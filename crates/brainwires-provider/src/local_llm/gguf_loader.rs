@@ -36,7 +36,8 @@ use candle_core::quantized::gguf_file;
 use candle_core::{DType, Device, Result, Tensor};
 use candle_nn::Activation;
 use candle_transformers::models::gemma4::config::{
-    Gemma4Config, Gemma4TextConfig, Gemma4VisionConfig,
+    Gemma4Config, Gemma4RopeLayerParams, Gemma4RopeParameters, Gemma4TextConfig,
+    Gemma4VisionConfig,
 };
 
 /// Translate one GGUF tensor name into the HF safetensors name the
@@ -51,6 +52,17 @@ pub fn gguf_to_hf_name(name: &str) -> Option<String> {
         "output_norm.weight" => return Some("model.language_model.norm.weight".into()),
         "output.weight" => return Some("lm_head.weight".into()),
         "rope_freqs.weight" => return None,
+        // PLE top-level tensors. Ollama gemma4:e2b uses bare names;
+        // older Gemma 3n publications used `_projection` / `_norm`.
+        "per_layer_model_proj.weight" | "per_layer_model_projection.weight" => {
+            return Some("model.language_model.per_layer_model_projection.weight".into())
+        }
+        "per_layer_proj_norm.weight" | "per_layer_projection_norm.weight" => {
+            return Some("model.language_model.per_layer_projection_norm.weight".into())
+        }
+        "per_layer_token_embd.weight" | "embed_tokens_per_layer.weight" => {
+            return Some("model.language_model.embed_tokens_per_layer.weight".into())
+        }
         _ => {}
     }
 
@@ -74,18 +86,23 @@ pub fn gguf_to_hf_name(name: &str) -> Option<String> {
         "ffn_gate.weight" => "mlp.gate_proj.weight",
         "ffn_up.weight" => "mlp.up_proj.weight",
         "ffn_down.weight" => "mlp.down_proj.weight",
-        // Gemma 4 PLE / AltUp / Laurel — names follow llama.cpp's
-        // gemma3n/gemma4 naming. If an Ollama publication uses
-        // different suffixes the model will simply not load that
-        // tower and the relevant disable_* flags should be set.
-        "per_layer_inp_gate.weight" => "per_layer_input_gate.weight",
-        "per_layer_proj.weight" => "per_layer_projection.weight",
-        "per_layer_model_proj.weight" => "per_layer_model_projection.weight",
+        // Gemma 4 PLE — Ollama-published gemma4:e2b uses bare names
+        // (`inp_gate`, `proj`, `post_norm`, `layer_output_scale`).
+        // Older llama.cpp gemma3n style is `per_layer_inp_gate` /
+        // `per_layer_proj` etc; we accept both for compatibility.
+        "inp_gate.weight" | "per_layer_inp_gate.weight" => "per_layer_input_gate.weight",
+        "proj.weight" | "per_layer_proj.weight" => "per_layer_projection.weight",
+        "post_norm.weight" | "post_per_layer_input_norm.weight" => {
+            "post_per_layer_input_norm.weight"
+        }
+        "layer_output_scale.weight" | "layer_scalar" => "layer_scalar",
+        // AltUp / Laurel — only present in some Gemma 3n publications;
+        // gemma4:e2b on Ollama doesn't ship these, so the model simply
+        // skips them at load time.
         "altup_proj.weight" => "altup_projections.weight",
         "altup_unembd_proj.weight" => "altup_unembed_projections.weight",
         "laurel_l.weight" => "laurel.linear_left.weight",
         "laurel_r.weight" => "laurel.linear_right.weight",
-        "layer_scalar" => "layer_scalar",
         _ => return None,
     };
     Some(format!(
@@ -195,13 +212,51 @@ pub fn build_gemma4_config_from_gguf(ct: &gguf_file::Content) -> Result<Gemma4Co
     let num_key_value_heads = md_get("attention.head_count_kv")?.to_u32()? as usize;
     let num_hidden_layers = md_get("block_count")?.to_u32()? as usize;
     let hidden_size = md_get("embedding_length")?.to_u32()? as usize;
-    let intermediate_size = md_get("feed_forward_length")?.to_u32()? as usize;
-    let head_dim = md_get("attention.key_length")?.to_u32()? as usize;
+
+    // `feed_forward_length` is published as either a single u32 (older
+    // gemma3 schema) or an Array of i32 with one entry per layer
+    // (Gemma 4's elastic MLP — E2B uses 6144 for layers 0-14 and 12288
+    // for 15-34). Handle both.
+    let (intermediate_size, intermediate_sizes) = match md_get("feed_forward_length")? {
+        gguf_file::Value::Array(arr) => {
+            let mut sizes = Vec::with_capacity(arr.len());
+            for v in arr {
+                let n = match v {
+                    gguf_file::Value::I32(n) => *n as usize,
+                    gguf_file::Value::U32(n) => *n as usize,
+                    other => bail!(
+                        "feed_forward_length array entry has unexpected type: {other:?}"
+                    ),
+                };
+                sizes.push(n);
+            }
+            let first = sizes.first().copied().unwrap_or(0);
+            (first, Some(sizes))
+        }
+        v => (v.to_u32()? as usize, None),
+    };
+
+    // Sliding (SWA) head_dim from `attention.key_length_swa`, full-attn
+    // head_dim from `attention.key_length`. Older gemma3 publications
+    // don't separate these, so fall back to a single key_length.
+    let head_dim_swa = md_get_opt("attention.key_length_swa")
+        .and_then(|m| m.to_u32().ok())
+        .map(|v| v as usize);
+    let head_dim_full = md_get("attention.key_length")?.to_u32()? as usize;
+    let head_dim = head_dim_swa.unwrap_or(head_dim_full);
+    let global_head_dim = head_dim_full;
+
     let rms_norm_eps = md_get("attention.layer_norm_rms_epsilon")?.to_f32()? as f64;
     let max_position_embeddings = md_get("context_length")?.to_u32()? as usize;
-    let rope_theta = md_get_opt("rope.freq_base")
+
+    // RoPE theta: full-attn uses `rope.freq_base`, sliding uses
+    // `rope.freq_base_swa`. Stored on the per-rope-type config.
+    let rope_theta_full = md_get_opt("rope.freq_base")
         .and_then(|m| m.to_f32().ok())
         .unwrap_or(1_000_000.0) as f64;
+    let rope_theta_swa = md_get_opt("rope.freq_base_swa")
+        .and_then(|m| m.to_f32().ok())
+        .unwrap_or(10_000.0) as f64;
 
     // Vocab size from the embedding tensor shape (more reliable than
     // metadata, which may not carry it).
@@ -215,26 +270,57 @@ pub fn build_gemma4_config_from_gguf(ct: &gguf_file::Content) -> Result<Gemma4Co
 
     let sliding_window = md_get_opt("attention.sliding_window")
         .and_then(|m| m.to_u32().ok())
-        .unwrap_or(4096) as usize;
-    let sliding_window_pattern = md_get_opt("attention.sliding_window_type")
-        .and_then(|m| m.to_u32().ok())
-        .unwrap_or(5) as usize;
-    let layer_types: Vec<String> = (0..num_hidden_layers)
-        .map(|i| {
-            // Mirror the llama.cpp convention used by quantized_gemma3:
-            // sliding when (i + 1) % sliding_window_pattern > 0.
-            let is_sliding = (i + 1) % sliding_window_pattern > 0;
-            if is_sliding {
-                "sliding_attention".to_string()
-            } else {
-                "full_attention".to_string()
-            }
-        })
-        .collect();
+        .unwrap_or(512) as usize;
 
-    // KV-share. Use GGUF metadata if present, else apply canonical
-    // heuristic (matches the chat-pwa wasm fix in commit dca60315).
-    let num_kv_shared_layers = md_get_opt("attention.kv_shared_layers")
+    // `attention.sliding_window_pattern` is published as an Array of Bool
+    // in Gemma 4 (true = sliding, false = full). Older Gemma 3 schemas
+    // used `attention.sliding_window_type` as a scalar period (every Nth
+    // layer is full). Support both, derive `layer_types` accordingly.
+    let layer_types: Vec<String> = match md_get_opt("attention.sliding_window_pattern") {
+        Some(gguf_file::Value::Array(arr)) => {
+            let mut types = Vec::with_capacity(arr.len());
+            for v in &arr {
+                let is_sliding = matches!(v, gguf_file::Value::Bool(true));
+                types.push(if is_sliding {
+                    "sliding_attention".to_string()
+                } else {
+                    "full_attention".to_string()
+                });
+            }
+            // Pad/truncate to num_hidden_layers if metadata length
+            // disagrees (defensive — should always match).
+            types.resize(num_hidden_layers, "sliding_attention".to_string());
+            types
+        }
+        _ => {
+            let period = md_get_opt("attention.sliding_window_type")
+                .and_then(|m| m.to_u32().ok())
+                .unwrap_or(5) as usize;
+            (0..num_hidden_layers)
+                .map(|i| {
+                    let is_sliding = (i + 1) % period > 0;
+                    if is_sliding {
+                        "sliding_attention".to_string()
+                    } else {
+                        "full_attention".to_string()
+                    }
+                })
+                .collect()
+        }
+    };
+    // For the legacy `sliding_window_pattern: usize` field, derive a
+    // period from the actual pattern (count between non-sliding layers).
+    let sliding_window_pattern = layer_types
+        .iter()
+        .position(|t| t == "full_attention")
+        .map(|p| p + 1)
+        .unwrap_or(num_hidden_layers);
+
+    // KV-share. Gemma 4 uses `attention.shared_kv_layers`; older
+    // gemma3 publications used `attention.kv_shared_layers`. Fall back
+    // to canonical heuristics when neither key is present.
+    let num_kv_shared_layers = md_get_opt("attention.shared_kv_layers")
+        .or_else(|| md_get_opt("attention.kv_shared_layers"))
         .and_then(|m| m.to_u32().ok())
         .map(|v| v as usize)
         .unwrap_or_else(|| match num_hidden_layers {
@@ -243,21 +329,56 @@ pub fn build_gemma4_config_from_gguf(ct: &gguf_file::Content) -> Result<Gemma4Co
             _ => 0,
         });
 
+    let final_logit_softcapping = md_get_opt("final_logit_softcapping")
+        .and_then(|m| m.to_f32().ok())
+        .map(|v| v as f64);
+
+    let hidden_size_per_layer_input = md_get_opt("embedding_length_per_layer_input")
+        .and_then(|m| m.to_u32().ok())
+        .map(|v| v as usize);
+
+    // Surface dual-RoPE base frequencies through the `rope_parameters`
+    // sub-config so `Gemma4TextConfig::rope_local_base_freq()` and
+    // `partial_rotary_factor()` resolve to the right values.
+    let rope_parameters = Some(Gemma4RopeParameters {
+        full_attention: Some(Gemma4RopeLayerParams {
+            rope_theta: Some(rope_theta_full),
+            rope_type: None,
+            partial_rotary_factor: Some(0.25),
+        }),
+        sliding_attention: Some(Gemma4RopeLayerParams {
+            rope_theta: Some(rope_theta_swa),
+            rope_type: None,
+            partial_rotary_factor: None,
+        }),
+        rope_theta: Some(rope_theta_full),
+        rope_type: None,
+        partial_rotary_factor: Some(0.25),
+    });
+
+    // PLE is enabled when `embedding_length_per_layer_input` is present
+    // and the GGUF carries the per-layer model projection tensor.
+    let has_ple = hidden_size_per_layer_input.is_some()
+        && (ct.tensor_infos.contains_key("per_layer_model_proj.weight")
+            || ct
+                .tensor_infos
+                .contains_key("per_layer_model_projection.weight"));
+
     let text_config = Gemma4TextConfig {
         attention_bias: false,
         head_dim,
         hidden_activation: Activation::GeluPytorchTanh,
         hidden_size,
         intermediate_size,
-        intermediate_sizes: None,
+        intermediate_sizes,
         num_attention_heads,
         num_hidden_layers,
         num_key_value_heads,
         rms_norm_eps,
-        rope_theta,
+        rope_theta: rope_theta_full,
         vocab_size,
         sliding_window,
-        final_logit_softcapping: None,
+        final_logit_softcapping,
         // Gemma 4 sets pre-softmax scale to 1.0 (commit b38856b1).
         // The struct stores it as a usize divisor under sqrt; 1
         // corresponds to scale = 1/sqrt(1) = 1.0.
@@ -266,16 +387,16 @@ pub fn build_gemma4_config_from_gguf(ct: &gguf_file::Content) -> Result<Gemma4Co
         tie_word_embeddings: true,
         sliding_window_pattern,
         layer_types,
-        global_head_dim: head_dim,
+        global_head_dim,
         num_global_key_value_heads: None,
-        rope_parameters: None,
+        rope_parameters,
         use_bidirectional_attention: None,
         use_flash_attn: false,
-        // PLE / AltUp / Laurel / sparsity / layer_scalar default-off
-        // until we verify Ollama GGUF publishes the relevant
-        // metadata + tensors.
-        hidden_size_per_layer_input: None,
+        hidden_size_per_layer_input,
         vocab_size_per_layer_input: None,
+        // Gemma 4 E2B doesn't ship AltUp / Laurel in the Ollama
+        // publication — disable both. PLE turns on iff the GGUF
+        // carries the projection tensor.
         altup_num_inputs: 1,
         altup_active_idx: 0,
         altup_correct_scale: false,
@@ -284,7 +405,7 @@ pub fn build_gemma4_config_from_gguf(ct: &gguf_file::Content) -> Result<Gemma4Co
         activation_sparsity_pattern: None,
         disable_altup: true,
         disable_laurel: true,
-        disable_per_layer_input_gate: true,
+        disable_per_layer_input_gate: !has_ple,
         num_kv_shared_layers,
     };
 

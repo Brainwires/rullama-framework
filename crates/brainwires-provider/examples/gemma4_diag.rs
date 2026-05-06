@@ -625,30 +625,60 @@ async fn run_quantized(args: Args, device: Device) -> Result<()> {
         args.prompt, token_ids,
     );
 
-    let input = Tensor::new(token_ids.as_slice(), &device)?.unsqueeze(0)?;
+    // Greedy autoregressive loop. First step ingests the prompt; each
+    // subsequent step feeds the previous argmax token at the next
+    // position. EOS = 1 (Gemma 4 `<eos>`) plus 106 / 50 from the
+    // GGUF's `tokenizer.ggml.eos_token_ids`.
+    let eos: std::collections::HashSet<u32> = [1u32, 106, 50].into_iter().collect();
+    let prompt_len = token_ids.len();
+    let mut all_tokens = token_ids.clone();
+    let mut seqlen_offset = 0usize;
+    let mut current_input = Tensor::new(token_ids.as_slice(), &device)?.unsqueeze(0)?;
     let t0 = std::time::Instant::now();
-    let logits = model.forward(&input, 0).context("model forward")?;
-    eprintln!(
-        "[gemma4_diag/quant] forward returned in {:?}, logits shape={:?}",
-        t0.elapsed(),
-        logits.shape(),
-    );
+    let mut t_first_step: Option<std::time::Duration> = None;
 
-    // argmax over the last token's logits.
-    let last_logits = logits.i((.., logits.dim(1)? - 1, ..))?.squeeze(0)?;
-    let (next_id, _) = last_logits
-        .to_dtype(DType::F32)?
-        .to_vec1::<f32>()?
-        .iter()
-        .enumerate()
-        .fold((0usize, f32::NEG_INFINITY), |acc, (i, &v)| {
-            if v > acc.1 { (i, v) } else { acc }
-        });
+    for step in 0..args.max_new_tokens {
+        let step_t0 = std::time::Instant::now();
+        let logits = model.forward(&current_input, seqlen_offset).context("model forward")?;
+        let elapsed = step_t0.elapsed();
+        if step == 0 {
+            t_first_step = Some(elapsed);
+            eprintln!(
+                "[gemma4_diag/quant] prompt forward in {:?}, logits shape={:?}",
+                elapsed,
+                logits.shape(),
+            );
+        }
+        let last_logits = logits.i((.., logits.dim(1)? - 1, ..))?.squeeze(0)?;
+        let (next_id, _) = last_logits
+            .to_dtype(DType::F32)?
+            .to_vec1::<f32>()?
+            .iter()
+            .enumerate()
+            .fold((0usize, f32::NEG_INFINITY), |acc, (i, &v)| {
+                if v > acc.1 { (i, v) } else { acc }
+            });
+        let next_id_u32 = next_id as u32;
+        all_tokens.push(next_id_u32);
+        seqlen_offset = if step == 0 { prompt_len } else { seqlen_offset + 1 };
+        current_input = Tensor::new(&[next_id_u32][..], &device)?.unsqueeze(0)?;
+        if eos.contains(&next_id_u32) {
+            eprintln!("[gemma4_diag/quant] EOS at step {step} ({next_id_u32})");
+            break;
+        }
+    }
+
+    let total = t0.elapsed();
+    let generated = &all_tokens[prompt_len..];
     let decoded = tokenizer
-        .decode(&[next_id as u32], true)
+        .decode(generated, true)
         .map_err(|e| anyhow::anyhow!("decode: {e}"))?;
     eprintln!(
-        "[gemma4_diag/quant] step 0: next_id={next_id} decoded={decoded:?}",
+        "[gemma4_diag/quant] generated {} tokens in {:?} (first step {:?}); decoded={:?}",
+        generated.len(),
+        total,
+        t_first_step.unwrap_or_default(),
+        decoded,
     );
     println!("RESULT: PASS  quantized_gemma4 forward produced finite logits");
     Ok(())
