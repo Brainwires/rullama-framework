@@ -2122,3 +2122,122 @@ pub async fn init_local_multimodal_gguf(
         source: "gguf",
     })
 }
+
+// ── Quantized GGUF entry point — Phase 5 perf path ─────────────────────────
+
+/// Build a text-only Gemma 4 handle from an Ollama Q4_K_M GGUF that
+/// keeps weights as `QTensor` end-to-end. Inference runs on PR #3379's
+/// `q4_k.pwgsl` quantized matmul kernel on WGPU and CPU dequant-on-fly
+/// elsewhere — this is the path that actually realises Phase 5's
+/// projected ~3-4× decode speedup.
+///
+/// Vision/audio are unavailable on this handle (Ollama gemma4:e2b
+/// is text-only). For the multimodal path use
+/// `init_local_multimodal_gguf` which dequantizes to BF16 at load and
+/// wraps the existing `Gemma4MultiModal`.
+#[wasm_bindgen]
+pub async fn init_local_multimodal_gguf_quantized(
+    weights: Vec<u8>,
+    tokenizer_json: Vec<u8>,
+    model_id: String,
+) -> Result<LocalQuantizedHandle, JsValue> {
+    let device = match try_webgpu_device().await {
+        Ok(dev) => {
+            web_sys::console::log_1(&"[wasm/gguf-q] using WebGPU device".into());
+            dev
+        }
+        Err(e) => {
+            web_sys::console::warn_1(
+                &format!("[wasm/gguf-q] WebGPU unavailable ({e}), CPU fallback").into(),
+            );
+            Device::Cpu
+        }
+    };
+
+    web_sys::console::log_1(
+        &format!(
+            "[wasm/gguf-q] loading GGUF blob ({} bytes), model_id={model_id}",
+            weights.len()
+        )
+        .into(),
+    );
+
+    let mut cursor = std::io::Cursor::new(weights);
+    let (model, cfg) =
+        brainwires_provider::local_llm::gguf_loader::load_quantized_gemma4_from_reader(
+            &mut cursor,
+            &device,
+        )
+        .map_err(|e| JsValue::from_str(&format!("quantized_gemma4 load: {e}")))?;
+
+    web_sys::console::log_1(
+        &format!(
+            "[wasm/gguf-q] quantized model built, layers={}",
+            cfg.text_config.num_hidden_layers,
+        )
+        .into(),
+    );
+
+    let tokenizer = Tokenizer::from_bytes(&tokenizer_json)
+        .map_err(|e| JsValue::from_str(&format!("tokenizer parse: {e}")))?;
+
+    let pipeline =
+        brainwires_provider::local_llm::quantized_gemma4_pipeline::Gemma4QuantizedTextOnly::from_components(
+            model, tokenizer, device, cfg,
+        );
+
+    Ok(LocalQuantizedHandle {
+        inner: Arc::new(pipeline),
+        model_id,
+    })
+}
+
+/// Text-only Gemma 4 handle backed by `Gemma4QuantizedTextOnly`. Mirrors
+/// `LocalMultiModalHandle` in shape but doesn't carry a vision/audio
+/// state machine. The `local_chat_stream_quantized` function below
+/// drives generation through this handle.
+#[wasm_bindgen]
+pub struct LocalQuantizedHandle {
+    inner: Arc<
+        brainwires_provider::local_llm::quantized_gemma4_pipeline::Gemma4QuantizedTextOnly,
+    >,
+    model_id: String,
+}
+
+#[wasm_bindgen]
+impl LocalQuantizedHandle {
+    /// Model id (e.g. `"gemma4:e2b"`).
+    #[wasm_bindgen(getter)]
+    pub fn model_id(&self) -> String {
+        self.model_id.clone()
+    }
+
+    /// `"webgpu"` or `"cpu"` — which device the quantized weights live on.
+    #[wasm_bindgen(getter)]
+    pub fn device_type(&self) -> String {
+        match self.inner.device().location() {
+            brainwires_provider::CandleDeviceLocation::Cpu => "cpu".into(),
+            brainwires_provider::CandleDeviceLocation::Wgpu { .. } => "webgpu".into(),
+            _ => "unknown".into(),
+        }
+    }
+
+    /// Always `false` — Ollama gemma4:e2b GGUF is text-only.
+    #[wasm_bindgen(getter)]
+    pub fn has_vision(&self) -> bool {
+        false
+    }
+
+    /// Always `false`.
+    #[wasm_bindgen(getter)]
+    pub fn has_audio(&self) -> bool {
+        false
+    }
+
+    /// Always `"gguf"` — paired with `LocalMultiModalHandle.source` so
+    /// JS UIs can render a single badge.
+    #[wasm_bindgen(getter)]
+    pub fn source(&self) -> String {
+        "gguf".into()
+    }
+}
