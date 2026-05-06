@@ -129,6 +129,36 @@ pub fn load_gemma4_gguf_from_reader<R: std::io::Read + std::io::Seek>(
     Ok((out, cfg))
 }
 
+/// Read a Gemma 4 GGUF and build a `quantized_gemma4::ModelWeights`
+/// directly — keeps weights as `QTensor` end-to-end so PR #3379's
+/// quantized matmul kernels (`q4_k.pwgsl` / `q5_k.pwgsl` / etc on
+/// WGPU, CPU dequant-on-fly elsewhere) carry the inference workload.
+/// This is the perf-bearing path; `load_gemma4_gguf_from_reader`
+/// above is the dequant-at-load fallback that runs the existing BF16
+/// model.
+///
+/// **Limitation:** the basic decoder only — auxiliary towers (PLE /
+/// AltUp / LAuReL / KV-share / layer_scalar / activation sparsity)
+/// are gated off until reference-verified. Output won't bit-match a
+/// canonical Gemma 4 forward pass.
+pub fn load_quantized_gemma4_from_reader<R: std::io::Read + std::io::Seek>(
+    reader: &mut R,
+    device: &Device,
+) -> Result<(
+    candle_transformers::models::quantized_gemma4::ModelWeights,
+    Gemma4Config,
+)> {
+    let content = gguf_file::Content::read(reader)?;
+    let cfg = build_gemma4_config_from_gguf(&content)?;
+    let model = candle_transformers::models::quantized_gemma4::ModelWeights::from_gguf(
+        content,
+        reader,
+        device,
+        &cfg.text_config,
+    )?;
+    Ok((model, cfg))
+}
+
 /// Build a [`Gemma4Config`] from a GGUF metadata kv-store.
 ///
 /// Falls back to canonical Gemma 4 E2B values when an optional key is
