@@ -311,6 +311,57 @@ Migration:
 
 ### Added
 
+#### chat-pwa — quantized_gemma4 auxiliary towers (KV-share, Laurel, layer_scalar, sparsity, PLE, AltUp)
+
+The basic quantized_gemma4 decoder shipped earlier landed with the
+auxiliary towers gated off (output wouldn't bit-match the BF16 model).
+This round finishes the Gemma 4 / Gemma 3n auxiliary stack:
+
+- **KV-share** — receivers (layers 15..34 on E2B) skip their own
+  k_proj / v_proj / k_norm and read post-cache `(k, v)` from a
+  donor's entry in a per-step `SharedKvStore`. Donors stash after
+  their own KvCache append; donor selection follows
+  `Gemma4TextConfig::donor_layer_idx_for(layer_idx)` (last
+  same-`is_sliding` layer before `first_kv_shared_layer_idx`). Q
+  always rotates through THIS layer's RoPE table either way.
+- **LaurelBlock** — low-rank residual augmentation (linear_left →
+  linear_right → post_laurel_norm) merged into the attention output
+  via `(attn + laurel) * (1/√2)`. Construction is fault-tolerant:
+  publications without the laurel weights silently fall back.
+- **layer_scalar** — single `[1]` f32 tensor at
+  `blk.{i}.layer_scalar`, applied as `xs *= scalar` at the very end
+  of `DecoderLayer::forward`. Required on E2B; without it the
+  residual stream `abs_max` runs away.
+- **activation sparsity** in `MLP::forward` — Gaussian-topk threshold
+  (`mean + std * z` ReLU) on the gate before the activation. `z =
+  sqrt(2) * erfinv(2p-1)` computed once at construction via a
+  Winitzki erfinv approximation.
+- **PLE side-channel** — `PerLayerEmbedding` computes a
+  `[B, T, num_layers, hidden_per_layer]` table once per step from
+  `inputs_embeds` (and optionally `embed_tokens_per_layer`); each
+  `DecoderLayer` slices its layer index out and applies
+  `gate(h) → act → * per_layer_input → projection → norm → +residual`
+  between the MLP residual and the layer_scalar multiply.
+- **AltUp** (Alternating Updates) — multi-stream forward with
+  `altup_num_inputs` parallel hidden streams. Top-level
+  `altup_projections` build the stack from `inputs_embeds`; each
+  layer runs `predict → activate (attn+laurel+MLP on the active
+  stream) → correct over the full stack`; top-level
+  `altup_unembed_projections` collapse the stack back before the
+  final RmsNorm + lm_head. PLE delta in this mode is applied to
+  `corrected[i != active_idx]`. Falls back to the classic
+  single-stream path when the GGUF doesn't carry the AltUp tensors.
+
+The remaining validation step is reference correctness against an
+actual Ollama-published gemma4:e2b GGUF — tensor name conventions
+(especially for AltUp `blk.{i}.altup_*.weight` and PLE
+`blk.{i}.per_layer_*`) follow llama.cpp-style guesses that may need
+adjustment when the first real GGUF is loaded.
+
+`gemma4_diag --quantized --gguf-path <file> --tokenizer-file <file>`
+exercises the path end-to-end: builds the quantized model, encodes
+the prompt, runs one forward, prints the predicted next token.
+
 #### chat-pwa — quantized_gemma4 model + chunked GPU upload + AMD adapter preset
 
 Three coordinated upgrades that together unlock real Phase 5 perf
