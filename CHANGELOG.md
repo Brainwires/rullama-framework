@@ -311,6 +311,46 @@ Migration:
 
 ### Added
 
+#### chat-pwa — Phase 5 perf path live end-to-end
+
+The user-visible Phase 5 path now runs in the chat-pwa:
+
+- **`Gemma4QuantizedTextOnly` pipeline** —
+  `crates/brainwires-provider/src/local_llm/quantized_gemma4_pipeline.rs`.
+  Wraps `quantized_gemma4::ModelWeights` + a `tokenizers::Tokenizer`
+  with a greedy decode loop: prefill the prompt → KvCache fills →
+  step-by-step token emit with `seqlen_offset = prompt_len + step`.
+  KvCache reset at the start of each generate.
+- **`init_local_multimodal_gguf_quantized` wasm entry** + new
+  `LocalQuantizedHandle` type. Loads via
+  `gguf_loader::load_quantized_gemma4_from_reader` (keeps weights
+  as `QTensor` end-to-end; QMatMul matmul calls hit PR #3379's
+  `q4_k.pwgsl` on WGPU and CPU dequant-on-fly elsewhere). Vision /
+  audio getters always return false.
+- **`local_chat_stream_quantized` wasm entry** — text streaming
+  over a `LocalQuantizedHandle`. Renders messages into the canonical
+  Gemma 4 chat-template prompt (`<|turn>{role}\n{text}<turn|>\n`)
+  and drives `Gemma4QuantizedTextOnly::generate_greedy_streaming`.
+  NDJSON `VisionWireChunk` framing matches the BF16 path so the
+  JS-side reader is unchanged.
+- **`local-worker.js` routing** — `handleChat` checks a new
+  `handleIsQuantized` flag and routes to `local_chat_stream_quantized`
+  when the loaded handle is quantized. Load path picks
+  `init_local_multimodal_gguf_quantized` over the BF16
+  dequant-at-load fallback when the wasm crate exposes it.
+  `handleVisionChat` fail-fasts with a clear error on quantized
+  handles (Ollama GGUF is text-only).
+- **`gemma4_diag --quantized`** — native CLI exercise of the
+  quantized path: load GGUF, encode prompt, run one forward,
+  argmax + decode, print predicted next token.
+
+End-to-end: open settings → download gemma4:e2b → load → chat. The
+forward pass runs on the `q4_k.pwgsl` quantized matmul kernel.
+Reference correctness against an actual Ollama-published gemma4:e2b
+GGUF is the remaining validation step before the path can be made
+the default route — tensor name conventions for AltUp / PLE /
+Laurel weights are llama.cpp-style guesses and may need adjustment.
+
 #### chat-pwa — quantized_gemma4 auxiliary towers (KV-share, Laurel, layer_scalar, sparsity, PLE, AltUp)
 
 The basic quantized_gemma4 decoder shipped earlier landed with the
