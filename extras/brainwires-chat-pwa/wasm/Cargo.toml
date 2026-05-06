@@ -20,17 +20,18 @@ brainwires-provider-speech = { path = "../../../crates/brainwires-provider-speec
 wgpu = { version = "29", default-features = false, features = ["webgpu"] }
 
 # Candle BERT (embedding model). Pulled in directly so we can use the
-# `candle_transformers::models::bert::BertModel` API; the workspace patch
-# at the root redirects this to the Brainwires candle-0.10 fork.
-candle-core = { version = "0.10", default-features = false }
-candle-transformers = { version = "0.10", default-features = false }
+# `candle_transformers::models::bert::BertModel` API; `[patch.crates-io]`
+# at the workspace root redirects this to the Brainwires candle fork
+# (currently `v0.11-wgpu`).
+candle-core = { version = "0.11", default-features = false }
+candle-transformers = { version = "0.11", default-features = false }
 
 # Candle NN — needed for the multimodal vision path which references
 # `candle_nn::Activation` when constructing the `gemma3_mm::Config`. The
 # providers crate re-exports `VarBuilder` but not the full `candle_nn`
 # surface, so we depend on it directly here. The `wgpu` feature is
 # pulled in transitively via `brainwires-provider/candle-wgpu`.
-candle-nn = { version = "0.10", default-features = false }
+candle-nn = { version = "0.11", default-features = false }
 
 # HF tokenizer with `unstable_wasm` for wasm32 target. The provider crate
 # already pulls tokenizers in with `fancy-regex`; declaring it here adds the

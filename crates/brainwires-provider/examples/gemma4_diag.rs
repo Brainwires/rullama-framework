@@ -142,6 +142,14 @@ struct Args {
     /// against each other on the same input.
     #[arg(long, default_value_t = false)]
     quantized: bool,
+
+    /// Wrap the prompt in the Gemma 4 chat template
+    /// (`<bos><|turn>user\n…<turn|>\n<|turn>model\n`) before encoding.
+    /// Required for IT-tuned variants like `gemma4:e2b` to produce
+    /// coherent answers — without it the model treats the input as raw
+    /// completion context and tends to repeat the input verbatim.
+    #[arg(long, default_value_t = false)]
+    chat_template: bool,
 }
 
 /// Tensors the chat-pwa filters out of the safetensors load. Replicated
@@ -616,13 +624,28 @@ async fn run_quantized(args: Args, device: Device) -> Result<()> {
 
     let tokenizer =
         Tokenizer::from_file(&tokenizer_path).map_err(|e| anyhow::anyhow!("tokenizer: {e}"))?;
+    // For IT variants (`gemma4:e2b`), wrap the prompt in the Gemma 4
+    // chat template; the wrapped string already contains `<bos>`, so
+    // call `encode(..., false)` to skip the auto-special-token pass.
+    // Raw mode keeps `add_special_tokens=true` so the BF16 path can
+    // be exercised with an unwrapped prompt for parity testing.
+    let (prompt_str, add_special) = if args.chat_template {
+        (
+            format!(
+                "<bos><|turn>user\n{}<turn|>\n<|turn>model\n",
+                args.prompt.trim()
+            ),
+            false,
+        )
+    } else {
+        (args.prompt.clone(), true)
+    };
     let encoded = tokenizer
-        .encode(args.prompt.as_str(), true)
+        .encode(prompt_str.as_str(), add_special)
         .map_err(|e| anyhow::anyhow!("encode: {e}"))?;
     let token_ids: Vec<u32> = encoded.get_ids().to_vec();
     eprintln!(
-        "[gemma4_diag/quant] prompt='{}' tokens={:?}",
-        args.prompt, token_ids,
+        "[gemma4_diag/quant] prompt={prompt_str:?} tokens={token_ids:?}",
     );
 
     // Greedy autoregressive loop. First step ingests the prompt; each
