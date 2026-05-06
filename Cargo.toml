@@ -360,7 +360,7 @@ rustpotter = { git = "https://github.com/Brainwires/rustpotter", rev = "4dbd6fd5
 # publication (upstream did not cut a `0.10.2` tag). The WebGPU backend
 # lands incrementally on this branch in subsequent phases of the
 # bright-scroll plan.
-candle-core         = { git = "https://github.com/Brainwires/candle", rev = "e7fd9442" }
-candle-nn           = { git = "https://github.com/Brainwires/candle", rev = "e7fd9442" }
-candle-transformers = { git = "https://github.com/Brainwires/candle", rev = "e7fd9442" }
+candle-core         = { git = "https://github.com/Brainwires/candle", rev = "acda3dbf" }
+candle-nn           = { git = "https://github.com/Brainwires/candle", rev = "acda3dbf" }
+candle-transformers = { git = "https://github.com/Brainwires/candle", rev = "acda3dbf" }
 
