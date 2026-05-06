@@ -88,15 +88,18 @@ impl Gemma4QuantizedTextOnly {
         &self.device
     }
 
-    /// Greedy generation. `eos_token_id`: stop early when the model
-    /// emits this token. `max_new_tokens`: hard cap on emit count.
+    /// Greedy generation. `eos_token_ids`: stop as soon as the model
+    /// emits any of these. Gemma 4 IT publishes three: `<eos>` (1),
+    /// `<turn|>` (106), and id 50; pass all three so generation stops
+    /// at the natural turn boundary instead of running to the cap.
+    /// `max_new_tokens`: hard cap on emit count.
     pub async fn generate_greedy(
         &self,
         prompt_text: &str,
         max_new_tokens: usize,
-        eos_token_id: Option<u32>,
+        eos_token_ids: &[u32],
     ) -> Result<String, QuantizedPipelineError> {
-        self.generate_greedy_streaming(prompt_text, max_new_tokens, eos_token_id, |_, _| {})
+        self.generate_greedy_streaming(prompt_text, max_new_tokens, eos_token_ids, |_, _| {})
             .await
     }
 
@@ -108,7 +111,7 @@ impl Gemma4QuantizedTextOnly {
         &self,
         prompt_text: &str,
         max_new_tokens: usize,
-        eos_token_id: Option<u32>,
+        eos_token_ids: &[u32],
         mut on_delta: impl FnMut(u32, &str),
     ) -> Result<String, QuantizedPipelineError> {
         let enc = self
@@ -150,7 +153,7 @@ impl Gemma4QuantizedTextOnly {
             decoded = cumulative.clone();
             prev_decoded_len = decoded.len();
 
-            if Some(next_id) == eos_token_id {
+            if eos_token_ids.contains(&next_id) {
                 break;
             }
 

@@ -2263,9 +2263,15 @@ pub fn local_chat_stream_quantized(
     };
 
     // Render messages into a Gemma 4 chat-template prompt. Image parts
-    // are dropped (text-only model).
+    // are dropped (text-only model). The downstream pipeline calls
+    // `tokenizer.encode(prompt, false)` so we include `<bos>` literally
+    // here. Role mapping: `assistant` → `model` (Gemma 4's
+    // chat_template.jinja convention; the model wasn't trained on the
+    // bare `assistant` role string).
     let mut prompt = String::with_capacity(256);
+    prompt.push_str("<bos>");
     for m in &messages {
+        let role: &str = if m.role == "assistant" { "model" } else { m.role.as_str() };
         let text = match &m.content {
             JsContent::Text(s) => s.clone(),
             JsContent::Parts(parts) => parts
@@ -2277,12 +2283,12 @@ pub fn local_chat_stream_quantized(
                 .collect::<Vec<_>>()
                 .join(""),
         };
-        // Gemma 4 chat tokens — matches the registration in the
-        // tokenizer.json `added_tokens` array (id 105 / 106).
+        // Gemma 4 chat tokens — registered in tokenizer.json
+        // `added_tokens` array as `<|turn>` (105) / `<turn|>` (106).
         prompt.push_str("<|turn>");
-        prompt.push_str(&m.role);
+        prompt.push_str(role);
         prompt.push('\n');
-        prompt.push_str(&text);
+        prompt.push_str(text.trim());
         prompt.push_str("<turn|>\n");
     }
     prompt.push_str("<|turn>model\n");
@@ -2308,8 +2314,11 @@ pub fn local_chat_stream_quantized(
                 }
             };
 
-            // Gemma 4 EOS token id is 1 (`<eos>` in the tokenizer).
-            let eos: Option<u32> = Some(1);
+            // Gemma 4 IT publishes three EOS tokens: 1 (`<eos>`), 106
+            // (`<turn|>`, end-of-turn), and 50. Stop on any of them so
+            // generation halts at the natural turn boundary instead of
+            // running through `max_new_tokens`.
+            let eos: &[u32] = &[1, 106, 50];
             let result = pipeline
                 .generate_greedy_streaming(&prompt_owned, max_new_tokens, eos, |_, delta| {
                     send_chunk(
