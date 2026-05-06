@@ -37,7 +37,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
-use candle_core::{DType, Device, Tensor};
+use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::var_builder::{SimpleBackend, VarBuilderArgs};
 use candle_nn::VarBuilder;
 use candle_transformers::models::gemma4::{Model as Gemma4Model, config::Gemma4Config};
@@ -133,6 +133,15 @@ struct Args {
     /// — pass an HF tokenizer.json explicitly).
     #[arg(long)]
     gguf_path: Option<PathBuf>,
+
+    /// Use the quantized_gemma4 path (QMatMul over GGUF QTensors,
+    /// hits PR #3379's q4_k.pwgsl on WGPU and CPU dequant-on-fly
+    /// elsewhere). Implies `--gguf-path`. Without this flag, the
+    /// `--gguf-path` route dequantizes to BF16 at load and runs the
+    /// existing Gemma4Model — useful for diffing the two paths
+    /// against each other on the same input.
+    #[arg(long, default_value_t = false)]
+    quantized: bool,
 }
 
 /// Tensors the chat-pwa filters out of the safetensors load. Replicated
@@ -461,6 +470,10 @@ async fn run(args: Args) -> Result<()> {
     let device = build_device(args.device)?;
     eprintln!("[gemma4_diag] device built: {:?}", device);
 
+    if args.quantized {
+        return run_quantized(args, device).await;
+    }
+
     let dtype = DType::BF16;
 
     // GGUF path: dequantize-at-load via the new Phase 4 loader. Skips HF
@@ -567,5 +580,76 @@ async fn run(args: Args) -> Result<()> {
         "[gemma4_diag] generate_greedy returned in {:?}: {output:?}",
         t0.elapsed()
     );
+    Ok(())
+}
+
+/// Quantized-path diagnostic — drives the `quantized_gemma4` model end-to-end:
+/// load GGUF (with QTensors kept as QTensor so PR #3379's `q4_k.pwgsl` runs),
+/// build a tokenizer, encode the prompt, run one forward step, argmax the
+/// final-token logits, and decode + print the predicted next token. Used to
+/// shake out the QMatMul + GGUF integration without the full `Gemma4MultiModal`
+/// generate_greedy machinery (which currently only wraps the BF16 path).
+async fn run_quantized(args: Args, device: Device) -> Result<()> {
+    let gguf_path = args
+        .gguf_path
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("--quantized requires --gguf-path"))?;
+    let tokenizer_path = args
+        .tokenizer_file
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("--quantized requires --tokenizer-file"))?;
+
+    eprintln!("[gemma4_diag/quant] loading GGUF: {}", gguf_path.display());
+    let mut file = std::fs::File::open(&gguf_path).context("open GGUF")?;
+    let t0 = std::time::Instant::now();
+    let (mut model, cfg) =
+        brainwires_provider::local_llm::gguf_loader::load_quantized_gemma4_from_reader(
+            &mut file, &device,
+        )
+        .context("load_quantized_gemma4_from_reader")?;
+    eprintln!(
+        "[gemma4_diag/quant] model built in {:?} (layers={}, vocab={})",
+        t0.elapsed(),
+        cfg.text_config.num_hidden_layers,
+        cfg.text_config.vocab_size,
+    );
+
+    let tokenizer =
+        Tokenizer::from_file(&tokenizer_path).map_err(|e| anyhow::anyhow!("tokenizer: {e}"))?;
+    let encoded = tokenizer
+        .encode(args.prompt.as_str(), true)
+        .map_err(|e| anyhow::anyhow!("encode: {e}"))?;
+    let token_ids: Vec<u32> = encoded.get_ids().to_vec();
+    eprintln!(
+        "[gemma4_diag/quant] prompt='{}' tokens={:?}",
+        args.prompt, token_ids,
+    );
+
+    let input = Tensor::new(token_ids.as_slice(), &device)?.unsqueeze(0)?;
+    let t0 = std::time::Instant::now();
+    let logits = model.forward(&input, 0).context("model forward")?;
+    eprintln!(
+        "[gemma4_diag/quant] forward returned in {:?}, logits shape={:?}",
+        t0.elapsed(),
+        logits.shape(),
+    );
+
+    // argmax over the last token's logits.
+    let last_logits = logits.i((.., logits.dim(1)? - 1, ..))?.squeeze(0)?;
+    let (next_id, _) = last_logits
+        .to_dtype(DType::F32)?
+        .to_vec1::<f32>()?
+        .iter()
+        .enumerate()
+        .fold((0usize, f32::NEG_INFINITY), |acc, (i, &v)| {
+            if v > acc.1 { (i, v) } else { acc }
+        });
+    let decoded = tokenizer
+        .decode(&[next_id as u32], true)
+        .map_err(|e| anyhow::anyhow!("decode: {e}"))?;
+    eprintln!(
+        "[gemma4_diag/quant] step 0: next_id={next_id} decoded={decoded:?}",
+    );
+    println!("RESULT: PASS  quantized_gemma4 forward produced finite logits");
     Ok(())
 }
