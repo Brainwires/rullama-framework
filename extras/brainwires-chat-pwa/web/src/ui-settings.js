@@ -16,11 +16,13 @@ import {
 import { listProviders } from './providers/index.js';
 import {
     KNOWN_MODELS,
+    KNOWN_OLLAMA_MODELS,
     KNOWN_EMBEDDING_MODELS,
     isDownloaded,
     cancelDownload,
     deleteModel,
     getPartialInfo,
+    getKnownModelAny,
 } from './model-store.js';
 import * as banner from './ui-download-banner.js';
 import * as cryptoStore from '../crypto-store.js';
@@ -510,7 +512,10 @@ async function testProvider(id, apiKeyInline, baseUrlInline) {
 // ── Local model ────────────────────────────────────────────────
 
 async function buildLlmCard(modelId) {
-    const m = KNOWN_MODELS[modelId];
+    // Accept HF (KNOWN_MODELS) or Ollama (KNOWN_OLLAMA_MODELS) ids — the
+    // settings card surface is identical for both, only the underlying
+    // download / load paths differ (handled in model-store.js).
+    const m = getKnownModelAny(modelId);
     if (!m) return el('div');
     const downloaded = await isDownloaded(modelId).catch((e) => { console.error("[bw] swallowed:", e); return false; });
     const card = el('div', { class: 'settings-card', id: `model-card-${modelId}` });
@@ -576,7 +581,11 @@ async function buildLlmCard(modelId) {
 
 async function sectionLocalModel() {
     const body = el('div', { class: 'settings-card-list' });
+    // HF safetensors (default) — full vision-capable model.
     body.appendChild(await buildLlmCard('gemma-4-e2b-it'));
+    // Ollama-format Q4_K_M (Phase 4) — same model, ~6× smaller download.
+    // Text-only; the GGUF doesn't carry the SigLIP vision tower.
+    body.appendChild(await buildLlmCard('gemma4:e2b'));
     return sectionWrap(t('settings.localModel.title'), body);
 }
 
@@ -706,7 +715,7 @@ async function refreshCard(modelId) {
     const existing = document.getElementById(`model-card-${modelId}`);
     if (!existing) return;
     let newCard;
-    if (KNOWN_MODELS[modelId]) {
+    if (KNOWN_MODELS[modelId] || KNOWN_OLLAMA_MODELS[modelId]) {
         newCard = await buildLlmCard(modelId);
     } else if (KNOWN_EMBEDDING_MODELS[modelId]) {
         newCard = await buildEmbeddingCard(KNOWN_EMBEDDING_MODELS[modelId]);
