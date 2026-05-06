@@ -617,11 +617,11 @@ async function buildLlmCard(modelId) {
 
 async function sectionLocalModel() {
     const body = el('div', { class: 'settings-card-list' });
-    // HF safetensors (default) — full vision-capable model.
-    body.appendChild(await buildLlmCard('gemma-4-e2b-it'));
     // Ollama-format Q4_K_M (Phase 4) — same model, ~6× smaller download.
     // Text-only; the GGUF doesn't carry the SigLIP vision tower.
     body.appendChild(await buildLlmCard('gemma4:e2b'));
+    // HF safetensors (default) — full vision-capable model.
+    body.appendChild(await buildLlmCard('gemma-4-e2b-it'));
     return sectionWrap(t('settings.localModel.title'), body);
 }
 
