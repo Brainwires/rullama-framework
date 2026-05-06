@@ -29,7 +29,13 @@ export const id = 'local-gemma-4-e2b-it';
 export const displayName = 'Gemma 4 E2B IT (on-device)';
 export const runtime = 'local';
 export const defaultModel = 'gemma-4-e2b-it';
-export const models = ['gemma-4-e2b-it'];
+// Both local sources for Gemma 4 E2B. 'gemma-4-e2b-it' loads the HF
+// safetensors variant (~10 GB BF16, full vision + audio towers).
+// 'gemma4:e2b' loads the Ollama-format Q4_K_M GGUF (~1.6 GB, text
+// only — no vision/audio in the GGUF). Same underlying decoder
+// weights; pick by which trade-off matters more (download size vs
+// vision/audio capability).
+export const models = ['gemma-4-e2b-it', 'gemma4:e2b'];
 
 // ── Worker singleton + RPC plumbing ────────────────────────────
 
