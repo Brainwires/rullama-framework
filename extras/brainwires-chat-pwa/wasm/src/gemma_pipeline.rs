@@ -982,10 +982,9 @@ async fn try_webgpu_device() -> Result<Device, String> {
         return Err("navigator.gpu not available".into());
     }
 
-    let gpu_device = brainwires_provider::WgpuDevice::new_async()
+    Device::new_wgpu_async(0)
         .await
-        .map_err(|e| format!("{e}"))?;
-    Ok(Device::Wgpu(gpu_device))
+        .map_err(|e| format!("{e}"))
 }
 
 /// Build a [`LocalMultiModalHandle`] from JS-supplied byte buffers.

@@ -195,10 +195,14 @@ async fn try_webgpu_device() -> Result<Device, String> {
         return Err("navigator.gpu not available".into());
     }
 
-    let gpu_device = brainwires_provider::WgpuDevice::new_async()
+    // PR #3379's WgpuDevice doesn't expose the bare async constructor;
+    // go through Device::new_wgpu_async which internally allocates the
+    // adapter, calls into wgpu_compute_layer::WgpuDevice::create_async,
+    // and registers the candle kernel loader. Returns Device::Wgpu(_)
+    // already wrapped — match it back out so the caller can route.
+    Device::new_wgpu_async(0)
         .await
-        .map_err(|e| format!("{e}"))?;
-    Ok(Device::Wgpu(gpu_device))
+        .map_err(|e| format!("{e}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -304,8 +308,18 @@ pub(crate) fn call_read_fn(read_fn: &Function, offset: u64, length: u64) -> Resu
     Ok(buf)
 }
 
-/// Stream tensor bytes directly from OPFS into a GPU buffer, bypassing
-/// WASM linear memory. Required for tensors > 2 GB on wasm32.
+/// Stream tensor bytes from OPFS into a GPU buffer.
+///
+/// Originally we used a chunked write-at-offset pattern
+/// (`create_storage_buffer` + `write_to_buffer` + `WgpuStorage::from_raw_buffer`)
+/// to keep peak wasm linear memory at one chunk (64 MiB) regardless of
+/// tensor size. PR #3379's WGPU backend doesn't expose those low-level
+/// buffer ops, so we now collect every chunk into a single `Vec<u8>` and
+/// hand it to `alloc_from_bytes`. Peak wasm memory becomes the largest
+/// tensor (Gemma 4 E2B's `embed_tokens.weight` is ~805 MB BF16, well
+/// within the wasm32 4 GB linear-memory cap). Restoring true streaming
+/// will require porting `create_storage_buffer` / `write_to_buffer` /
+/// `from_raw_buffer` forward into PR #3379's wgpu-compute-layer.
 pub(crate) fn load_tensor_to_gpu(
     read_fn: &Function,
     file_offset: u64,
@@ -316,9 +330,7 @@ pub(crate) fn load_tensor_to_gpu(
 ) -> Result<Tensor, JsValue> {
     const CHUNK: u64 = 64 * 1024 * 1024;
 
-    let elem_count: usize = shape.iter().product();
-    let buffer = wgpu_dev.create_storage_buffer(byte_length);
-
+    let mut bytes = Vec::with_capacity(byte_length as usize);
     let mut pos = 0u64;
     while pos < byte_length {
         let chunk_len = std::cmp::min(CHUNK, byte_length - pos);
@@ -329,16 +341,13 @@ pub(crate) fn load_tensor_to_gpu(
         )?;
         let array = Uint8Array::new(&result);
         let chunk_bytes = array.to_vec();
-        wgpu_dev.write_to_buffer(&buffer, pos, &chunk_bytes);
+        bytes.extend_from_slice(&chunk_bytes);
         pos += chunk_len;
     }
 
-    let storage = WgpuStorage::from_raw_buffer(
-        Arc::new(buffer),
-        elem_count,
-        dtype,
-        wgpu_dev.clone(),
-    );
+    let storage = wgpu_dev
+        .alloc_from_bytes(dtype, &bytes)
+        .map_err(|e| JsValue::from_str(&format!("alloc_from_bytes failed: {e}")))?;
     let storage = Storage::Wgpu(storage);
     let shape: candle_core::Shape = shape.into();
     Ok(Tensor::from_storage(

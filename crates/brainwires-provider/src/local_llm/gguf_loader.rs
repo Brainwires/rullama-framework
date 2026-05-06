@@ -28,11 +28,9 @@
 //! the JS-supplied byte stream and reuses [`gguf_to_hf_name`] +
 //! [`build_gemma4_config_from_gguf`] from this module.
 
-#![cfg(all(not(target_arch = "wasm32"), feature = "local-llm-candle"))]
+#![cfg(feature = "local-llm-candle")]
 
 use std::collections::HashMap;
-use std::fs::File;
-use std::path::Path;
 
 use candle_core::quantized::gguf_file;
 use candle_core::{DType, Device, Result, Tensor};
@@ -95,15 +93,27 @@ pub fn gguf_to_hf_name(name: &str) -> Option<String> {
     ))
 }
 
-/// Read a Gemma 4 GGUF file, dequantize every tensor to BF16, translate
-/// names. Returns the tensor map plus the GGUF metadata-derived config.
+/// Read a Gemma 4 GGUF file from a local path. Native-only convenience
+/// wrapper over [`load_gemma4_gguf_from_reader`]; the wasm chat-pwa
+/// path uses an in-memory `Cursor` over the OPFS blob instead.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_gemma4_gguf(
-    path: impl AsRef<Path>,
+    path: impl AsRef<std::path::Path>,
     device: &Device,
 ) -> Result<(HashMap<String, Tensor>, Gemma4Config)> {
-    let mut file = File::open(path.as_ref())?;
-    let content = gguf_file::Content::read(&mut file)?;
+    let mut file = std::fs::File::open(path.as_ref())?;
+    load_gemma4_gguf_from_reader(&mut file, device)
+}
 
+/// Read a Gemma 4 GGUF from any `Read + Seek` source (file on native,
+/// `Cursor<Vec<u8>>` on wasm), dequantize every tensor to BF16, and
+/// translate GGUF tensor names to the HF safetensors keys the existing
+/// `Gemma4Model` consumer expects.
+pub fn load_gemma4_gguf_from_reader<R: std::io::Read + std::io::Seek>(
+    reader: &mut R,
+    device: &Device,
+) -> Result<(HashMap<String, Tensor>, Gemma4Config)> {
+    let content = gguf_file::Content::read(reader)?;
     let cfg = build_gemma4_config_from_gguf(&content)?;
 
     let mut out = HashMap::with_capacity(content.tensor_infos.len());
@@ -112,7 +122,7 @@ pub fn load_gemma4_gguf(
         let Some(hf_name) = gguf_to_hf_name(&gguf_name) else {
             continue;
         };
-        let qtensor = content.tensor(&mut file, &gguf_name, device)?;
+        let qtensor = content.tensor(reader, &gguf_name, device)?;
         let tensor = qtensor.dequantize(device)?.to_dtype(DType::BF16)?;
         out.insert(hf_name, tensor);
     }

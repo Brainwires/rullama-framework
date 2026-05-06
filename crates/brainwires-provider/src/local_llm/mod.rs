@@ -19,7 +19,7 @@ mod provider;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod ollama_cache;
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "local-llm-candle"))]
+#[cfg(feature = "local-llm-candle")]
 pub mod gguf_loader;
 
 #[cfg(feature = "local-llm-candle")]
