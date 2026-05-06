@@ -2241,3 +2241,111 @@ impl LocalQuantizedHandle {
         "gguf".into()
     }
 }
+
+/// Drive a text-only chat against a [`LocalQuantizedHandle`]. Mirrors
+/// `local_chat_stream_with_image` (NDJSON `VisionWireChunk` framing
+/// over a `ReadableStream<Uint8Array>`) so the JS-side reader can
+/// consume both streams identically. Image parts in `messages_json`
+/// are silently dropped — text-only model.
+#[wasm_bindgen]
+pub fn local_chat_stream_quantized(
+    handle: &LocalQuantizedHandle,
+    messages_json: String,
+    params_json: String,
+) -> Result<ReadableStream, JsValue> {
+    let messages: Vec<JsMessage> = serde_json::from_str(&messages_json)
+        .map_err(|e| JsValue::from_str(&format!("messages_json parse: {e}")))?;
+    let params: VisionStreamParams = if params_json.trim().is_empty() {
+        VisionStreamParams::default()
+    } else {
+        serde_json::from_str(&params_json)
+            .map_err(|e| JsValue::from_str(&format!("params_json parse: {e}")))?
+    };
+
+    // Render messages into a Gemma 4 chat-template prompt. Image parts
+    // are dropped (text-only model).
+    let mut prompt = String::with_capacity(256);
+    for m in &messages {
+        let text = match &m.content {
+            JsContent::Text(s) => s.clone(),
+            JsContent::Parts(parts) => parts
+                .iter()
+                .filter_map(|p| match p {
+                    JsPart::Text { text } => Some(text.clone()),
+                    JsPart::Image { .. } => None,
+                })
+                .collect::<Vec<_>>()
+                .join(""),
+        };
+        // Gemma 4 chat tokens — matches the registration in the
+        // tokenizer.json `added_tokens` array (id 105 / 106).
+        prompt.push_str("<|turn>");
+        prompt.push_str(&m.role);
+        prompt.push('\n');
+        prompt.push_str(&text);
+        prompt.push_str("<turn|>\n");
+    }
+    prompt.push_str("<|turn>model\n");
+
+    let pipeline = handle.inner.clone();
+    let max_new_tokens = params.max_tokens.unwrap_or(512) as usize;
+
+    let underlying = Object::new();
+    let start_cb = Closure::once_into_js(move |controller: JsValue| {
+        let controller: ReadableStreamDefaultController = match controller.dyn_into() {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let pipeline = pipeline.clone();
+        let prompt_owned = prompt.clone();
+        spawn_local(async move {
+            let send_chunk = |c: &ReadableStreamDefaultController, chunk: &VisionWireChunk<'_>| {
+                if let Ok(json) = serde_json::to_string(chunk) {
+                    let bytes = json.into_bytes();
+                    let arr = Uint8Array::new_with_length(bytes.len() as u32);
+                    arr.copy_from(&bytes);
+                    let _ = c.enqueue_with_chunk(&arr);
+                }
+            };
+
+            // Gemma 4 EOS token id is 1 (`<eos>` in the tokenizer).
+            let eos: Option<u32> = Some(1);
+            let result = pipeline
+                .generate_greedy_streaming(&prompt_owned, max_new_tokens, eos, |_, delta| {
+                    send_chunk(
+                        &controller,
+                        &VisionWireChunk {
+                            delta: Some(delta),
+                            ..Default::default()
+                        },
+                    );
+                })
+                .await;
+
+            match result {
+                Ok(_) => {
+                    send_chunk(
+                        &controller,
+                        &VisionWireChunk {
+                            finished: true,
+                            ..Default::default()
+                        },
+                    );
+                }
+                Err(e) => {
+                    send_chunk(
+                        &controller,
+                        &VisionWireChunk {
+                            error: Some(format!("{e}")),
+                            finished: true,
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
+            let _ = controller.close();
+        });
+    });
+    Reflect::set(&underlying, &JsValue::from_str("start"), &start_cb)?;
+    ReadableStream::new_with_underlying_source(&underlying)
+}

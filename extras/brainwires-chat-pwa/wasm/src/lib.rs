@@ -62,7 +62,8 @@ pub use embedding::{init_embedding_model, EmbeddingHandle};
 mod gemma_pipeline;
 pub use gemma_pipeline::{
     init_local_multimodal, init_local_multimodal_chunked, init_local_multimodal_gguf_quantized,
-    local_chat_stream_with_image, LocalMultiModalHandle, LocalQuantizedHandle,
+    local_chat_stream_quantized, local_chat_stream_with_image, LocalMultiModalHandle,
+    LocalQuantizedHandle,
 };
 
 #[wasm_bindgen(start)]
