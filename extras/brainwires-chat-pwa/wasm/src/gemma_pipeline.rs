@@ -2047,10 +2047,15 @@ impl candle_nn::var_builder::SimpleBackend for CpuPinnedBackend {
 /// — Ollama's `gemma4:e2b` is text-only and the GGUF doesn't carry the
 /// SigLIP / audio weights.
 ///
-/// **No perf win on its own** — this is the dequant-at-load path. The
-/// quantized matmul pipeline (`QMatMul` over WGPU's `q4_k.pwgsl` kernel)
-/// is reachable through PR #3379 but requires a `quantized_gemma4`
-/// model implementation that doesn't exist yet. Until then, GGUF saves
+/// **No perf win on its own** — this is the dequant-at-load path. A
+/// `quantized_gemma4::ModelWeights` model that consumes QTensors via
+/// QMatMul end-to-end now exists in candle (and is reachable via
+/// `gguf_loader::load_quantized_gemma4_from_reader`), but the wasm
+/// pipeline here doesn't wire it up yet — the `Gemma4MultiModal`
+/// generate_greedy machinery currently only wraps the BF16 path.
+/// Adding a parallel `Gemma4QuantizedMultiModal` wrapper is the
+/// follow-up needed to make the chat-pwa actually run on the
+/// `q4_k.pwgsl` quantized matmul kernels. Until then, GGUF saves
 /// download bytes (~6× smaller than HF safetensors) but inference
 /// runs at the same BF16 tok/s as the safetensors path.
 #[wasm_bindgen]
