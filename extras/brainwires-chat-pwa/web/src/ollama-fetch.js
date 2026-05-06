@@ -18,8 +18,19 @@
 //
 // No auth is required for the public registry. The default namespace is
 // `library/` (matches `ollama pull` semantics for un-prefixed names).
+//
+// **CORS:** `registry.ollama.ai` does not send
+// `Access-Control-Allow-Origin`, so direct browser fetches from another
+// origin are blocked. The PWA's nginx (see nginx.conf) reverse-proxies
+// `/ollama-registry/...` to `https://registry.ollama.ai/...`, plus a
+// catch-all `/ollama-blob/<host>/<path>` for the CDN redirects the
+// registry issues for blob downloads. Always use the same-origin
+// proxy — works in production (docker nginx) and dev (`start.sh dev`
+// which also runs nginx via docker-compose). Standalone `esbuild
+// --serve` has no proxy, so this URL will 404 there; running through
+// docker-compose is the supported dev mode for downloading.
 
-const REGISTRY = 'https://registry.ollama.ai';
+const REGISTRY = '/ollama-registry';
 
 const MANIFEST_ACCEPT = [
     'application/vnd.docker.distribution.manifest.v2+json',
