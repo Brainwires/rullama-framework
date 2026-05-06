@@ -362,6 +362,27 @@ export async function deleteModel(modelId) {
     // Give the SW time to close its writable stream after abort.
     await new Promise((r) => setTimeout(r, 500));
 
+    // Ollama-source models live under `model-downloads/ollama/<name>__<tag>/`,
+    // not the per-id scheme below. Delete that subtree directly.
+    const om = KNOWN_OLLAMA_MODELS[modelId];
+    if (om && _hasOpfs()) {
+        try {
+            const root = await navigator.storage.getDirectory();
+            const dlDir = await root.getDirectoryHandle(OPFS_DIR, { create: false });
+            const ollamaParent = await dlDir.getDirectoryHandle('ollama', { create: false });
+            const dirName = `${om.ollama.name}__${om.ollama.tag}`;
+            try {
+                await ollamaParent.removeEntry(dirName, { recursive: true });
+            } catch (e) {
+                if (e && e.name !== 'NotFoundError') {
+                    console.warn(`[bw] ollama delete failed: ${e.message}`);
+                }
+            }
+        } catch (_) { /* OPFS not present or no ollama parent dir */ }
+        events.dispatchEvent(new CustomEvent('model_deleted', { detail: { modelId } }));
+        return;
+    }
+
     const m = getKnownModel(modelId);
     if (m && _hasCaches()) {
         const cache = await caches.open(CACHE_NAME);
