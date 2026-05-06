@@ -311,6 +311,73 @@ Migration:
 
 ### Added
 
+#### chat-pwa — candle rebase to v0.11-wgpu (Phase 1)
+
+Rebased the candle fork onto upstream PR #3379 (KimHenrikOtte's full
+WGPU backend) as a fresh `v0.11-wgpu` branch. PR #3379 ships a
+substantially more complete WGPU backend than our incremental
+`v0.10-wgpu`:
+
+- Multiple matmul variants tuned per shape: `matmul1x32_32b`,
+  `matmul1x64`, `matmul1x64_32b`, `matmul24x24`, `matmul24x48`,
+  `matmul32x32`, `matmul32x64`, `matmul64x64`, `matmul64x64_4x8`,
+  `matmul64x64_8x8`. M=1 specialization means decode-path
+  projections (q/k/v/o, gate/up/down) hit a kernel optimized for
+  one query token instead of the generic tile path.
+- `rms_norm.pwgsl` collapses 4-5 dispatches/norm into 1.
+- `q4_k.pwgsl`, `q5_k.pwgsl`, `q6_k.pwgsl`, `q8_k.pwgsl` quantized
+  matmul kernels — Phase 5's "WGPU Q4_K_M dequant matmul WGSL"
+  is shipped as part of PR #3379, not from-scratch work for us.
+- Full `QStorage::Wgpu` path including `quantize`, `quantize_onto`,
+  `dequantize`, and `quantize_imatrix` ops.
+- `flush_gpu_command` accumulates all dispatches in a single
+  `command_queue`, flushes once per token through one encoder /
+  one compute pass — Phase 3's "dispatch batching / encoder
+  reuse" is also shipped as part of PR #3379.
+
+What we ported forward on top of PR #3379:
+- The complete `candle-transformers/src/models/gemma4/` directory
+  (text.rs ~1850 LOC, config.rs ~550 LOC, plus mod / vision /
+  audio / multimodal_embedding) — PR #3379 predates Gemma 4 being
+  merged to candle main so the model code wasn't there.
+- `candle-nn/src/rotary_emb.rs` cos/sin `to_dtype(xs.dtype())`
+  coercion in `rope`, `rope_i`, `rope_thd` — required for Gemma 4
+  receiver attention where the RoPE table is f32 but receiver
+  hidden states are bf16.
+- `candle-core/src/cpu_backend/mod.rs` bf16 matmul via transient
+  f32 promotion — `gemm` 0.19 ships no bf16 specialization, so
+  mixed-device flows (wgpu wasm32 readback landing on CPU as bf16
+  at lm_head) trip the generic Map2 path every token.
+- `candle-transformers/src/models/gemma3.rs` `value_states.contiguous()`
+  before `KvCache::append`.
+
+Plus three small wgpu 28→29 API deltas to keep our Rust 1.91 MSRV
+(PR #3379 pinned wgpu 28.0.0 which requires Rust 1.92):
+- `Instance::new()` takes `InstanceDescriptor` by value
+- `PipelineLayoutDescriptor.bind_group_layouts: &[Option<&BGL>]`
+- `ShaderRuntimeChecks` gained `mesh_shader_primitive_indices_clamp`
+  and `task_shader_dispatch_tracking` fields
+
+Verified: `gemma4_diag --device cpu --target-layer 15 --load-ple-table`
+still produces `decoded="Hi"` with clean intra-self_attn checkpoints
+(zero NaN / zero Inf at every probe). Branch is at
+`Brainwires/candle@v0.11-wgpu`, framework pins
+`https://github.com/Brainwires/candle?rev=acda3dbf`.
+
+#### chat-pwa — SwiGLU gate/up fuse (Phase 7)
+
+Concatenate `gate_proj` and `up_proj` weights along the output axis
+at construction time, run one fused matmul, narrow the result halfway
+along the last dim into `(gate, up)`. Saves one matmul dispatch per
+FFN × 35 layers = 35 fewer dispatches per token. Compute work is
+unchanged — same total FMA count — but on chat-pwa where dispatch
+overhead dominates, the dispatch reduction is ~10%. Pattern from
+candle PR #3485. Sparsity (Gaussian-topk gating) still applies to
+the `gate` slice only — gating happens post-narrow so the fuse is
+transparent to the activation pipeline. Verified bit-identical on
+gemma4_diag CPU smoke (`next_id=10979`, `top5[0]=10979@0.848`
+unchanged).
+
 #### chat-pwa — Ollama-format model download (Phase 4 / part 1)
 
 First slice of the chat-pwa local-inference perf overhaul plan: pull
