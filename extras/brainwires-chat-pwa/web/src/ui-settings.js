@@ -40,6 +40,7 @@ import { render as renderRagPanel } from './ui-rag-panel.js';
 import { render as renderMcpPanel } from './ui-mcp-panel.js';
 import { renderHomePairingCard } from './ui-home-pairing.js';
 import * as homeProvider from './home-provider.js';
+import * as localProvider from './providers/local.js';
 
 const PASSPHRASE_SETTING = 'passphraseConfig'; // { salt: base64, verify: encrypted("ok") }
 const ENCRYPT_OPT_OUT_SETTING = 'encryptionOptOut';
@@ -518,12 +519,24 @@ async function buildLlmCard(modelId) {
     const m = getKnownModelAny(modelId);
     if (!m) return el('div');
     const downloaded = await isDownloaded(modelId).catch((e) => { console.error("[bw] swallowed:", e); return false; });
+
+    // Which downloaded LLM is currently selected for chat. The setting
+    // key matches what `ui-chat.js`'s `updateAttachVisibility` already
+    // reads (`provider.<id>.model`), so flipping it here is enough —
+    // no separate sync needed.
+    const llmSettingKey = `provider.${localProvider.id}.model`;
+    const savedModel = await getSetting(llmSettingKey).catch(() => null);
+    const activeLlm = savedModel || localProvider.defaultModel;
+    const isActive = downloaded && activeLlm === modelId;
+
     const card = el('div', { class: 'settings-card', id: `model-card-${modelId}` });
 
     card.appendChild(el('div', { class: 'settings-card-header' },
         el('h3', { class: 'settings-card-title' }, m.displayName),
         el('span', { class: 'pill ' + (downloaded ? 'pill-ok' : 'pill-muted') },
-            downloaded ? t('settings.localModel.ready') : formatSize(m.estimatedBytes)),
+            downloaded
+                ? (isActive ? 'In use' : t('settings.localModel.ready'))
+                : formatSize(m.estimatedBytes)),
     ));
     card.appendChild(el('p', { class: 'settings-help' }, m.description));
 
@@ -565,13 +578,36 @@ async function buildLlmCard(modelId) {
             }, `Clear partial (${formatSize(partial.totalBytes)})`));
         }
     } else {
+        // Use button — clickable when this model isn't the active
+        // selection, disabled (greyed) when it is.
+        const useAttrs = { type: 'button' };
+        if (isActive) useAttrs.disabled = '';
+        actions.appendChild(el('button', {
+            class: 'bw-btn bw-btn-primary bw-btn-sm',
+            attrs: useAttrs,
+            onClick: async () => {
+                await setSetting(llmSettingKey, modelId);
+                toast(`${m.displayName} set as active`);
+                // Refresh sibling cards too so the previously-active
+                // one re-enables its Use button.
+                await refreshCard('gemma-4-e2b-it');
+                await refreshCard('gemma4:e2b');
+            },
+        }, isActive ? '✓ In use' : 'Use'));
         actions.appendChild(el('button', {
             class: 'bw-btn bw-btn-danger bw-btn-sm',
             attrs: { type: 'button' },
             onClick: async () => {
                 if (!confirm(t('settings.localModel.confirmDelete'))) return;
                 await banner.deleteActive(modelId);
-                await refreshCard(modelId);
+                if (isActive) {
+                    // The active model is being deleted — fall back to
+                    // the provider default so chat doesn't reference a
+                    // missing model.
+                    await setSetting(llmSettingKey, localProvider.defaultModel);
+                }
+                await refreshCard('gemma-4-e2b-it');
+                await refreshCard('gemma4:e2b');
             },
         }, t('settings.localModel.delete')));
     }
@@ -650,19 +686,27 @@ async function buildEmbeddingCard(m) {
             }, `Clear partial (${formatSize(partial.totalBytes)})`));
         }
     } else {
-        if (!active) {
-            actions.appendChild(el('button', {
-                class: 'bw-btn bw-btn-primary bw-btn-sm',
-                attrs: { type: 'button' },
-                onClick: async () => {
-                    await setSetting('embedding.activeModel', m.id);
-                    toast(`${m.displayName} set as active`);
-                    await refreshCard(m.id);
-                },
-            }, 'Use'));
-        } else {
-            actions.appendChild(el('span', { class: 'pill pill-ok' }, '✓ Active'));
-        }
+        // Use button — clickable when not active, disabled-greyed when
+        // this is the currently-active embedding. Mirrors the LLM
+        // card pattern so both sections of the settings page have a
+        // consistent "in use" affordance.
+        const useAttrs = { type: 'button' };
+        if (active) useAttrs.disabled = '';
+        actions.appendChild(el('button', {
+            class: 'bw-btn bw-btn-primary bw-btn-sm',
+            attrs: useAttrs,
+            onClick: async () => {
+                const prevActiveId = await getSetting('embedding.activeModel');
+                await setSetting('embedding.activeModel', m.id);
+                toast(`${m.displayName} set as active`);
+                // Refresh both cards so the previously-active one
+                // re-enables its Use button.
+                if (prevActiveId && prevActiveId !== m.id) {
+                    await refreshCard(prevActiveId);
+                }
+                await refreshCard(m.id);
+            },
+        }, active ? '✓ In use' : 'Use'));
         actions.appendChild(el('button', {
             class: 'bw-btn bw-btn-danger bw-btn-sm',
             attrs: { type: 'button' },
