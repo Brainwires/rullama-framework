@@ -30,6 +30,19 @@ services:
         required: false
     ports:
       - "${HOST_PORT:-8080}:80"
+    volumes:
+      # Optional Ollama models cache. When the host running this
+      # container also runs the `ollama` daemon, set
+      # OLLAMA_MODELS_DIR=/usr/share/ollama/.ollama/models in .env so
+      # nginx can serve manifests + blobs straight off local disk
+      # instead of round-tripping through registry.ollama.ai.
+      #
+      # When OLLAMA_MODELS_DIR is unset, this falls back to the named
+      # volume `ollama-cache-empty` (defined at the bottom of this
+      # file) — a docker-managed volume that starts empty. nginx's
+      # `try_files` then falls through to the registry proxy
+      # transparently for every request.
+      - "${OLLAMA_MODELS_DIR:-ollama-cache-empty}:/var/ollama-cache:ro"
     environment:
       # Runtime overrides — entrypoint.sh rewrites build-info.js with
       # these values at container start.
@@ -38,3 +51,10 @@ services:
       - BRAINWIRES_BUILD_COMMIT=${BUILD_COMMIT:-}
       - BRAINWIRES_BUILD_VERSION=${BUILD_VERSION:-0.1.0}
     restart: unless-stopped
+
+# Fallback empty volume for the OLLAMA_MODELS_DIR mount above. Only
+# used when the env var isn't set; nginx sees an empty cache dir and
+# falls through to the registry proxy for every request.
+volumes:
+  ollama-cache-empty:
+    driver: local
