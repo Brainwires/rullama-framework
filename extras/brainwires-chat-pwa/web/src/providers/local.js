@@ -28,14 +28,22 @@ import { appendMessageChunk, putMessage, partsToText } from '../db.js';
 export const id = 'local-gemma-4-e2b-it';
 export const displayName = 'Gemma 4 E2B IT (on-device)';
 export const runtime = 'local';
-export const defaultModel = 'gemma-4-e2b-it';
-// Both local sources for Gemma 4 E2B. 'gemma-4-e2b-it' loads the HF
-// safetensors variant (~10 GB BF16, full vision + audio towers).
-// 'gemma4:e2b' loads the Ollama-format Q4_K_M GGUF (~1.6 GB, text
-// only — no vision/audio in the GGUF). Same underlying decoder
-// weights; pick by which trade-off matters more (download size vs
-// vision/audio capability).
-export const models = ['gemma-4-e2b-it', 'gemma4:e2b'];
+// Default to the Ollama Q4_K_M path because it ships with WGPU
+// kernels for q4_k matmul (verified working end-to-end against the
+// `ollama run gemma4:e2b` reference). The HF safetensors variant is
+// BF16, and candle's WGPU backend does not yet implement BF16
+// storage — falls back to F16 via a cast at load time, but that's
+// extra memory + slower than going straight through Q4_K_M. Users
+// who need the vision/audio towers can flip via the Settings → Local
+// Model "Use" buttons.
+export const defaultModel = 'gemma4:e2b';
+// Both local sources for Gemma 4 E2B. 'gemma4:e2b' is the
+// Ollama-format Q4_K_M GGUF (~7.2 GB published, text-only — no
+// vision/audio in this publication, despite the towers being
+// embedded as BF16 in the file). 'gemma-4-e2b-it' is the HF
+// safetensors variant (~10 GB BF16, full vision + audio towers
+// unpacked). Pick by trade-off: speed/size vs vision capability.
+export const models = ['gemma4:e2b', 'gemma-4-e2b-it'];
 
 // ── Worker singleton + RPC plumbing ────────────────────────────
 

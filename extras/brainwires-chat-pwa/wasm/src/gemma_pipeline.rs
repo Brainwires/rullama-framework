@@ -1088,6 +1088,23 @@ fn load_one_tensor(
 
     let needs_gpu_stream = length > (isize::MAX as u64);
 
+    // candle's WGPU backend doesn't support BF16 storage (only F16 /
+    // F32 / U32 / U8 / I64 / F64 — see `candle-core/src/wgpu_backend/
+    // mod.rs:34` which panics on the unsupported dtype). HF Gemma 4
+    // safetensors are BF16. Detect the BF16-on-WGPU combo and cast
+    // through CPU F16 before transfer. F16 has slightly less exponent
+    // range than BF16, but for inference weights (typically clamped
+    // to [-3, 3] for trained models) the loss is below numerical
+    // noise — Apple silicon, llama.cpp, and most quantization tools
+    // do the same conversion.
+    //
+    // The `needs_gpu_stream` path (tensors > isize::MAX bytes, ~2 GB
+    // on wasm32) is unaffected: HF Gemma 4's largest BF16 tensor is
+    // the embedding table at ~800 MB, well below the threshold. If a
+    // future model needs BF16-on-WGPU streaming we'll need to also
+    // teach `load_tensor_to_gpu` to convert chunkwise.
+    let bf16_on_wgpu = !device.is_cpu() && matches!(src_dtype, DType::BF16);
+
     if force_cpu && needs_gpu_stream {
         let w = wgpu_dev.ok_or_else(|| {
             JsValue::from_str(&format!(
@@ -1108,6 +1125,17 @@ fn load_one_tensor(
             ))
         })?;
         load_tensor_to_gpu(read_fn, offset, length, src_dtype, &info.shape, w)
+    } else if bf16_on_wgpu {
+        // BF16 → CPU → cast to F16 → transfer to WGPU.
+        let bytes = call_read_fn(read_fn, offset, length)?;
+        let cpu_t = Tensor::from_raw_buffer(&bytes, src_dtype, &info.shape, &Device::Cpu)
+            .map_err(|e| JsValue::from_str(&format!("tensor {name} (cpu BF16): {e}")))?;
+        let f16_t = cpu_t
+            .to_dtype(DType::F16)
+            .map_err(|e| JsValue::from_str(&format!("tensor {name} (BF16→F16): {e}")))?;
+        f16_t
+            .to_device(device)
+            .map_err(|e| JsValue::from_str(&format!("tensor {name} (CPU→WGPU): {e}")))
     } else {
         let bytes = call_read_fn(read_fn, offset, length)?;
         Tensor::from_raw_buffer(&bytes, src_dtype, &info.shape, device)
