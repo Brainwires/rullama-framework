@@ -311,6 +311,47 @@ Migration:
 
 ### Added
 
+#### chat-pwa — quantized_gemma4 model + chunked GPU upload + AMD adapter preset
+
+Three coordinated upgrades that together unlock real Phase 5 perf
+on the Ollama-format path:
+
+- **`candle-transformers/src/models/quantized_gemma4.rs`** — basic
+  decoder ported with `Linear → QMatMul`. Reads weights directly via
+  `gguf_file::Content::tensor` so the entire matmul path stays
+  quantized; PR #3379's `q4_k.pwgsl` / `q5_k.pwgsl` / `q6_k.pwgsl` /
+  `q8_k.pwgsl` WGPU kernels (and CPU dequant-on-fly elsewhere) carry
+  the inference workload. Mirrors `quantized_gemma3.rs` structurally
+  with Gemma 4 specifics: GQA self-attention with q_norm/k_norm/
+  v_norm, p-RoPE (partial 25%) on full layers + standard RoPE on
+  sliding, SwiGLU MLP, KvCache (Normal for full / Rotating for
+  sliding), input + post-attention + pre-feedforward + post-feedforward
+  RmsNorms. **Auxiliary towers gated off** — PLE, AltUp, Laurel,
+  KV-share donor/receiver, layer_scalar, activation sparsity. Output
+  won't bit-match a canonical Gemma 4 forward pass with these off;
+  reference verification against an Ollama-published gemma4:e2b GGUF
+  is the remaining work to enable them.
+- **`brainwires_provider::local_llm::gguf_loader::load_quantized_gemma4_from_reader`** —
+  parallel path to the existing `load_gemma4_gguf_from_reader` (which
+  dequant-at-loads to BF16). The new path keeps weights as QTensor
+  end-to-end and constructs the new `quantized_gemma4::ModelWeights`.
+  This is the path that actually unlocks the projected ~3-4× decode
+  speedup on chat-pwa once a `quantized_gemma4` UI route lands.
+- **`wgpu_compute_layer::WgpuDevice::alloc_uninit_storage_eager` +
+  `write_to_storage_at`** — restores the chunked-upload pattern PR
+  #3379 dropped. The chat-pwa wasm `load_tensor_to_gpu` rewires to
+  these two APIs so a 805 MB `embed_tokens.weight` uploads in 64 MiB
+  chunks with bounded peak wasm linear memory, instead of needing
+  the entire tensor in linear memory at once.
+- **`WgpuDevice::is_amd_adapter` / `is_nvidia_adapter` /
+  `is_apple_adapter`** — adapter-info-based predicates over PCI
+  vendor id + adapter name (the WebGPU fallback). AMD adapters
+  default to `MatmulAlgorithm::Matmul64_64_8_8` (matches GCN/RDNA
+  wave-64 boundaries) instead of the auto-select `MatmulX`. NVIDIA
+  and Apple keep auto-select. First Phase 6 piece — without real AMD
+  hardware to profile against, the routing infrastructure is in place
+  but the actual best preset awaits real measurements.
+
 #### chat-pwa — Ollama-format end-to-end load (Phase 4 part 3)
 
 Wired the dequantize-at-load GGUF path through every layer:
