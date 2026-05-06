@@ -255,7 +255,20 @@ export async function getPartialInfo(modelId) {
     try {
         const root = await navigator.storage.getDirectory();
         const dlDir = await root.getDirectoryHandle(OPFS_DIR, { create: false });
-        const modelDir = await dlDir.getDirectoryHandle(modelId, { create: false });
+        // Ollama-source ids live at `ollama/<name>__<tag>/` instead of
+        // `<modelId>/`. Resolve the right path so partial-progress
+        // bookkeeping works for both flows.
+        let modelDir;
+        const om = KNOWN_OLLAMA_MODELS[modelId];
+        if (om) {
+            const ollamaParent = await dlDir.getDirectoryHandle('ollama', { create: false });
+            modelDir = await ollamaParent.getDirectoryHandle(
+                `${om.ollama.name}__${om.ollama.tag}`,
+                { create: false },
+            );
+        } else {
+            modelDir = await dlDir.getDirectoryHandle(modelId, { create: false });
+        }
         let totalBytes = 0;
         let fileCount = 0;
         for await (const [name, handle] of modelDir.entries()) {
