@@ -46,6 +46,56 @@ async function _getOllamaModule() {
     return _ollamaModule;
 }
 
+/// Fetch a companion tokenizer.json from HuggingFace and stash it in OPFS
+/// alongside the Ollama GGUF blob. Used when the Ollama manifest doesn't
+/// include a `tokenizer` layer (most current publications). One-shot:
+/// the cached copy is re-used on subsequent loads.
+async function _fetchOllamaTokenizerCompanion(om) {
+    if (!om.tokenizerCompanion) return null;
+    const { repo, revision, filename } = om.tokenizerCompanion;
+    const cacheKey = `tokenizer.json`;
+    // Try OPFS first.
+    const root = await navigator.storage.getDirectory();
+    const dlDir = await root.getDirectoryHandle(OPFS_DIR, { create: true });
+    const ollamaParent = await dlDir.getDirectoryHandle('ollama', { create: true });
+    const modelDir = await ollamaParent.getDirectoryHandle(
+        `${om.ollama.name}__${om.ollama.tag}`,
+        { create: true },
+    );
+    try {
+        const fh = await modelDir.getFileHandle(cacheKey, { create: false });
+        const file = await fh.getFile();
+        if (file.size > 0) {
+            console.log(`[local-worker] reusing cached companion tokenizer (${file.size} bytes)`);
+            return new Uint8Array(await file.arrayBuffer());
+        }
+    } catch { /* not cached yet */ }
+
+    const url = `https://huggingface.co/${repo}/resolve/${encodeURIComponent(revision || 'main')}/${filename}`;
+    console.log(`[local-worker] fetching companion tokenizer from ${url}`);
+    const resp = await fetch(url);
+    if (!resp.ok) {
+        throw new Error(`companion tokenizer fetch failed: ${resp.status} ${resp.statusText}`);
+    }
+    const bytes = new Uint8Array(await resp.arrayBuffer());
+
+    // Write to OPFS for reuse. SyncAccessHandle for atomicity.
+    try {
+        const fh = await modelDir.getFileHandle(cacheKey, { create: true });
+        const sync = await fh.createSyncAccessHandle();
+        try {
+            sync.truncate(0);
+            sync.write(bytes, { at: 0 });
+            sync.flush();
+        } finally {
+            sync.close();
+        }
+    } catch (e) {
+        console.warn(`[local-worker] failed to cache companion tokenizer: ${e.message}`);
+    }
+    return bytes;
+}
+
 async function _getOpfsFile(modelId, filename) {
     if (typeof navigator === 'undefined' || !navigator.storage || !navigator.storage.getDirectory) return null;
     try {
@@ -220,11 +270,15 @@ async function getModelBytes(modelId) {
         if (!bytes.weights) {
             throw new Error(`ollama model ${modelId} missing weights blob`);
         }
-        // Ollama may publish a `tokenizer` layer alongside the GGUF.
-        // When it doesn't, the user has to download the companion HF
-        // tokenizer.json; the wasm side bails clearly if `tokenizer`
-        // is empty.
-        const tokenizer = bytes.tokenizer || new Uint8Array(0);
+        let tokenizer = bytes.tokenizer || null;
+        if (!tokenizer && om.tokenizerCompanion) {
+            tokenizer = await _fetchOllamaTokenizerCompanion(om);
+        }
+        if (!tokenizer || tokenizer.byteLength === 0) {
+            throw new Error(
+                `ollama model ${modelId} has no tokenizer layer in the manifest and no tokenizerCompanion configured`
+            );
+        }
         return { weights: bytes.weights, tokenizer };
     }
     const m = KNOWN_MODELS[modelId];
@@ -348,16 +402,10 @@ async function handleLoad(msg) {
                 });
                 return;
             }
+            // `getModelBytes` already handles the companion-tokenizer
+            // fallback for ollama-source ids; if it returns at all the
+            // bytes are valid.
             let { weights, tokenizer } = await getModelBytes(modelId);
-            if (!tokenizer || tokenizer.byteLength === 0) {
-                self.postMessage({
-                    requestId,
-                    type: 'load_error',
-                    error: 'ollama-source models need a tokenizer.json layer in the manifest; this publication does not include one',
-                });
-                weights = null;
-                return;
-            }
             try {
                 handle = await mod.init_local_multimodal_gguf(weights, tokenizer, modelId);
             } finally {

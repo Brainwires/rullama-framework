@@ -61,6 +61,17 @@ export const KNOWN_OLLAMA_MODELS = {
         ollama: { name: 'gemma4', tag: 'e2b' },
         // Files filled in at runtime from the manifest layers.
         files: null,
+        // Tokenizer companion — Ollama publications don't always include a
+        // `application/vnd.ollama.image.tokenizer` layer. When the
+        // manifest lacks one, the loader falls back to fetching this
+        // tokenizer.json from HuggingFace and caching it in the same
+        // OPFS dir as the GGUF blob. Reuses the existing HF
+        // model-store cache plumbing so the fetch is one-shot.
+        tokenizerCompanion: {
+            repo: 'google/gemma-4-e2b-it',
+            revision: 'main',
+            filename: 'tokenizer.json',
+        },
         estimatedBytes: 1_600_000_000,
         contextSize: 8192,
         gated: false,
