@@ -261,7 +261,11 @@ function generateHljsTheme() {
 function generateRsqliteAssets() {
     const rsqliteRoot = join(__dirname, '..', '..', '..', '..', 'rsqlite-wasm');
     const distSrc = join(rsqliteRoot, 'js', 'dist');
-    const pkgSrc = join(rsqliteRoot, 'pkg');
+    // wasm-pack outputs land under js/dist/wasm/ in the current
+    // rsqlite-wasm layout; older revisions used a top-level pkg/.
+    // Try the new path first, fall back to the old one.
+    const pkgSrcCandidates = [join(rsqliteRoot, 'js', 'dist', 'wasm'), join(rsqliteRoot, 'pkg')];
+    const pkgSrc = pkgSrcCandidates.find((p) => existsSync(p)) || pkgSrcCandidates[0];
     const distDst = join(__dirname, 'vendor', 'rsqlite', 'dist');
     const pkgDst = join(__dirname, 'vendor', 'rsqlite', 'pkg');
     if (!existsSync(distSrc) || !existsSync(pkgSrc)) {

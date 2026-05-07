@@ -2465,7 +2465,14 @@ pub fn local_chat_stream_quantized(
         let prompt_owned = prompt.clone();
         spawn_local(async move {
             let send_chunk = |c: &ReadableStreamDefaultController, chunk: &VisionWireChunk<'_>| {
-                if let Ok(json) = serde_json::to_string(chunk) {
+                if let Ok(mut json) = serde_json::to_string(chunk) {
+                    // Frame as NDJSON — the JS reader at
+                    // `local-worker.js::runChatStream` splits the
+                    // stream on `\n` to parse incremental
+                    // VisionWireChunk records. Without the trailing
+                    // newline the reader buffers indefinitely and the
+                    // UI never sees any deltas.
+                    json.push('\n');
                     let bytes = json.into_bytes();
                     let arr = Uint8Array::new_with_length(bytes.len() as u32);
                     arr.copy_from(&bytes);
