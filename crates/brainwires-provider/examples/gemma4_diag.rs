@@ -673,14 +673,22 @@ async fn run_quantized(args: Args, device: Device) -> Result<()> {
             );
         }
         let last_logits = logits.i((.., logits.dim(1)? - 1, ..))?.squeeze(0)?;
-        let (next_id, _) = last_logits
-            .to_dtype(DType::F32)?
-            .to_vec1::<f32>()?
+        let logit_vec: Vec<f32> = last_logits.to_dtype(DType::F32)?.to_vec1::<f32>()?;
+        let (next_id, max_v) = logit_vec
             .iter()
             .enumerate()
             .fold((0usize, f32::NEG_INFINITY), |acc, (i, &v)| {
                 if v > acc.1 { (i, v) } else { acc }
             });
+        let nan_count = logit_vec.iter().filter(|v| v.is_nan()).count();
+        let zero_count = logit_vec.iter().filter(|&&v| v == 0.0).count();
+        let mut sorted: Vec<(usize, f32)> = logit_vec.iter().copied().enumerate().collect();
+        sorted.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let top5: Vec<(usize, f32)> = sorted.into_iter().take(5).collect();
+        eprintln!(
+            "[gemma4_diag/quant] step {step}: next_id={next_id} max={max_v:.3} \
+             nan_count={nan_count} zero_count={zero_count} top5={top5:?}",
+        );
         let next_id_u32 = next_id as u32;
         all_tokens.push(next_id_u32);
         seqlen_offset = if step == 0 { prompt_len } else { seqlen_offset + 1 };

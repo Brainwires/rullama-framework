@@ -2300,14 +2300,18 @@ pub async fn init_local_multimodal_gguf_quantized_chunked(
     tokenizer_json: Vec<u8>,
     model_id: String,
 ) -> Result<LocalQuantizedHandle, JsValue> {
-    // WGPU q4_k path is FAST (~300ms/tok) but produces zero logits
-    // (next_id=0 every step) — kernel correctness bug independent of
-    // the PLE truncation we just fixed. Force CPU until per-kernel
-    // q4_k correctness pass is done.
-    let device = Device::Cpu;
-    web_sys::console::log_1(
-        &"[wasm/gguf-q-chunked] forcing CPU (WGPU q4_k kernels still produce zero logits)".into(),
-    );
+    let device = match try_webgpu_device().await {
+        Ok(dev) => {
+            web_sys::console::log_1(&"[wasm/gguf-q-chunked] using WebGPU device".into());
+            dev
+        }
+        Err(e) => {
+            web_sys::console::warn_1(
+                &format!("[wasm/gguf-q-chunked] WebGPU unavailable ({e}), CPU fallback").into(),
+            );
+            Device::Cpu
+        }
+    };
 
     let file_size = file_size as u64;
     web_sys::console::log_1(
