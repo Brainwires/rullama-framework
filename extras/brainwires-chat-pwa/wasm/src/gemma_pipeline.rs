@@ -2300,18 +2300,18 @@ pub async fn init_local_multimodal_gguf_quantized_chunked(
     tokenizer_json: Vec<u8>,
     model_id: String,
 ) -> Result<LocalQuantizedHandle, JsValue> {
-    let device = match try_webgpu_device().await {
-        Ok(dev) => {
-            web_sys::console::log_1(&"[wasm/gguf-q-chunked] using WebGPU device".into());
-            dev
-        }
-        Err(e) => {
-            web_sys::console::warn_1(
-                &format!("[wasm/gguf-q-chunked] WebGPU unavailable ({e}), CPU fallback").into(),
-            );
-            Device::Cpu
-        }
-    };
+    // Force CPU for the quantized Q4_K path: the WGPU forward currently
+    // produces all-zero / NaN logits (next_id=0 every step in the
+    // browser), even though the CPU path produces coherent output
+    // ("Hi! How can I help you today? 😊"). The bug is in one or more
+    // q4_k WGPU kernels (matmul / rmsnorm / softmax / rotary_emb) that
+    // hasn't been bisected yet — Phase 6 territory. Falling back to CPU
+    // gives coherent output at ~1 tok/s in-browser today; revisit once
+    // a kernel-level WGPU correctness pass is done.
+    let device = Device::Cpu;
+    web_sys::console::log_1(
+        &"[wasm/gguf-q-chunked] forcing CPU device (WGPU q4_k path produces zero logits — pending kernel debug)".into(),
+    );
 
     let file_size = file_size as u64;
     web_sys::console::log_1(
