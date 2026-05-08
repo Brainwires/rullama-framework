@@ -246,25 +246,35 @@ impl Gemma4QuantizedTextOnly {
                 break;
             }
 
-            // Soft-EOS on repetition. Greedy decoding can wander into a
-            // single-token emit loop ("😊😊😊…", "...,...,..."), or a
-            // short-n-gram cycle ("abc abc abc"), particularly when
-            // upstream logits drift and the natural EOS no longer wins
-            // the argmax. We detect two patterns and treat either as
-            // EOS so the pipeline stops cleanly instead of burning
-            // through max_new_tokens emitting garbage.
+            // Soft-EOS on repetition. Greedy decoding can wander into
+            // an emit loop, particularly when upstream logits drift
+            // and the natural EOS no longer wins the argmax. We
+            // detect three patterns and treat any as EOS so the
+            // pipeline stops cleanly instead of burning through
+            // max_new_tokens emitting garbage.
             //
             // Pattern A — same token N times consecutively. Catches
-            // the emoji-spam attractor.
+            // the emoji-spam attractor ("😊😊😊…").
+            //
+            // Pattern B — exact-cycle repetition: same k-gram repeats
+            // back-to-back. Catches " a b a b a b" and
+            // " a b c a b c a b c". 3 full cycles is the trigger.
+            //
+            // Pattern C — long-window n-gram repeat: any 4-gram
+            // appearing 2+ times in the last 24 emitted tokens.
+            // Catches near-cycles like "How do you feel? How do you
+            // feel today?" where the second occurrence is preceded
+            // by a separator. Single recurrence is permitted (a
+            // model that emits "I I" or "the the" in passing isn't
+            // looping).
             const REPEAT_RUN: usize = 4;
-            // Pattern B — same 2- or 3-gram repeating M times. Catches
-            // " a b a b a b" and " a b c a b c a b c". M=3 cycles plus
-            // the just-emitted token = 6 (or 9) trailing ids matching.
             const REPEAT_NGRAM_CYCLES: usize = 3;
+            const NGRAM_K: usize = 4;
+            const NGRAM_WINDOW: usize = 24;
             let n = emitted_ids.len();
             let same_run = n >= REPEAT_RUN
                 && emitted_ids[n - REPEAT_RUN..].iter().all(|&id| id == next_id);
-            let ngram_cycle = |k: usize| -> bool {
+            let exact_cycle = |k: usize| -> bool {
                 let need = k * REPEAT_NGRAM_CYCLES;
                 if n < need {
                     return false;
@@ -273,13 +283,29 @@ impl Gemma4QuantizedTextOnly {
                 let first = &tail[..k];
                 tail.chunks_exact(k).all(|chunk| chunk == first)
             };
-            if same_run || ngram_cycle(2) || ngram_cycle(3) {
+            let window_repeat = || -> bool {
+                if n < NGRAM_K * 2 {
+                    return false;
+                }
+                let win_start = n.saturating_sub(NGRAM_WINDOW);
+                let tail = &emitted_ids[win_start..];
+                if tail.len() < NGRAM_K * 2 {
+                    return false;
+                }
+                let needle = &tail[tail.len() - NGRAM_K..];
+                tail[..tail.len() - NGRAM_K]
+                    .windows(NGRAM_K)
+                    .any(|w| w == needle)
+            };
+            if same_run || exact_cycle(2) || exact_cycle(3) || window_repeat() {
                 let kind = if same_run {
                     format!("{REPEAT_RUN}× same token id={next_id}")
-                } else if ngram_cycle(2) {
+                } else if exact_cycle(2) {
                     format!("2-gram cycled {REPEAT_NGRAM_CYCLES}×")
-                } else {
+                } else if exact_cycle(3) {
                     format!("3-gram cycled {REPEAT_NGRAM_CYCLES}×")
+                } else {
+                    format!("{NGRAM_K}-gram repeated within last {NGRAM_WINDOW}")
                 };
                 diag_log(&format!(
                     "[gemma4/diag] step {step}: repetition detected ({kind}) — soft-EOS",

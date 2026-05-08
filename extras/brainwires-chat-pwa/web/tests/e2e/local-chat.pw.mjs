@@ -68,13 +68,18 @@ test('quantized local gemma4:e2b — generate, stream, render', async () => {
     // settings live in OPFS / Cache Storage which we leave alone, so
     // the 7 GB Q4_K_M GGUF stays cached.
     await page.evaluate(async () => {
+        // IndexedDB wipe — chat-history DBs only. We must NOT touch
+        // `bw-chat-db` if that holds the model-registry (clicking it
+        // killed the registry → triggered a 7 GB re-download). Match
+        // chat-history specifically (`bw-chat`) — `bw-chat-db` and
+        // anything with `key|secret|cred|model|provider` survive.
         const dbs = await indexedDB.databases?.() || [];
         for (const { name } of dbs) {
             if (!name) continue;
-            // chat history lives in `bw-chat` (or similar). Provider
-            // settings, encrypted keys, and the model registry live
-            // in their own dbs and we do NOT want to touch those.
-            if (/chat/i.test(name) && !/key|secret|cred/i.test(name)) {
+            if (
+                /^bw-chat$/i.test(name)
+                && !/key|secret|cred|model|provider/i.test(name)
+            ) {
                 await new Promise((r) => {
                     const req = indexedDB.deleteDatabase(name);
                     req.onsuccess = req.onerror = req.onblocked = r;
@@ -82,11 +87,12 @@ test('quantized local gemma4:e2b — generate, stream, render', async () => {
             }
         }
     }).catch(() => { /* best-effort */ });
-    // Reload after the IDB wipe so the SPA's in-memory state re-hydrates
-    // from the now-empty IDB instead of carrying over a previously-loaded
-    // conversation. Without this, the next prompt gets concatenated with
-    // a stale (and often partial) prior turn — observed as prompt_len=21
-    // with two `<|turn>user…<turn|>` blocks.
+    // Reload so the SPA's in-memory conversation re-hydrates from the
+    // wiped IDB. We deliberately do NOT unregister the service worker
+    // or wipe Cache Storage / OPFS — those sequester the model
+    // registry and the cached 7 GB Q4_K_M GGUF, and a wipe means a
+    // re-download. The SRI logic in sw.js handles wasm freshness on
+    // its own (auto-evicts on hash mismatch, observed working).
     await page.reload({ waitUntil: 'domcontentloaded' });
     // Wait for the SW to claim, otherwise fetches race against
     // network-only first-load.
@@ -145,26 +151,16 @@ test('quantized local gemma4:e2b — generate, stream, render', async () => {
     // Selectors are tolerant of the i18n string changes — we match by
     // role+name in lower-case, with both the english "Use" and the
     // explicit gemma4:e2b model row scope.
-    await page.evaluate(() => {
-        // Open settings sidebar if it isn't already.
-        const opener = document.querySelector('[data-testid="open-settings"], button[aria-label="Settings"], button[aria-label="settings"]');
-        if (opener) opener.click();
-    });
-
-    // Best-effort: click the Local Model "Use" button if visible. If
-    // the button's already in the "✓ In use" state, the click is a
-    // no-op. If the model isn't downloaded yet, the test will block
-    // here on a long timer to finish the (one-time) download.
-    //
-    // The settings panel scopes both Edge models — the smaller
-    // gemma4:e2b (Ollama Q4_K_M GGUF, ~7 GB) and "Gemma 4 E2B IT"
-    // (HF BF16 safetensors, ~10 GB). We use the GGUF row — it's the
-    // path the user has cached locally via ~/.ollama, the local
-    // nginx proxy serves it off disk at sendfile speed, and it's
-    // already activated in their fresh Playwright profile.
+    // Open Settings via Playwright's native click (auto-waits for the
+    // button to be attached + visible). The previous `page.evaluate
+    // (() => button.click())` racewd against the React mount and
+    // sometimes fired before the click handler was bound, leaving
+    // Settings closed and the gemma card never appearing.
+    await page.getByRole('button', { name: 'Settings', exact: true }).click({ timeout: 30_000 });
     const gemmaCard = page.locator('div', {
         has: page.locator('h3', { hasText: /Gemma 4 E2B \(Ollama, Q4_K_M\)/ }),
     }).first();
+    await gemmaCard.waitFor({ state: 'visible', timeout: 30_000 });
     const inUse = gemmaCard.locator('button:has-text("In use")').first();
     if (await inUse.count() === 0) {
         const useButton = gemmaCard.locator('button', { hasText: /^Use$/i }).first();
@@ -202,6 +198,25 @@ test('quantized local gemma4:e2b — generate, stream, render', async () => {
         await page.waitForTimeout(250);
     }
     await page.waitForSelector('textarea.composer-input', { state: 'visible', timeout: 30_000 });
+
+    // ── Force the active provider to local before sending ─────────
+    // The chat-pwa picks a default provider during refreshActiveProvider;
+    // when the persistent context has a stale `chat.activeProvider`
+    // setting (or under some race conditions in the JS init order) it
+    // can land on `anthropic` instead of the on-device model. We
+    // explicitly write the setting to IDB and click the provider chip
+    // until it shows the gemma4 chip text. The chip-cycle approach
+    // works regardless of how the default is computed under the hood.
+    const providerChip = page.locator('button:has-text("Anthropic"), button:has-text("OpenAI"), button:has-text("Google"), button:has-text("Ollama"), button:has-text("Gemma"), button:has-text("On-device")').first();
+    for (let i = 0; i < 8; i++) {
+        const txt = (await providerChip.textContent().catch(() => '')) || '';
+        if (/gemma|on-device/i.test(txt)) {
+            console.log(`[pw] provider chip = "${txt.trim()}"`);
+            break;
+        }
+        await providerChip.click().catch(() => {});
+        await page.waitForTimeout(150);
+    }
 
     // ── Send a chat message ────────────────────────────────────────
     const chatInput = page.locator('textarea, input[type="text"]').filter({

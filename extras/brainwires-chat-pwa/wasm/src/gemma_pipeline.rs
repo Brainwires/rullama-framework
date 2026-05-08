@@ -2300,26 +2300,18 @@ pub async fn init_local_multimodal_gguf_quantized_chunked(
     tokenizer_json: Vec<u8>,
     model_id: String,
 ) -> Result<LocalQuantizedHandle, JsValue> {
-    // CORRECTNESS-FIRST FALLBACK — force CPU for the quantized path.
-    //
-    // The WGPU path (Chrome/Dawn → Tint → MSL) on macOS Metal still drifts
-    // through at least one kernel that we haven't isolated. Symptoms with
-    // the rms_norm tid=0 fix + F32 softcap + flash_attn_decode disabled:
-    // text is grammatical for ~5 tokens then degrades ("How do I can you
-    // help"), and the model never emits EOS. Native wgpu (Naga MSL) on the
-    // same hardware produces correct output, so the WGSL is right; it's a
-    // Tint-vs-Naga MSL-lowering discrepancy.
-    //
-    // Until the remaining drifting kernel is identified (matmul1_m1 /
-    // softmax / rotary_emb are the suspects), the chat-pwa runs on CPU
-    // wasm32. Slower (~0.2 tok/s vs target ~5 tok/s) but coherent.
-    //
-    // To re-enable the wgpu path for kernel bisection, replace `Device::Cpu`
-    // below with the previous `try_webgpu_device().await` block.
-    let device = Device::Cpu;
-    web_sys::console::log_1(
-        &"[wasm/gguf-q-chunked] CPU device (WGPU drift workaround active)".into(),
-    );
+    let device = match try_webgpu_device().await {
+        Ok(dev) => {
+            web_sys::console::log_1(&"[wasm/gguf-q-chunked] using WebGPU device".into());
+            dev
+        }
+        Err(e) => {
+            web_sys::console::warn_1(
+                &format!("[wasm/gguf-q-chunked] WebGPU unavailable ({e}), CPU fallback").into(),
+            );
+            Device::Cpu
+        }
+    };
 
     let file_size = file_size as u64;
     web_sys::console::log_1(
