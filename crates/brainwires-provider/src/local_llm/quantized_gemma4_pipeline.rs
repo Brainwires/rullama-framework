@@ -246,6 +246,47 @@ impl Gemma4QuantizedTextOnly {
                 break;
             }
 
+            // Soft-EOS on repetition. Greedy decoding can wander into a
+            // single-token emit loop ("😊😊😊…", "...,...,..."), or a
+            // short-n-gram cycle ("abc abc abc"), particularly when
+            // upstream logits drift and the natural EOS no longer wins
+            // the argmax. We detect two patterns and treat either as
+            // EOS so the pipeline stops cleanly instead of burning
+            // through max_new_tokens emitting garbage.
+            //
+            // Pattern A — same token N times consecutively. Catches
+            // the emoji-spam attractor.
+            const REPEAT_RUN: usize = 4;
+            // Pattern B — same 2- or 3-gram repeating M times. Catches
+            // " a b a b a b" and " a b c a b c a b c". M=3 cycles plus
+            // the just-emitted token = 6 (or 9) trailing ids matching.
+            const REPEAT_NGRAM_CYCLES: usize = 3;
+            let n = emitted_ids.len();
+            let same_run = n >= REPEAT_RUN
+                && emitted_ids[n - REPEAT_RUN..].iter().all(|&id| id == next_id);
+            let ngram_cycle = |k: usize| -> bool {
+                let need = k * REPEAT_NGRAM_CYCLES;
+                if n < need {
+                    return false;
+                }
+                let tail = &emitted_ids[n - need..];
+                let first = &tail[..k];
+                tail.chunks_exact(k).all(|chunk| chunk == first)
+            };
+            if same_run || ngram_cycle(2) || ngram_cycle(3) {
+                let kind = if same_run {
+                    format!("{REPEAT_RUN}× same token id={next_id}")
+                } else if ngram_cycle(2) {
+                    format!("2-gram cycled {REPEAT_NGRAM_CYCLES}×")
+                } else {
+                    format!("3-gram cycled {REPEAT_NGRAM_CYCLES}×")
+                };
+                diag_log(&format!(
+                    "[gemma4/diag] step {step}: repetition detected ({kind}) — soft-EOS",
+                ));
+                break;
+            }
+
             // Decode step: feed only the new token, with seqlen_offset
             // pointing past the prompt + previously-emitted tokens.
             let seqlen_offset = prompt_len + step;

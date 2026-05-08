@@ -2,7 +2,7 @@
 //
 // What this test does:
 //   1. Boots a Playwright Chromium with WebGPU.
-//   2. Navigates to http://localhost:8080/ (the local nginx).
+//   2. Navigates to http://localhost:8090/ (the local nginx).
 //   3. Drives the unlock UI with a fixed test passphrase.
 //   4. Activates the gemma4:e2b local model (downloads via local
 //      ~/.ollama/ proxy on first run; reuses OPFS thereafter).
@@ -61,7 +61,7 @@ test('quantized local gemma4:e2b — generate, stream, render', async () => {
     page.on('crash', () => errors.push('page-crashed'));
 
     // ── Boot ─────────────────────────────────────────────────────────
-    await page.goto(process.env.BW_PWA_URL || 'http://localhost:8080/');
+    await page.goto(process.env.BW_PWA_URL || 'http://localhost:8090/');
     // Clear conversation history so each run starts fresh — otherwise
     // every successive run grows the context and we can't diff against
     // the native baseline (prompt_len=10). The model + activation
@@ -82,6 +82,12 @@ test('quantized local gemma4:e2b — generate, stream, render', async () => {
             }
         }
     }).catch(() => { /* best-effort */ });
+    // Reload after the IDB wipe so the SPA's in-memory state re-hydrates
+    // from the now-empty IDB instead of carrying over a previously-loaded
+    // conversation. Without this, the next prompt gets concatenated with
+    // a stale (and often partial) prior turn — observed as prompt_len=21
+    // with two `<|turn>user…<turn|>` blocks.
+    await page.reload({ waitUntil: 'domcontentloaded' });
     // Wait for the SW to claim, otherwise fetches race against
     // network-only first-load.
     await page.waitForFunction(

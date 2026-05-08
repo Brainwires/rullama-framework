@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # End-to-end harness driver:
 #   1. Asserts the wasm bundle is built (web/pkg/*.wasm fresh).
-#   2. Boots nginx in user mode (port 8080) in the background.
-#   3. Runs the Playwright spec(s) against http://localhost:8080.
+#   2. Boots nginx in user mode (port 8090) in the background.
+#   3. Runs the Playwright spec(s) against http://localhost:8090.
 #   4. Tears nginx down on exit (success or failure).
 
 set -euo pipefail
@@ -47,7 +47,7 @@ NGINX_BG=$!
 
 # Wait for the listener to come up (or the process to die).
 for _ in $(seq 1 30); do
-    if curl -fsS -o /dev/null http://localhost:8080/index.html; then
+    if curl -fsS -o /dev/null http://localhost:8090/index.html; then
         break
     fi
     if ! kill -0 "$NGINX_BG" 2>/dev/null; then
@@ -57,13 +57,13 @@ for _ in $(seq 1 30); do
     fi
     sleep 0.5
 done
-if ! curl -fsS -o /dev/null http://localhost:8080/index.html; then
-    echo "error: nginx did not respond on :8080 after 15s" >&2
+if ! curl -fsS -o /dev/null http://localhost:8090/index.html; then
+    echo "error: nginx did not respond on :8090 after 15s" >&2
     cat "$NGINX_LOG" >&2
     exit 1
 fi
 
-echo "==> nginx ready on http://localhost:8080/ — running Playwright"
+echo "==> nginx ready on http://localhost:8090/ — running Playwright"
 cd "$WEB_DIR"
 exec npx playwright test \
     --config=tests/e2e/playwright.config.mjs \

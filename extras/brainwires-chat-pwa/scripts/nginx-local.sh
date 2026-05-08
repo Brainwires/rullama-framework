@@ -5,7 +5,7 @@
 #   ./scripts/nginx-local.sh           # foreground, ^C to stop
 #   ./scripts/nginx-local.sh --check   # validate config only, exit
 #
-# The Playwright e2e harness expects the PWA on http://localhost:8080
+# The Playwright e2e harness expects the PWA on http://localhost:8090
 # with /ollama-registry/v2/library/gemma4/{manifests/e2b,blobs/...}
 # served from ~/.ollama/models/. No sudo, no privileged ports, no
 # system files touched.
@@ -73,5 +73,5 @@ fi
 echo "==> nginx -c $CONF_RENDERED"
 echo "==> root: $WEB_DIR"
 echo "==> ollama cache: $OLLAMA_CACHE"
-echo "==> http://localhost:8080/  (^C to stop)"
+echo "==> http://localhost:8090/  (^C to stop)"
 exec "$NGINX_BIN" -c "$CONF_RENDERED" -p "$RUN_DIR"

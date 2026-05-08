@@ -1008,7 +1008,8 @@ async function refreshActiveProvider() {
     if (stored && providers.find((p) => p.id === stored)) {
         _activeProviderId = stored;
     } else {
-        _activeProviderId = providers[0].id;
+        const local = providers.find((p) => p.id === 'local');
+        _activeProviderId = (local || providers[0]).id;
     }
     updateProviderChip();
     updateSendDisabled();
