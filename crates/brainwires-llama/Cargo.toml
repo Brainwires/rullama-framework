@@ -1,0 +1,53 @@
+[package]
+name = "brainwires-llama"
+description = "Gemma 4 inference engine for brainwires-framework: pure Rust + wgpu + WASM, GGUF-native."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wgpu = { version = "29", default-features = false, features = ["wgsl"] }
+bytemuck = { version = "1.25", features = ["derive"] }
+half = "2.7"
+thiserror = { workspace = true }
+log = "0.4.29"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+futures-channel = { version = "0.3.32", default-features = false, features = ["alloc"] }
+async-trait = "0.1.89"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2.121"
+wasm-bindgen-futures = "0.4.71"
+serde-wasm-bindgen = "0.6.5"
+js-sys = "0.3.98"
+web-sys = { version = "0.3.98", features = [
+    "Navigator",
+    "Window",
+    "WorkerGlobalScope",
+    "WorkerNavigator",
+    "Gpu",
+    "GpuAdapter",
+    "GpuDevice",
+    "Headers",
+    "Request",
+    "RequestInit",
+    "Response",
+] }
+console_error_panic_hook = "0.1.7"
+console_log = "1.0.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+pollster = "0.4.0"
+
+[features]
+default = []
+# CPU f32 reference forward (oracle, used by parity tests in the source repo).
+# Harmless to leave defined here; not consumed by chat-pwa.
+cpu-reference = []

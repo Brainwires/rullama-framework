@@ -27,6 +27,7 @@ members = [
     "crates/brainwires-finetune",
     "crates/brainwires-finetune-local",
     "crates/brainwires-training",
+    "crates/brainwires-llama",
     "extras/brainwires-autonomy",
     "extras/brainwires-chat-pwa/home",
     "extras/brainwires-chat-pwa/wasm",
@@ -380,7 +381,7 @@ rustpotter = { git = "https://github.com/Brainwires/rustpotter", rev = "4dbd6fd5
 # publication (upstream did not cut a `0.10.2` tag). The WebGPU backend
 # lands incrementally on this branch in subsequent phases of the
 # bright-scroll plan.
-candle-core         = { git = "https://github.com/Brainwires/candle", rev = "404f3799" }
-candle-nn           = { git = "https://github.com/Brainwires/candle", rev = "404f3799" }
-candle-transformers = { git = "https://github.com/Brainwires/candle", rev = "404f3799" }
+candle-core         = { git = "https://github.com/Brainwires/candle", rev = "ae737a76" }
+candle-nn           = { git = "https://github.com/Brainwires/candle", rev = "ae737a76" }
+candle-transformers = { git = "https://github.com/Brainwires/candle", rev = "ae737a76" }
 

@@ -13,6 +13,7 @@ crate-type = ["cdylib", "rlib"]
 brainwires-core = { path = "../../../crates/brainwires-core", default-features = false, features = ["wasm"] }
 brainwires-provider = { path = "../../../crates/brainwires-provider", default-features = false, features = ["local-llm-candle", "local-llm-vision", "candle-wgpu"] }
 brainwires-provider-speech = { path = "../../../crates/brainwires-provider-speech", default-features = false, features = ["web-speech"] }
+brainwires-llama = { path = "../../../crates/brainwires-llama" }
 
 # Enable the WebGPU backend for wgpu. The candle fork declares wgpu with
 # default-features=false (wgsl only, no backend). Since this crate always
@@ -61,6 +62,9 @@ web-sys = { version = "0.3", features = [
 
 # Stream adapters (matches workspace pin used by the framework crates).
 futures = "0.3"
+
+# Trait support for the brainwires-llama TensorFetcher impl in opfs_fetcher.rs.
+async-trait = "0.1.89"
 
 # Serde
 serde = { workspace = true, features = ["derive"] }

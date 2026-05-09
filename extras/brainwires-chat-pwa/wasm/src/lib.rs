@@ -59,6 +59,8 @@ use web_sys::{ReadableStream, ReadableStreamDefaultController};
 mod embedding;
 pub use embedding::{init_embedding_model, EmbeddingHandle};
 
+mod opfs_fetcher;
+
 mod gemma_pipeline;
 pub use gemma_pipeline::{
     init_local_multimodal, init_local_multimodal_chunked, init_local_multimodal_gguf_quantized,

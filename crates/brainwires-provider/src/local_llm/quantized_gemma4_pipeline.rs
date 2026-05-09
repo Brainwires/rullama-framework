@@ -22,7 +22,7 @@ use std::sync::Mutex;
 
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_transformers::models::gemma4::config::Gemma4Config;
-use candle_transformers::models::quantized_gemma4::ModelWeights;
+use candle_transformers::models::quantized_gemma4_e2b::ModelWeights;
 use tokenizers::Tokenizer;
 
 /// Best-effort diagnostic log. On wasm32 forwards to `console.log`; on

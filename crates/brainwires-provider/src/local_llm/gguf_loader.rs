@@ -162,12 +162,12 @@ pub fn load_quantized_gemma4_from_reader<R: std::io::Read + std::io::Seek>(
     reader: &mut R,
     device: &Device,
 ) -> Result<(
-    candle_transformers::models::quantized_gemma4::ModelWeights,
+    candle_transformers::models::quantized_gemma4_e2b::ModelWeights,
     Gemma4Config,
 )> {
     let content = gguf_file::Content::read(reader)?;
     let cfg = build_gemma4_config_from_gguf(&content)?;
-    let model = candle_transformers::models::quantized_gemma4::ModelWeights::from_gguf(
+    let model = candle_transformers::models::quantized_gemma4_e2b::ModelWeights::from_gguf(
         content,
         reader,
         device,

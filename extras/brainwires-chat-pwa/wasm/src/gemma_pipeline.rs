@@ -55,7 +55,12 @@ use brainwires_provider::gemma4::Model as Gemma4Model;
 use brainwires_provider::{
     CandleDType as DType, CandleDevice as Device, CandleTensor as Tensor, CandleVarBuilder,
 };
+use brainwires_llama::api::{
+    ChatMessage as LlamaChatMessage, ChatRole as LlamaChatRole, Model as LlamaModel,
+};
+use brainwires_llama::gguf::InMemoryFetcher;
 use candle_nn::Activation;
+use futures::lock::Mutex as AsyncMutex;
 use js_sys::{Function, Object, Reflect, Uint8Array};
 use serde::{Deserialize, Serialize};
 use tokenizers::Tokenizer;
@@ -2230,22 +2235,12 @@ impl std::io::Seek for JsCallbackReader {
 #[wasm_bindgen]
 pub async fn init_local_multimodal_gguf_quantized(
     weights: Vec<u8>,
-    tokenizer_json: Vec<u8>,
+    _tokenizer_json: Vec<u8>,
     model_id: String,
 ) -> Result<LocalQuantizedHandle, JsValue> {
-    let device = match try_webgpu_device().await {
-        Ok(dev) => {
-            web_sys::console::log_1(&"[wasm/gguf-q] using WebGPU device".into());
-            dev
-        }
-        Err(e) => {
-            web_sys::console::warn_1(
-                &format!("[wasm/gguf-q] WebGPU unavailable ({e}), CPU fallback").into(),
-            );
-            Device::Cpu
-        }
-    };
-
+    // brainwires-llama parses the tokenizer directly from the GGUF blob; the
+    // separate `tokenizer_json` arg is accepted for JS-side signature stability
+    // and ignored.
     web_sys::console::log_1(
         &format!(
             "[wasm/gguf-q] loading GGUF blob ({} bytes), model_id={model_id}",
@@ -2254,32 +2249,15 @@ pub async fn init_local_multimodal_gguf_quantized(
         .into(),
     );
 
-    let mut cursor = std::io::Cursor::new(weights);
-    let (model, cfg) =
-        brainwires_provider::local_llm::gguf_loader::load_quantized_gemma4_from_reader(
-            &mut cursor,
-            &device,
-        )
-        .map_err(|e| JsValue::from_str(&format!("quantized_gemma4 load: {e}")))?;
+    let fetcher = Arc::new(InMemoryFetcher::new(weights));
+    let model = LlamaModel::load_streaming(fetcher)
+        .await
+        .map_err(|e| JsValue::from_str(&format!("brainwires-llama load: {e}")))?;
 
-    web_sys::console::log_1(
-        &format!(
-            "[wasm/gguf-q] quantized model built, layers={}",
-            cfg.text_config.num_hidden_layers,
-        )
-        .into(),
-    );
-
-    let tokenizer = Tokenizer::from_bytes(&tokenizer_json)
-        .map_err(|e| JsValue::from_str(&format!("tokenizer parse: {e}")))?;
-
-    let pipeline =
-        brainwires_provider::local_llm::quantized_gemma4_pipeline::Gemma4QuantizedTextOnly::from_components(
-            model, tokenizer, device, cfg,
-        );
+    web_sys::console::log_1(&"[wasm/gguf-q] brainwires-llama model ready".into());
 
     Ok(LocalQuantizedHandle {
-        inner: Arc::new(pipeline),
+        inner: Arc::new(AsyncMutex::new(model)),
         model_id,
     })
 }
@@ -2297,56 +2275,27 @@ pub async fn init_local_multimodal_gguf_quantized(
 pub async fn init_local_multimodal_gguf_quantized_chunked(
     read_fn: js_sys::Function,
     file_size: f64,
-    tokenizer_json: Vec<u8>,
+    _tokenizer_json: Vec<u8>,
     model_id: String,
 ) -> Result<LocalQuantizedHandle, JsValue> {
-    let device = match try_webgpu_device().await {
-        Ok(dev) => {
-            web_sys::console::log_1(&"[wasm/gguf-q-chunked] using WebGPU device".into());
-            dev
-        }
-        Err(e) => {
-            web_sys::console::warn_1(
-                &format!("[wasm/gguf-q-chunked] WebGPU unavailable ({e}), CPU fallback").into(),
-            );
-            Device::Cpu
-        }
-    };
-
     let file_size = file_size as u64;
     web_sys::console::log_1(
         &format!(
-            "[wasm/gguf-q-chunked] streaming GGUF, file_size={file_size}, model_id={model_id}",
+            "[wasm/gguf-q-chunked] streaming GGUF via OPFS, file_size={file_size}, model_id={model_id}",
         )
         .into(),
     );
 
-    let mut reader = JsCallbackReader::new(read_fn, file_size);
-    let (model, cfg) =
-        brainwires_provider::local_llm::gguf_loader::load_quantized_gemma4_from_reader(
-            &mut reader,
-            &device,
-        )
-        .map_err(|e| JsValue::from_str(&format!("quantized_gemma4 load: {e}")))?;
+    let fetcher: Arc<dyn brainwires_llama::gguf::TensorFetcher> =
+        Arc::new(crate::opfs_fetcher::OpfsFetcher::new(read_fn, file_size));
+    let model = LlamaModel::load_streaming(fetcher)
+        .await
+        .map_err(|e| JsValue::from_str(&format!("brainwires-llama streaming load: {e}")))?;
 
-    web_sys::console::log_1(
-        &format!(
-            "[wasm/gguf-q-chunked] quantized model built, layers={}",
-            cfg.text_config.num_hidden_layers,
-        )
-        .into(),
-    );
-
-    let tokenizer = Tokenizer::from_bytes(&tokenizer_json)
-        .map_err(|e| JsValue::from_str(&format!("tokenizer parse: {e}")))?;
-
-    let pipeline =
-        brainwires_provider::local_llm::quantized_gemma4_pipeline::Gemma4QuantizedTextOnly::from_components(
-            model, tokenizer, device, cfg,
-        );
+    web_sys::console::log_1(&"[wasm/gguf-q-chunked] brainwires-llama model ready".into());
 
     Ok(LocalQuantizedHandle {
-        inner: Arc::new(pipeline),
+        inner: Arc::new(AsyncMutex::new(model)),
         model_id,
     })
 }
@@ -2357,9 +2306,7 @@ pub async fn init_local_multimodal_gguf_quantized_chunked(
 /// drives generation through this handle.
 #[wasm_bindgen]
 pub struct LocalQuantizedHandle {
-    inner: Arc<
-        brainwires_provider::local_llm::quantized_gemma4_pipeline::Gemma4QuantizedTextOnly,
-    >,
+    inner: Arc<AsyncMutex<LlamaModel>>,
     model_id: String,
 }
 
@@ -2371,14 +2318,12 @@ impl LocalQuantizedHandle {
         self.model_id.clone()
     }
 
-    /// `"webgpu"` or `"cpu"` — which device the quantized weights live on.
+    /// brainwires-llama only loads when WebGPU is available (`WgpuCtx::new()`
+    /// fails closed otherwise), so the device is always WebGPU once a handle
+    /// exists.
     #[wasm_bindgen(getter)]
     pub fn device_type(&self) -> String {
-        match self.inner.device().location() {
-            brainwires_provider::CandleDeviceLocation::Cpu => "cpu".into(),
-            brainwires_provider::CandleDeviceLocation::Wgpu { .. } => "webgpu".into(),
-            _ => "unknown".into(),
-        }
+        "webgpu".into()
     }
 
     /// Always `false` — Ollama gemma4:e2b GGUF is text-only.
@@ -2421,38 +2366,33 @@ pub fn local_chat_stream_quantized(
             .map_err(|e| JsValue::from_str(&format!("params_json parse: {e}")))?
     };
 
-    // Render messages into a Gemma 4 chat-template prompt. Image parts
-    // are dropped (text-only model). The downstream pipeline calls
-    // `tokenizer.encode(prompt, false)` so we include `<bos>` literally
-    // here. Role mapping: `assistant` → `model` (Gemma 4's
-    // chat_template.jinja convention; the model wasn't trained on the
-    // bare `assistant` role string).
-    let mut prompt = String::with_capacity(256);
-    prompt.push_str("<bos>");
-    for m in &messages {
-        let role: &str = if m.role == "assistant" { "model" } else { m.role.as_str() };
-        let text = match &m.content {
-            JsContent::Text(s) => s.clone(),
-            JsContent::Parts(parts) => parts
-                .iter()
-                .filter_map(|p| match p {
-                    JsPart::Text { text } => Some(text.clone()),
-                    JsPart::Image { .. } => None,
-                })
-                .collect::<Vec<_>>()
-                .join(""),
-        };
-        // Gemma 4 chat tokens — registered in tokenizer.json
-        // `added_tokens` array as `<|turn>` (105) / `<turn|>` (106).
-        prompt.push_str("<|turn>");
-        prompt.push_str(role);
-        prompt.push('\n');
-        prompt.push_str(text.trim());
-        prompt.push_str("<turn|>\n");
-    }
-    prompt.push_str("<|turn>model\n");
+    // Convert JsMessage → brainwires-llama ChatMessage. Image parts are
+    // dropped (text-only model). Role mapping: "assistant" / "model" →
+    // ChatRole::Model (Gemma 4's chat_template.jinja convention).
+    let chat_msgs: Vec<LlamaChatMessage> = messages
+        .iter()
+        .map(|m| {
+            let role = match m.role.as_str() {
+                "system" => LlamaChatRole::System,
+                "assistant" | "model" => LlamaChatRole::Model,
+                _ => LlamaChatRole::User,
+            };
+            let content = match &m.content {
+                JsContent::Text(s) => s.clone(),
+                JsContent::Parts(parts) => parts
+                    .iter()
+                    .filter_map(|p| match p {
+                        JsPart::Text { text } => Some(text.clone()),
+                        JsPart::Image { .. } => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join(""),
+            };
+            LlamaChatMessage { role, content }
+        })
+        .collect();
 
-    let pipeline = handle.inner.clone();
+    let model_arc = handle.inner.clone();
     let max_new_tokens = params.max_tokens.unwrap_or(512) as usize;
 
     let underlying = Object::new();
@@ -2461,17 +2401,14 @@ pub fn local_chat_stream_quantized(
             Ok(c) => c,
             Err(_) => return,
         };
-        let pipeline = pipeline.clone();
-        let prompt_owned = prompt.clone();
+        let model_arc = model_arc.clone();
+        let chat_msgs = chat_msgs.clone();
         spawn_local(async move {
             let send_chunk = |c: &ReadableStreamDefaultController, chunk: &VisionWireChunk<'_>| {
                 if let Ok(mut json) = serde_json::to_string(chunk) {
                     // Frame as NDJSON — the JS reader at
                     // `local-worker.js::runChatStream` splits the
-                    // stream on `\n` to parse incremental
-                    // VisionWireChunk records. Without the trailing
-                    // newline the reader buffers indefinitely and the
-                    // UI never sees any deltas.
+                    // stream on `\n` to parse incremental records.
                     json.push('\n');
                     let bytes = json.into_bytes();
                     let arr = Uint8Array::new_with_length(bytes.len() as u32);
@@ -2480,44 +2417,87 @@ pub fn local_chat_stream_quantized(
                 }
             };
 
-            // Gemma 4 IT publishes three EOS tokens: 1 (`<eos>`), 106
-            // (`<turn|>`, end-of-turn), and 50. Stop on any of them so
-            // generation halts at the natural turn boundary instead of
-            // running through `max_new_tokens`.
-            let eos: &[u32] = &[1, 106, 50];
-            let result = pipeline
-                .generate_greedy_streaming(&prompt_owned, max_new_tokens, eos, |_, delta| {
-                    send_chunk(
-                        &controller,
-                        &VisionWireChunk {
-                            delta: Some(delta),
-                            ..Default::default()
-                        },
-                    );
-                })
-                .await;
+            let send_error = |c: &ReadableStreamDefaultController, msg: String| {
+                send_chunk(
+                    c,
+                    &VisionWireChunk {
+                        error: Some(msg),
+                        finished: true,
+                        ..Default::default()
+                    },
+                );
+                let _ = c.close();
+            };
 
-            match result {
-                Ok(_) => {
-                    send_chunk(
-                        &controller,
-                        &VisionWireChunk {
-                            finished: true,
-                            ..Default::default()
-                        },
-                    );
-                }
-                Err(e) => {
-                    send_chunk(
-                        &controller,
-                        &VisionWireChunk {
-                            error: Some(format!("{e}")),
-                            finished: true,
-                            ..Default::default()
-                        },
-                    );
-                }
+            let mut model = model_arc.lock().await;
+
+            // Greedy decode — set sampler temperature to 0 so step() returns argmax.
+            model.set_sampling_native(brainwires_llama::sampling::SamplingOptions {
+                temperature: 0.0,
+                ..brainwires_llama::sampling::SamplingOptions::default()
+            });
+            model.reset_native();
+
+            // Render chat template through brainwires-llama (Ollama-bit-exact per
+            // its README) instead of building the prompt by hand.
+            let prompt = model.render_chat_native(&chat_msgs, /*with_bos=*/ true);
+
+            let prompt_tokens = model.encode_tokens(&prompt);
+            if prompt_tokens.is_empty() {
+                send_error(&controller, "empty prompt after tokenization".into());
+                return;
             }
+
+            // Feed the prompt into the model. Each step returns a sampled token id;
+            // we only care about the sample produced from the LAST prompt token —
+            // that becomes the first generated token.
+            let mut next: u32 = 0;
+            for &tok in &prompt_tokens {
+                next = match model.step_native(tok).await {
+                    Ok(n) => n,
+                    Err(e) => {
+                        send_error(&controller, format!("prompt step failed: {e}"));
+                        return;
+                    }
+                };
+            }
+
+            // Generation loop. `next` is the sampled token to emit next; after
+            // emitting we feed it back into the model to get the following sample.
+            let mut emitted = 0usize;
+            loop {
+                if emitted >= max_new_tokens {
+                    break;
+                }
+                if model.is_eos_native(next) {
+                    break;
+                }
+                let token_str = model.token_str_native(next).unwrap_or_default();
+                send_chunk(
+                    &controller,
+                    &VisionWireChunk {
+                        delta: Some(&token_str),
+                        ..Default::default()
+                    },
+                );
+                emitted += 1;
+
+                next = match model.step_native(next).await {
+                    Ok(n) => n,
+                    Err(e) => {
+                        send_error(&controller, format!("generation step failed: {e}"));
+                        return;
+                    }
+                };
+            }
+
+            send_chunk(
+                &controller,
+                &VisionWireChunk {
+                    finished: true,
+                    ..Default::default()
+                },
+            );
             let _ = controller.close();
         });
     });
