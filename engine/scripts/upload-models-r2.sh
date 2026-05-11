@@ -50,7 +50,18 @@
 set -euo pipefail
 
 BUCKET="${BUCKET:-rullama-models}"
-RCLONE_REMOTE="${RCLONE_REMOTE:-r2}"
+
+# Default the rclone remote name to the first one that exists out of
+# the common spellings (`r2`, `R2`). Explicit env override still wins.
+if [ -z "${RCLONE_REMOTE:-}" ]; then
+    for candidate in r2 R2; do
+        if rclone listremotes 2>/dev/null | grep -qx "${candidate}:"; then
+            RCLONE_REMOTE="$candidate"
+            break
+        fi
+    done
+    RCLONE_REMOTE="${RCLONE_REMOTE:-r2}"
+fi
 
 if ! command -v rclone >/dev/null 2>&1; then
     cat >&2 <<EOF
