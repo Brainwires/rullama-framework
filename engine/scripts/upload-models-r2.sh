@@ -2,28 +2,83 @@
 #
 # Upload the multimodal Gemma 4 GGUF blobs from a local Ollama install
 # to Cloudflare R2. Run once per model — R2 is the new origin for the
-# public demo so rullama's server doesn't have to serve 9 GB blobs.
+# public demo so rullama's server doesn't have to serve multi-GB blobs.
 #
-# Prereqs:
-#   - wrangler installed and authenticated: `npm install -g wrangler && wrangler login`
-#   - R2 bucket created in the CF dashboard (or via `wrangler r2 bucket create`)
-#   - Custom domain bound to the bucket (e.g. models.brainwires.dev),
-#     or use the bucket's r2.dev URL.
+# Uses rclone, not wrangler, because wrangler's `r2 object put` caps at
+# 300 MiB. rclone handles multipart automatically and is the standard
+# tool for S3-compatible storage.
+#
+# One-time setup:
+#
+#   1. Install rclone:
+#        brew install rclone        # macOS
+#        sudo apt install rclone    # Debian/Ubuntu
+#        curl https://rclone.org/install.sh | sudo bash
+#
+#   2. Create R2 API credentials (separate from your CF account token):
+#        Dashboard → R2 → Manage R2 API tokens → Create API token
+#        Permission: Object Read & Write
+#        Specify bucket: rullama-models
+#        Copy the Access Key ID + Secret Access Key + S3 endpoint.
+#
+#   3. Configure rclone:
+#        rclone config
+#          n (new remote)
+#          name: r2
+#          storage: 4 (Amazon S3)
+#          provider: 6 (Cloudflare)
+#          access_key_id: <from step 2>
+#          secret_access_key: <from step 2>
+#          region: auto
+#          endpoint: <from step 2 — looks like https://<acct-id>.r2.cloudflarestorage.com>
+#          (accept defaults for the rest)
+#
+#   4. CORS (one-time, run from anywhere with `wrangler` installed):
+#        wrangler r2 bucket cors put rullama-models --file=docker/r2-cors.json
+#      Or upload the policy via the dashboard.
 #
 # Usage:
-#   scripts/upload-models-r2.sh                       # upload e2b + e4b
-#   scripts/upload-models-r2.sh gemma4:e2b            # upload one model
-#   BUCKET=foo scripts/upload-models-r2.sh
+#   scripts/upload-models-r2.sh                  # upload e2b + e4b
+#   scripts/upload-models-r2.sh gemma4:e2b       # one model
+#   BUCKET=foo RCLONE_REMOTE=r2 scripts/upload-models-r2.sh
 #
 # Env:
 #   BUCKET           R2 bucket name (default: rullama-models)
-#   OLLAMA_MODELS    Path to ~/.ollama/models (default: $HOME/.ollama/models)
-#   WRANGLER_BIN     Wrangler binary path (default: wrangler)
+#   RCLONE_REMOTE    rclone remote name (default: r2)
+#   OLLAMA_MODELS    Path to .ollama/models (auto-probed when unset)
 
 set -euo pipefail
 
 BUCKET="${BUCKET:-rullama-models}"
-WRANGLER_BIN="${WRANGLER_BIN:-wrangler}"
+RCLONE_REMOTE="${RCLONE_REMOTE:-r2}"
+
+if ! command -v rclone >/dev/null 2>&1; then
+    cat >&2 <<EOF
+error: rclone is not installed.
+
+Install with one of:
+  brew install rclone          # macOS
+  sudo apt install rclone      # Debian / Ubuntu
+  curl https://rclone.org/install.sh | sudo bash
+
+Then configure an R2 remote — see the comment block at the top of this
+file for the full one-time setup.
+EOF
+    exit 1
+fi
+if ! command -v jq >/dev/null 2>&1; then
+    echo "error: 'jq' required for manifest parsing." >&2
+    exit 1
+fi
+
+# Verify the rclone remote is configured before we waste time resolving
+# blob paths only to discover it isn't.
+if ! rclone listremotes 2>/dev/null | grep -qx "${RCLONE_REMOTE}:"; then
+    echo "error: rclone remote '$RCLONE_REMOTE' is not configured." >&2
+    echo "  Run \`rclone config\` and add an S3-compatible remote pointing at R2." >&2
+    echo "  See the comment block at the top of this script for the exact answers." >&2
+    exit 1
+fi
 
 # Resolve OLLAMA_MODELS. Honor an explicit env override; otherwise probe
 # the common install locations and pick the first one with a `manifests`
@@ -51,15 +106,6 @@ if [ -z "${OLLAMA_MODELS:-}" ]; then
     echo "→ using OLLAMA_MODELS=$OLLAMA_MODELS"
 fi
 
-if ! command -v "$WRANGLER_BIN" >/dev/null 2>&1; then
-    echo "error: '$WRANGLER_BIN' not on PATH. Install with: npm install -g wrangler" >&2
-    exit 1
-fi
-if ! command -v jq >/dev/null 2>&1; then
-    echo "error: 'jq' required for manifest parsing." >&2
-    exit 1
-fi
-
 # Resolve a model "family:tag" to its on-disk blob path by walking the
 # Ollama manifest layout. Mirrors the same logic in docker/entrypoint.sh.
 resolve_blob() {
@@ -67,8 +113,6 @@ resolve_blob() {
     local family="${nametag%:*}"
     local tag="${nametag#*:}"
     local manifest
-    # Manifests live under registries/<host>/<ns>/<family>/<tag>; the host
-    # is usually registry.ollama.ai. Glob to find it without hardcoding.
     manifest=$(find "$OLLAMA_MODELS/manifests" -type f -path "*/$family/$tag" | head -n1)
     if [ -z "$manifest" ]; then
         echo "error: no manifest for $nametag under $OLLAMA_MODELS" >&2
@@ -103,23 +147,14 @@ upload_model() {
     echo "→ $nametag  $(numfmt --to=iec --suffix=B "$size" 2>/dev/null || echo "$size bytes")"
     echo "    src:    $blob"
     echo "    digest: $digest"
-    echo "    target: r2://$BUCKET/$key"
-    "$WRANGLER_BIN" r2 object put "$BUCKET/$key" \
-        --file="$blob" \
-        --content-type="application/octet-stream" \
-        --remote
-    echo "    ✓ done"
-}
-
-# Apply the CORS policy. Idempotent — safe to re-run.
-apply_cors() {
-    local cors="$(dirname "$0")/../docker/r2-cors.json"
-    if [ ! -f "$cors" ]; then
-        echo "warn: $cors not found — skipping CORS apply" >&2
-        return 0
-    fi
-    echo "→ applying CORS from $cors"
-    "$WRANGLER_BIN" r2 bucket cors put "$BUCKET" --file="$cors"
+    echo "    target: ${RCLONE_REMOTE}:${BUCKET}/${key}"
+    # `copyto` (not `copy`) so the destination keeps the explicit
+    # filename we pass instead of inheriting the source basename.
+    # `--s3-chunk-size 100M` is rclone's multipart chunk size; default
+    # 5 MiB is fine but slower. `--progress` gives a live transfer bar.
+    rclone copyto "$blob" "${RCLONE_REMOTE}:${BUCKET}/${key}" \
+        --s3-chunk-size 100M \
+        --progress
     echo "    ✓ done"
 }
 
@@ -134,10 +169,11 @@ for m in "${MODELS[@]}"; do
     upload_model "$m"
 done
 
-apply_cors
-
 echo
 echo "All done. Verify with:"
-echo "  curl -I https://<your-domain>/${MODELS[0]/:/-}.gguf"
-echo "  curl -sI -H 'Origin: https://gemma.brainwires.dev' -H 'Range: bytes=0-15' \\"
-echo "       https://<your-domain>/${MODELS[0]/:/-}.gguf | grep -i access-control"
+echo "  curl -sI -H 'Origin: https://gemma.brainwires.dev' \\"
+echo "       -H 'Range: bytes=0-15' \\"
+echo "       https://<your-domain>/${MODELS[0]/:/-}.gguf | grep -iE 'content-range|access-control'"
+echo
+echo "Remember to apply the CORS policy once (if you haven't yet):"
+echo "  wrangler r2 bucket cors put $BUCKET --file=docker/r2-cors.json"
