@@ -51,11 +51,24 @@ set -euo pipefail
 
 BUCKET="${BUCKET:-rullama-models}"
 
+# Pick the rclone binary. Prefer an explicit RCLONE_BIN, then a user-local
+# install at ~/.local/bin/rclone (the no-sudo install path), then whatever
+# is on PATH. Distro-packaged rclone is often too old to handle R2's
+# stricter SigV4 enforcement; the no-sudo install lets us upgrade without
+# touching the system rclone.
+if [ -z "${RCLONE_BIN:-}" ]; then
+    if [ -x "$HOME/.local/bin/rclone" ]; then
+        RCLONE_BIN="$HOME/.local/bin/rclone"
+    elif command -v rclone >/dev/null 2>&1; then
+        RCLONE_BIN="$(command -v rclone)"
+    fi
+fi
+
 # Default the rclone remote name to the first one that exists out of
 # the common spellings (`r2`, `R2`). Explicit env override still wins.
 if [ -z "${RCLONE_REMOTE:-}" ]; then
     for candidate in r2 R2; do
-        if rclone listremotes 2>/dev/null | grep -qx "${candidate}:"; then
+        if "$RCLONE_BIN" listremotes 2>/dev/null | grep -qx "${candidate}:"; then
             RCLONE_REMOTE="$candidate"
             break
         fi
@@ -63,7 +76,7 @@ if [ -z "${RCLONE_REMOTE:-}" ]; then
     RCLONE_REMOTE="${RCLONE_REMOTE:-r2}"
 fi
 
-if ! command -v rclone >/dev/null 2>&1; then
+if [ -z "${RCLONE_BIN:-}" ] || [ ! -x "$RCLONE_BIN" ]; then
     cat >&2 <<EOF
 error: rclone is not installed.
 
@@ -163,7 +176,7 @@ upload_model() {
     # filename we pass instead of inheriting the source basename.
     # `--s3-chunk-size 100M` is rclone's multipart chunk size; default
     # 5 MiB is fine but slower. `--progress` gives a live transfer bar.
-    rclone copyto "$blob" "${RCLONE_REMOTE}:${BUCKET}/${key}" \
+    "$RCLONE_BIN" copyto "$blob" "${RCLONE_REMOTE}:${BUCKET}/${key}" \
         --s3-chunk-size 100M \
         --progress
     echo "    ✓ done"
