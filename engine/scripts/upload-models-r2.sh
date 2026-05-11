@@ -23,8 +23,33 @@
 set -euo pipefail
 
 BUCKET="${BUCKET:-rullama-models}"
-OLLAMA_MODELS="${OLLAMA_MODELS:-$HOME/.ollama/models}"
 WRANGLER_BIN="${WRANGLER_BIN:-wrangler}"
+
+# Resolve OLLAMA_MODELS. Honor an explicit env override; otherwise probe
+# the common install locations and pick the first one with a `manifests`
+# subdirectory.
+if [ -z "${OLLAMA_MODELS:-}" ]; then
+    CANDIDATES=(
+        "$HOME/.ollama/models"                          # macOS / user install
+        "/usr/share/ollama/.ollama/models"              # Linux service user
+        "/var/lib/ollama/models"                        # some systemd packages
+        "/opt/ollama/models"                            # custom prefix
+    )
+    for c in "${CANDIDATES[@]}"; do
+        if [ -d "$c/manifests" ]; then
+            OLLAMA_MODELS="$c"
+            break
+        fi
+    done
+    if [ -z "${OLLAMA_MODELS:-}" ]; then
+        echo "error: couldn't auto-locate the Ollama models dir." >&2
+        echo "  Tried:" >&2
+        for c in "${CANDIDATES[@]}"; do echo "    $c" >&2; done
+        echo "  Set OLLAMA_MODELS=<path> explicitly and re-run." >&2
+        exit 1
+    fi
+    echo "→ using OLLAMA_MODELS=$OLLAMA_MODELS"
+fi
 
 if ! command -v "$WRANGLER_BIN" >/dev/null 2>&1; then
     echo "error: '$WRANGLER_BIN' not on PATH. Install with: npm install -g wrangler" >&2
