@@ -118,6 +118,17 @@ async fn run() -> Result<(), BoxError> {
         "[done] start={l0:.4}, end={last_loss:.4}, drop={drop_pct:.1}%"
     );
 
+    // Optional adapter save/load round-trip.
+    if let Ok(path_s) = env::var("RULLAMA_ADAPTER_PATH") {
+        let path = PathBuf::from(&path_s);
+        session
+            .save_adapter(&path)
+            .await
+            .map_err(|e| -> BoxError { format!("save_adapter: {e:?}").into() })?;
+        let bytes = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        eprintln!("[save] adapter written to {} ({} bytes)", path.display(), bytes);
+    }
+
     if !assert_drop {
         // Smoke test with fewer steps — don't enforce the 90% drop
         // assertion. We only report.

@@ -244,6 +244,11 @@ impl LoraState {
         self.layers.get(key)
     }
 
+    /// Borrow the GPU context — used by `load_adapter_into_state` to
+    /// upload tensor bytes into the existing A/B buffers without
+    /// requiring the caller to pass `ctx` separately.
+    pub fn ctx(&self) -> &WgpuCtx { &self.ctx }
+
     /// Iterate over all `(key, layer)` pairs in deterministic
     /// (`BTreeMap`) order.
     pub fn iter(&self) -> impl Iterator<Item = (&LoraKey, &LoraLayer)> {

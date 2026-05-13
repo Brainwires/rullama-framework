@@ -36,4 +36,4 @@ pub mod lora;
 pub mod scratch;
 /// `TrainingSession` — drives one training step end-to-end.
 pub mod session;
-pub use session::TrainingSession;
+pub use session::{load_adapter_into_state, TrainingSession};

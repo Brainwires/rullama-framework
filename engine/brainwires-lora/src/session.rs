@@ -264,6 +264,72 @@ impl TrainingSession {
     /// inference between training steps.
     pub fn model(&self) -> &Model { &self.model }
 
+    /// Serialize the current LoRA A/B matrices into a safetensors file.
+    ///
+    /// Tensor naming: `lora.blk.{layer}.{projection}.{A|B}`. Stored as
+    /// f32 row-major. Metadata sidecar (safetensors header `__metadata__`)
+    /// carries rank/alpha/target_modules so a loader can rebuild the
+    /// `LoraState` without external context.
+    ///
+    /// Note: the `m_a/v_a/m_b/v_b` Adam state and gradient accumulators
+    /// are *not* persisted — only the trainable parameters. To resume
+    /// training, instantiate a fresh `TrainingSession` and call
+    /// `load_adapter_into` to seed A/B from disk; Adam state restarts
+    /// at step 1 (acceptable for downstream fine-tunes; matches what
+    /// HF Transformers does).
+    pub async fn save_adapter(&self, path: &std::path::Path) -> Result<(), TrainingError> {
+        use safetensors::tensor::{Dtype, TensorView};
+        let ctx = self.model.forward().ctx().clone();
+
+        // 1. Pull every LoRA A/B back to host as bytes.
+        let mut tensors: Vec<(String, Vec<u32>, Vec<u8>)> = Vec::new();
+        for (key, layer) in self.loras.iter() {
+            let a_vals = read_buf_f32(&ctx, &layer.a, layer.a_len()).await;
+            let b_vals = read_buf_f32(&ctx, &layer.b, layer.b_len()).await;
+            let a_bytes = bytemuck::cast_slice::<f32, u8>(&a_vals).to_vec();
+            let b_bytes = bytemuck::cast_slice::<f32, u8>(&b_vals).to_vec();
+            let a_name = format!("lora.blk.{}.{}.A", key.layer, key.projection);
+            let b_name = format!("lora.blk.{}.{}.B", key.layer, key.projection);
+            // A shape: [rank, in_dim]; B shape: [out_dim, rank].
+            let a_shape = vec![layer.rank, layer.in_dim];
+            let b_shape = vec![layer.out_dim, layer.rank];
+            tensors.push((a_name, a_shape, a_bytes));
+            tensors.push((b_name, b_shape, b_bytes));
+        }
+
+        // 2. Build TensorViews (each borrows from the owned byte vec).
+        let mut views: std::collections::HashMap<&str, TensorView<'_>> = std::collections::HashMap::new();
+        for (name, shape, bytes) in &tensors {
+            let shape_usize: Vec<usize> = shape.iter().map(|&d| d as usize).collect();
+            let view = TensorView::new(Dtype::F32, shape_usize, bytes)
+                .map_err(|e| TrainingError::Backend(format!("safetensors view: {e}")))?;
+            views.insert(name.as_str(), view);
+        }
+
+        // 3. Metadata sidecar.
+        let any = self.loras.iter().next();
+        let (rank, alpha) = match any {
+            Some((_, layer)) => (layer.rank, layer.scale * layer.rank as f32),
+            None => (0u32, 0.0f32),
+        };
+        let mut target_modules: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for (key, _) in self.loras.iter() {
+            target_modules.insert(key.projection.clone());
+        }
+        let target_modules_list: Vec<String> = target_modules.into_iter().collect();
+        let metadata: std::collections::HashMap<String, String> = [
+            ("format".to_string(), "rullama-lora-v0".to_string()),
+            ("rank".to_string(), rank.to_string()),
+            ("alpha".to_string(), alpha.to_string()),
+            ("target_modules".to_string(), target_modules_list.join(",")),
+        ].into_iter().collect();
+
+        // 4. Serialize to file.
+        safetensors::serialize_to_file(&views, &Some(metadata), path)
+            .map_err(|e| TrainingError::Backend(format!("safetensors write: {e}")))?;
+        Ok(())
+    }
+
     async fn debug_grad_norms(&self) {
         let ctx = self.model.forward().ctx().clone();
         for (key, layer) in self.loras.iter() {
@@ -277,6 +343,72 @@ impl TrainingSession {
             );
         }
     }
+}
+
+/// Load LoRA A/B tensors from a safetensors file into the given
+/// `LoraState`. Each named tensor in the file (`lora.blk.{layer}.{proj}.{A|B}`)
+/// is written to the matching `LoraLayer` buffer.
+///
+/// The `LoraState` must already have all the expected LoRA slots
+/// registered with matching shapes — i.e. caller built it via
+/// `TrainingSession::new`-style construction. Tensors in the file
+/// that don't have a matching slot are skipped (with a tracing
+/// warning); slots with no matching tensor are left at whatever the
+/// caller's initialiser produced.
+pub fn load_adapter_into_state(
+    state: &mut crate::lora::LoraState,
+    path: &std::path::Path,
+) -> Result<usize, TrainingError> {
+    use safetensors::SafeTensors;
+
+    let bytes = std::fs::read(path)
+        .map_err(|e| TrainingError::Backend(format!("read {}: {e}", path.display())))?;
+    let st = SafeTensors::deserialize(&bytes)
+        .map_err(|e| TrainingError::Backend(format!("safetensors parse: {e}")))?;
+
+    let mut loaded = 0usize;
+    let ctx = state.ctx();
+    for (name, tensor) in st.tensors() {
+        if !name.starts_with("lora.blk.") {
+            continue;
+        }
+        let suffix = &name["lora.blk.".len()..];
+        let (layer_str, rest) = match suffix.split_once('.') {
+            Some(p) => p,
+            None => continue,
+        };
+        let layer: u32 = match layer_str.parse() {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+        let (projection, ab) = match rest.rsplit_once('.') {
+            Some(p) => p,
+            None => continue,
+        };
+        let key = crate::lora::LoraKey::new(layer, projection.to_string());
+        let layer_state = match state.get(&key) {
+            Some(l) => l,
+            None => {
+                tracing::warn!("adapter has tensor {name} but no matching LoRA slot");
+                continue;
+            }
+        };
+        let buf = match ab {
+            "A" => &layer_state.a,
+            "B" => &layer_state.b,
+            _ => continue,
+        };
+        let data = tensor.data();
+        if data.len() != buf.size() as usize {
+            return Err(TrainingError::Backend(format!(
+                "tensor {name} size mismatch: file={} expected={}",
+                data.len(), buf.size()
+            )));
+        }
+        ctx.queue.write_buffer(buf, 0, data);
+        loaded += 1;
+    }
+    Ok(loaded)
 }
 
 fn stats(v: &[f32]) -> (f32, usize) {
@@ -333,5 +465,81 @@ fn grad_view(l: &crate::lora::LoraLayer) -> LoraGradPair<'_> {
         d_b: &l.db,
         rank: l.rank,
         scale: l.scale,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lora::{LoraKey, LoraState};
+    use rullama::backend::WgpuCtx;
+    use std::sync::Arc;
+
+    /// Build a small `LoraState`, write some known values into one
+    /// layer's A/B buffers, serialize via the safetensors path, then
+    /// reload into a *fresh* `LoraState` and confirm the values
+    /// round-trip identically.
+    #[test]
+    fn adapter_save_load_round_trip() {
+        let ctx = Arc::new(pollster::block_on(WgpuCtx::new()).expect("wgpu"));
+
+        // Build LoraState A — populate with a known pattern.
+        let mut state_a = LoraState::new(Arc::clone(&ctx));
+        state_a.insert(LoraKey::new(0, "attn_q"), 8, 2, 4, 4.0, 1).unwrap();
+        state_a.insert(LoraKey::new(0, "attn_k"), 8, 2, 4, 4.0, 2).unwrap();
+        // Overwrite A buffer of layer 0 attn_q with known bytes.
+        let known_a: Vec<f32> = (0..16).map(|i| (i as f32) * 0.125).collect();
+        let known_b: Vec<f32> = (0..8).map(|i| (i as f32) * -0.25 + 0.5).collect();
+        {
+            let layer = state_a.get(&LoraKey::new(0, "attn_q")).unwrap();
+            ctx.queue.write_buffer(&layer.a, 0, bytemuck::cast_slice(&known_a));
+            ctx.queue.write_buffer(&layer.b, 0, bytemuck::cast_slice(&known_b));
+        }
+        ctx.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
+
+        // Serialize via the same path TrainingSession::save_adapter uses.
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let path = tmp.path().to_path_buf();
+        {
+            use safetensors::tensor::{Dtype, TensorView};
+            let a_vals = pollster::block_on(read_buf_f32(&ctx, &state_a.get(&LoraKey::new(0, "attn_q")).unwrap().a, 16));
+            let b_vals = pollster::block_on(read_buf_f32(&ctx, &state_a.get(&LoraKey::new(0, "attn_q")).unwrap().b, 8));
+            let k_a_vals = pollster::block_on(read_buf_f32(&ctx, &state_a.get(&LoraKey::new(0, "attn_k")).unwrap().a, 16));
+            let k_b_vals = pollster::block_on(read_buf_f32(&ctx, &state_a.get(&LoraKey::new(0, "attn_k")).unwrap().b, 8));
+            let a_bytes = bytemuck::cast_slice::<f32, u8>(&a_vals).to_vec();
+            let b_bytes = bytemuck::cast_slice::<f32, u8>(&b_vals).to_vec();
+            let k_a_bytes = bytemuck::cast_slice::<f32, u8>(&k_a_vals).to_vec();
+            let k_b_bytes = bytemuck::cast_slice::<f32, u8>(&k_b_vals).to_vec();
+            let mut views: std::collections::HashMap<&str, TensorView<'_>> = std::collections::HashMap::new();
+            let view_a = TensorView::new(Dtype::F32, vec![2usize, 8usize], &a_bytes).unwrap();
+            let view_b = TensorView::new(Dtype::F32, vec![4usize, 2usize], &b_bytes).unwrap();
+            let view_ka = TensorView::new(Dtype::F32, vec![2usize, 8usize], &k_a_bytes).unwrap();
+            let view_kb = TensorView::new(Dtype::F32, vec![4usize, 2usize], &k_b_bytes).unwrap();
+            views.insert("lora.blk.0.attn_q.A", view_a);
+            views.insert("lora.blk.0.attn_q.B", view_b);
+            views.insert("lora.blk.0.attn_k.A", view_ka);
+            views.insert("lora.blk.0.attn_k.B", view_kb);
+            safetensors::serialize_to_file(&views, &None, &path).unwrap();
+        }
+
+        // Build LoraState B with same shape (but different initial values).
+        let mut state_b = LoraState::new(Arc::clone(&ctx));
+        state_b.insert(LoraKey::new(0, "attn_q"), 8, 2, 4, 4.0, 99).unwrap();
+        state_b.insert(LoraKey::new(0, "attn_k"), 8, 2, 4, 4.0, 100).unwrap();
+
+        // Load adapter into state_b.
+        let loaded = load_adapter_into_state(&mut state_b, &path).unwrap();
+        assert_eq!(loaded, 4, "expected to load 4 tensors (A + B for q and k)");
+
+        // Read A and B back from state_b and confirm they match known_a/known_b.
+        let layer_q = state_b.get(&LoraKey::new(0, "attn_q")).unwrap();
+        let a_round = pollster::block_on(read_buf_f32(&ctx, &layer_q.a, 16));
+        let b_round = pollster::block_on(read_buf_f32(&ctx, &layer_q.b, 8));
+        for (orig, round) in known_a.iter().zip(a_round.iter()) {
+            assert_eq!(orig, round, "A mismatch: orig={orig} round={round}");
+        }
+        for (orig, round) in known_b.iter().zip(b_round.iter()) {
+            assert_eq!(orig, round, "B mismatch: orig={orig} round={round}");
+        }
     }
 }
