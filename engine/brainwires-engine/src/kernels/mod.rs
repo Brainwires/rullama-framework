@@ -57,3 +57,6 @@ pub const RMSNORM_PER_ROW: &str = include_str!("wgsl/rmsnorm_per_row.wgsl");
 pub const ROPE_NEOX: &str = include_str!("wgsl/rope_neox.wgsl");
 pub const SCALE: &str = include_str!("wgsl/scale.wgsl");
 pub const SOFTCAP: &str = include_str!("wgsl/softcap.wgsl");
+
+// --- Training kernels (M0 backward pass) ---
+pub const CROSS_ENTROPY_BACKWARD: &str = include_str!("wgsl/cross_entropy_backward.wgsl");

@@ -151,6 +151,54 @@ pub fn scale(a: &mut [f32], s: f32) {
     }
 }
 
+/// Sentinel target id used by the dataset loader to mask positions on which
+/// no loss should fire (prompt tokens, the final position with no next
+/// token). Matches `u32::MAX`.
+pub const TARGET_MASK: u32 = u32::MAX;
+
+/// Cross-entropy forward + backward over a single logit vector.
+///
+/// Writes `softmax(logits) - one_hot(target)` into `d_logits` and returns the
+/// scalar loss `-log softmax(target)`. When `target == TARGET_MASK` or
+/// `target >= logits.len()`, the gradient is zeroed and the loss is `0.0` —
+/// matches the masking semantics of the WGSL kernel.
+pub fn cross_entropy_backward(
+    logits: &[f32],
+    target: u32,
+    d_logits: &mut [f32],
+) -> f32 {
+    debug_assert_eq!(logits.len(), d_logits.len());
+    let n = logits.len();
+    let masked = target == TARGET_MASK || (target as usize) >= n;
+    if masked {
+        for g in d_logits.iter_mut() {
+            *g = 0.0;
+        }
+        return 0.0;
+    }
+
+    let mut max_v = f32::NEG_INFINITY;
+    for &x in logits {
+        if x > max_v {
+            max_v = x;
+        }
+    }
+
+    let mut sum_exp = 0.0f64;
+    for &x in logits {
+        sum_exp += ((x - max_v) as f64).exp();
+    }
+    let inv_sum = 1.0 / sum_exp;
+
+    let target = target as usize;
+    for (i, (&x, g)) in logits.iter().zip(d_logits.iter_mut()).enumerate() {
+        let soft = (((x - max_v) as f64).exp() * inv_sum) as f32;
+        *g = if i == target { soft - 1.0 } else { soft };
+    }
+
+    (-(logits[target] - max_v) as f64 + sum_exp.ln()) as f32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,5 +259,59 @@ mod tests {
         let copy = x.clone();
         rope_neox(&mut x, 4, 1, 0, 4, 10000.0, None);
         for i in 0..4 { assert!((x[i] - copy[i]).abs() < 1e-6); }
+    }
+
+    #[test]
+    fn cross_entropy_uniform_logits_match_log_n() {
+        // Uniform logits -> softmax = 1/n, loss = ln(n) regardless of target.
+        let n = 8;
+        let logits = vec![0.5f32; n];
+        let mut grad = vec![0.0f32; n];
+        let loss = cross_entropy_backward(&logits, 3, &mut grad);
+        let expected_loss = (n as f32).ln();
+        assert!((loss - expected_loss).abs() < 1e-5, "loss {loss} != {expected_loss}");
+        // dL/d_logits = softmax - one_hot; sums to 0.
+        let s: f32 = grad.iter().sum();
+        assert!(s.abs() < 1e-5, "sum of d_logits = {s}");
+        // Target entry: softmax - 1 = 1/n - 1 ≈ -0.875.
+        let expected_target = 1.0 / (n as f32) - 1.0;
+        assert!((grad[3] - expected_target).abs() < 1e-5);
+        // Non-target entry: softmax = 1/n.
+        let expected_other = 1.0 / (n as f32);
+        assert!((grad[0] - expected_other).abs() < 1e-5);
+    }
+
+    #[test]
+    fn cross_entropy_masked_target_zero_grad_zero_loss() {
+        let logits = vec![1.0, 2.0, 3.0, 4.0];
+        let mut grad = vec![0.0; 4];
+        let loss = cross_entropy_backward(&logits, TARGET_MASK, &mut grad);
+        assert_eq!(loss, 0.0);
+        for g in &grad { assert_eq!(*g, 0.0); }
+    }
+
+    #[test]
+    fn cross_entropy_out_of_range_target_is_masked() {
+        let logits = vec![1.0, 2.0, 3.0];
+        let mut grad = vec![0.0; 3];
+        let loss = cross_entropy_backward(&logits, 99, &mut grad);
+        assert_eq!(loss, 0.0);
+        for g in &grad { assert_eq!(*g, 0.0); }
+    }
+
+    #[test]
+    fn cross_entropy_argmax_target_gives_small_loss() {
+        // Strong logit at index 2: softmax(2) close to 1, loss close to 0.
+        let logits = vec![0.0f32, 0.0, 10.0, 0.0];
+        let mut grad = vec![0.0f32; 4];
+        let loss = cross_entropy_backward(&logits, 2, &mut grad);
+        assert!(loss < 0.01, "loss {loss} should be near 0");
+        // d_logits[2] = softmax[2] - 1 close to 0; others close to 0.
+        assert!(grad[2].abs() < 0.01);
+        for (i, g) in grad.iter().enumerate() {
+            if i != 2 {
+                assert!(g.abs() < 0.01, "off-target grad {g} at {i}");
+            }
+        }
     }
 }

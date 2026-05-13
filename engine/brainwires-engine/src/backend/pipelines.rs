@@ -90,6 +90,13 @@ pub struct Pipelines {
     pub bf16_matmul_batched_tiled_v2: wgpu::ComputePipeline,
     pub scale_per_inner_dim: wgpu::ComputePipeline,
     pub add_bias_batched: wgpu::ComputePipeline,
+
+    // --- Training kernels (M0 backward pass) ---
+    /// Cross-entropy forward + backward over a single logit vector. Produces
+    /// `d_logits = softmax(logits) - one_hot(target)` plus the scalar loss.
+    /// Safe to call on masked positions (`target == u32::MAX`): emits zero
+    /// gradient and zero loss.
+    pub cross_entropy_backward: wgpu::ComputePipeline,
 }
 
 impl Pipelines {
@@ -176,6 +183,11 @@ impl Pipelines {
             q6_k_matmul:       build(device, "q6_k_matmul",       kernels::Q6_K_DEQUANT_MATMUL),
             rmsnorm:           build(device, "rmsnorm",           kernels::RMSNORM),
             softcap:           build(device, "softcap",           kernels::SOFTCAP),
+            cross_entropy_backward: build(
+                device,
+                "cross_entropy_backward",
+                kernels::CROSS_ENTROPY_BACKWARD,
+            ),
             geglu:             build(device, "geglu",             kernels::GEGLU),
             rope_neox:         build(device, "rope_neox",         kernels::ROPE_NEOX),
             attention:         build(device, "attention",         kernels::ATTENTION),

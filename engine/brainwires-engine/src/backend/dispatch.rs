@@ -28,6 +28,10 @@ struct CapParams { n: u32, cap: f32, _p0: u32, _p1: u32 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct XEntParams { vocab_size: u32, target: u32, _p0: u32, _p1: u32 }
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct GegluParams { n: u32, _p0: u32, _p1: u32, _p2: u32 }
 
 #[repr(C)]
@@ -367,6 +371,43 @@ pub async fn rmsnorm_cached(ctx: &WgpuCtx, p: &Pipelines, x: &[f32], weight: Opt
     enc.copy_buffer_to_buffer(&y_buf, 0, &read_buf, 0, n_bytes);
     queue.submit(Some(enc.finish()));
     read_back_f32(device, &read_buf).await
+}
+
+// ---------- cross-entropy backward (parity-test convenience) ----------
+
+/// Async helper: build buffers, dispatch `cross_entropy_backward`, read
+/// the gradient and loss back to the host. Useful for parity tests and
+/// occasional host-side instrumentation. Hot training paths should use
+/// `cross_entropy_backward_chained` with pre-allocated buffers and avoid
+/// the per-call readback.
+pub async fn cross_entropy_backward_cached(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    logits: &[f32],
+    target: u32,
+) -> Result<(Vec<f32>, f32)> {
+    let n = logits.len();
+    if n == 0 {
+        return Ok((Vec::new(), 0.0));
+    }
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    let logits_buf = write_storage_f32(device, queue, "xent.logits", logits);
+    let n_bytes = (n * 4) as u64;
+    let (d_logits_buf, d_logits_read) = make_output_pair(device, "xent.dlog", n_bytes);
+    let (loss_buf, loss_read) = make_output_pair(device, "xent.loss", 4);
+    let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("xent.enc"),
+    });
+    cross_entropy_backward_chained(
+        ctx, p, &mut enc, &logits_buf, &d_logits_buf, &loss_buf, n, target,
+    );
+    enc.copy_buffer_to_buffer(&d_logits_buf, 0, &d_logits_read, 0, n_bytes);
+    enc.copy_buffer_to_buffer(&loss_buf, 0, &loss_read, 0, 4);
+    queue.submit(Some(enc.finish()));
+    let d_logits = read_back_f32(device, &d_logits_read).await?;
+    let loss_vec = read_back_f32(device, &loss_read).await?;
+    Ok((d_logits, loss_vec[0]))
 }
 
 // ---------- softcap ----------
@@ -2025,6 +2066,41 @@ pub fn rmsnorm_per_row_chained(
     cp.dispatch_workgroups(n_rows as u32, 1, 1);
 }
 
+/// Cross-entropy forward + backward over a single logit vector.
+///
+/// Writes `d_logits = softmax(logits) - one_hot(target)` and the scalar
+/// loss into the caller's buffers. `target = u32::MAX` or any value ≥
+/// `vocab_size` masks the position: gradient and loss are both zero.
+///
+/// One workgroup of 256 threads sweeps the vocab in three passes
+/// (max-reduce, sum-exp-reduce, write). Dispatch is `(1, 1, 1)`.
+pub fn cross_entropy_backward_chained(
+    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
+    logits: &wgpu::Buffer, d_logits: &wgpu::Buffer, loss_out: &wgpu::Buffer,
+    vocab_size: usize, target: u32,
+) {
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    let params = XEntParams { vocab_size: vocab_size as u32, target, _p0: 0, _p1: 0 };
+    let p_buf = write_uniform(device, queue, "xent_bwd.params", &params);
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("xent_bwd.bg"),
+        layout: &p.cross_entropy_backward.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: p_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: logits.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: d_logits.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: loss_out.as_entire_binding() },
+        ],
+    });
+    let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("xent_bwd.pass"), timestamp_writes: None,
+    });
+    cp.set_pipeline(&p.cross_entropy_backward);
+    cp.set_bind_group(0, &bg, &[]);
+    cp.dispatch_workgroups(1, 1, 1);
+}
+
 /// Chained softcap: in-place would be ideal, but the WGSL has separate `x`, `y`
 /// bindings — so caller passes both. Output buffer can equal input on the host
 /// side (alias the same wgpu::Buffer through both bindings).
@@ -2255,4 +2331,69 @@ pub async fn attention_cached(
     enc.copy_buffer_to_buffer(&out_buf, 0, &read_buf, 0, out_bytes);
     queue.submit(Some(enc.finish()));
     read_back_f32(device, &read_buf).await
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// GPU vs CPU parity for `cross_entropy_backward` on a vocab vector with a
+    /// real (non-masked) target. Verifies both the gradient and the scalar
+    /// loss agree within f32 noise.
+    #[test]
+    fn cross_entropy_backward_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+
+        // Deterministic logits — keep magnitude modest so the f32 softmax
+        // sum stays well-conditioned across CPU and GPU.
+        let vocab = 4096usize;
+        let mut state: u32 = 0x1234_5678;
+        let mut next = || {
+            state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+            ((state >> 8) as f32 / 16_777_216.0) - 0.5
+        };
+        let logits: Vec<f32> = (0..vocab).map(|_| next() * 4.0).collect();
+        let target: u32 = 137;
+
+        // CPU oracle
+        let mut cpu_grad = vec![0.0f32; vocab];
+        let cpu_loss =
+            crate::reference::ops::cross_entropy_backward(&logits, target, &mut cpu_grad);
+
+        // GPU
+        let (gpu_grad, gpu_loss) =
+            pollster::block_on(cross_entropy_backward_cached(&ctx, &p, &logits, target))
+                .expect("gpu");
+
+        assert!(
+            (cpu_loss - gpu_loss).abs() < 1e-3,
+            "loss cpu={cpu_loss} gpu={gpu_loss}"
+        );
+        let mut max_diff = 0.0f32;
+        for (c, g) in cpu_grad.iter().zip(gpu_grad.iter()) {
+            let d = (c - g).abs();
+            if d > max_diff {
+                max_diff = d;
+            }
+        }
+        assert!(max_diff < 1e-5, "d_logits max_diff = {max_diff}");
+    }
+
+    /// Masked target (`u32::MAX`) emits zero gradient and zero loss on the
+    /// GPU, matching the CPU oracle's masking behavior.
+    #[test]
+    fn cross_entropy_backward_gpu_masked_target_is_zero() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let logits: Vec<f32> = (0..512).map(|i| (i as f32) * 0.01).collect();
+        let (gpu_grad, gpu_loss) =
+            pollster::block_on(cross_entropy_backward_cached(&ctx, &p, &logits, u32::MAX))
+                .expect("gpu");
+        assert_eq!(gpu_loss, 0.0);
+        for g in &gpu_grad {
+            assert_eq!(*g, 0.0);
+        }
+    }
 }
