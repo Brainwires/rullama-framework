@@ -49,6 +49,10 @@ async fn run() -> Result<(), BoxError> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(DEFAULT_N_STEPS);
     let assert_drop: bool = n_steps >= DEFAULT_N_STEPS / 2;
+    let lr: f64 = env::var("RULLAMA_OVERFIT_LR")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1e-3);
     eprintln!("[load] reading {} …", gguf_path.display());
     let bytes = fs::read(&gguf_path)?;
     let model = Model::load_native(bytes)
@@ -80,10 +84,11 @@ async fn run() -> Result<(), BoxError> {
         ],
     };
     let mut hp = TrainingHyperparams::default();
-    hp.learning_rate = 1e-3;
+    hp.learning_rate = lr;
     hp.weight_decay = 0.0;
     hp.max_seq_len = input_tokens.len().max(32) as usize;
     hp.seed = 0xC0FFEE;
+    eprintln!("[hp] lr = {lr:.3e}, steps = {n_steps}");
     let mut session = TrainingSession::new(model, lora_cfg, hp)
         .map_err(|e| -> BoxError { format!("{e:?}").into() })?;
     eprintln!(

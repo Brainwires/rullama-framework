@@ -230,6 +230,13 @@ impl TrainingSession {
             .await
             .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
 
+        // Debug readback of LoRA gradient norms — set
+        // `RULLAMA_DEBUG_GRADS=1` to print each layer's dA/dB max-abs +
+        // NaN count. Used to localise NaN sources in the backward path.
+        if std::env::var("RULLAMA_DEBUG_GRADS").is_ok() {
+            self.debug_grad_norms().await;
+        }
+
         // Adam over every LoRA's (A, m_a, v_a) and (B, m_b, v_b).
         let adam = AdamConfig { step: self.step_num, ..self.adam_cfg };
         let ctx = self.model.forward().ctx().clone();
@@ -256,6 +263,55 @@ impl TrainingSession {
     /// Immutable handle on the wrapped model — for token encoding /
     /// inference between training steps.
     pub fn model(&self) -> &Model { &self.model }
+
+    async fn debug_grad_norms(&self) {
+        let ctx = self.model.forward().ctx().clone();
+        for (key, layer) in self.loras.iter() {
+            let da_vals = read_buf_f32(&ctx, &layer.da, layer.a_len()).await;
+            let db_vals = read_buf_f32(&ctx, &layer.db, layer.b_len()).await;
+            let (da_max, da_nans) = stats(&da_vals);
+            let (db_max, db_nans) = stats(&db_vals);
+            eprintln!(
+                "[grad] layer={} proj={} dA max={da_max:.3e} nan={da_nans}  dB max={db_max:.3e} nan={db_nans}",
+                key.layer, key.projection
+            );
+        }
+    }
+}
+
+fn stats(v: &[f32]) -> (f32, usize) {
+    let mut max_abs = 0.0f32;
+    let mut nans = 0usize;
+    for &x in v {
+        if x.is_nan() { nans += 1; }
+        else if x.abs() > max_abs { max_abs = x.abs(); }
+    }
+    (max_abs, nans)
+}
+
+async fn read_buf_f32(ctx: &rullama::backend::WgpuCtx, buf: &wgpu::Buffer, n: usize) -> Vec<f32> {
+    let bytes = (n * 4) as u64;
+    let read_buf = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("grad.read"),
+        size: bytes,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut enc = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("grad.read.enc"),
+    });
+    enc.copy_buffer_to_buffer(buf, 0, &read_buf, 0, bytes);
+    ctx.queue.submit(Some(enc.finish()));
+    let slice = read_buf.slice(..);
+    let (tx, rx) = futures_channel::oneshot::channel();
+    slice.map_async(wgpu::MapMode::Read, move |r| { let _ = tx.send(r); });
+    ctx.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).expect("poll");
+    rx.await.unwrap().unwrap();
+    let data = slice.get_mapped_range();
+    let v: Vec<f32> = bytemuck::cast_slice(&data).to_vec();
+    drop(data);
+    read_buf.unmap();
+    v
 }
 
 fn slot_view(l: &crate::lora::LoraLayer) -> LoraSlot<'_> {

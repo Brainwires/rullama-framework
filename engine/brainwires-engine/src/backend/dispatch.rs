@@ -406,6 +406,37 @@ pub async fn matmul_q4_k_backward_input_cached(
     read_back_f32(device, &dx_read).await
 }
 
+// ---------- Q6_K backward w.r.t. input (parity-test convenience) ----------
+
+/// Async helper for parity-testing `matmul_q6_k_backward_input`.
+pub async fn matmul_q6_k_backward_input_cached(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    w_bytes: &[u8],
+    dy: &[f32],
+    k: usize,
+    n: usize,
+) -> Result<Vec<f32>> {
+    if k == 0 || n == 0 {
+        return Ok(vec![0.0; k]);
+    }
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    let w_buf = write_storage(device, queue, "q6k_bwd.w", w_bytes);
+    let dy_buf = write_storage_f32(device, queue, "q6k_bwd.dy", dy);
+    let n_bytes = (k * 4) as u64;
+    let (dx_buf, dx_read) = make_output_pair(device, "q6k_bwd.dx", n_bytes);
+    let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("q6k_bwd.enc"),
+    });
+    matmul_q6_k_backward_input_chained(
+        ctx, p, &mut enc, &w_buf, &dy_buf, &dx_buf, k, n,
+    );
+    enc.copy_buffer_to_buffer(&dx_buf, 0, &dx_read, 0, n_bytes);
+    queue.submit(Some(enc.finish()));
+    read_back_f32(device, &dx_read).await
+}
+
 // ---------- cross-entropy backward (parity-test convenience) ----------
 
 /// Async helper: build buffers, dispatch `cross_entropy_backward`, read
@@ -3041,6 +3072,68 @@ mod tests {
         );
     }
 
+    /// GPU vs CPU parity for `matmul_q6_k_backward_input`. Same approach
+    /// as the Q4_K parity test — synthesize a small Q6_K weight buffer
+    /// from a deterministic byte stream with f16 scale field clamped to
+    /// a small finite value, then compare GPU vs CPU oracle.
+    #[test]
+    fn matmul_q6_k_backward_input_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+
+        let k = 256usize;
+        let n = 16usize;
+        // Q6_K: 210 bytes per 256-element block.
+        let block_bytes = 210usize;
+        let row_bytes = (k / 256) * block_bytes;
+        let total_bytes = n * row_bytes;
+        let mut w_bytes = vec![0u8; total_bytes];
+        let mut state: u32 = 0xCAFEBABE;
+        for b in w_bytes.iter_mut() {
+            state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+            *b = (state >> 16) as u8;
+        }
+        // Clamp the super-block scale `d` (last 2 bytes of each 210-byte
+        // block) so the dequant stays bounded — random f16 bit patterns
+        // can land in NaN/Inf and propagate everywhere.
+        for j in 0..n {
+            for b in 0..(k / 256) {
+                let off = j * row_bytes + b * block_bytes;
+                w_bytes[off + 208] = 0x00;
+                w_bytes[off + 209] = 0x28; // f16(0.03125) — small, positive, finite
+            }
+        }
+
+        let dy: Vec<f32> = (0..n).map(|j| ((j as i32 - 8) as f32) * 0.25).collect();
+
+        let mut cpu_dx = vec![0.0f32; k];
+        crate::reference::ops::matmul_q6_k_backward_input(
+            &w_bytes, &dy, k, n, &mut cpu_dx,
+        );
+        let gpu_dx = pollster::block_on(matmul_q6_k_backward_input_cached(
+            &ctx, &p, &w_bytes, &dy, k, n,
+        ))
+        .expect("gpu");
+
+        let mut max_diff = 0.0f32;
+        let mut max_rel = 0.0f32;
+        for (c, g) in cpu_dx.iter().zip(gpu_dx.iter()) {
+            let d = (c - g).abs();
+            if d > max_diff {
+                max_diff = d;
+            }
+            let denom = c.abs().max(1e-6);
+            let r = d / denom;
+            if r > max_rel {
+                max_rel = r;
+            }
+        }
+        assert!(
+            max_diff < 1e-3 && max_rel < 1e-3,
+            "q6_k_bwd_input max_abs={max_diff} max_rel={max_rel}"
+        );
+    }
+
     /// GPU vs CPU parity for `rmsnorm_backward` with a real weight vector.
     #[test]
     fn rmsnorm_backward_gpu_vs_cpu() {
@@ -3075,6 +3168,73 @@ mod tests {
             if d > max_diff { max_diff = d; }
         }
         assert!(max_diff < 1e-4, "rmsnorm_bwd max_diff = {max_diff}");
+    }
+
+    /// GPU vs CPU parity for `rmsnorm_per_row_backward`.
+    #[test]
+    fn rmsnorm_per_row_backward_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let n_rows = 4usize;
+        let n = 32usize;
+        let total = n_rows * n;
+        let x: Vec<f32> = (0..total).map(|i| ((i as i32 - 30) as f32) * 0.05).collect();
+        let w: Vec<f32> = (0..n).map(|i| (i as f32 * 0.3).sin() * 0.3 + 1.0).collect();
+        let dy: Vec<f32> = (0..total).map(|i| (i as f32 * 0.7).cos() * 0.5).collect();
+        let eps = 1e-6f32;
+
+        let mut cpu_dx = vec![0.0f32; total];
+        crate::reference::ops::rmsnorm_per_row_backward(
+            &x, Some(&w), &dy, eps, n_rows, n, &mut cpu_dx,
+        );
+
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let x_buf  = write_storage_f32(device, queue, "x", &x);
+        let w_buf  = write_storage_f32(device, queue, "w", &w);
+        let dy_buf = write_storage_f32(device, queue, "dy", &dy);
+        let (dx_buf, dx_read) = make_output_pair(device, "dx", (total * 4) as u64);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("rms_pr_bwd.enc"),
+        });
+        rmsnorm_per_row_backward_chained(
+            &ctx, &p, &mut enc, &x_buf, &w_buf, &dy_buf, &dx_buf,
+            n_rows, n, eps, true,
+        );
+        enc.copy_buffer_to_buffer(&dx_buf, 0, &dx_read, 0, (total * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu_dx = pollster::block_on(read_back_f32(device, &dx_read)).expect("readback");
+
+        let mut max_diff = 0.0f32;
+        for (c, g) in cpu_dx.iter().zip(gpu_dx.iter()) {
+            let d = (c - g).abs();
+            if d > max_diff { max_diff = d; }
+        }
+        assert!(max_diff < 1e-4, "rmsnorm_per_row_bwd max_diff = {max_diff}");
+
+        // Unweighted variant.
+        let mut cpu_dx_u = vec![0.0f32; total];
+        crate::reference::ops::rmsnorm_per_row_backward(
+            &x, None, &dy, eps, n_rows, n, &mut cpu_dx_u,
+        );
+        let dummy = make_dummy_storage(device, "dummy");
+        let (dx_u_buf, dx_u_read) = make_output_pair(device, "dx_u", (total * 4) as u64);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("rms_pr_bwd_u.enc"),
+        });
+        rmsnorm_per_row_backward_chained(
+            &ctx, &p, &mut enc, &x_buf, &dummy, &dy_buf, &dx_u_buf,
+            n_rows, n, eps, false,
+        );
+        enc.copy_buffer_to_buffer(&dx_u_buf, 0, &dx_u_read, 0, (total * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu_dx_u = pollster::block_on(read_back_f32(device, &dx_u_read)).expect("readback");
+        let mut max_diff_u = 0.0f32;
+        for (c, g) in cpu_dx_u.iter().zip(gpu_dx_u.iter()) {
+            let d = (c - g).abs();
+            if d > max_diff_u { max_diff_u = d; }
+        }
+        assert!(max_diff_u < 1e-4, "rmsnorm_per_row_bwd unweighted max_diff = {max_diff_u}");
     }
 
     /// GPU vs CPU parity for `geglu_backward`.
