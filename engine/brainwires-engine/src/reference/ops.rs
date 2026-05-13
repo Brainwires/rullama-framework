@@ -156,6 +156,114 @@ pub fn scale(a: &mut [f32], s: f32) {
 /// token). Matches `u32::MAX`.
 pub const TARGET_MASK: u32 = u32::MAX;
 
+/// RMSNorm backward w.r.t. the input.
+///
+/// Forward:  `y = (x / r) * w`            where `r = sqrt(mean(x²) + eps)`
+/// Backward: `dx[j] = w[j]·dy[j]/r - x[j]·s/(n·r³)`,
+///           `s = Σ_i dy[i]·w[i]·x[i]`
+///
+/// Weight is frozen (LoRA convention); no `dw` is produced.
+pub fn rmsnorm_backward(
+    x: &[f32],
+    w: Option<&[f32]>,
+    dy: &[f32],
+    eps: f32,
+    dx: &mut [f32],
+) {
+    let n = x.len();
+    assert_eq!(dy.len(), n);
+    assert_eq!(dx.len(), n);
+    if let Some(w) = w {
+        assert_eq!(w.len(), n);
+    }
+
+    let mut sumsq = 0f64;
+    for &v in x {
+        sumsq += (v as f64) * (v as f64);
+    }
+    let nf = n as f64;
+    let inv_r = 1.0 / ((sumsq / nf + eps as f64).sqrt());
+
+    let mut s = 0f64;
+    for i in 0..n {
+        let wi = w.map_or(1.0, |ws| ws[i] as f64);
+        s += (dy[i] as f64) * wi * (x[i] as f64);
+    }
+    let coef = s * inv_r * inv_r * inv_r / nf;
+
+    for j in 0..n {
+        let wj = w.map_or(1.0, |ws| ws[j] as f64);
+        dx[j] = (wj * dy[j] as f64 * inv_r - x[j] as f64 * coef) as f32;
+    }
+}
+
+/// GeGLU backward — produces `d_gate` and `d_up` given `dy`, `gate`, `up`.
+///
+/// `d_gate[i] = dy[i] · gelu'(gate[i]) · up[i]`,
+/// `d_up[i]   = dy[i] · gelu(gate[i])`.
+pub fn geglu_backward(
+    gate: &[f32],
+    up: &[f32],
+    dy: &[f32],
+    d_gate: &mut [f32],
+    d_up: &mut [f32],
+) {
+    let n = gate.len();
+    assert_eq!(up.len(), n);
+    assert_eq!(dy.len(), n);
+    assert_eq!(d_gate.len(), n);
+    assert_eq!(d_up.len(), n);
+    let sqrt_half: f32 = std::f32::consts::FRAC_1_SQRT_2;
+    let sqrt_2_over_pi: f32 = (2.0 / std::f32::consts::PI).sqrt();
+    for i in 0..n {
+        let g = gate[i];
+        let phi = 1.0 + erf_approx(g * sqrt_half);
+        let dphi = sqrt_2_over_pi * (-0.5 * g * g).exp();
+        let gelu = 0.5 * g * phi;
+        let gelu_prime = 0.5 * phi + 0.5 * g * dphi;
+        d_gate[i] = dy[i] * gelu_prime * up[i];
+        d_up[i] = dy[i] * gelu;
+    }
+}
+
+/// NeoX RoPE backward — inverse in-place rotation.
+///
+/// Pass the same `pos`, `base`, and `freq_factors` as the forward and the
+/// rotation undoes itself. `dx` is rotated in place; on return it holds
+/// `dx_pre_rope` from the upstream `dx_post_rope`.
+pub fn rope_neox_backward(
+    dx: &mut [f32],
+    head_dim: usize,
+    n_heads: usize,
+    pos: usize,
+    rope_dims: usize,
+    base: f32,
+    freq_factors: Option<&[f32]>,
+) {
+    debug_assert!(rope_dims <= head_dim);
+    debug_assert!(rope_dims % 2 == 0);
+    debug_assert_eq!(dx.len(), head_dim * n_heads);
+    let half = rope_dims / 2;
+    for h in 0..n_heads {
+        let base_off = h * head_dim;
+        for i in 0..half {
+            let theta = (pos as f32) * base.powf(-(2.0 * i as f32) / rope_dims as f32);
+            let theta = if let Some(f) = freq_factors {
+                theta / f[i]
+            } else {
+                theta
+            };
+            let c = theta.cos();
+            let s = theta.sin();
+            let a = dx[base_off + i];
+            let b = dx[base_off + i + half];
+            // Inverse rotation: cos symmetric, sin sign-flipped.
+            dx[base_off + i]        =  a * c + b * s;
+            dx[base_off + i + half] = -a * s + b * c;
+        }
+    }
+}
+
 /// Backward of `y = matmul_q4_k(W, x)` w.r.t. the input vector `x`.
 ///
 /// Computes `dx[i] = Σ_j dy[j] * dequant(W)[j, i]` where the dequanted
@@ -334,6 +442,137 @@ mod tests {
         let loss = cross_entropy_backward(&logits, 99, &mut grad);
         assert_eq!(loss, 0.0);
         for g in &grad { assert_eq!(*g, 0.0); }
+    }
+
+    /// Compare analytical `rmsnorm_backward` against a finite-difference
+    /// gradient of `L(x) = Σ dy·rmsnorm(x)`.
+    #[test]
+    fn rmsnorm_backward_matches_finite_difference() {
+        let n = 12;
+        let x: Vec<f32> = (1..=n).map(|i| i as f32 * 0.1 - 0.5).collect();
+        let w: Vec<f32> = (1..=n)
+            .map(|i| (i as f32 * 0.7).sin() * 0.4 + 1.0)
+            .collect();
+        let dy: Vec<f32> = (1..=n)
+            .map(|i| (i as f32 * 1.3).cos() * 0.5)
+            .collect();
+        let eps = 1e-6f32;
+
+        let mut dx = vec![0.0; n];
+        rmsnorm_backward(&x, Some(&w), &dy, eps, &mut dx);
+
+        let mut y = vec![0.0; n];
+        let h = 5e-4f32;
+        for i in 0..n {
+            let mut xp = x.clone();
+            xp[i] += h;
+            rmsnorm(&xp, Some(&w), eps, &mut y);
+            let lp: f32 = y.iter().zip(dy.iter()).map(|(a, b)| a * b).sum();
+            let mut xm = x.clone();
+            xm[i] -= h;
+            rmsnorm(&xm, Some(&w), eps, &mut y);
+            let lm: f32 = y.iter().zip(dy.iter()).map(|(a, b)| a * b).sum();
+            let num = (lp - lm) / (2.0 * h);
+            let denom = dx[i].abs().max(1e-3);
+            assert!(
+                (dx[i] - num).abs() / denom < 5e-3,
+                "i={i} analytic={a} numeric={num}",
+                a = dx[i],
+            );
+        }
+    }
+
+    /// Same finite-difference check for RMSNorm with `w = None`.
+    #[test]
+    fn rmsnorm_backward_no_weight_matches_finite_difference() {
+        let n = 8;
+        let x: Vec<f32> = (1..=n).map(|i| (i as f32) * 0.2).collect();
+        let dy: Vec<f32> = (0..n).map(|i| (i as f32 * 0.5).sin()).collect();
+        let eps = 1e-6f32;
+        let mut dx = vec![0.0; n];
+        rmsnorm_backward(&x, None, &dy, eps, &mut dx);
+        let mut y = vec![0.0; n];
+        let h = 5e-4f32;
+        for i in 0..n {
+            let mut xp = x.clone();
+            xp[i] += h;
+            rmsnorm(&xp, None, eps, &mut y);
+            let lp: f32 = y.iter().zip(dy.iter()).map(|(a, b)| a * b).sum();
+            let mut xm = x.clone();
+            xm[i] -= h;
+            rmsnorm(&xm, None, eps, &mut y);
+            let lm: f32 = y.iter().zip(dy.iter()).map(|(a, b)| a * b).sum();
+            let num = (lp - lm) / (2.0 * h);
+            let denom = dx[i].abs().max(1e-3);
+            assert!((dx[i] - num).abs() / denom < 5e-3);
+        }
+    }
+
+    /// GeGLU backward finite-difference check on both inputs.
+    #[test]
+    fn geglu_backward_matches_finite_difference() {
+        let n = 6;
+        let gate: Vec<f32> = (0..n).map(|i| (i as f32 - 2.0) * 0.4).collect();
+        let up: Vec<f32> = (0..n).map(|i| (i as f32) * 0.3 + 0.1).collect();
+        let dy: Vec<f32> = (0..n).map(|i| (i as f32 * 0.9).sin()).collect();
+
+        let mut d_gate = vec![0.0; n];
+        let mut d_up = vec![0.0; n];
+        geglu_backward(&gate, &up, &dy, &mut d_gate, &mut d_up);
+
+        let mut y = vec![0.0; n];
+        let h = 5e-4f32;
+        for i in 0..n {
+            // Perturb gate[i]
+            let mut gp = gate.clone();
+            gp[i] += h;
+            geglu_split(&gp, &up, &mut y);
+            let lp: f32 = y.iter().zip(dy.iter()).map(|(a, b)| a * b).sum();
+            let mut gm = gate.clone();
+            gm[i] -= h;
+            geglu_split(&gm, &up, &mut y);
+            let lm: f32 = y.iter().zip(dy.iter()).map(|(a, b)| a * b).sum();
+            let num_g = (lp - lm) / (2.0 * h);
+            assert!(
+                (d_gate[i] - num_g).abs() < 1e-3,
+                "gate i={i} analytic={a} numeric={num_g}",
+                a = d_gate[i],
+            );
+
+            // Perturb up[i]
+            let mut upp = up.clone();
+            upp[i] += h;
+            geglu_split(&gate, &upp, &mut y);
+            let lp: f32 = y.iter().zip(dy.iter()).map(|(a, b)| a * b).sum();
+            let mut upm = up.clone();
+            upm[i] -= h;
+            geglu_split(&gate, &upm, &mut y);
+            let lm: f32 = y.iter().zip(dy.iter()).map(|(a, b)| a * b).sum();
+            let num_u = (lp - lm) / (2.0 * h);
+            assert!(
+                (d_up[i] - num_u).abs() < 1e-3,
+                "up i={i} analytic={a} numeric={num_u}",
+                a = d_up[i],
+            );
+        }
+    }
+
+    /// rope_neox followed by rope_neox_backward at the same `pos` should
+    /// restore the original input.
+    #[test]
+    fn rope_neox_forward_then_backward_is_identity() {
+        let head_dim = 8;
+        let n_heads = 2;
+        let rope_dims = 8;
+        let pos = 7;
+        let base = 10_000.0f32;
+        let mut x: Vec<f32> = (0..head_dim * n_heads).map(|i| (i as f32) * 0.13 - 1.0).collect();
+        let orig = x.clone();
+        rope_neox(&mut x, head_dim, n_heads, pos, rope_dims, base, None);
+        rope_neox_backward(&mut x, head_dim, n_heads, pos, rope_dims, base, None);
+        for (a, b) in x.iter().zip(orig.iter()) {
+            assert!((a - b).abs() < 1e-5, "rope roundtrip drift {a} != {b}");
+        }
     }
 
     #[test]

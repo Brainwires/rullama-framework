@@ -101,6 +101,12 @@ pub struct Pipelines {
     /// Computes `dx[i] = Σ_j dy[j] * dequant(W)[j, i]`. The weight matrix
     /// stays in Q4_K (frozen by LoRA convention) — no weight gradient.
     pub matmul_q4_k_backward_input: wgpu::ComputePipeline,
+    /// RMSNorm backward w.r.t. the input. Weight `w` is frozen — no `dw`.
+    pub rmsnorm_backward: wgpu::ComputePipeline,
+    /// GeGLU backward — `d_gate` and `d_up` from `dy`, `gate`, `up`.
+    pub geglu_backward: wgpu::ComputePipeline,
+    /// NeoX RoPE backward — inverse in-place rotation of `dx`.
+    pub rope_neox_backward: wgpu::ComputePipeline,
 }
 
 impl Pipelines {
@@ -197,6 +203,9 @@ impl Pipelines {
                 "matmul_q4_k_backward_input",
                 kernels::MATMUL_Q4_K_BACKWARD_INPUT,
             ),
+            rmsnorm_backward:   build(device, "rmsnorm_backward",   kernels::RMSNORM_BACKWARD),
+            geglu_backward:     build(device, "geglu_backward",     kernels::GEGLU_BACKWARD),
+            rope_neox_backward: build(device, "rope_neox_backward", kernels::ROPE_NEOX_BACKWARD),
             geglu:             build(device, "geglu",             kernels::GEGLU),
             rope_neox:         build(device, "rope_neox",         kernels::ROPE_NEOX),
             attention:         build(device, "attention",         kernels::ATTENTION),

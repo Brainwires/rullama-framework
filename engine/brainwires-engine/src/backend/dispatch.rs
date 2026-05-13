@@ -2099,6 +2099,105 @@ pub fn rmsnorm_per_row_chained(
     cp.dispatch_workgroups(n_rows as u32, 1, 1);
 }
 
+/// RMSNorm backward w.r.t. the input. Weight `w` is frozen (LoRA
+/// convention) — pass a real `w_buf` with `has_weight = true` or any
+/// dummy `wgpu::Buffer` with `has_weight = false`.
+pub fn rmsnorm_backward_chained(
+    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer, w: &wgpu::Buffer, dy: &wgpu::Buffer, dx: &wgpu::Buffer,
+    n: usize, eps: f32, has_weight: bool,
+) {
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    let params = RmsParams {
+        n: n as u32, eps,
+        has_weight: has_weight as u32, _p: 0,
+    };
+    let p_buf = write_uniform(device, queue, "rms_bwd.params", &params);
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("rms_bwd.bg"),
+        layout: &p.rmsnorm_backward.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: p_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: x.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: w.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: dy.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 4, resource: dx.as_entire_binding() },
+        ],
+    });
+    let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("rms_bwd.pass"), timestamp_writes: None,
+    });
+    cp.set_pipeline(&p.rmsnorm_backward);
+    cp.set_bind_group(0, &bg, &[]);
+    cp.dispatch_workgroups(1, 1, 1);
+}
+
+/// GeGLU backward — produces `d_gate` and `d_up` from `dy`, `gate`, `up`.
+pub fn geglu_backward_chained(
+    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
+    gate: &wgpu::Buffer, up: &wgpu::Buffer, dy: &wgpu::Buffer,
+    d_gate: &wgpu::Buffer, d_up: &wgpu::Buffer, n: usize,
+) {
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    let params = GegluParams { n: n as u32, _p0: 0, _p1: 0, _p2: 0 };
+    let p_buf = write_uniform(device, queue, "geglu_bwd.params", &params);
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("geglu_bwd.bg"),
+        layout: &p.geglu_backward.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: p_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: gate.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: up.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: dy.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 4, resource: d_gate.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 5, resource: d_up.as_entire_binding() },
+        ],
+    });
+    let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("geglu_bwd.pass"), timestamp_writes: None,
+    });
+    cp.set_pipeline(&p.geglu_backward);
+    cp.set_bind_group(0, &bg, &[]);
+    cp.dispatch_workgroups((n as u32).div_ceil(64), 1, 1);
+}
+
+/// NeoX RoPE backward — inverse in-place rotation. Reuses the same
+/// `RopeParams` layout and call shape as the forward.
+pub fn rope_neox_backward_chained(
+    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer, factors: Option<&wgpu::Buffer>, dummy: &wgpu::Buffer,
+    head_dim: usize, n_heads: usize, pos: usize, rope_dims: usize, base: f32,
+) {
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    let params = RopeParams {
+        head_dim: head_dim as u32, n_heads: n_heads as u32,
+        rope_dims: rope_dims as u32, pos: pos as u32,
+        base, has_factors: factors.is_some() as u32,
+        _p0: 0, _p1: 0,
+    };
+    let p_buf = write_uniform(device, queue, "rope_bwd.params", &params);
+    let f_buf = factors.unwrap_or(dummy);
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("rope_bwd.bg"),
+        layout: &p.rope_neox_backward.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: p_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: x.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: f_buf.as_entire_binding() },
+        ],
+    });
+    let total = (n_heads * (rope_dims / 2)) as u32;
+    let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("rope_bwd.pass"), timestamp_writes: None,
+    });
+    cp.set_pipeline(&p.rope_neox_backward);
+    cp.set_bind_group(0, &bg, &[]);
+    cp.dispatch_workgroups(total.div_ceil(64), 1, 1);
+}
+
 /// Backward of `y = matmul_q4_k(W, x)` w.r.t. the input.
 ///
 /// Computes `dx[i] = Σ_j dy[j] * dequant(W)[j, i]` on the GPU. One
@@ -2515,6 +2614,132 @@ mod tests {
             max_diff < 1e-3 && max_rel < 1e-3,
             "q4_k_bwd_input max_abs={max_diff} max_rel={max_rel}"
         );
+    }
+
+    /// GPU vs CPU parity for `rmsnorm_backward` with a real weight vector.
+    #[test]
+    fn rmsnorm_backward_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let n = 64usize;
+        let x: Vec<f32> = (0..n).map(|i| (i as f32 - 30.0) * 0.05).collect();
+        let w: Vec<f32> = (0..n).map(|i| (i as f32 * 0.3).sin() * 0.3 + 1.0).collect();
+        let dy: Vec<f32> = (0..n).map(|i| (i as f32 * 0.7).cos() * 0.5).collect();
+        let eps = 1e-6f32;
+
+        let mut cpu_dx = vec![0.0f32; n];
+        crate::reference::ops::rmsnorm_backward(&x, Some(&w), &dy, eps, &mut cpu_dx);
+
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let x_buf  = write_storage_f32(device, queue, "x", &x);
+        let w_buf  = write_storage_f32(device, queue, "w", &w);
+        let dy_buf = write_storage_f32(device, queue, "dy", &dy);
+        let (dx_buf, dx_read) = make_output_pair(device, "dx", (n * 4) as u64);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("rms_bwd.enc"),
+        });
+        rmsnorm_backward_chained(&ctx, &p, &mut enc, &x_buf, &w_buf, &dy_buf, &dx_buf, n, eps, true);
+        enc.copy_buffer_to_buffer(&dx_buf, 0, &dx_read, 0, (n * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu_dx = pollster::block_on(read_back_f32(device, &dx_read)).expect("readback");
+
+        let mut max_diff = 0.0f32;
+        for (c, g) in cpu_dx.iter().zip(gpu_dx.iter()) {
+            let d = (c - g).abs();
+            if d > max_diff { max_diff = d; }
+        }
+        assert!(max_diff < 1e-4, "rmsnorm_bwd max_diff = {max_diff}");
+    }
+
+    /// GPU vs CPU parity for `geglu_backward`.
+    #[test]
+    fn geglu_backward_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let n = 64usize;
+        let gate: Vec<f32> = (0..n).map(|i| (i as f32 - 30.0) * 0.05).collect();
+        let up:   Vec<f32> = (0..n).map(|i| (i as f32) * 0.02 + 0.5).collect();
+        let dy:   Vec<f32> = (0..n).map(|i| (i as f32 * 0.4).sin()).collect();
+
+        let mut cpu_dg = vec![0.0f32; n];
+        let mut cpu_du = vec![0.0f32; n];
+        crate::reference::ops::geglu_backward(&gate, &up, &dy, &mut cpu_dg, &mut cpu_du);
+
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let g_buf  = write_storage_f32(device, queue, "gate", &gate);
+        let u_buf  = write_storage_f32(device, queue, "up",   &up);
+        let dy_buf = write_storage_f32(device, queue, "dy",   &dy);
+        let (dg_buf, dg_read) = make_output_pair(device, "dg", (n * 4) as u64);
+        let (du_buf, du_read) = make_output_pair(device, "du", (n * 4) as u64);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("geglu_bwd.enc"),
+        });
+        geglu_backward_chained(&ctx, &p, &mut enc, &g_buf, &u_buf, &dy_buf, &dg_buf, &du_buf, n);
+        enc.copy_buffer_to_buffer(&dg_buf, 0, &dg_read, 0, (n * 4) as u64);
+        enc.copy_buffer_to_buffer(&du_buf, 0, &du_read, 0, (n * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu_dg = pollster::block_on(read_back_f32(device, &dg_read)).expect("dg readback");
+        let gpu_du = pollster::block_on(read_back_f32(device, &du_read)).expect("du readback");
+
+        let mut max_dg = 0.0f32;
+        let mut max_du = 0.0f32;
+        for i in 0..n {
+            max_dg = max_dg.max((cpu_dg[i] - gpu_dg[i]).abs());
+            max_du = max_du.max((cpu_du[i] - gpu_du[i]).abs());
+        }
+        assert!(max_dg < 1e-5 && max_du < 1e-5, "geglu_bwd max_dg={max_dg} max_du={max_du}");
+    }
+
+    /// GPU forward+backward round-trip restores the input (rotations are
+    /// orthogonal — fwd · bwd = identity at the same `pos`).
+    #[test]
+    fn rope_neox_forward_then_backward_gpu_is_identity() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let head_dim = 16usize;
+        let n_heads = 4usize;
+        let rope_dims = 16usize;
+        let pos = 11usize;
+        let base = 10_000.0f32;
+        let total = head_dim * n_heads;
+        let orig: Vec<f32> = (0..total).map(|i| (i as f32) * 0.07 - 1.5).collect();
+
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let x_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rope.x"),
+            size: (total * 4) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&x_buf, 0, bytemuck::cast_slice(&orig));
+        let dummy = write_storage_f32(device, queue, "dummy", &[0.0]);
+        let read_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rope.read"),
+            size: (total * 4) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("rope.enc"),
+        });
+        rope_neox_chained(&ctx, &p, &mut enc, &x_buf, None, &dummy,
+                          head_dim, n_heads, pos, rope_dims, base);
+        rope_neox_backward_chained(&ctx, &p, &mut enc, &x_buf, None, &dummy,
+                                   head_dim, n_heads, pos, rope_dims, base);
+        enc.copy_buffer_to_buffer(&x_buf, 0, &read_buf, 0, (total * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let out = pollster::block_on(read_back_f32(device, &read_buf)).expect("readback");
+
+        let mut max_drift = 0.0f32;
+        for (o, n) in orig.iter().zip(out.iter()) {
+            let d = (o - n).abs();
+            if d > max_drift { max_drift = d; }
+        }
+        assert!(max_drift < 1e-4, "rope fwd+bwd drift = {max_drift}");
     }
 
     /// Masked target (`u32::MAX`) emits zero gradient and zero loss on the
