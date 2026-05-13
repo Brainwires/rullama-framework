@@ -57,7 +57,7 @@ fn main() -> ExitCode {
     println!("encoding {h}×{w} (expected soft tokens: {expected}) ...");
 
     let t0 = Instant::now();
-    let soft = pollster::block_on(model.encode_image_native(&pixels, h, w))
+    let soft = pollster::block_on(model.encode_image_native(&pixels, h, w, None))
         .expect("encode_image");
     let dt = t0.elapsed();
 

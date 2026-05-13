@@ -77,19 +77,19 @@ print(f"{{ow}}x{{oh}} -> {{tw}}x{{th}}")
 
     println!("\nFIRST encode (cold cache):");
     let t = Instant::now();
-    let soft1 = pollster::block_on(model.encode_image_native(&pixels, th, tw)).expect("encode");
+    let soft1 = pollster::block_on(model.encode_image_native(&pixels, th, tw, None)).expect("encode");
     let dt1 = t.elapsed();
     println!("  encoded {} f32 in {:?}", soft1.len(), dt1);
 
     println!("\nSECOND encode (warm cache):");
     let t = Instant::now();
-    let soft2 = pollster::block_on(model.encode_image_native(&pixels, th, tw)).expect("encode");
+    let soft2 = pollster::block_on(model.encode_image_native(&pixels, th, tw, None)).expect("encode");
     let dt2 = t.elapsed();
     println!("  encoded {} f32 in {:?}", soft2.len(), dt2);
 
     println!("\nTHIRD encode (also warm):");
     let t = Instant::now();
-    let _soft3 = pollster::block_on(model.encode_image_native(&pixels, th, tw)).expect("encode");
+    let _soft3 = pollster::block_on(model.encode_image_native(&pixels, th, tw, None)).expect("encode");
     let dt3 = t.elapsed();
     println!("  encoded in {:?}", dt3);
 

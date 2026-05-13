@@ -317,6 +317,7 @@ impl VisionForward {
     /// Returns `[n_pooled_patches * d_text]` f32 — flatten as the soft-token sequence.
     pub async fn encode(
         &self, pixels: &[f32], img_h: usize, img_w: usize,
+        progress: Option<&dyn Fn(u32, u32)>,
     ) -> Result<Vec<f32>> {
         let cfg = &self.cfg;
         let ps = cfg.patch_size as usize;
@@ -410,6 +411,7 @@ impl VisionForward {
         // ---- 3. Transformer layers (each submits its own encoder) ----
         for i in 0..cfg.n_layers {
             self.encode_layer(i, n_patches, hidden, ffn_inter, n_heads, head_dim, eps).await?;
+            if let Some(cb) = progress { cb(i + 1, cfg.n_layers); }
         }
 
         // Epilogue: pool, scale, projector, final norm, readback. The

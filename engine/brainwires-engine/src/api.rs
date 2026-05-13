@@ -132,13 +132,14 @@ impl Model {
     /// Returns `[n_pooled_patches * d_text]` f32 — one row of d_text per soft token.
     pub async fn encode_image_native(
         &self, pixels: &[f32], h: usize, w: usize,
+        progress: Option<&dyn Fn(u32, u32)>,
     ) -> Result<Vec<f32>> {
         let v = self.vision.as_ref().ok_or_else(|| {
             crate::error::RullamaError::Inference(
                 "encode_image: this checkpoint has no vision tower".into()
             )
         })?;
-        v.encode(pixels, h, w).await
+        v.encode(pixels, h, w, progress).await
     }
 
     /// Number of soft tokens an image of `h × w` pixels produces (after AvgPool 3×3
@@ -419,8 +420,21 @@ impl Model {
     #[wasm_bindgen(js_name = encodeImage)]
     pub async fn encode_image_js(
         &self, pixels: Vec<f32>, h: u32, w: u32,
+        progress_cb: Option<js_sys::Function>,
     ) -> std::result::Result<Vec<f32>, JsError> {
-        self.encode_image_native(&pixels, h as usize, w as usize)
+        // Wrap the optional JS callback as a Rust closure that gets
+        // called after each transformer layer; lets the UI show
+        // "Analyzing image (N/M)…" instead of a frozen spinner.
+        let cb: Option<Box<dyn Fn(u32, u32)>> = progress_cb.map(|f| {
+            Box::new(move |layer: u32, total: u32| {
+                let _ = f.call2(
+                    &JsValue::NULL,
+                    &JsValue::from(layer),
+                    &JsValue::from(total),
+                );
+            }) as Box<dyn Fn(u32, u32)>
+        });
+        self.encode_image_native(&pixels, h as usize, w as usize, cb.as_deref())
             .await
             .map_err(|e| JsError::new(&format!("{e}")))
     }

@@ -113,7 +113,7 @@ print(f"preprocess: {{ow}}x{{oh}} -> {{tw}}x{{th}}", file=sys.stderr)
         .expect("image sentinels missing");
 
     let t = Instant::now();
-    let soft = pollster::block_on(model.encode_image_native(&pixels, th, tw)).expect("encode_image");
+    let soft = pollster::block_on(model.encode_image_native(&pixels, th, tw, None)).expect("encode_image");
     let n_soft = model.image_soft_token_count_native(th, tw).expect("count");
     let d_text = soft.len() / n_soft;
     println!("encoded {n_soft} image soft tokens × {d_text} dim in {:?}", t.elapsed());
