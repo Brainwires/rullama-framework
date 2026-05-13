@@ -62,7 +62,10 @@ pub const SOFTCAP: &str = include_str!("wgsl/softcap.wgsl");
 pub const CROSS_ENTROPY_BACKWARD: &str = include_str!("wgsl/cross_entropy_backward.wgsl");
 pub const MATMUL_Q4_K_BACKWARD_INPUT: &str =
     include_str!("wgsl/matmul_q4_k_backward_input.wgsl");
+pub const MATMUL_Q6_K_BACKWARD_INPUT: &str =
+    include_str!("wgsl/matmul_q6_k_backward_input.wgsl");
 pub const RMSNORM_BACKWARD: &str = include_str!("wgsl/rmsnorm_backward.wgsl");
+pub const RMSNORM_PER_ROW_BACKWARD: &str = include_str!("wgsl/rmsnorm_per_row_backward.wgsl");
 pub const GEGLU_BACKWARD: &str = include_str!("wgsl/geglu_backward.wgsl");
 pub const ROPE_NEOX_BACKWARD: &str = include_str!("wgsl/rope_neox_backward.wgsl");
 pub const ATTENTION_BACKWARD_DQ: &str = include_str!("wgsl/attention_backward_dq.wgsl");

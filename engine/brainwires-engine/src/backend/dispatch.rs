@@ -2449,6 +2449,45 @@ pub fn rmsnorm_backward_chained(
     cp.dispatch_workgroups(1, 1, 1);
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct RmsPerRowBackParams { n_rows: u32, n: u32, eps: f32, has_weight: u32 }
+
+/// Per-row RMSNorm backward — one workgroup per row. Mirrors
+/// `rmsnorm_per_row_chained` (forward); used by the training backward
+/// pass for q/k/v head normalisations.
+#[allow(clippy::too_many_arguments)]
+pub fn rmsnorm_per_row_backward_chained(
+    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer, w: &wgpu::Buffer, dy: &wgpu::Buffer, dx: &wgpu::Buffer,
+    n_rows: usize, n: usize, eps: f32, has_weight: bool,
+) {
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    let params = RmsPerRowBackParams {
+        n_rows: n_rows as u32, n: n as u32, eps,
+        has_weight: has_weight as u32,
+    };
+    let p_buf = write_uniform(device, queue, "rms_pr_bwd.params", &params);
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("rms_pr_bwd.bg"),
+        layout: &p.rmsnorm_per_row_backward.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: p_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: x.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: w.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: dy.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 4, resource: dx.as_entire_binding() },
+        ],
+    });
+    let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("rms_pr_bwd.pass"), timestamp_writes: None,
+    });
+    cp.set_pipeline(&p.rmsnorm_per_row_backward);
+    cp.set_bind_group(0, &bg, &[]);
+    cp.dispatch_workgroups(n_rows as u32, 1, 1);
+}
+
 /// GeGLU backward — produces `d_gate` and `d_up` from `dy`, `gate`, `up`.
 pub fn geglu_backward_chained(
     ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
@@ -2546,6 +2585,38 @@ pub fn matmul_q4_k_backward_input_chained(
         label: Some("q4k_bwd.pass"), timestamp_writes: None,
     });
     cp.set_pipeline(&p.matmul_q4_k_backward_input);
+    cp.set_bind_group(0, &bg, &[]);
+    cp.dispatch_workgroups((k / 256) as u32, 1, 1);
+}
+
+/// Backward of `y = matmul_q6_k(W, x)` w.r.t. the input. Same convention
+/// as the Q4_K variant — `dx[i] = Σ_j dy[j] * dequant(W)[j, i]`. Used by
+/// the output-projection backward, since Gemma 4's tied `token_embd` is
+/// Q6_K. `k` must be divisible by 256 (Q6_K block elements).
+pub fn matmul_q6_k_backward_input_chained(
+    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
+    weight: &wgpu::Buffer, dy: &wgpu::Buffer, dx: &wgpu::Buffer,
+    k: usize, n: usize,
+) {
+    assert!(k % 256 == 0, "k must be divisible by 256 for Q6_K backward");
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    let params = MatmulParams { k: k as u32, n: n as u32, _p0: 0, _p1: 0 };
+    let p_buf = write_uniform(device, queue, "q6k_bwd.params", &params);
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("q6k_bwd.bg"),
+        layout: &p.matmul_q6_k_backward_input.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: p_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: weight.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: dy.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: dx.as_entire_binding() },
+        ],
+    });
+    let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("q6k_bwd.pass"), timestamp_writes: None,
+    });
+    cp.set_pipeline(&p.matmul_q6_k_backward_input);
     cp.set_bind_group(0, &bg, &[]);
     cp.dispatch_workgroups((k / 256) as u32, 1, 1);
 }

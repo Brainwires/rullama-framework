@@ -17,10 +17,16 @@
 use std::sync::Arc;
 
 use crate::backend::dispatch::{
-    attention_chained, geglu_chained, make_dummy_storage,
-    matmul_q4_k_chained, matmul_q6_k_chained,
-    residual_add_chained, rmsnorm_chained, rmsnorm_per_row_chained,
-    rope_neox_chained, scale_chained, softcap_chained,
+    attention_chained, attention_backward_dkv_chained, attention_backward_dq_chained,
+    attention_probs_chained,
+    cross_entropy_backward_chained, geglu_backward_chained, geglu_chained,
+    lora_matmul_col_chained, lora_matmul_row_chained,
+    lora_outer_add_chained,
+    make_dummy_storage, matmul_q4_k_backward_input_chained,
+    matmul_q4_k_chained, matmul_q6_k_backward_input_chained, matmul_q6_k_chained,
+    residual_add_chained, rmsnorm_backward_chained, rmsnorm_chained,
+    rmsnorm_per_row_backward_chained, rmsnorm_per_row_chained,
+    rope_neox_backward_chained, rope_neox_chained, scale_chained, softcap_chained,
 };
 
 /// Activation capture buffers for one transformer layer. Used by the
@@ -46,6 +52,8 @@ pub struct LayerCaptureBuffers<'a> {
     pub v_pre_norm:  &'a wgpu::Buffer,
     /// Attention output, input to o_proj ([n_heads · head_dim]).
     pub attn_out:    &'a wgpu::Buffer,
+    /// o_proj matmul output, input to post_attn_norm rmsnorm ([d_model]).
+    pub attn_proj:   &'a wgpu::Buffer,
     /// `self.hidden` after the attn residual add ([d_model]).
     pub pre_ffn_rms: &'a wgpu::Buffer,
     /// Output of ffn rmsnorm ([d_model]).
@@ -56,6 +64,32 @@ pub struct LayerCaptureBuffers<'a> {
     pub ffn_up:      &'a wgpu::Buffer,
     /// GEGLU output, input to ffn_down ([ffn_inter]).
     pub ffn_act:     &'a wgpu::Buffer,
+    /// ffn_down matmul output, input to post_ffw_norm rmsnorm ([d_model]).
+    pub ffn_out:     &'a wgpu::Buffer,
+}
+
+/// One LoRA wrapper's GPU state — A, B, and a small `z` scratch that
+/// the forward correction writes into and the backward reads from.
+///
+/// Forward: `y[out_dim] = W·x + scale · B · (A·x)`. The `z` buffer
+/// holds `A·x` (size `[rank]`) after the forward correction so the
+/// backward can build `dB = scale · dy ⊗ z`.
+pub struct LoraSlot<'a> {
+    pub a: &'a wgpu::Buffer,  // [rank, in_dim]
+    pub b: &'a wgpu::Buffer,  // [out_dim, rank]
+    pub z: &'a wgpu::Buffer,  // [rank] scratch
+    pub rank:  u32,
+    pub scale: f32,           // alpha / rank
+}
+
+/// Per-layer LoRA slots for the four attention projections. Pass
+/// `None` for projections that aren't LoRA-wrapped. (M2 extends with
+/// ffn slots.)
+pub struct LayerLoraSlots<'a> {
+    pub q: Option<LoraSlot<'a>>,
+    pub k: Option<LoraSlot<'a>>,
+    pub v: Option<LoraSlot<'a>>,
+    pub o: Option<LoraSlot<'a>>,
 }
 use crate::backend::{Pipelines, WeightCache, WgpuCtx};
 use crate::error::{Result, RullamaError};
@@ -315,6 +349,19 @@ impl Forward {
 
     pub fn cfg(&self) -> &Gemma4Config { &self.cfg }
     pub fn pos(&self) -> u32 { self.pos }
+    /// Borrow the GPU context (`WgpuCtx` is internally `Arc`-backed and
+    /// cheap to clone). Used by `rullama-finetune` to allocate LoRA and
+    /// scratch buffers on the same device + queue as the model.
+    pub fn ctx(&self) -> &WgpuCtx { &self.ctx }
+    /// Borrow the pipeline cache. The training crate doesn't need this
+    /// directly (the backward path goes through `Forward::backward_step`),
+    /// but exposing it keeps the surface symmetric for future test code.
+    pub fn pipes(&self) -> &std::sync::Arc<Pipelines> { &self.pipes }
+    /// Read-only handle on the model's logits buffer (post-forward).
+    /// `TrainingSession::step` uses this to feed
+    /// `cross_entropy_backward` without exposing the rest of Forward's
+    /// scratch.
+    pub fn logits_buffer(&self) -> &wgpu::Buffer { &self.logits }
 
     pub fn reset(&mut self) {
         self.pos = 0;
@@ -324,7 +371,7 @@ impl Forward {
     /// Run one forward step from a token id. Looks up the token's embedding row,
     /// uploads it to the hidden buffer, then runs the rest of the forward.
     pub async fn step(&mut self, token_id: u32) -> Result<Vec<f32>> {
-        self.step_inner(token_id, None).await
+        self.step_inner(token_id, None, None).await
     }
 
     /// Run one forward step **with per-layer activation capture** into
@@ -340,6 +387,7 @@ impl Forward {
         &mut self,
         token_id: u32,
         capture: &'a [LayerCaptureBuffers<'a>],
+        loras: Option<&'a [LayerLoraSlots<'a>]>,
     ) -> Result<Vec<f32>> {
         if capture.len() != self.cfg.n_layers as usize {
             return Err(RullamaError::Inference(format!(
@@ -347,13 +395,40 @@ impl Forward {
                 capture.len(), self.cfg.n_layers
             )));
         }
-        self.step_inner(token_id, Some(capture)).await
+        if let Some(l) = loras {
+            if l.len() != self.cfg.n_layers as usize {
+                return Err(RullamaError::Inference(format!(
+                    "step_capture: got {} lora slots, expected {}",
+                    l.len(), self.cfg.n_layers
+                )));
+            }
+        }
+        self.step_inner(token_id, Some(capture), loras).await
+    }
+
+    /// Run a forward step with LoRA correction enabled but **without**
+    /// capturing activations. Used for the prompt-prefill pass during
+    /// training (positions 0..N-2 just fill KV; only the final position
+    /// is captured + has its loss measured).
+    pub async fn step_with_lora<'a>(
+        &mut self,
+        token_id: u32,
+        loras: &'a [LayerLoraSlots<'a>],
+    ) -> Result<Vec<f32>> {
+        if loras.len() != self.cfg.n_layers as usize {
+            return Err(RullamaError::Inference(format!(
+                "step_with_lora: got {} lora slots, expected {}",
+                loras.len(), self.cfg.n_layers
+            )));
+        }
+        self.step_inner(token_id, None, Some(loras)).await
     }
 
     async fn step_inner<'a>(
         &mut self,
         token_id: u32,
         capture: Option<&'a [LayerCaptureBuffers<'a>]>,
+        loras:   Option<&'a [LayerLoraSlots<'a>]>,
     ) -> Result<Vec<f32>> {
         if (token_id as u64) >= self.cfg.vocab_size as u64 {
             return Err(RullamaError::Inference(format!(
@@ -385,7 +460,7 @@ impl Forward {
             drop(ple_in);
         }
 
-        self.run_forward_from_hidden(capture).await
+        self.run_forward_from_hidden(capture, loras).await
     }
 
     /// Run one forward step from a pre-computed `[d_model]` embedding (vision soft
@@ -421,7 +496,7 @@ impl Forward {
             self.ctx.queue.write_buffer(&self.per_layer_residual, 0, bytemuck::cast_slice(&zeros));
         }
 
-        self.run_forward_from_hidden(None).await
+        self.run_forward_from_hidden(None, None).await
     }
 
     /// Forward pass starting from `self.hidden` already populated. Shared by
@@ -429,6 +504,7 @@ impl Forward {
     async fn run_forward_from_hidden<'a>(
         &mut self,
         capture: Option<&'a [LayerCaptureBuffers<'a>]>,
+        loras:   Option<&'a [LayerLoraSlots<'a>]>,
     ) -> Result<Vec<f32>> {
         let d_model = self.cfg.d_model as usize;
         let n_layers = self.cfg.n_layers as usize;
@@ -491,7 +567,8 @@ impl Forward {
         // first step — the per-layer cadence is the working strip-line.
         for i in 0..n_layers as u32 {
             let cap = capture.map(|c| &c[i as usize]);
-            self.encode_layer(&mut enc, i, pos, cap).await?;
+            let lora = loras.map(|l| &l[i as usize]);
+            self.encode_layer(&mut enc, i, pos, cap, lora).await?;
             self.ctx.queue.submit(Some(enc.finish()));
             enc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("fwd.token_encoder.cont"),
@@ -573,6 +650,7 @@ impl Forward {
         i: u32,
         pos: u32,
         capture: Option<&'a LayerCaptureBuffers<'a>>,
+        loras:   Option<&'a LayerLoraSlots<'a>>,
     ) -> Result<()> {
         let prefix = format!("blk.{i}.");
         let d_model = self.cfg.d_model as usize;
@@ -645,6 +723,18 @@ impl Forward {
         matmul_q4_k_chained(&self.ctx, &self.pipes, enc,
             &q_w, &self.norm_x, &self.q, d_model, n_heads * head_dim);
 
+        // ---- LoRA forward correction (q): self.q += scale · B · (A · norm_x) ----
+        if let Some(slot) = loras.and_then(|l| l.q.as_ref()) {
+            // z = A · norm_x  ([rank] = [rank, d_model] @ [d_model])
+            lora_matmul_row_chained(&self.ctx, &self.pipes, enc,
+                slot.a, &self.norm_x, slot.z,
+                d_model, slot.rank as usize, 1.0, false);
+            // self.q += scale · B · z  ([n_heads*head_dim] += [n_heads*head_dim, rank] @ [rank])
+            lora_matmul_row_chained(&self.ctx, &self.pipes, enc,
+                slot.b, slot.z, &self.q,
+                slot.rank as usize, n_heads * head_dim, slot.scale, true);
+        }
+
         // ---- CAPTURE: q_pre_norm (q matmul output, input to q_norm rmsnorm) ----
         if let Some(cap) = capture {
             enc.copy_buffer_to_buffer(&self.q, 0, cap.q_pre_norm, 0, (n_heads * head_dim * 4) as u64);
@@ -677,6 +767,16 @@ impl Forward {
             matmul_q4_k_chained(&self.ctx, &self.pipes, enc,
                 kw, &self.norm_x, &self.k, d_model, n_kv_heads * head_dim);
 
+            // ---- LoRA forward correction (k) ----
+            if let Some(slot) = loras.and_then(|l| l.k.as_ref()) {
+                lora_matmul_row_chained(&self.ctx, &self.pipes, enc,
+                    slot.a, &self.norm_x, slot.z,
+                    d_model, slot.rank as usize, 1.0, false);
+                lora_matmul_row_chained(&self.ctx, &self.pipes, enc,
+                    slot.b, slot.z, &self.k,
+                    slot.rank as usize, n_kv_heads * head_dim, slot.scale, true);
+            }
+
             // ---- CAPTURE: k_pre_norm (k matmul output, input to k_norm rmsnorm) ----
             if let Some(cap) = capture {
                 enc.copy_buffer_to_buffer(&self.k, 0, cap.k_pre_norm, 0, (n_kv_heads * head_dim * 4) as u64);
@@ -695,6 +795,16 @@ impl Forward {
                 GgmlDtype::Q4_K => matmul_q4_k_chained(&self.ctx, &self.pipes, enc,
                     vw, &self.norm_x, &self.v, d_model, n_kv_heads * head_dim),
                 other => return Err(RullamaError::Inference(format!("attn_v dtype {other:?} unsupported"))),
+            }
+
+            // ---- LoRA forward correction (v) ----
+            if let Some(slot) = loras.and_then(|l| l.v.as_ref()) {
+                lora_matmul_row_chained(&self.ctx, &self.pipes, enc,
+                    slot.a, &self.norm_x, slot.z,
+                    d_model, slot.rank as usize, 1.0, false);
+                lora_matmul_row_chained(&self.ctx, &self.pipes, enc,
+                    slot.b, slot.z, &self.v,
+                    slot.rank as usize, n_kv_heads * head_dim, slot.scale, true);
             }
 
             // ---- CAPTURE: v_pre_norm (v matmul output, input to unweighted v_norm rmsnorm) ----
@@ -733,6 +843,22 @@ impl Forward {
         // attn_proj = matmul(attn_out_buf, attn_output.weight)
         matmul_q4_k_chained(&self.ctx, &self.pipes, enc,
             &o_w, &self.attn_out_buf, &self.attn_proj, n_heads * head_dim, d_model);
+
+        // ---- LoRA forward correction (o): self.attn_proj += scale · B · (A · attn_out_buf) ----
+        if let Some(slot) = loras.and_then(|l| l.o.as_ref()) {
+            lora_matmul_row_chained(&self.ctx, &self.pipes, enc,
+                slot.a, &self.attn_out_buf, slot.z,
+                n_heads * head_dim, slot.rank as usize, 1.0, false);
+            lora_matmul_row_chained(&self.ctx, &self.pipes, enc,
+                slot.b, slot.z, &self.attn_proj,
+                slot.rank as usize, d_model, slot.scale, true);
+        }
+
+        // ---- CAPTURE: attn_proj (input to post_attn_norm rmsnorm) ----
+        if let Some(cap) = capture {
+            enc.copy_buffer_to_buffer(&self.attn_proj, 0, cap.attn_proj, 0, (d_model * 4) as u64);
+        }
+
         // norm_y = rmsnorm(attn_proj, post_attn_norm.weight)
         rmsnorm_chained(&self.ctx, &self.pipes, enc,
             &self.attn_proj, Some(&post_attn_w), &self.dummy,
@@ -782,6 +908,12 @@ impl Forward {
                 &down_w, &self.ffn_act, &self.ffn_out, ffn_n, d_model),
             other => return Err(RullamaError::Inference(format!("ffn_down dtype {other:?} unsupported"))),
         }
+
+        // ---- CAPTURE: ffn_out (input to post_ffw_norm rmsnorm) ----
+        if let Some(cap) = capture {
+            enc.copy_buffer_to_buffer(&self.ffn_out, 0, cap.ffn_out, 0, (d_model * 4) as u64);
+        }
+
         rmsnorm_chained(&self.ctx, &self.pipes, enc,
             &self.ffn_out, Some(&post_ffw_w), &self.dummy,
             &self.norm_y, d_model, eps);
@@ -908,4 +1040,482 @@ async fn read_back_f32(device: &wgpu::Device, buf: &wgpu::Buffer) -> Result<Vec<
     drop(data);
     buf.unmap();
     Ok(v)
+}
+
+// =========================================================================
+//                            BACKWARD PASS
+// =========================================================================
+//
+// Reverse-mode chained backward, parallel in structure to `encode_layer`.
+// Mirrors the forward graph node-for-node — no tape, no autodiff. The
+// fully-captured `LayerCaptureBuffers` for each layer plus the live KV
+// cache provide every activation the reverse pass needs.
+//
+// Encoder cadence matches forward: one `wgpu::CommandEncoder` per layer
+// (preserves the iPhone WebContent per-encoder workaround), plus single
+// encoders for the CE+output-proj+final-norm head and the Adam step.
+
+/// Per-LoRA gradient accumulators. Mirrors `LoraSlot` (the forward
+/// view) with the addition of `d_a` and `d_b` — the buffers Adam will
+/// step over. Backward writes into these via `lora_outer_add_chained`.
+pub struct LoraGradPair<'a> {
+    pub a: &'a wgpu::Buffer,    // [rank, in_dim] — read for u = Bᵀ·dy
+    pub b: &'a wgpu::Buffer,    // [out_dim, rank] — read for u = Bᵀ·dy
+    pub z: &'a wgpu::Buffer,    // [rank] — captured A·x from forward, dB needs it
+    pub d_a: &'a wgpu::Buffer,  // [rank, in_dim] — gradient accumulator
+    pub d_b: &'a wgpu::Buffer,  // [out_dim, rank] — gradient accumulator
+    pub rank: u32,
+    pub scale: f32,
+}
+
+/// Per-layer LoRA gradient accumulators for the four attention
+/// projections. Each pair drives both the LoRA backward (computing
+/// dA, dB into d_a, d_b) AND the LoRA contribution to dx
+/// (Aᵀ·Bᵀ·dy added to the running input gradient).
+pub struct LayerLoraGrads<'a> {
+    pub q: Option<LoraGradPair<'a>>,
+    pub k: Option<LoraGradPair<'a>>,
+    pub v: Option<LoraGradPair<'a>>,
+    pub o: Option<LoraGradPair<'a>>,
+}
+
+/// All scratch buffers the backward orchestration writes into. Sized
+/// at construction time and reused across steps. Allocated by
+/// `rullama-finetune::TrainingScratch`.
+#[allow(clippy::struct_field_names)]
+pub struct BackwardScratchView<'a> {
+    /// `[vocab]` — softmax(logits) - one_hot(target).
+    pub d_logits: &'a wgpu::Buffer,
+    /// `[1]` — scalar CE loss (read back to CPU after backward).
+    pub loss: &'a wgpu::Buffer,
+    /// `[d_model]` — gradient at the final post-norm hidden (= input
+    /// to output projection); used as the running d_hidden after the
+    /// output proj backward chains in.
+    pub d_hidden_final: &'a wgpu::Buffer,
+    /// `[d_model]` — running gradient on the residual stream.
+    pub d_hidden: &'a wgpu::Buffer,
+    /// `[d_model]` — second d_model scratch (post-attn/post-ffn intermediates).
+    pub d_hidden_tmp: &'a wgpu::Buffer,
+    /// `[d_model]` — third d_model scratch (sum two contributions).
+    pub d_hidden_tmp2: &'a wgpu::Buffer,
+    /// `[n_heads · history_len]` — recomputed attention probs.
+    pub attn_probs: &'a wgpu::Buffer,
+    /// `[n_heads · history_len]` — staged d_scores (pass 1 → pass 2).
+    pub attn_d_scores: &'a wgpu::Buffer,
+    /// `[n_heads · head_dim]` — d_attn_out (input to attn back dq).
+    pub d_attn_out: &'a wgpu::Buffer,
+    /// `[n_heads · head_dim]` — d_q output of attn back dq (= d_q_post_rope).
+    pub d_q: &'a wgpu::Buffer,
+    /// `[history_len · n_kv · head_dim]` — d_k_hist (only row[pos] consumed in M0).
+    pub d_k_hist: &'a wgpu::Buffer,
+    /// `[history_len · n_kv · head_dim]` — d_v_hist.
+    pub d_v_hist: &'a wgpu::Buffer,
+    /// `[n_heads · head_dim]` — d after rope_back of q.
+    pub d_q_pre_rope: &'a wgpu::Buffer,
+    /// `[n_kv · head_dim]` — d after rope_back of k.
+    pub d_k_pre_rope: &'a wgpu::Buffer,
+    /// `[n_heads · head_dim]` — d after q_norm rmsnorm_back.
+    pub d_q_pre_norm: &'a wgpu::Buffer,
+    /// `[n_kv · head_dim]` — d after k_norm rmsnorm_back.
+    pub d_k_pre_norm: &'a wgpu::Buffer,
+    /// `[n_kv · head_dim]` — d after v_norm rmsnorm_back.
+    pub d_v_pre_norm: &'a wgpu::Buffer,
+    /// `[ffn_inter]` — d_ffn_out (matmul_back output, going into geglu_back).
+    pub d_ffn_a: &'a wgpu::Buffer,
+    /// `[ffn_inter]` — d_ffn_gate (geglu_back output).
+    pub d_ffn_b: &'a wgpu::Buffer,
+    /// `[ffn_inter]` — d_ffn_up (geglu_back output).
+    pub d_ffn_c: &'a wgpu::Buffer,
+}
+
+impl Forward {
+    /// Full backward pass — produces gradients into `grads` for every
+    /// registered LoRA, writes the scalar CE loss into `scratch.loss`,
+    /// and returns the loss value.
+    ///
+    /// Preconditions:
+    /// - `step_capture(...)` has just run on this same `Forward`, with
+    ///   `capture` and `loras` matching the slices passed here.
+    /// - `self.logits` still holds the final-position logits.
+    /// - `self.hidden` still holds the pre-final-norm residual stream.
+    /// - `self.norm_x` still holds the post-final-norm hidden (input
+    ///   to the output projection).
+    /// - KV caches `self.kv_k[i]` / `self.kv_v[i]` still hold the
+    ///   prompt's K/V (history length = current `pos`).
+    /// - `grads[i].*.d_a` and `d_b` are pre-zeroed by the caller (the
+    ///   training step's `zero_all_grads` before forward).
+    ///
+    /// `target_id ≥ vocab_size` masks the gradient (zero loss / zero
+    /// gradient at this position).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn backward_step<'a>(
+        &mut self,
+        target_id: u32,
+        capture: &'a [LayerCaptureBuffers<'a>],
+        loras:   &'a [LayerLoraSlots<'a>],
+        grads:   &'a [LayerLoraGrads<'a>],
+        scratch: &'a BackwardScratchView<'a>,
+        history_len: u32,
+        pos: u32,
+    ) -> Result<f32> {
+        let n_layers = self.cfg.n_layers as usize;
+        if capture.len() != n_layers || loras.len() != n_layers || grads.len() != n_layers {
+            return Err(RullamaError::Inference(
+                "backward_step: capture/loras/grads slice length must equal n_layers".into(),
+            ));
+        }
+        let d_model = self.cfg.d_model as usize;
+        let vocab = self.cfg.vocab_size as usize;
+        let eps = self.cfg.rms_norm_eps;
+
+        // Fetch top-level frozen weights.
+        let wc = self.wcache.clone();
+        let final_norm = wc.buffer_async("output_norm.weight").await?;
+        let token_embd = wc.buffer_async("token_embd.weight").await?;
+        let token_embd_dtype = wc.dtype("token_embd.weight")?;
+
+        // ===== Head: CE → output_proj_back → final norm back =====
+        let mut enc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("bwd.head"),
+        });
+
+        // d_logits + scalar loss
+        cross_entropy_backward_chained(&self.ctx, &self.pipes, &mut enc,
+            &self.logits, scratch.d_logits, scratch.loss, vocab, target_id);
+
+        // d_norm_x_final = embedᵀ @ d_logits → write into scratch.d_hidden_final
+        match token_embd_dtype {
+            GgmlDtype::Q6_K => matmul_q6_k_backward_input_chained(
+                &self.ctx, &self.pipes, &mut enc,
+                &token_embd, scratch.d_logits, scratch.d_hidden_final,
+                d_model, vocab,
+            ),
+            GgmlDtype::Q4_K => matmul_q4_k_backward_input_chained(
+                &self.ctx, &self.pipes, &mut enc,
+                &token_embd, scratch.d_logits, scratch.d_hidden_final,
+                d_model, vocab,
+            ),
+            other => return Err(RullamaError::Inference(format!(
+                "backward_step: token_embd dtype {other:?} unsupported"
+            ))),
+        }
+
+        // d_hidden (running, top-of-stack) = rmsnorm_back(self.hidden,
+        // output_norm.weight, d_norm_x_final).
+        rmsnorm_backward_chained(&self.ctx, &self.pipes, &mut enc,
+            &self.hidden, &final_norm, scratch.d_hidden_final, scratch.d_hidden,
+            d_model, eps, true);
+
+        self.ctx.queue.submit(Some(enc.finish()));
+
+        // ===== Walk layers top-down =====
+        for li in (0..n_layers).rev() {
+            let i = li as u32;
+            let cap = &capture[li];
+            let lora = &loras[li];
+            let grad = &grads[li];
+            let mut lenc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("bwd.layer"),
+            });
+            self.backward_layer(&mut lenc, i, history_len, pos, cap, lora, grad, scratch).await?;
+            self.ctx.queue.submit(Some(lenc.finish()));
+        }
+
+        // ===== Loss readback =====
+        let loss_read = self.ctx.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("bwd.loss_read"),
+            size: 4,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut renc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("bwd.loss_copy"),
+        });
+        renc.copy_buffer_to_buffer(scratch.loss, 0, &loss_read, 0, 4);
+        self.ctx.queue.submit(Some(renc.finish()));
+        let loss_vec = read_back_f32(&self.ctx.device, &loss_read).await?;
+        Ok(loss_vec[0])
+    }
+
+    /// Backward through one transformer layer. Reads `cap` (forward
+    /// activations) and the live KV cache; writes LoRA gradients into
+    /// `grad`; carries `d_hidden` running into the next-down layer.
+    ///
+    /// Skips PLE-injection backward (Gemma 4 e2b's PLE has no LoRA;
+    /// the gradient leakage through `inp_gate_w` is dropped — an M0
+    /// approximation, documented in `MIGRATION-REPORT.md`).
+    #[allow(clippy::too_many_arguments)]
+    async fn backward_layer<'a>(
+        &mut self,
+        enc: &mut wgpu::CommandEncoder,
+        i: u32,
+        history_len: u32,
+        pos: u32,
+        cap:  &LayerCaptureBuffers<'a>,
+        lora: &LayerLoraSlots<'a>,
+        grad: &LayerLoraGrads<'a>,
+        scratch: &BackwardScratchView<'a>,
+    ) -> Result<()> {
+        let prefix = format!("blk.{i}.");
+        let d_model = self.cfg.d_model as usize;
+        let eps = self.cfg.rms_norm_eps;
+        let n_heads = self.cfg.n_heads as usize;
+        let n_kv_heads = self.cfg.n_kv_heads(i) as usize;
+        let head_dim = self.cfg.head_dim(i) as usize;
+        let ffn_n = self.cfg.ffn(i) as usize;
+        let kind = self.cfg.kind(i);
+
+        // Frozen weights this layer needs (cache hits after the forward).
+        let wc = self.wcache.clone();
+        let attn_norm_w  = wc.buffer_async(&format!("{prefix}attn_norm.weight")).await?;
+        let post_attn_w  = wc.buffer_async(&format!("{prefix}post_attention_norm.weight")).await?;
+        let mlp_norm_w   = wc.buffer_async(&format!("{prefix}ffn_norm.weight")).await?;
+        let post_ffw_w   = wc.buffer_async(&format!("{prefix}post_ffw_norm.weight")).await?;
+        let q_w          = wc.buffer_async(&format!("{prefix}attn_q.weight")).await?;
+        let q_norm_w     = wc.buffer_async(&format!("{prefix}attn_q_norm.weight")).await?;
+        let o_w          = wc.buffer_async(&format!("{prefix}attn_output.weight")).await?;
+        let k_w          = wc.buffer_async(&format!("{prefix}attn_k.weight")).await?;
+        let k_norm_w     = wc.buffer_async(&format!("{prefix}attn_k_norm.weight")).await?;
+        let v_name       = format!("{prefix}attn_v.weight");
+        let v_w          = wc.buffer_async(&v_name).await?;
+        let v_w_dtype    = wc.dtype(&v_name)?;
+        let gate_w       = wc.buffer_async(&format!("{prefix}ffn_gate.weight")).await?;
+        let up_w         = wc.buffer_async(&format!("{prefix}ffn_up.weight")).await?;
+        let down_name    = format!("{prefix}ffn_down.weight");
+        let down_w       = wc.buffer_async(&down_name).await?;
+        let down_dtype   = wc.dtype(&down_name)?;
+        let factors_w    = if matches!(kind, LayerKind::Global) {
+            wc.buffer_opt_async("rope_freqs.weight").await?
+        } else { None };
+
+        // Undo per-layer output scale.
+        if let Some(s) = self.layer_scalars[i as usize] {
+            scale_chained(&self.ctx, &self.pipes, enc, scratch.d_hidden, d_model, s);
+        }
+
+        // PLE injection backward: skipped for M0 (no LoRA on PLE; the
+        // gradient leakage through inp_gate_w is dropped). residual_add
+        // backward passes d_hidden through unchanged.
+
+        // ----- FFN block backward -----
+        // residual_add backward (ffn): d_norm_y_ffn = d_hidden (alias).
+        // d_hidden continues as d_pre_ffn_residual (= d_h1 path through residual).
+        //
+        // post_ffw_norm rmsnorm backward → d_ffn_out into d_hidden_tmp.
+        rmsnorm_backward_chained(&self.ctx, &self.pipes, enc,
+            cap.ffn_out, &post_ffw_w, scratch.d_hidden, scratch.d_hidden_tmp,
+            d_model, eps, true);
+
+        // ffn_down matmul backward: d_ffn_act = down_wᵀ · d_ffn_out → d_ffn_a.
+        match down_dtype {
+            GgmlDtype::Q6_K => matmul_q6_k_backward_input_chained(
+                &self.ctx, &self.pipes, enc,
+                &down_w, scratch.d_hidden_tmp, scratch.d_ffn_a, ffn_n, d_model,
+            ),
+            GgmlDtype::Q4_K => matmul_q4_k_backward_input_chained(
+                &self.ctx, &self.pipes, enc,
+                &down_w, scratch.d_hidden_tmp, scratch.d_ffn_a, ffn_n, d_model,
+            ),
+            other => return Err(RullamaError::Inference(format!("ffn_down dtype {other:?} unsupported in backward"))),
+        }
+
+        // geglu backward → d_ffn_gate (d_ffn_b), d_ffn_up (d_ffn_c).
+        geglu_backward_chained(&self.ctx, &self.pipes, enc,
+            cap.ffn_gate, cap.ffn_up, scratch.d_ffn_a,
+            scratch.d_ffn_b, scratch.d_ffn_c, ffn_n);
+
+        // gate matmul backward: d_norm_x_ffn_via_gate = gate_wᵀ · d_ffn_gate → d_hidden_tmp.
+        matmul_q4_k_backward_input_chained(&self.ctx, &self.pipes, enc,
+            &gate_w, scratch.d_ffn_b, scratch.d_hidden_tmp, d_model, ffn_n);
+        // up matmul backward: d_norm_x_ffn_via_up → d_hidden_tmp2.
+        matmul_q4_k_backward_input_chained(&self.ctx, &self.pipes, enc,
+            &up_w, scratch.d_ffn_c, scratch.d_hidden_tmp2, d_model, ffn_n);
+        // d_hidden_tmp += d_hidden_tmp2 (full d_norm_x_ffn).
+        residual_add_chained(&self.ctx, &self.pipes, enc,
+            scratch.d_hidden_tmp, scratch.d_hidden_tmp2, d_model);
+
+        // mlp_norm rmsnorm backward → d_pre_ffn_rms into d_hidden_tmp2.
+        rmsnorm_backward_chained(&self.ctx, &self.pipes, enc,
+            cap.pre_ffn_rms, &mlp_norm_w, scratch.d_hidden_tmp, scratch.d_hidden_tmp2,
+            d_model, eps, true);
+        // Accumulate FFN block branch contribution into running d_hidden.
+        residual_add_chained(&self.ctx, &self.pipes, enc,
+            scratch.d_hidden, scratch.d_hidden_tmp2, d_model);
+
+        // ----- Attention block backward -----
+        // residual_add backward (attn): d_norm_y_attn = d_hidden (alias).
+        //
+        // post_attn_norm rmsnorm backward → d_attn_proj into d_hidden_tmp.
+        rmsnorm_backward_chained(&self.ctx, &self.pipes, enc,
+            cap.attn_proj, &post_attn_w, scratch.d_hidden, scratch.d_hidden_tmp,
+            d_model, eps, true);
+
+        // o_proj matmul backward: d_attn_out = o_wᵀ · d_attn_proj → scratch.d_attn_out.
+        matmul_q4_k_backward_input_chained(&self.ctx, &self.pipes, enc,
+            &o_w, scratch.d_hidden_tmp, scratch.d_attn_out,
+            n_heads * head_dim, d_model);
+
+        // o LoRA backward: dB += scale·dy⊗z; u=Bᵀ·dy; d_attn_out += scale·Aᵀ·u; dA += scale·u⊗x.
+        if let (Some(o_lora), Some(o_grad)) = (lora.o.as_ref(), grad.o.as_ref()) {
+            let r = o_lora.rank as usize;
+            let s = o_lora.scale;
+            // dB_o += s · d_attn_proj ⊗ z_o  (using captured z from forward).
+            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                scratch.d_hidden_tmp, o_lora.z, o_grad.d_b,
+                d_model, r, s, true);
+            // u_o = B_oᵀ · d_attn_proj → o_lora.z (overwrite).
+            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                o_lora.b, scratch.d_hidden_tmp, o_lora.z,
+                d_model, r, 1.0, false);
+            // d_attn_out += s · A_oᵀ · u_o.
+            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                o_lora.a, o_lora.z, scratch.d_attn_out,
+                r, n_heads * head_dim, s, true);
+            // dA_o += s · u_o ⊗ attn_out (= cap.attn_out).
+            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                o_lora.z, cap.attn_out, o_grad.d_a,
+                r, n_heads * head_dim, s, true);
+        }
+
+        // Recompute attention probs (from q_post_rope + kv cache) into scratch.attn_probs.
+        let window = if matches!(kind, LayerKind::SlidingWindow) {
+            self.cfg.sliding_window as usize
+        } else { 0 };
+        attention_probs_chained(&self.ctx, &self.pipes, enc,
+            cap.q_post_rope, &self.kv_k[i as usize], scratch.attn_probs,
+            head_dim, n_heads, n_kv_heads,
+            pos as usize, history_len as usize, window);
+
+        // Attn backward pass 1: d_q + d_scores (staged).
+        attention_backward_dq_chained(&self.ctx, &self.pipes, enc,
+            &self.kv_k[i as usize], &self.kv_v[i as usize],
+            scratch.attn_probs, scratch.d_attn_out,
+            scratch.attn_d_scores, scratch.d_q,
+            head_dim, n_heads, n_kv_heads, history_len as usize);
+        // Attn backward pass 2: d_k_hist, d_v_hist.
+        attention_backward_dkv_chained(&self.ctx, &self.pipes, enc,
+            cap.q_post_rope, scratch.attn_probs, scratch.d_attn_out,
+            scratch.attn_d_scores, scratch.d_k_hist, scratch.d_v_hist,
+            head_dim, n_heads, n_kv_heads, history_len as usize);
+
+        // rope backward of q (in-place into d_q → now d_q_pre_rope's value).
+        let (rope_base, rope_dims) = match kind {
+            LayerKind::SlidingWindow => (self.cfg.rope_freq_base_swa, self.cfg.rope_dim_swa as usize),
+            LayerKind::Global        => (self.cfg.rope_freq_base,     self.cfg.rope_dim_global as usize),
+        };
+        rope_neox_backward_chained(&self.ctx, &self.pipes, enc,
+            scratch.d_q, factors_w.as_ref(), &self.dummy,
+            head_dim, n_heads, pos as usize, rope_dims, rope_base);
+        // q_norm rmsnorm backward → d_q_pre_norm.
+        rmsnorm_per_row_backward_chained(&self.ctx, &self.pipes, enc,
+            cap.q_pre_norm, &q_norm_w, scratch.d_q, scratch.d_q_pre_norm,
+            n_heads, head_dim, eps, true);
+        // q matmul backward: d_norm_x_attn_via_q → d_hidden_tmp (overwrites d_attn_proj).
+        matmul_q4_k_backward_input_chained(&self.ctx, &self.pipes, enc,
+            &q_w, scratch.d_q_pre_norm, scratch.d_hidden_tmp,
+            d_model, n_heads * head_dim);
+        // q LoRA backward.
+        if let (Some(q_lora), Some(q_grad)) = (lora.q.as_ref(), grad.q.as_ref()) {
+            let r = q_lora.rank as usize;
+            let s = q_lora.scale;
+            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                scratch.d_q_pre_norm, q_lora.z, q_grad.d_b,
+                n_heads * head_dim, r, s, true);
+            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                q_lora.b, scratch.d_q_pre_norm, q_lora.z,
+                n_heads * head_dim, r, 1.0, false);
+            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                q_lora.a, q_lora.z, scratch.d_hidden_tmp,
+                r, d_model, s, true);
+            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                q_lora.z, cap.norm_x_attn, q_grad.d_a,
+                r, d_model, s, true);
+        }
+
+        // K backward — pull d_k at the final position from d_k_hist.
+        // For M0 we only consume the final-position slice (history positions
+        // before `pos` get zero LoRA grad contribution — see plan).
+        let row_bytes = (n_kv_heads * head_dim * 4) as u64;
+        let dk_final_off = pos as u64 * row_bytes;
+        enc.copy_buffer_to_buffer(scratch.d_k_hist, dk_final_off,
+            scratch.d_k_pre_rope, 0, row_bytes);
+        rope_neox_backward_chained(&self.ctx, &self.pipes, enc,
+            scratch.d_k_pre_rope, factors_w.as_ref(), &self.dummy,
+            head_dim, n_kv_heads, pos as usize, rope_dims, rope_base);
+        rmsnorm_per_row_backward_chained(&self.ctx, &self.pipes, enc,
+            cap.k_pre_norm, &k_norm_w, scratch.d_k_pre_rope, scratch.d_k_pre_norm,
+            n_kv_heads, head_dim, eps, true);
+        // d_norm_x_attn_via_k → d_hidden_tmp2.
+        matmul_q4_k_backward_input_chained(&self.ctx, &self.pipes, enc,
+            &k_w, scratch.d_k_pre_norm, scratch.d_hidden_tmp2,
+            d_model, n_kv_heads * head_dim);
+        residual_add_chained(&self.ctx, &self.pipes, enc,
+            scratch.d_hidden_tmp, scratch.d_hidden_tmp2, d_model);
+        if let (Some(k_lora), Some(k_grad)) = (lora.k.as_ref(), grad.k.as_ref()) {
+            let r = k_lora.rank as usize;
+            let s = k_lora.scale;
+            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                scratch.d_k_pre_norm, k_lora.z, k_grad.d_b,
+                n_kv_heads * head_dim, r, s, true);
+            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                k_lora.b, scratch.d_k_pre_norm, k_lora.z,
+                n_kv_heads * head_dim, r, 1.0, false);
+            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                k_lora.a, k_lora.z, scratch.d_hidden_tmp,
+                r, d_model, s, true);
+            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                k_lora.z, cap.norm_x_attn, k_grad.d_a,
+                r, d_model, s, true);
+        }
+
+        // V backward — pull d_v at the final position from d_v_hist.
+        enc.copy_buffer_to_buffer(scratch.d_v_hist, dk_final_off,
+            scratch.d_v_pre_norm, 0, row_bytes);
+        // V was passed through unweighted rmsnorm_per_row; do the unweighted backward.
+        rmsnorm_per_row_backward_chained(&self.ctx, &self.pipes, enc,
+            cap.v_pre_norm, &self.dummy, scratch.d_v_pre_norm, scratch.d_v_pre_norm,
+            n_kv_heads, head_dim, eps, false);
+        // d_norm_x_attn_via_v → d_hidden_tmp2.
+        match v_w_dtype {
+            GgmlDtype::Q6_K => matmul_q6_k_backward_input_chained(
+                &self.ctx, &self.pipes, enc,
+                &v_w, scratch.d_v_pre_norm, scratch.d_hidden_tmp2,
+                d_model, n_kv_heads * head_dim,
+            ),
+            GgmlDtype::Q4_K => matmul_q4_k_backward_input_chained(
+                &self.ctx, &self.pipes, enc,
+                &v_w, scratch.d_v_pre_norm, scratch.d_hidden_tmp2,
+                d_model, n_kv_heads * head_dim,
+            ),
+            other => return Err(RullamaError::Inference(format!("attn_v dtype {other:?} unsupported in backward"))),
+        }
+        residual_add_chained(&self.ctx, &self.pipes, enc,
+            scratch.d_hidden_tmp, scratch.d_hidden_tmp2, d_model);
+        if let (Some(v_lora), Some(v_grad)) = (lora.v.as_ref(), grad.v.as_ref()) {
+            let r = v_lora.rank as usize;
+            let s = v_lora.scale;
+            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                scratch.d_v_pre_norm, v_lora.z, v_grad.d_b,
+                n_kv_heads * head_dim, r, s, true);
+            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                v_lora.b, scratch.d_v_pre_norm, v_lora.z,
+                n_kv_heads * head_dim, r, 1.0, false);
+            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                v_lora.a, v_lora.z, scratch.d_hidden_tmp,
+                r, d_model, s, true);
+            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                v_lora.z, cap.norm_x_attn, v_grad.d_a,
+                r, d_model, s, true);
+        }
+
+        // attn_norm rmsnorm backward — flows the attn block contribution
+        // into d_hidden_tmp2, then accumulates into running d_hidden.
+        rmsnorm_backward_chained(&self.ctx, &self.pipes, enc,
+            cap.hidden_in, &attn_norm_w, scratch.d_hidden_tmp, scratch.d_hidden_tmp2,
+            d_model, eps, true);
+        residual_add_chained(&self.ctx, &self.pipes, enc,
+            scratch.d_hidden, scratch.d_hidden_tmp2, d_model);
+
+        Ok(())
+    }
 }

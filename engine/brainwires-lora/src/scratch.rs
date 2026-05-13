@@ -63,6 +63,8 @@ pub struct LayerActivations {
     pub v_pre_norm: Buffer,
     /// Attention output (= input to o_proj matmul).
     pub attn_out: Buffer,
+    /// o_proj matmul output (= input to post_attn_norm rmsnorm).
+    pub attn_proj: Buffer,
     /// `self.hidden` snapshot after the attn residual add (input to ffn rmsnorm).
     pub pre_ffn_rms: Buffer,
     /// Output of the ffn rmsnorm (input to gate/up matmul + LoRA).
@@ -73,6 +75,8 @@ pub struct LayerActivations {
     pub ffn_up: Buffer,
     /// GEGLU output (= input to ffn_down matmul).
     pub ffn_act: Buffer,
+    /// ffn_down matmul output (= input to post_ffw_norm rmsnorm).
+    pub ffn_out: Buffer,
 }
 
 /// Top-level scratch for a training step.
@@ -179,11 +183,13 @@ impl TrainingScratch {
                     k_pre_norm:   make("layer.k_pre_norm",   n_kv * head_dim),
                     v_pre_norm:   make("layer.v_pre_norm",   n_kv * head_dim),
                     attn_out:     make("layer.attn_out",     n_heads * head_dim),
+                    attn_proj:    make("layer.attn_proj",    d_model_e),
                     pre_ffn_rms:  make("layer.pre_ffn_rms",  d_model_e),
                     norm_x_ffn:   make("layer.norm_x_ffn",   d_model_e),
                     ffn_gate:     make("layer.ffn_gate",     ffn_inter),
                     ffn_up:       make("layer.ffn_up",       ffn_inter),
                     ffn_act:      make("layer.ffn_act",      ffn_inter),
+                    ffn_out:      make("layer.ffn_out",      d_model_e),
                 }
             })
             .collect();
@@ -254,11 +260,13 @@ impl TrainingScratch {
                 + l.k_pre_norm.size()
                 + l.v_pre_norm.size()
                 + l.attn_out.size()
+                + l.attn_proj.size()
                 + l.pre_ffn_rms.size()
                 + l.norm_x_ffn.size()
                 + l.ffn_gate.size()
                 + l.ffn_up.size()
-                + l.ffn_act.size();
+                + l.ffn_act.size()
+                + l.ffn_out.size();
         }
         total
     }

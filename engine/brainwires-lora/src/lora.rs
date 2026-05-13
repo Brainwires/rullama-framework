@@ -74,7 +74,12 @@ pub struct LoraLayer {
     pub m_b: Buffer,
     /// Adam second-moment estimate for B.
     pub v_b: Buffer,
-}
+
+    /// Scratch buffer holding `z = A · x` from the most recent forward
+    /// LoRA correction. Reused in the backward pass to build
+    /// `dB = scale · dy ⊗ z` (the dB gradient depends on the captured
+    /// `z`, not the input `x`). Size is `[rank]` f32 — trivially small.
+    pub z: Buffer,
 
 impl LoraLayer {
     /// Allocate fresh A and B buffers, initialize A with a deterministic
@@ -153,6 +158,7 @@ impl LoraLayer {
         let v_a = make_zero("lora.vA", a_bytes);
         let m_b = make_zero("lora.mB", b_bytes);
         let v_b = make_zero("lora.vB", b_bytes);
+        let z = make_zero("lora.z", (rank as usize * 4) as u64);
 
         Self {
             in_dim,
@@ -167,6 +173,7 @@ impl LoraLayer {
             v_a,
             m_b,
             v_b,
+            z,
         }
     }
 
@@ -234,6 +241,20 @@ impl LoraState {
 
     pub fn get(&self, key: &LoraKey) -> Option<&LoraLayer> {
         self.layers.get(key)
+    }
+
+    /// Iterate over all `(key, layer)` pairs in deterministic
+    /// (`BTreeMap`) order.
+    pub fn iter(&self) -> impl Iterator<Item = (&LoraKey, &LoraLayer)> {
+        self.layers.iter()
+    }
+
+    /// Clear every LoRA's gradient buffers — call at the start of each
+    /// training step (or each gradient-accumulation micro-batch).
+    pub fn zero_all_grads(&self) {
+        for layer in self.layers.values() {
+            layer.zero_grads(&self.ctx);
+        }
     }
 
     pub fn len(&self) -> usize {

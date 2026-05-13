@@ -244,6 +244,14 @@ impl Model {
     }
 
     /// Reset KV state so the next call starts from an empty conversation.
+    /// Mutable handle on the underlying text `Forward`. Exposed for the
+    /// training crate (`rullama-finetune::TrainingSession`) so it can
+    /// drive `step_capture` and `backward_step` on the same model the
+    /// inference path uses.
+    pub fn forward_mut(&mut self) -> &mut Forward { &mut self.forward }
+    /// Immutable handle on the text `Forward`.
+    pub fn forward(&self) -> &Forward { &self.forward }
+
     pub fn reset_native(&mut self) {
         self.forward.reset();
         self.sampler.clear_history();

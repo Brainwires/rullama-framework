@@ -101,8 +101,16 @@ pub struct Pipelines {
     /// Computes `dx[i] = Σ_j dy[j] * dequant(W)[j, i]`. The weight matrix
     /// stays in Q4_K (frozen by LoRA convention) — no weight gradient.
     pub matmul_q4_k_backward_input: wgpu::ComputePipeline,
+    /// Backward of Q6_K matmul w.r.t. the input vector. Same convention
+    /// as the Q4_K variant — `dx[i] = Σ_j dy[j] * dequant(W)[j, i]`.
+    /// Required for the tied embedding (Gemma 4's `token_embd` is Q6_K)
+    /// so the output projection backward stays on-GPU.
+    pub matmul_q6_k_backward_input: wgpu::ComputePipeline,
     /// RMSNorm backward w.r.t. the input. Weight `w` is frozen — no `dw`.
     pub rmsnorm_backward: wgpu::ComputePipeline,
+    /// Per-row RMSNorm backward (one workgroup per row). Mirrors the
+    /// per-row forward used for q/k/v head normalisations.
+    pub rmsnorm_per_row_backward: wgpu::ComputePipeline,
     /// GeGLU backward — `d_gate` and `d_up` from `dy`, `gate`, `up`.
     pub geglu_backward: wgpu::ComputePipeline,
     /// NeoX RoPE backward — inverse in-place rotation of `dx`.
@@ -227,7 +235,17 @@ impl Pipelines {
                 "matmul_q4_k_backward_input",
                 kernels::MATMUL_Q4_K_BACKWARD_INPUT,
             ),
+            matmul_q6_k_backward_input: build(
+                device,
+                "matmul_q6_k_backward_input",
+                kernels::MATMUL_Q6_K_BACKWARD_INPUT,
+            ),
             rmsnorm_backward:   build(device, "rmsnorm_backward",   kernels::RMSNORM_BACKWARD),
+            rmsnorm_per_row_backward: build(
+                device,
+                "rmsnorm_per_row_backward",
+                kernels::RMSNORM_PER_ROW_BACKWARD,
+            ),
             geglu_backward:     build(device, "geglu_backward",     kernels::GEGLU_BACKWARD),
             rope_neox_backward: build(device, "rope_neox_backward", kernels::ROPE_NEOX_BACKWARD),
             attention_backward_dq: build(
