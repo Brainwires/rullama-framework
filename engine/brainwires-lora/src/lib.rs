@@ -32,3 +32,5 @@ pub mod dataset_loader;
 pub mod lr_schedule;
 /// Per-LoRA GPU state: A and B matrices for each wrapped projection.
 pub mod lora;
+/// Per-step GPU scratch buffers for the backward pass.
+pub mod scratch;
