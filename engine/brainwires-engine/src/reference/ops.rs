@@ -264,6 +264,42 @@ pub fn rope_neox_backward(
     }
 }
 
+/// AdamW step over a flat parameter slice — mirrors `adam_step.wgsl`.
+///
+/// `step` is 1-based. `param`, `m`, `v` are updated in place.
+#[allow(clippy::too_many_arguments)]
+pub fn adam_step(
+    grad: &[f32],
+    param: &mut [f32],
+    m: &mut [f32],
+    v: &mut [f32],
+    lr: f32,
+    beta1: f32,
+    beta2: f32,
+    eps: f32,
+    weight_decay: f32,
+    step: u32,
+) {
+    let n = grad.len();
+    assert_eq!(param.len(), n);
+    assert_eq!(m.len(), n);
+    assert_eq!(v.len(), n);
+    let step_f = step as f32;
+    let bc1 = 1.0 - beta1.powf(step_f);
+    let bc2 = 1.0 - beta2.powf(step_f);
+    for i in 0..n {
+        let g = grad[i];
+        let m_new = beta1 * m[i] + (1.0 - beta1) * g;
+        let v_new = beta2 * v[i] + (1.0 - beta2) * g * g;
+        m[i] = m_new;
+        v[i] = v_new;
+        let m_hat = m_new / bc1;
+        let v_hat = v_new / bc2;
+        let p = param[i];
+        param[i] = p - lr * (m_hat / (v_hat.sqrt() + eps) + weight_decay * p);
+    }
+}
+
 /// LoRA primitive: `y = scale · W @ x` (or `+=` when `accumulate`).
 /// `W` is `[n, k]` row-major.
 pub fn lora_matmul_row(
@@ -794,6 +830,50 @@ mod tests {
                 a = d_up[i],
             );
         }
+    }
+
+    /// One-step Adam: hand-compute the expected update and compare.
+    #[test]
+    fn adam_one_step_matches_hand_calc() {
+        let mut p = vec![1.0f32, -0.5];
+        let mut m = vec![0.0f32, 0.0];
+        let mut v = vec![0.0f32, 0.0];
+        let g = vec![0.1f32, -0.2];
+        let lr = 0.01;
+        let b1 = 0.9;
+        let b2 = 0.999;
+        let eps = 1e-8;
+
+        adam_step(&g, &mut p, &mut m, &mut v, lr, b1, b2, eps, 0.0, 1);
+
+        // After step 1 with m_prev = v_prev = 0:
+        //   m_new = (1 - β₁) g = 0.1 g
+        //   v_new = (1 - β₂) g² = 0.001 g²
+        //   m̂ = m_new / (1 - β₁¹) = m_new / 0.1 = g
+        //   v̂ = v_new / (1 - β₂¹) = v_new / 0.001 = g²
+        //   update = lr · g / (|g| + eps)
+        // So |update| ≈ lr regardless of |g|.
+        let expected_0 = 1.0 - lr * 0.1 / (0.1 + eps);
+        let expected_1 = -0.5 - lr * (-0.2) / (0.2 + eps);
+        assert!((p[0] - expected_0).abs() < 1e-6, "p[0]={p0} expected={expected_0}", p0 = p[0]);
+        assert!((p[1] - expected_1).abs() < 1e-6, "p[1]={p1} expected={expected_1}", p1 = p[1]);
+    }
+
+    /// Adam converges on a tiny convex problem: minimize ½ (param - target)²,
+    /// gradient = (param - target). 200 steps should drive |param - target|
+    /// below 1e-3 from a starting offset of 1.0.
+    #[test]
+    fn adam_converges_on_quadratic() {
+        let mut param = vec![1.0f32];
+        let mut m = vec![0.0f32];
+        let mut v = vec![0.0f32];
+        let target = 0.0f32;
+        let lr = 0.05;
+        for step in 1..=400u32 {
+            let g = vec![param[0] - target];
+            adam_step(&g, &mut param, &mut m, &mut v, lr, 0.9, 0.999, 1e-8, 0.0, step);
+        }
+        assert!((param[0] - target).abs() < 1e-3, "converged to {p}", p = param[0]);
     }
 
     /// LoRA composed forward + backward — finite-difference check.

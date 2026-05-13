@@ -122,6 +122,10 @@ pub struct Pipelines {
     /// Rank-1 outer-product accumulator: `out[i, j] += scale · a[i] · b[j]`.
     /// Builds both `dA` (`a=u, b=x`) and `dB` (`a=dy, b=z`) in LoRA backward.
     pub lora_outer_add: wgpu::ComputePipeline,
+    /// AdamW optimizer step — elementwise update of `(param, m, v)` from
+    /// the gradient buffer. Standard β₁/β₂ bias correction, decoupled weight
+    /// decay. Drives every LoRA A and B at the end of `TrainingSession::step`.
+    pub adam_step: wgpu::ComputePipeline,
 }
 
 impl Pipelines {
@@ -234,6 +238,7 @@ impl Pipelines {
             lora_matmul_row: build(device, "lora_matmul_row", kernels::LORA_MATMUL_ROW),
             lora_matmul_col: build(device, "lora_matmul_col", kernels::LORA_MATMUL_COL),
             lora_outer_add:  build(device, "lora_outer_add",  kernels::LORA_OUTER_ADD),
+            adam_step:       build(device, "adam_step",       kernels::ADAM_STEP),
             geglu:             build(device, "geglu",             kernels::GEGLU),
             rope_neox:         build(device, "rope_neox",         kernels::ROPE_NEOX),
             attention:         build(device, "attention",         kernels::ATTENTION),

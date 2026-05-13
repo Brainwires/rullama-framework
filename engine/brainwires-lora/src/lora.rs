@@ -37,10 +37,12 @@ impl LoraKey {
     }
 }
 
-/// Trainable A and B for one LoRA wrapper plus their shape.
+/// Trainable A and B plus per-parameter gradient and Adam state.
 ///
 /// Forward: `y[j] += (alpha/r) · Σ_p B[j, p] · Σ_i A[p, i] · x[i]`.
-/// Backward (M0): A/B grads flow back through `dispatch::lora_*_chained`.
+/// Backward: gradients accumulate into `da` / `db` via
+/// `dispatch::lora_outer_add_chained`. Adam consumes those grads to
+/// update `a` and `b` via `dispatch::adam_step_chained`.
 pub struct LoraLayer {
     /// Input dim of the wrapped projection (k).
     pub in_dim: u32,
@@ -52,10 +54,26 @@ pub struct LoraLayer {
     /// for the layer's lifetime; baked in at construction so the per-step
     /// dispatchers don't have to recompute.
     pub scale: f32,
+
     /// A matrix, shape `[r, in_dim]` row-major. STORAGE + COPY_DST + COPY_SRC.
     pub a: Buffer,
     /// B matrix, shape `[out_dim, r]` row-major. Same usage flags as A.
     pub b: Buffer,
+
+    /// Gradient buffer for A — accumulated across the backward sweep,
+    /// reset by [`LoraLayer::zero_grads`] at the start of each step.
+    pub da: Buffer,
+    /// Gradient buffer for B.
+    pub db: Buffer,
+
+    /// Adam first-moment estimate for A.
+    pub m_a: Buffer,
+    /// Adam second-moment estimate for A.
+    pub v_a: Buffer,
+    /// Adam first-moment estimate for B.
+    pub m_b: Buffer,
+    /// Adam second-moment estimate for B.
+    pub v_b: Buffer,
 }
 
 impl LoraLayer {
@@ -111,6 +129,31 @@ impl LoraLayer {
         ctx.queue
             .write_buffer(&b, 0, bytemuck::cast_slice(&b_init));
 
+        // Gradient + Adam buffers, all f32, all zero-initialized. Same
+        // usage flags as A/B so they can participate in copy operations
+        // (gradient clearing, checkpoint readback, etc.).
+        let make_zero = |label: &str, size_bytes: u64| -> Buffer {
+            let buf = device.create_buffer(&BufferDescriptor {
+                label: Some(label),
+                size: size_bytes,
+                usage,
+                mapped_at_creation: false,
+            });
+            // Single zero-fill upload — wgpu doesn't have a buffer-clear
+            // command in the public API at this version, so a small Vec
+            // suffices (it's freed once write_buffer returns).
+            let zeros = vec![0u8; size_bytes as usize];
+            ctx.queue.write_buffer(&buf, 0, &zeros);
+            buf
+        };
+
+        let da = make_zero("lora.dA", a_bytes);
+        let db = make_zero("lora.dB", b_bytes);
+        let m_a = make_zero("lora.mA", a_bytes);
+        let v_a = make_zero("lora.vA", a_bytes);
+        let m_b = make_zero("lora.mB", b_bytes);
+        let v_b = make_zero("lora.vB", b_bytes);
+
         Self {
             in_dim,
             rank,
@@ -118,7 +161,33 @@ impl LoraLayer {
             scale,
             a,
             b,
+            da,
+            db,
+            m_a,
+            v_a,
+            m_b,
+            v_b,
         }
+    }
+
+    /// Number of f32 elements in A. (= `rank * in_dim`.)
+    pub fn a_len(&self) -> usize {
+        self.rank as usize * self.in_dim as usize
+    }
+
+    /// Number of f32 elements in B. (= `out_dim * rank`.)
+    pub fn b_len(&self) -> usize {
+        self.out_dim as usize * self.rank as usize
+    }
+
+    /// Clear the gradient buffers in-place. Called at the start of every
+    /// training step (or every micro-batch boundary) before the backward
+    /// sweep accumulates fresh gradients.
+    pub fn zero_grads(&self, ctx: &WgpuCtx) {
+        let zeros_a = vec![0u8; self.a_len() * 4];
+        let zeros_b = vec![0u8; self.b_len() * 4];
+        ctx.queue.write_buffer(&self.da, 0, &zeros_a);
+        ctx.queue.write_buffer(&self.db, 0, &zeros_b);
     }
 }
 
@@ -232,6 +301,23 @@ mod tests {
         let b_vals: &[f32] = bytemuck::cast_slice(&view);
         for &v in b_vals {
             assert_eq!(v, 0.0, "B should be zero-initialized");
+        }
+    }
+
+    #[test]
+    fn lora_layer_carries_grad_and_adam_buffers() {
+        let ctx = Arc::new(pollster::block_on(WgpuCtx::new()).expect("wgpu"));
+        let mut state = LoraState::new(Arc::clone(&ctx));
+        state.insert(LoraKey::new(0, "attn_q"), 8, 2, 4, 4.0, 1).unwrap();
+        let layer = state.get(&LoraKey::new(0, "attn_q")).unwrap();
+        assert_eq!(layer.a_len(), 16);
+        assert_eq!(layer.b_len(), 8);
+        // Existence and size: every aux buffer matches A or B exactly.
+        for buf in [&layer.da, &layer.m_a, &layer.v_a] {
+            assert_eq!(buf.size() as usize, layer.a_len() * 4);
+        }
+        for buf in [&layer.db, &layer.m_b, &layer.v_b] {
+            assert_eq!(buf.size() as usize, layer.b_len() * 4);
         }
     }
 

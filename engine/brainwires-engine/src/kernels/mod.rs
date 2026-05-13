@@ -70,3 +70,4 @@ pub const ATTENTION_BACKWARD_DKV: &str = include_str!("wgsl/attention_backward_d
 pub const LORA_MATMUL_ROW: &str = include_str!("wgsl/lora_matmul_row.wgsl");
 pub const LORA_MATMUL_COL: &str = include_str!("wgsl/lora_matmul_col.wgsl");
 pub const LORA_OUTER_ADD: &str = include_str!("wgsl/lora_outer_add.wgsl");
+pub const ADAM_STEP: &str = include_str!("wgsl/adam_step.wgsl");

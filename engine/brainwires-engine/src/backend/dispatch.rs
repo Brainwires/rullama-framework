@@ -2101,6 +2101,86 @@ pub fn rmsnorm_per_row_chained(
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct AdamParams {
+    n: u32,
+    step: u32,
+    _pad0: u32,
+    _pad1: u32,
+    lr: f32,
+    beta1: f32,
+    beta2: f32,
+    eps: f32,
+    weight_decay: f32,
+    _pad2: f32,
+    _pad3: f32,
+    _pad4: f32,
+}
+
+/// Configuration for one `adam_step` dispatch — bias correction is keyed
+/// off `step`, which is 1-based to match PyTorch convention.
+#[derive(Clone, Copy, Debug)]
+pub struct AdamConfig {
+    pub lr: f32,
+    pub beta1: f32,
+    pub beta2: f32,
+    pub eps: f32,
+    pub weight_decay: f32,
+    pub step: u32,
+}
+
+impl Default for AdamConfig {
+    fn default() -> Self {
+        Self {
+            lr: 1e-3,
+            beta1: 0.9,
+            beta2: 0.999,
+            eps: 1e-8,
+            weight_decay: 0.0,
+            step: 1,
+        }
+    }
+}
+
+/// AdamW step over a single parameter buffer. Updates `param`, `m`, `v`
+/// in-place. `grad` is read-only.
+#[allow(clippy::too_many_arguments)]
+pub fn adam_step_chained(
+    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
+    grad: &wgpu::Buffer, param: &wgpu::Buffer,
+    m: &wgpu::Buffer, v: &wgpu::Buffer,
+    n: usize, cfg: AdamConfig,
+) {
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    let params = AdamParams {
+        n: n as u32, step: cfg.step,
+        _pad0: 0, _pad1: 0,
+        lr: cfg.lr, beta1: cfg.beta1, beta2: cfg.beta2,
+        eps: cfg.eps, weight_decay: cfg.weight_decay,
+        _pad2: 0.0, _pad3: 0.0, _pad4: 0.0,
+    };
+    let p_buf = write_uniform(device, queue, "adam.params", &params);
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("adam.bg"),
+        layout: &p.adam_step.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: p_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: grad.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: param.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: m.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 4, resource: v.as_entire_binding() },
+        ],
+    });
+    let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("adam.pass"), timestamp_writes: None,
+    });
+    cp.set_pipeline(&p.adam_step);
+    cp.set_bind_group(0, &bg, &[]);
+    cp.dispatch_workgroups((n as u32).div_ceil(64), 1, 1);
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct LoraMatmulParams {
     k: u32,
     n: u32,
@@ -2926,6 +3006,101 @@ mod tests {
             max_du = max_du.max((cpu_du[i] - gpu_du[i]).abs());
         }
         assert!(max_dg < 1e-5 && max_du < 1e-5, "geglu_bwd max_dg={max_dg} max_du={max_du}");
+    }
+
+    /// GPU vs CPU Adam step. Initializes random params + grads + zeros for
+    /// (m, v), runs the kernel once, and compares against the CPU oracle.
+    #[test]
+    fn adam_step_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let n = 128usize;
+
+        let mut param: Vec<f32> = (0..n).map(|i| (i as f32 * 0.07).sin() * 0.5).collect();
+        let grad: Vec<f32> = (0..n).map(|i| (i as f32 * 0.13).cos() * 0.1).collect();
+        let mut m_cpu = vec![0.0f32; n];
+        let mut v_cpu = vec![0.0f32; n];
+        let mut param_cpu = param.clone();
+
+        let lr = 1e-3;
+        let beta1 = 0.9;
+        let beta2 = 0.999;
+        let eps = 1e-8;
+        let wd = 0.01;
+        let step = 1u32;
+
+        crate::reference::ops::adam_step(
+            &grad, &mut param_cpu, &mut m_cpu, &mut v_cpu,
+            lr, beta1, beta2, eps, wd, step,
+        );
+
+        // GPU
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let grad_buf = write_storage_f32(device, queue, "g", &grad);
+        let param_buf = {
+            let buf = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("param"),
+                size: (n * 4) as u64,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            queue.write_buffer(&buf, 0, bytemuck::cast_slice(&param));
+            buf
+        };
+        let m_init = vec![0.0f32; n];
+        let v_init = vec![0.0f32; n];
+        let m_buf = {
+            let buf = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("m"),
+                size: (n * 4) as u64,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            queue.write_buffer(&buf, 0, bytemuck::cast_slice(&m_init));
+            buf
+        };
+        let v_buf = {
+            let buf = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("v"),
+                size: (n * 4) as u64,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            queue.write_buffer(&buf, 0, bytemuck::cast_slice(&v_init));
+            buf
+        };
+        let param_read = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("param.read"),
+            size: (n * 4) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("adam.enc"),
+        });
+        adam_step_chained(
+            &ctx, &p, &mut enc,
+            &grad_buf, &param_buf, &m_buf, &v_buf, n,
+            AdamConfig { lr, beta1, beta2, eps, weight_decay: wd, step },
+        );
+        enc.copy_buffer_to_buffer(&param_buf, 0, &param_read, 0, (n * 4) as u64);
+        queue.submit(Some(enc.finish()));
+
+        let gpu_param = pollster::block_on(read_back_f32(device, &param_read)).unwrap();
+        param = gpu_param;
+
+        let max_diff = param.iter().zip(param_cpu.iter())
+            .map(|(g, c)| (g - c).abs())
+            .fold(0.0f32, f32::max);
+        assert!(max_diff < 1e-6, "adam max_diff = {max_diff}");
     }
 
     /// GPU vs CPU for the three LoRA primitives composed into a full
