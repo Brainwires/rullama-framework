@@ -264,6 +264,77 @@ pub fn rope_neox_backward(
     }
 }
 
+/// LoRA primitive: `y = scale · W @ x` (or `+=` when `accumulate`).
+/// `W` is `[n, k]` row-major.
+pub fn lora_matmul_row(
+    w: &[f32],
+    x: &[f32],
+    y: &mut [f32],
+    k: usize,
+    n: usize,
+    scale: f32,
+    accumulate: bool,
+) {
+    assert_eq!(w.len(), n * k);
+    assert_eq!(x.len(), k);
+    assert_eq!(y.len(), n);
+    for (j, slot) in y.iter_mut().enumerate() {
+        let mut acc = 0f32;
+        for i in 0..k {
+            acc += w[j * k + i] * x[i];
+        }
+        let v = scale * acc;
+        *slot = if accumulate { *slot + v } else { v };
+    }
+}
+
+/// LoRA primitive: `y = scale · Wᵀ @ x` (or `+=`).
+/// Same physical `[outer, inner]` layout as `lora_matmul_row`'s W; iterates
+/// by column to produce the transposed product.
+pub fn lora_matmul_col(
+    w: &[f32],
+    x: &[f32],
+    y: &mut [f32],
+    outer: usize,
+    inner: usize,
+    scale: f32,
+    accumulate: bool,
+) {
+    assert_eq!(w.len(), outer * inner);
+    assert_eq!(x.len(), outer);
+    assert_eq!(y.len(), inner);
+    for (p, slot) in y.iter_mut().enumerate() {
+        let mut acc = 0f32;
+        for j in 0..outer {
+            acc += w[j * inner + p] * x[j];
+        }
+        let v = scale * acc;
+        *slot = if accumulate { *slot + v } else { v };
+    }
+}
+
+/// LoRA primitive: rank-1 outer-product accumulator.
+/// `out[i, j] += scale · a[i] · b[j]` (or `=` when `!accumulate`).
+/// `out` shape `[outer_a, outer_b]`.
+pub fn lora_outer_add(
+    a: &[f32],
+    b: &[f32],
+    out: &mut [f32],
+    scale: f32,
+    accumulate: bool,
+) {
+    let outer_a = a.len();
+    let outer_b = b.len();
+    assert_eq!(out.len(), outer_a * outer_b);
+    for i in 0..outer_a {
+        for j in 0..outer_b {
+            let v = scale * a[i] * b[j];
+            let off = i * outer_b + j;
+            out[off] = if accumulate { out[off] + v } else { v };
+        }
+    }
+}
+
 /// Forward softmax attention over a KV history — single-batch, GQA-aware.
 ///
 /// Mirrors `kernels/wgsl/attention.wgsl` exactly, including the
@@ -721,6 +792,107 @@ mod tests {
                 (d_up[i] - num_u).abs() < 1e-3,
                 "up i={i} analytic={a} numeric={num_u}",
                 a = d_up[i],
+            );
+        }
+    }
+
+    /// LoRA composed forward + backward — finite-difference check.
+    ///
+    /// Models a single LoRA-wrapped projection: `y = scale · B @ A @ x`.
+    /// Defines `L = Σ dy · y` and verifies that the primitive composition
+    ///     z   = A @ x
+    ///     y  += scale · B @ z
+    ///     u   = Bᵀ @ dy
+    ///     dA += scale · outer(u, x)
+    ///     dB += scale · outer(dy, z)
+    ///     dx += scale · Aᵀ @ u
+    /// reproduces the analytical gradients across all of A, B, and x.
+    #[test]
+    fn lora_forward_backward_matches_finite_difference() {
+        let k = 6usize;
+        let r = 3usize;
+        let n = 5usize;
+        let scale = 0.5f32;
+        let a: Vec<f32> = (0..r * k).map(|i| (i as f32 * 0.17).sin() * 0.4).collect();
+        let b: Vec<f32> = (0..n * r).map(|i| (i as f32 * 0.29).cos() * 0.3).collect();
+        let x: Vec<f32> = (0..k).map(|i| (i as f32 * 0.31).sin() * 0.5 + 0.1).collect();
+        let dy: Vec<f32> = (0..n).map(|i| (i as f32 * 0.47).cos() * 0.3 + 0.2).collect();
+
+        // Forward: z = A @ x, y = scale · B @ z
+        let forward = |a_in: &[f32], b_in: &[f32], x_in: &[f32]| -> Vec<f32> {
+            let mut z = vec![0f32; r];
+            lora_matmul_row(a_in, x_in, &mut z, k, r, 1.0, false);
+            let mut y = vec![0f32; n];
+            lora_matmul_row(b_in, &z, &mut y, r, n, scale, false);
+            y
+        };
+
+        // Analytical backward:
+        let mut z = vec![0f32; r];
+        lora_matmul_row(&a, &x, &mut z, k, r, 1.0, false);
+        let mut u = vec![0f32; r];
+        lora_matmul_col(&b, &dy, &mut u, n, r, 1.0, false);
+        let mut da = vec![0f32; r * k];
+        lora_outer_add(&u, &x, &mut da, scale, false);
+        let mut db = vec![0f32; n * r];
+        lora_outer_add(&dy, &z, &mut db, scale, false);
+        let mut dx = vec![0f32; k];
+        lora_matmul_col(&a, &u, &mut dx, r, k, scale, false);
+
+        // Finite-difference reference: perturb each (param, index) and
+        // measure Δ(L) / (2h).
+        let h = 1e-3f32;
+        let loss = |y: &[f32]| -> f32 {
+            y.iter().zip(dy.iter()).map(|(a, b)| a * b).sum()
+        };
+
+        // dA
+        for p in 0..r {
+            for ki in 0..k {
+                let mut ap = a.clone();
+                ap[p * k + ki] += h;
+                let yp = forward(&ap, &b, &x);
+                let mut am = a.clone();
+                am[p * k + ki] -= h;
+                let ym = forward(&am, &b, &x);
+                let num = (loss(&yp) - loss(&ym)) / (2.0 * h);
+                let ana = da[p * k + ki];
+                assert!(
+                    (num - ana).abs() < 1e-3,
+                    "dA[{p}, {ki}] analytic={ana} numeric={num}"
+                );
+            }
+        }
+        // dB
+        for j in 0..n {
+            for p in 0..r {
+                let mut bp = b.clone();
+                bp[j * r + p] += h;
+                let yp = forward(&a, &bp, &x);
+                let mut bm = b.clone();
+                bm[j * r + p] -= h;
+                let ym = forward(&a, &bm, &x);
+                let num = (loss(&yp) - loss(&ym)) / (2.0 * h);
+                let ana = db[j * r + p];
+                assert!(
+                    (num - ana).abs() < 1e-3,
+                    "dB[{j}, {p}] analytic={ana} numeric={num}"
+                );
+            }
+        }
+        // dx
+        for ki in 0..k {
+            let mut xp = x.clone();
+            xp[ki] += h;
+            let yp = forward(&a, &b, &xp);
+            let mut xm = x.clone();
+            xm[ki] -= h;
+            let ym = forward(&a, &b, &xm);
+            let num = (loss(&yp) - loss(&ym)) / (2.0 * h);
+            let ana = dx[ki];
+            assert!(
+                (num - ana).abs() < 1e-3,
+                "dx[{ki}] analytic={ana} numeric={num}"
             );
         }
     }

@@ -112,6 +112,16 @@ pub struct Pipelines {
     /// Attention backward — pass 2. Consumes pass-1 `d_scores`, produces
     /// `d_k_hist` and `d_v_hist`.
     pub attention_backward_dkv: wgpu::ComputePipeline,
+    /// Tiny f32 row-major matmul: `y = scale * W @ x` (or `y += scale * W @ x`).
+    /// Building block of the LoRA forward correction.
+    pub lora_matmul_row: wgpu::ComputePipeline,
+    /// Tiny f32 transposed matmul: `y = scale * Wᵀ @ x` (or `y += …`).
+    /// Building block of the LoRA backward path for both `u = Bᵀ·dy` and
+    /// `dx += s · Aᵀ·u`.
+    pub lora_matmul_col: wgpu::ComputePipeline,
+    /// Rank-1 outer-product accumulator: `out[i, j] += scale · a[i] · b[j]`.
+    /// Builds both `dA` (`a=u, b=x`) and `dB` (`a=dy, b=z`) in LoRA backward.
+    pub lora_outer_add: wgpu::ComputePipeline,
 }
 
 impl Pipelines {
@@ -221,6 +231,9 @@ impl Pipelines {
                 "attention_backward_dkv",
                 kernels::ATTENTION_BACKWARD_DKV,
             ),
+            lora_matmul_row: build(device, "lora_matmul_row", kernels::LORA_MATMUL_ROW),
+            lora_matmul_col: build(device, "lora_matmul_col", kernels::LORA_MATMUL_COL),
+            lora_outer_add:  build(device, "lora_outer_add",  kernels::LORA_OUTER_ADD),
             geglu:             build(device, "geglu",             kernels::GEGLU),
             rope_neox:         build(device, "rope_neox",         kernels::ROPE_NEOX),
             attention:         build(device, "attention",         kernels::ATTENTION),

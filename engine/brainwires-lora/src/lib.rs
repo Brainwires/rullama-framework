@@ -30,3 +30,5 @@ pub mod shared;
 pub mod dataset_loader;
 /// Learning rate schedules.
 pub mod lr_schedule;
+/// Per-LoRA GPU state: A and B matrices for each wrapped projection.
+pub mod lora;

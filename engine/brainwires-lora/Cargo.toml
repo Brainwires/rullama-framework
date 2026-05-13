@@ -19,6 +19,9 @@ path = "src/lib.rs"
 # the rebuild adds wgpu (via rullama-core) plus a thin set of utilities.
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rullama = { path = "../rullama" }
+wgpu = { workspace = true }
+bytemuck = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -27,6 +30,7 @@ tokenizers = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tempfile = { workspace = true }
+pollster = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true

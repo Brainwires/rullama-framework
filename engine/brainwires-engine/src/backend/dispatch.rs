@@ -2101,6 +2101,144 @@ pub fn rmsnorm_per_row_chained(
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct LoraMatmulParams {
+    k: u32,
+    n: u32,
+    accumulate: u32,
+    _pad: u32,
+    scale: f32,
+    _pad2: u32,
+    _pad3: u32,
+    _pad4: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct LoraOuterParams {
+    outer_a: u32,
+    outer_b: u32,
+    accumulate: u32,
+    _pad: u32,
+    scale: f32,
+    _pad2: u32,
+    _pad3: u32,
+    _pad4: u32,
+}
+
+/// Tiny f32 row-major matmul: `y = scale · W @ x` (or `y += scale · W @ x`
+/// when `accumulate` is true). `W` shape `[n, k]` row-major.
+#[allow(clippy::too_many_arguments)]
+pub fn lora_matmul_row_chained(
+    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
+    w: &wgpu::Buffer, x: &wgpu::Buffer, y: &wgpu::Buffer,
+    k: usize, n: usize, scale: f32, accumulate: bool,
+) {
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    let params = LoraMatmulParams {
+        k: k as u32, n: n as u32,
+        accumulate: accumulate as u32, _pad: 0,
+        scale, _pad2: 0, _pad3: 0, _pad4: 0,
+    };
+    let p_buf = write_uniform(device, queue, "lora_mm_row.params", &params);
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("lora_mm_row.bg"),
+        layout: &p.lora_matmul_row.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: p_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: w.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: x.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: y.as_entire_binding() },
+        ],
+    });
+    let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("lora_mm_row.pass"), timestamp_writes: None,
+    });
+    cp.set_pipeline(&p.lora_matmul_row);
+    cp.set_bind_group(0, &bg, &[]);
+    cp.dispatch_workgroups((n as u32).div_ceil(64), 1, 1);
+}
+
+/// Tiny f32 transposed matmul: `y = scale · Wᵀ @ x` (or `+=`).
+///
+/// `W` is the same physical `[outer, inner]` row-major layout as
+/// `lora_matmul_row`; the kernel iterates by column to compute the
+/// transposed product. `outer` = the summed-over dimension (rows of W),
+/// `inner` = the output length (cols of W).
+#[allow(clippy::too_many_arguments)]
+pub fn lora_matmul_col_chained(
+    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
+    w: &wgpu::Buffer, x: &wgpu::Buffer, y: &wgpu::Buffer,
+    outer: usize, inner: usize, scale: f32, accumulate: bool,
+) {
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    // Reuse LoraMatmulParams shape (k=outer, n=inner — semantically swapped
+    // but the WGSL maps them to `outer`/`inner` names internally).
+    let params = LoraMatmulParams {
+        k: outer as u32, n: inner as u32,
+        accumulate: accumulate as u32, _pad: 0,
+        scale, _pad2: 0, _pad3: 0, _pad4: 0,
+    };
+    let p_buf = write_uniform(device, queue, "lora_mm_col.params", &params);
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("lora_mm_col.bg"),
+        layout: &p.lora_matmul_col.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: p_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: w.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: x.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: y.as_entire_binding() },
+        ],
+    });
+    let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("lora_mm_col.pass"), timestamp_writes: None,
+    });
+    cp.set_pipeline(&p.lora_matmul_col);
+    cp.set_bind_group(0, &bg, &[]);
+    cp.dispatch_workgroups((inner as u32).div_ceil(64), 1, 1);
+}
+
+/// Rank-1 outer-product accumulator: `out[i, j] += scale · a[i] · b[j]`
+/// (or `=` when `accumulate` is false). `out` is `[outer_a, outer_b]`.
+#[allow(clippy::too_many_arguments)]
+pub fn lora_outer_add_chained(
+    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
+    a: &wgpu::Buffer, b: &wgpu::Buffer, out: &wgpu::Buffer,
+    outer_a: usize, outer_b: usize, scale: f32, accumulate: bool,
+) {
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    let params = LoraOuterParams {
+        outer_a: outer_a as u32, outer_b: outer_b as u32,
+        accumulate: accumulate as u32, _pad: 0,
+        scale, _pad2: 0, _pad3: 0, _pad4: 0,
+    };
+    let p_buf = write_uniform(device, queue, "lora_outer.params", &params);
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("lora_outer.bg"),
+        layout: &p.lora_outer_add.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: p_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: a.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: b.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: out.as_entire_binding() },
+        ],
+    });
+    let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("lora_outer.pass"), timestamp_writes: None,
+    });
+    cp.set_pipeline(&p.lora_outer_add);
+    cp.set_bind_group(0, &bg, &[]);
+    cp.dispatch_workgroups(
+        (outer_a as u32).div_ceil(8),
+        (outer_b as u32).div_ceil(8),
+        1,
+    );
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct AttnBackParams {
     head_dim:     u32,
     n_heads:      u32,
@@ -2788,6 +2926,100 @@ mod tests {
             max_du = max_du.max((cpu_du[i] - gpu_du[i]).abs());
         }
         assert!(max_dg < 1e-5 && max_du < 1e-5, "geglu_bwd max_dg={max_dg} max_du={max_du}");
+    }
+
+    /// GPU vs CPU for the three LoRA primitives composed into a full
+    /// forward+backward sequence (matches what `TrainingSession::step`
+    /// will eventually run, minus optimizer + activation capture).
+    ///
+    /// Exercises `lora_matmul_row` × 2 (forward correction's z=A·x and
+    /// y+=s·B·z), `lora_matmul_col` × 2 (u=Bᵀ·dy and dx+=s·Aᵀ·u), and
+    /// `lora_outer_add` × 2 (dA and dB) — all six call sites that
+    /// `TrainingSession::step` will use per LoRA-wrapped projection.
+    #[test]
+    fn lora_forward_backward_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+
+        let k = 16usize;
+        let r = 4usize;
+        let n = 12usize;
+        let scale = 0.5f32;
+        let a: Vec<f32> = (0..r * k).map(|i| (i as f32 * 0.17).sin() * 0.4).collect();
+        let b: Vec<f32> = (0..n * r).map(|i| (i as f32 * 0.29).cos() * 0.3).collect();
+        let x: Vec<f32> = (0..k).map(|i| (i as f32 * 0.31).sin() * 0.5 + 0.1).collect();
+        let dy: Vec<f32> = (0..n).map(|i| (i as f32 * 0.47).cos() * 0.3 + 0.2).collect();
+
+        // CPU reference path
+        let mut z_cpu = vec![0f32; r];
+        crate::reference::ops::lora_matmul_row(&a, &x, &mut z_cpu, k, r, 1.0, false);
+        let mut y_cpu = vec![0f32; n];
+        crate::reference::ops::lora_matmul_row(&b, &z_cpu, &mut y_cpu, r, n, scale, false);
+        let mut u_cpu = vec![0f32; r];
+        crate::reference::ops::lora_matmul_col(&b, &dy, &mut u_cpu, n, r, 1.0, false);
+        let mut da_cpu = vec![0f32; r * k];
+        crate::reference::ops::lora_outer_add(&u_cpu, &x, &mut da_cpu, scale, false);
+        let mut db_cpu = vec![0f32; n * r];
+        crate::reference::ops::lora_outer_add(&dy, &z_cpu, &mut db_cpu, scale, false);
+        let mut dx_cpu = vec![0f32; k];
+        crate::reference::ops::lora_matmul_col(&a, &u_cpu, &mut dx_cpu, r, k, scale, false);
+
+        // GPU path — all dispatches in one encoder.
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let a_buf  = write_storage_f32(device, queue, "A",  &a);
+        let b_buf  = write_storage_f32(device, queue, "B",  &b);
+        let x_buf  = write_storage_f32(device, queue, "x",  &x);
+        let dy_buf = write_storage_f32(device, queue, "dy", &dy);
+        let (z_buf,  z_read)  = make_output_pair(device, "z",  (r * 4) as u64);
+        let (y_buf,  y_read)  = make_output_pair(device, "y",  (n * 4) as u64);
+        let (u_buf,  u_read)  = make_output_pair(device, "u",  (r * 4) as u64);
+        let (da_buf, da_read) = make_output_pair(device, "dA", (r * k * 4) as u64);
+        let (db_buf, db_read) = make_output_pair(device, "dB", (n * r * 4) as u64);
+        let (dx_buf, dx_read) = make_output_pair(device, "dx", (k * 4) as u64);
+
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("lora_fb.enc"),
+        });
+        // Forward: z = A @ x, y = scale · B @ z
+        lora_matmul_row_chained(&ctx, &p, &mut enc, &a_buf, &x_buf, &z_buf, k, r, 1.0, false);
+        lora_matmul_row_chained(&ctx, &p, &mut enc, &b_buf, &z_buf, &y_buf, r, n, scale, false);
+        // Backward: u = Bᵀ @ dy
+        lora_matmul_col_chained(&ctx, &p, &mut enc, &b_buf, &dy_buf, &u_buf, n, r, 1.0, false);
+        // dA = scale · outer(u, x), dB = scale · outer(dy, z)
+        lora_outer_add_chained(&ctx, &p, &mut enc, &u_buf, &x_buf, &da_buf, r, k, scale, false);
+        lora_outer_add_chained(&ctx, &p, &mut enc, &dy_buf, &z_buf, &db_buf, n, r, scale, false);
+        // dx = scale · Aᵀ @ u
+        lora_matmul_col_chained(&ctx, &p, &mut enc, &a_buf, &u_buf, &dx_buf, r, k, scale, false);
+
+        for (src, sz, dst) in [
+            (&z_buf,  (r * 4) as u64,     &z_read),
+            (&y_buf,  (n * 4) as u64,     &y_read),
+            (&u_buf,  (r * 4) as u64,     &u_read),
+            (&da_buf, (r * k * 4) as u64, &da_read),
+            (&db_buf, (n * r * 4) as u64, &db_read),
+            (&dx_buf, (k * 4) as u64,     &dx_read),
+        ] {
+            enc.copy_buffer_to_buffer(src, 0, dst, 0, sz);
+        }
+        queue.submit(Some(enc.finish()));
+
+        let z_gpu  = pollster::block_on(read_back_f32(device, &z_read)).unwrap();
+        let y_gpu  = pollster::block_on(read_back_f32(device, &y_read)).unwrap();
+        let u_gpu  = pollster::block_on(read_back_f32(device, &u_read)).unwrap();
+        let da_gpu = pollster::block_on(read_back_f32(device, &da_read)).unwrap();
+        let db_gpu = pollster::block_on(read_back_f32(device, &db_read)).unwrap();
+        let dx_gpu = pollster::block_on(read_back_f32(device, &dx_read)).unwrap();
+
+        let max = |a: &[f32], b: &[f32]| a.iter().zip(b.iter())
+            .map(|(x, y)| (x - y).abs())
+            .fold(0.0f32, f32::max);
+        assert!(max(&z_cpu,  &z_gpu)  < 1e-5);
+        assert!(max(&y_cpu,  &y_gpu)  < 1e-5);
+        assert!(max(&u_cpu,  &u_gpu)  < 1e-5);
+        assert!(max(&da_cpu, &da_gpu) < 1e-5);
+        assert!(max(&db_cpu, &db_gpu) < 1e-5);
+        assert!(max(&dx_cpu, &dx_gpu) < 1e-5);
     }
 
     /// GPU two-pass attention backward vs. CPU oracle.
