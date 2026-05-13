@@ -28,7 +28,7 @@ use rullama_finetune::TrainingSession;
 
 type BoxError = Box<dyn Error + Send + Sync>;
 
-const N_STEPS: u32 = 200;
+const DEFAULT_N_STEPS: u32 = 200;
 const PROMPT: &str = "The quick brown fox";
 const TARGET: &str = " jumps";
 
@@ -41,6 +41,14 @@ async fn run() -> Result<(), BoxError> {
         .nth(1)
         .ok_or_else(|| -> BoxError { "usage: overfit_one <gguf-path>".into() })?
         .into();
+    // `RULLAMA_OVERFIT_STEPS=<n>` lets the smoke test run a short
+    // session (e.g. 2 steps for a "does it crash?" check) without a
+    // rebuild. Defaults to the M0 acceptance target of 200.
+    let n_steps: u32 = env::var("RULLAMA_OVERFIT_STEPS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(DEFAULT_N_STEPS);
+    let assert_drop: bool = n_steps >= DEFAULT_N_STEPS / 2;
     eprintln!("[load] reading {} …", gguf_path.display());
     let bytes = fs::read(&gguf_path)?;
     let model = Model::load_native(bytes)
@@ -85,7 +93,7 @@ async fn run() -> Result<(), BoxError> {
 
     let mut first_loss: Option<f32> = None;
     let mut last_loss = f32::NAN;
-    for step in 1..=N_STEPS {
+    for step in 1..=n_steps {
         let loss = session
             .step(&input_tokens, target_id)
             .await
@@ -94,7 +102,7 @@ async fn run() -> Result<(), BoxError> {
             first_loss = Some(loss);
         }
         last_loss = loss;
-        if step <= 5 || step % 10 == 0 || step == N_STEPS {
+        if step <= 5 || step % 10 == 0 || step == n_steps {
             eprintln!("[step {step:>3}] loss = {loss:.4}");
         }
     }
@@ -105,6 +113,12 @@ async fn run() -> Result<(), BoxError> {
         "[done] start={l0:.4}, end={last_loss:.4}, drop={drop_pct:.1}%"
     );
 
+    if !assert_drop {
+        // Smoke test with fewer steps — don't enforce the 90% drop
+        // assertion. We only report.
+        eprintln!("[smoke] short run ({n_steps} steps); skipping drop-assert");
+        return Ok(());
+    }
     if drop_pct >= 90.0 {
         eprintln!("[PASS] loss drop ≥ 90%");
         Ok(())
