@@ -1232,6 +1232,25 @@ impl Forward {
         self.ctx.queue.submit(Some(enc.finish()));
 
         let trace_hidden = std::env::var("RULLAMA_TRACE_DHIDDEN").is_ok();
+        // Adaptive max-abs clip on d_hidden between layers. Defaults to
+        // 1.0 to keep deep-network gradient flow finite for LoRA
+        // fine-tuning of pretrained models, where the backward graph
+        // (which the pretrained weights were *not* initialized for) can
+        // amplify 100-1500x per layer. Adam normalises to ≈ lr · sign(g)
+        // anyway, so absolute magnitude is mostly informational — but
+        // preventing overflow is the bare minimum the optimiser needs.
+        let clip_max: f32 = std::env::var("RULLAMA_CLIP_DHIDDEN")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1.0);
+        if trace_hidden {
+            let (max_abs, nans) = read_buf_stats(&self.ctx, scratch.d_hidden, self.cfg.d_model as usize).await?;
+            eprintln!("[trace] after head section: d_hidden max_abs={max_abs:.3e} nan={nans}");
+            let (max_abs_f, nans_f) = read_buf_stats(&self.ctx, scratch.d_hidden_final, self.cfg.d_model as usize).await?;
+            eprintln!("[trace] d_hidden_final (head): max_abs={max_abs_f:.3e} nan={nans_f}");
+            let (max_abs_l, nans_l) = read_buf_stats(&self.ctx, scratch.d_logits, self.cfg.vocab_size as usize).await?;
+            eprintln!("[trace] d_logits: max_abs={max_abs_l:.3e} nan={nans_l}");
+        }
         // ===== Walk layers top-down =====
         for li in (0..n_layers).rev() {
             let i = li as u32;
@@ -1243,6 +1262,25 @@ impl Forward {
             });
             self.backward_layer(&mut lenc, i, history_len, pos, cap, lora, grad, scratch).await?;
             self.ctx.queue.submit(Some(lenc.finish()));
+
+            // Adaptive renorm of d_hidden — if max-abs exceeds the
+            // configured ceiling, scale d_hidden in-place to bring
+            // max-abs back down. Preserves direction (every element
+            // scaled by the same factor); Adam doesn't care about
+            // absolute scale.
+            if clip_max > 0.0 {
+                let (max_abs, _) = read_buf_stats(&self.ctx, scratch.d_hidden, self.cfg.d_model as usize).await?;
+                if max_abs > clip_max && max_abs.is_finite() {
+                    let s = clip_max / max_abs;
+                    let mut cenc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("bwd.clip"),
+                    });
+                    scale_chained(&self.ctx, &self.pipes, &mut cenc,
+                        scratch.d_hidden, self.cfg.d_model as usize, s);
+                    self.ctx.queue.submit(Some(cenc.finish()));
+                }
+            }
+
             if trace_hidden {
                 let (max_abs, nans) = read_buf_stats(&self.ctx, scratch.d_hidden, self.cfg.d_model as usize).await?;
                 eprintln!("[trace] after layer {li} bwd: d_hidden max_abs={max_abs:.3e} nan={nans}");
