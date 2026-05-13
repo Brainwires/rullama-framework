@@ -109,27 +109,55 @@ impl TrainingSession {
         })
     }
 
-    /// Run one training step on a single example:
-    ///   `loss = CE(forward(input_ids), target_id)`.
-    ///
-    /// Resets KV cache, runs forward with LoRA correction, captures
-    /// activations at the final position, runs backward, applies Adam.
-    /// Returns the scalar cross-entropy loss for this step.
-    pub async fn step(
+    /// Zero every LoRA's `dA` / `dB` gradient buffers. Call at the
+    /// start of a gradient-accumulation cycle (or `step()` does this
+    /// for you for the single-example case).
+    pub fn zero_grads(&self) {
+        self.loras.zero_all_grads();
+    }
+
+    /// Apply Adam to every registered LoRA's `(A, m_a, v_a)` and
+    /// `(B, m_b, v_b)`. Bumps the internal step counter (1-based,
+    /// drives the bias-correction). Call once at the end of each
+    /// gradient-accumulation cycle.
+    pub fn optimizer_step(&mut self) {
+        let adam = AdamConfig { step: self.step_num, ..self.adam_cfg };
+        let ctx = self.model.forward().ctx().clone();
+        let pipes = self.model.forward().pipes().clone();
+        let mut enc = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("train.adam"),
+        });
+        for (_key, layer) in self.loras.iter() {
+            adam_step_chained(&ctx, &pipes, &mut enc,
+                &layer.da, &layer.a, &layer.m_a, &layer.v_a, layer.a_len(), adam);
+            adam_step_chained(&ctx, &pipes, &mut enc,
+                &layer.db, &layer.b, &layer.m_b, &layer.v_b, layer.b_len(), adam);
+        }
+        ctx.queue.submit(Some(enc.finish()));
+        self.step_num = self.step_num.saturating_add(1);
+    }
+
+    /// Run a forward + backward sweep that **accumulates** gradients
+    /// into each LoRA's `dA` / `dB` buffers without applying Adam or
+    /// zeroing first. The driver of a gradient-accumulation loop
+    /// calls this N times after a single `zero_grads()`, then one
+    /// `optimizer_step()` to consume the summed gradients.
+    pub async fn forward_backward(
         &mut self,
         input_ids: &[u32],
         target_id: u32,
     ) -> Result<f32, TrainingError> {
         if input_ids.is_empty() {
             return Err(TrainingError::Config(
-                "step: input_ids must be non-empty".into(),
+                "forward_backward: input_ids must be non-empty".into(),
             ));
         }
         let n_layers = self.model.forward().cfg().n_layers as usize;
 
-        // Fresh KV cache + zeroed gradient buffers.
+        // Fresh KV cache (each call is a fresh sequence). LoRA grad
+        // buffers are *not* touched — caller zeros them via
+        // `zero_grads()` at the start of the accumulation cycle.
         self.model.forward_mut().reset();
-        self.loras.zero_all_grads();
 
         // Build per-layer LoRA slot views (forward correction inputs).
         // Stays alive for the whole step — borrows immutably from
@@ -237,21 +265,27 @@ impl TrainingSession {
             self.debug_grad_norms().await;
         }
 
-        // Adam over every LoRA's (A, m_a, v_a) and (B, m_b, v_b).
-        let adam = AdamConfig { step: self.step_num, ..self.adam_cfg };
-        let ctx = self.model.forward().ctx().clone();
-        let pipes = self.model.forward().pipes().clone();
-        let mut enc = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("train.adam"),
-        });
-        for (_key, layer) in self.loras.iter() {
-            adam_step_chained(&ctx, &pipes, &mut enc,
-                &layer.da, &layer.a, &layer.m_a, &layer.v_a, layer.a_len(), adam);
-            adam_step_chained(&ctx, &pipes, &mut enc,
-                &layer.db, &layer.b, &layer.m_b, &layer.v_b, layer.b_len(), adam);
-        }
-        ctx.queue.submit(Some(enc.finish()));
-        self.step_num = self.step_num.saturating_add(1);
+        Ok(loss)
+    }
+
+    /// Run one training step on a single example:
+    ///   `loss = CE(forward(input_ids), target_id)`.
+    ///
+    /// Resets KV cache, **zeroes gradients**, runs forward with LoRA
+    /// correction, captures activations at the final position, runs
+    /// backward, applies Adam. Returns the scalar cross-entropy loss.
+    ///
+    /// For gradient accumulation across multiple micro-batches, call
+    /// `zero_grads()` once, `forward_backward()` for each
+    /// micro-batch, then `optimizer_step()` once.
+    pub async fn step(
+        &mut self,
+        input_ids: &[u32],
+        target_id: u32,
+    ) -> Result<f32, TrainingError> {
+        self.zero_grads();
+        let loss = self.forward_backward(input_ids, target_id).await?;
+        self.optimizer_step();
         Ok(loss)
     }
 
