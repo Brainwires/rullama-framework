@@ -67,6 +67,7 @@ pub const GEGLU_BACKWARD: &str = include_str!("wgsl/geglu_backward.wgsl");
 pub const ROPE_NEOX_BACKWARD: &str = include_str!("wgsl/rope_neox_backward.wgsl");
 pub const ATTENTION_BACKWARD_DQ: &str = include_str!("wgsl/attention_backward_dq.wgsl");
 pub const ATTENTION_BACKWARD_DKV: &str = include_str!("wgsl/attention_backward_dkv.wgsl");
+pub const ATTENTION_PROBS: &str = include_str!("wgsl/attention_probs.wgsl");
 pub const LORA_MATMUL_ROW: &str = include_str!("wgsl/lora_matmul_row.wgsl");
 pub const LORA_MATMUL_COL: &str = include_str!("wgsl/lora_matmul_col.wgsl");
 pub const LORA_OUTER_ADD: &str = include_str!("wgsl/lora_outer_add.wgsl");

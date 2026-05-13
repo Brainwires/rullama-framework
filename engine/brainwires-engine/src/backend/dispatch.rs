@@ -2757,6 +2757,44 @@ pub fn attention_chained(
     cp.dispatch_workgroups(n_heads as u32, 1, 1);
 }
 
+/// Compute attention softmax probabilities only (no V multiply). Mirrors
+/// `attention_chained`'s scoring + softmax math and writes
+/// `probs[n_heads, history_len]`. Used by the training backward pass to
+/// reconstruct probs from the captured `q_post_rope` and the existing KV
+/// cache, so the forward attention kernel can stay unchanged.
+#[allow(clippy::too_many_arguments)]
+pub fn attention_probs_chained(
+    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
+    q: &wgpu::Buffer, k_hist: &wgpu::Buffer, probs: &wgpu::Buffer,
+    head_dim: usize, n_heads: usize, n_kv_heads: usize,
+    pos: usize, history_len: usize, window: usize,
+) {
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    let params = AttnParams {
+        head_dim: head_dim as u32, n_heads: n_heads as u32,
+        n_kv_heads: n_kv_heads as u32, heads_per_kv: (n_heads / n_kv_heads) as u32,
+        pos: pos as u32, history_len: history_len as u32, window: window as u32, _p: 0,
+    };
+    let p_buf = write_uniform(device, queue, "attn_probs.params", &params);
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("attn_probs.bg"),
+        layout: &p.attention_probs.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: p_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: q.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: k_hist.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: probs.as_entire_binding() },
+        ],
+    });
+    let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("attn_probs.pass"), timestamp_writes: None,
+    });
+    cp.set_pipeline(&p.attention_probs);
+    cp.set_bind_group(0, &bg, &[]);
+    cp.dispatch_workgroups(n_heads as u32, 1, 1);
+}
+
 // ---------- attention ----------
 
 pub async fn attention_cached(

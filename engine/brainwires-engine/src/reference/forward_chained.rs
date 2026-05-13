@@ -22,6 +22,41 @@ use crate::backend::dispatch::{
     residual_add_chained, rmsnorm_chained, rmsnorm_per_row_chained,
     rope_neox_chained, scale_chained, softcap_chained,
 };
+
+/// Activation capture buffers for one transformer layer. Used by the
+/// training backward pass to read forward intermediates without
+/// recomputing them. Sized for a **single query position** (M0); M1
+/// will extend along a seq axis.
+///
+/// Each buffer must be a STORAGE | COPY_DST | COPY_SRC `wgpu::Buffer`
+/// large enough to hold the named tensor at the layer's per-position
+/// shape (see `crates/rullama-finetune/src/scratch.rs`).
+pub struct LayerCaptureBuffers<'a> {
+    /// `self.hidden` snapshot at the start of the layer ([d_model]).
+    pub hidden_in:   &'a wgpu::Buffer,
+    /// Output of attn rmsnorm ([d_model]).
+    pub norm_x_attn: &'a wgpu::Buffer,
+    /// q matmul output before q_norm rmsnorm ([n_heads · head_dim]).
+    pub q_pre_norm:  &'a wgpu::Buffer,
+    /// q after q_norm rmsnorm AND RoPE ([n_heads · head_dim]).
+    pub q_post_rope: &'a wgpu::Buffer,
+    /// k matmul output before k_norm rmsnorm ([n_kv · head_dim]).
+    pub k_pre_norm:  &'a wgpu::Buffer,
+    /// v matmul output before v_norm rmsnorm ([n_kv · head_dim]).
+    pub v_pre_norm:  &'a wgpu::Buffer,
+    /// Attention output, input to o_proj ([n_heads · head_dim]).
+    pub attn_out:    &'a wgpu::Buffer,
+    /// `self.hidden` after the attn residual add ([d_model]).
+    pub pre_ffn_rms: &'a wgpu::Buffer,
+    /// Output of ffn rmsnorm ([d_model]).
+    pub norm_x_ffn:  &'a wgpu::Buffer,
+    /// Gate matmul output ([ffn_inter]).
+    pub ffn_gate:    &'a wgpu::Buffer,
+    /// Up matmul output ([ffn_inter]).
+    pub ffn_up:      &'a wgpu::Buffer,
+    /// GEGLU output, input to ffn_down ([ffn_inter]).
+    pub ffn_act:     &'a wgpu::Buffer,
+}
 use crate::backend::{Pipelines, WeightCache, WgpuCtx};
 use crate::error::{Result, RullamaError};
 use crate::gguf::GgmlDtype;
@@ -289,6 +324,37 @@ impl Forward {
     /// Run one forward step from a token id. Looks up the token's embedding row,
     /// uploads it to the hidden buffer, then runs the rest of the forward.
     pub async fn step(&mut self, token_id: u32) -> Result<Vec<f32>> {
+        self.step_inner(token_id, None).await
+    }
+
+    /// Run one forward step **with per-layer activation capture** into
+    /// the supplied buffers. Used by the training backward pass —
+    /// `capture[i]` receives the layer-`i` intermediates needed by the
+    /// reverse walker. Pass exactly `cfg.n_layers` entries.
+    ///
+    /// Capture only emits `copy_buffer_to_buffer` commands inside the
+    /// per-token encoder; there is no extra submit. Adds ~12 small
+    /// copies per layer (≤ d_model floats each), trivial vs. the
+    /// per-layer matmul cost.
+    pub async fn step_capture<'a>(
+        &mut self,
+        token_id: u32,
+        capture: &'a [LayerCaptureBuffers<'a>],
+    ) -> Result<Vec<f32>> {
+        if capture.len() != self.cfg.n_layers as usize {
+            return Err(RullamaError::Inference(format!(
+                "step_capture: got {} capture layers, expected {}",
+                capture.len(), self.cfg.n_layers
+            )));
+        }
+        self.step_inner(token_id, Some(capture)).await
+    }
+
+    async fn step_inner<'a>(
+        &mut self,
+        token_id: u32,
+        capture: Option<&'a [LayerCaptureBuffers<'a>]>,
+    ) -> Result<Vec<f32>> {
         if (token_id as u64) >= self.cfg.vocab_size as u64 {
             return Err(RullamaError::Inference(format!(
                 "token_id {token_id} >= vocab_size {}", self.cfg.vocab_size
@@ -319,7 +385,7 @@ impl Forward {
             drop(ple_in);
         }
 
-        self.run_forward_from_hidden().await
+        self.run_forward_from_hidden(capture).await
     }
 
     /// Run one forward step from a pre-computed `[d_model]` embedding (vision soft
@@ -355,12 +421,15 @@ impl Forward {
             self.ctx.queue.write_buffer(&self.per_layer_residual, 0, bytemuck::cast_slice(&zeros));
         }
 
-        self.run_forward_from_hidden().await
+        self.run_forward_from_hidden(None).await
     }
 
     /// Forward pass starting from `self.hidden` already populated. Shared by
     /// `step` (token-id path) and `step_with_embedding` (multimodal soft tokens).
-    async fn run_forward_from_hidden(&mut self) -> Result<Vec<f32>> {
+    async fn run_forward_from_hidden<'a>(
+        &mut self,
+        capture: Option<&'a [LayerCaptureBuffers<'a>]>,
+    ) -> Result<Vec<f32>> {
         let d_model = self.cfg.d_model as usize;
         let n_layers = self.cfg.n_layers as usize;
         let ple_dim = self.cfg.ple_dim as usize;
@@ -421,7 +490,8 @@ impl Forward {
         // submit (tried 3) re-introduces the iPhone WebContent crash on the
         // first step — the per-layer cadence is the working strip-line.
         for i in 0..n_layers as u32 {
-            self.encode_layer(&mut enc, i, pos).await?;
+            let cap = capture.map(|c| &c[i as usize]);
+            self.encode_layer(&mut enc, i, pos, cap).await?;
             self.ctx.queue.submit(Some(enc.finish()));
             enc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("fwd.token_encoder.cont"),
@@ -497,11 +567,12 @@ impl Forward {
         Ok(logits)
     }
 
-    async fn encode_layer(
+    async fn encode_layer<'a>(
         &mut self,
         enc: &mut wgpu::CommandEncoder,
         i: u32,
         pos: u32,
+        capture: Option<&'a LayerCaptureBuffers<'a>>,
     ) -> Result<()> {
         let prefix = format!("blk.{i}.");
         let d_model = self.cfg.d_model as usize;
@@ -512,6 +583,11 @@ impl Forward {
         let ffn_n = self.cfg.ffn(i) as usize;
         let kind = self.cfg.kind(i);
         let donor = self.donor_map[i as usize];
+
+        // ---- CAPTURE: hidden_in (start-of-layer residual stream) ----
+        if let Some(cap) = capture {
+            enc.copy_buffer_to_buffer(&self.hidden, 0, cap.hidden_in, 0, (d_model * 4) as u64);
+        }
 
         // Pre-fetch all weights this layer needs (each is cached after first call).
         let attn_norm_w = self.wcache.buffer_async(&format!("{prefix}attn_norm.weight")).await?;
@@ -560,9 +636,20 @@ impl Forward {
             &self.hidden, Some(&attn_norm_w), &self.dummy,
             &self.norm_x, d_model, eps);
 
+        // ---- CAPTURE: norm_x_attn (input to q/k/v matmul + LoRA) ----
+        if let Some(cap) = capture {
+            enc.copy_buffer_to_buffer(&self.norm_x, 0, cap.norm_x_attn, 0, (d_model * 4) as u64);
+        }
+
         // Q/K/V projections from norm_x
         matmul_q4_k_chained(&self.ctx, &self.pipes, enc,
             &q_w, &self.norm_x, &self.q, d_model, n_heads * head_dim);
+
+        // ---- CAPTURE: q_pre_norm (q matmul output, input to q_norm rmsnorm) ----
+        if let Some(cap) = capture {
+            enc.copy_buffer_to_buffer(&self.q, 0, cap.q_pre_norm, 0, (n_heads * head_dim * 4) as u64);
+        }
+
         // per-head q_norm (weighted)
         rmsnorm_per_row_chained(&self.ctx, &self.pipes, enc,
             &self.q, Some(&q_norm_w), &self.dummy,
@@ -576,6 +663,11 @@ impl Forward {
             &self.q_norm, factors_w.as_ref(), &self.dummy,
             head_dim, n_heads, pos as usize, rope_dims, rope_base);
 
+        // ---- CAPTURE: q_post_rope (input to attention; reused in dkv pass) ----
+        if let Some(cap) = capture {
+            enc.copy_buffer_to_buffer(&self.q_norm, 0, cap.q_post_rope, 0, (n_heads * head_dim * 4) as u64);
+        }
+
         if donor.is_none() {
             let kw = k_w.as_ref().unwrap();
             let knw = k_norm_w.as_ref().unwrap();
@@ -584,6 +676,12 @@ impl Forward {
 
             matmul_q4_k_chained(&self.ctx, &self.pipes, enc,
                 kw, &self.norm_x, &self.k, d_model, n_kv_heads * head_dim);
+
+            // ---- CAPTURE: k_pre_norm (k matmul output, input to k_norm rmsnorm) ----
+            if let Some(cap) = capture {
+                enc.copy_buffer_to_buffer(&self.k, 0, cap.k_pre_norm, 0, (n_kv_heads * head_dim * 4) as u64);
+            }
+
             rmsnorm_per_row_chained(&self.ctx, &self.pipes, enc,
                 &self.k, Some(knw), &self.dummy,
                 &self.k_norm, n_kv_heads, head_dim, eps);
@@ -598,6 +696,12 @@ impl Forward {
                     vw, &self.norm_x, &self.v, d_model, n_kv_heads * head_dim),
                 other => return Err(RullamaError::Inference(format!("attn_v dtype {other:?} unsupported"))),
             }
+
+            // ---- CAPTURE: v_pre_norm (v matmul output, input to unweighted v_norm rmsnorm) ----
+            if let Some(cap) = capture {
+                enc.copy_buffer_to_buffer(&self.v, 0, cap.v_pre_norm, 0, (n_kv_heads * head_dim * 4) as u64);
+            }
+
             // V-norm is unweighted
             rmsnorm_per_row_chained(&self.ctx, &self.pipes, enc,
                 &self.v, None, &self.dummy,
@@ -621,6 +725,11 @@ impl Forward {
             &self.q_norm, &self.kv_k[i as usize], &self.kv_v[i as usize], &self.attn_out_buf,
             head_dim, n_heads, n_kv_heads, pos as usize, history_len, window);
 
+        // ---- CAPTURE: attn_out (input to o_proj) ----
+        if let Some(cap) = capture {
+            enc.copy_buffer_to_buffer(&self.attn_out_buf, 0, cap.attn_out, 0, (n_heads * head_dim * 4) as u64);
+        }
+
         // attn_proj = matmul(attn_out_buf, attn_output.weight)
         matmul_q4_k_chained(&self.ctx, &self.pipes, enc,
             &o_w, &self.attn_out_buf, &self.attn_proj, n_heads * head_dim, d_model);
@@ -632,16 +741,39 @@ impl Forward {
         residual_add_chained(&self.ctx, &self.pipes, enc,
             &self.hidden, &self.norm_y, d_model);
 
+        // ---- CAPTURE: pre_ffn_rms (hidden after attn residual add) ----
+        if let Some(cap) = capture {
+            enc.copy_buffer_to_buffer(&self.hidden, 0, cap.pre_ffn_rms, 0, (d_model * 4) as u64);
+        }
+
         // ===== MLP =====
         rmsnorm_chained(&self.ctx, &self.pipes, enc,
             &self.hidden, Some(&mlp_norm_w), &self.dummy,
             &self.norm_x, d_model, eps);
+
+        // ---- CAPTURE: norm_x_ffn (input to gate/up matmul + LoRA) ----
+        if let Some(cap) = capture {
+            enc.copy_buffer_to_buffer(&self.norm_x, 0, cap.norm_x_ffn, 0, (d_model * 4) as u64);
+        }
+
         matmul_q4_k_chained(&self.ctx, &self.pipes, enc,
             &gate_w, &self.norm_x, &self.ffn_gate, d_model, ffn_n);
         matmul_q4_k_chained(&self.ctx, &self.pipes, enc,
             &up_w, &self.norm_x, &self.ffn_up, d_model, ffn_n);
+
+        // ---- CAPTURE: ffn_gate, ffn_up (inputs to GEGLU) ----
+        if let Some(cap) = capture {
+            enc.copy_buffer_to_buffer(&self.ffn_gate, 0, cap.ffn_gate, 0, (ffn_n * 4) as u64);
+            enc.copy_buffer_to_buffer(&self.ffn_up,   0, cap.ffn_up,   0, (ffn_n * 4) as u64);
+        }
+
         geglu_chained(&self.ctx, &self.pipes, enc,
             &self.ffn_gate, &self.ffn_up, &self.ffn_act, ffn_n);
+
+        // ---- CAPTURE: ffn_act (input to ffn_down matmul) ----
+        if let Some(cap) = capture {
+            enc.copy_buffer_to_buffer(&self.ffn_act, 0, cap.ffn_act, 0, (ffn_n * 4) as u64);
+        }
 
         match down_dtype {
             GgmlDtype::Q6_K => matmul_q6_k_chained(&self.ctx, &self.pipes, enc,

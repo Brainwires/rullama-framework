@@ -112,6 +112,11 @@ pub struct Pipelines {
     /// Attention backward — pass 2. Consumes pass-1 `d_scores`, produces
     /// `d_k_hist` and `d_v_hist`.
     pub attention_backward_dkv: wgpu::ComputePipeline,
+    /// Compute attention softmax probabilities (Phase A–D of the forward
+    /// attention kernel) without applying them against V. Used by the
+    /// training backward pass to reconstruct probs from `q_post_rope`
+    /// and the KV cache without modifying the forward kernel.
+    pub attention_probs: wgpu::ComputePipeline,
     /// Tiny f32 row-major matmul: `y = scale * W @ x` (or `y += scale * W @ x`).
     /// Building block of the LoRA forward correction.
     pub lora_matmul_row: wgpu::ComputePipeline,
@@ -235,6 +240,7 @@ impl Pipelines {
                 "attention_backward_dkv",
                 kernels::ATTENTION_BACKWARD_DKV,
             ),
+            attention_probs: build(device, "attention_probs", kernels::ATTENTION_PROBS),
             lora_matmul_row: build(device, "lora_matmul_row", kernels::LORA_MATMUL_ROW),
             lora_matmul_col: build(device, "lora_matmul_col", kernels::LORA_MATMUL_COL),
             lora_outer_add:  build(device, "lora_outer_add",  kernels::LORA_OUTER_ADD),

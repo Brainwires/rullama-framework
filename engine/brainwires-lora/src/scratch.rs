@@ -6,34 +6,37 @@
 //! `Gemma4Config` + `max_seq_len` so the lifetime of a scratch is the
 //! lifetime of a `TrainingSession` (no per-step alloc).
 //!
+//! ### M0 simplification — single-position capture
+//!
+//! M0's NextToken loss only needs activations at the final query
+//! position. Per-layer capture buffers are sized for one position
+//! (`max_seq_len = 1` effectively). The K/V history is read directly
+//! from the model's existing KV cache (`Forward::kv_k[i]`,
+//! `Forward::kv_v[i]`) — no separate capture.
+//!
 //! ### Per-layer activations (what the backward needs)
 //!
-//! Per layer, the M0 backward walker consumes:
-//!
-//! | name            | shape (seq × …)                                 | needed by                                  |
-//! | --------------- | ----------------------------------------------- | ------------------------------------------ |
-//! | `hidden_in`     | `[seq, d_model]`                                | post-RMSNorm-attn residual backward        |
-//! | `pre_attn_rms`  | `[seq, d_model]`                                | rmsnorm_backward (input to attn_norm)      |
-//! | `norm_x_attn`   | `[seq, d_model]`                                | matmul_q4_k_backward_input for q/k/v       |
-//! | `q_pre_rope`    | `[seq, n_heads · head_dim]`                     | rope_backward (q)                          |
-//! | `k_pre_rope`    | `[seq, n_kv · head_dim]`                        | rope_backward (k)                          |
-//! | `attn_probs`    | `[seq, n_heads, history_len]`                   | attention_backward (softmax probs)         |
-//! | `attn_out`      | `[seq, n_heads · head_dim]`                     | matmul_q4_k_backward_input (o_proj input)  |
-//! | `pre_ffn_rms`   | `[seq, d_model]`                                | rmsnorm_backward (input to mlp_norm)       |
-//! | `norm_x_ffn`    | `[seq, d_model]`                                | matmul_q4_k_backward_input for gate/up     |
-//! | `ffn_gate`      | `[seq, ffn_inter]`                              | geglu_backward                             |
-//! | `ffn_up`        | `[seq, ffn_inter]`                              | geglu_backward                             |
-//! | `ffn_act`       | `[seq, ffn_inter]`                              | matmul_q4_k_backward_input for ffn_down    |
-//!
-//! Sizes for Gemma 4 e2b at `seq=128`:
-//!   d_model=1536, n_heads=8, head_dim=256, ffn_inter≈8192, history=128.
-//!   Per layer total ≈ 12 × {1.5K..1MB} ≈ 1.3 MB. 26 layers ≈ 34 MB.
+//! | name            | shape                             | needed by                                  |
+//! | --------------- | --------------------------------- | ------------------------------------------ |
+//! | `hidden_in`     | `[d_model]`                       | attn rmsnorm backward (input)              |
+//! | `norm_x_attn`   | `[d_model]`                       | matmul_q4_k_backward_input for q/k/v       |
+//! | `q_pre_norm`    | `[n_heads · head_dim]`            | q_norm rmsnorm backward (input)            |
+//! | `q_post_rope`   | `[n_heads · head_dim]`            | attention backward (probs recompute + dkv) |
+//! | `k_pre_norm`    | `[n_kv · head_dim]`               | k_norm rmsnorm backward (input)            |
+//! | `v_pre_norm`    | `[n_kv · head_dim]`               | v_norm rmsnorm backward (input)            |
+//! | `attn_out`      | `[n_heads · head_dim]`            | matmul_q4_k_backward_input (o_proj input)  |
+//! | `pre_ffn_rms`   | `[d_model]`                       | ffn rmsnorm backward (input)               |
+//! | `norm_x_ffn`    | `[d_model]`                       | matmul_q4_k_backward_input for gate/up     |
+//! | `ffn_gate`      | `[ffn_inter]`                     | geglu backward                             |
+//! | `ffn_up`        | `[ffn_inter]`                     | geglu backward                             |
+//! | `ffn_act`       | `[ffn_inter]`                     | matmul_q4_k_backward_input for ffn_down    |
 //!
 //! Activations live on the GPU as `wgpu::Buffer`s with
-//! `STORAGE | COPY_DST | COPY_SRC`. The forward writes to them via a
-//! `Forward::with_activation_capture(...)` mode that task #14b will
-//! plumb through `forward_chained.rs::encode_layer`. The backward
-//! reads them through the dispatchers added in tasks #9–#12.
+//! `STORAGE | COPY_DST | COPY_SRC`. The forward writes to them via
+//! `Forward::step_capture(...)` which threads an
+//! `Option<&mut LayerActivations>` through `encode_layer` and emits
+//! `copy_buffer_to_buffer` at each capture point. The backward reads
+//! them through the dispatchers added in tasks #9–#12.
 
 use std::sync::Arc;
 
@@ -42,42 +45,88 @@ use rullama::model::config::Gemma4Config;
 use wgpu::{Buffer, BufferDescriptor, BufferUsages};
 
 /// Per-layer activation buffer set. One per layer; addressed by layer index.
+///
+/// All buffers are single-position (final query position). M1 will extend
+/// the leading axis to `[seq, …]` for the PerPosition loss path.
 pub struct LayerActivations {
-    pub hidden_in:    Buffer,
-    pub pre_attn_rms: Buffer,
-    pub norm_x_attn:  Buffer,
-    pub q_pre_rope:   Buffer,
-    pub k_pre_rope:   Buffer,
-    pub attn_probs:   Buffer,
-    pub attn_out:     Buffer,
-    pub pre_ffn_rms:  Buffer,
-    pub norm_x_ffn:   Buffer,
-    pub ffn_gate:     Buffer,
-    pub ffn_up:       Buffer,
-    pub ffn_act:      Buffer,
+    /// `self.hidden` snapshot at the start of the layer (input to attn rmsnorm).
+    pub hidden_in: Buffer,
+    /// Output of the attn rmsnorm (input to q/k/v matmul + LoRA).
+    pub norm_x_attn: Buffer,
+    /// `self.q` snapshot (q matmul output, before q_norm rmsnorm).
+    pub q_pre_norm: Buffer,
+    /// `self.q_norm` snapshot AFTER RoPE (input to attention; reused in dkv pass).
+    pub q_post_rope: Buffer,
+    /// `self.k` snapshot (k matmul output, before k_norm rmsnorm).
+    pub k_pre_norm: Buffer,
+    /// `self.v` snapshot (v matmul output, before v_norm rmsnorm — unweighted).
+    pub v_pre_norm: Buffer,
+    /// Attention output (= input to o_proj matmul).
+    pub attn_out: Buffer,
+    /// `self.hidden` snapshot after the attn residual add (input to ffn rmsnorm).
+    pub pre_ffn_rms: Buffer,
+    /// Output of the ffn rmsnorm (input to gate/up matmul + LoRA).
+    pub norm_x_ffn: Buffer,
+    /// Gate matmul output (one input to GEGLU).
+    pub ffn_gate: Buffer,
+    /// Up matmul output (one input to GEGLU).
+    pub ffn_up: Buffer,
+    /// GEGLU output (= input to ffn_down matmul).
+    pub ffn_act: Buffer,
 }
 
 /// Top-level scratch for a training step.
 ///
 /// Layout invariants:
-/// - `max_seq_len` is the upper bound on training-time sequence length;
-///   per-step calls may use ≤ that. Buffers are sized for the max.
-/// - `d_logits` / `loss` are dispatched once per step (NextToken mode);
-///   PerPosition mode (M1) extends `d_logits` to `[seq, vocab]` and
-///   `loss` to `[seq]`.
+/// - Capture is single-position (NextToken / M0). M1 will widen the
+///   per-layer buffers along a seq axis.
+/// - `d_logits` / `loss` are dispatched once per step.
 pub struct TrainingScratch {
     /// `d_logits[vocab]` from cross_entropy_backward.
     pub d_logits: Buffer,
-    /// Scalar loss readback.
+    /// Scalar loss readback (1 f32).
     pub loss: Buffer,
     /// `d_hidden_final[d_model]` — gradient at the final-position hidden
     /// state after the output projection's backward.
     pub d_hidden_final: Buffer,
     /// Per-layer activation captures.
     pub layers: Vec<LayerActivations>,
+    /// Running `d_hidden[d_model]` — the per-layer gradient on the
+    /// residual stream that walks from the top of the model down to the
+    /// embedding. Backward maintains a single running buffer here so
+    /// each layer's backward reads from it and writes back to it.
+    pub d_hidden: Buffer,
+    /// Scratch for in-flight d(something) of d_model shape (e.g. dx out of
+    /// rmsnorm_backward before residual_add merges it back into d_hidden).
+    pub d_hidden_tmp: Buffer,
+    /// Scratch `[n_heads · max_history_len]` for the attention probs
+    /// recomputed during backward (output of `attention_probs_chained`).
+    pub attn_probs: Buffer,
     /// Staging buffer for `d_scores` in attention backward (pass-1 output,
-    /// pass-2 input). Sized `[n_heads, history_len]`.
+    /// pass-2 input). Sized `[n_heads · max_history_len]`.
     pub attn_d_scores: Buffer,
+    /// Scratch `[n_heads · head_dim]` — `d_q` from attention backward,
+    /// also reused as d(q_post_rope) input to rope backward.
+    pub d_q: Buffer,
+    /// Scratch `[max_history_len · n_kv · head_dim]` — `d_k_hist`. For M0
+    /// we only consume the row at `pos`, but the kernel writes all rows.
+    pub d_k_hist: Buffer,
+    /// Same shape as `d_k_hist` — `d_v_hist`.
+    pub d_v_hist: Buffer,
+    /// Scratch `[n_heads · head_dim]` — d(q before rope) post-rope-back.
+    pub d_q_pre_rope: Buffer,
+    /// Scratch `[n_kv · head_dim]` — d(k before rope) post-rope-back.
+    pub d_k_pre_rope: Buffer,
+    /// Scratch `[n_heads · head_dim]` — d(q matmul output).
+    pub d_q_pre_norm: Buffer,
+    /// Scratch `[n_kv · head_dim]` — d(k matmul output).
+    pub d_k_pre_norm: Buffer,
+    /// Scratch `[n_kv · head_dim]` — d(v matmul output) (unweighted v_norm).
+    pub d_v_pre_norm: Buffer,
+    /// Scratch `[ffn_inter]` — running d through ffn block.
+    pub d_ffn_a: Buffer,
+    /// Scratch `[ffn_inter]` — second d through ffn block (gate vs up split).
+    pub d_ffn_b: Buffer,
     /// Configured max sequence length the scratch is sized for.
     pub max_seq_len: u32,
 }
@@ -104,61 +153,106 @@ impl TrainingScratch {
         let d_model_e = cfg.d_model as u64;
         let seq_e     = max_seq_len as u64;
         let vocab_e   = cfg.vocab_size as u64;
+        let n_heads_e = cfg.n_heads as u64;
+        let head_dim_max_e = cfg.head_dim_global.max(cfg.head_dim_swa) as u64;
+        let n_kv_max_e = cfg.n_kv_heads_global.max(cfg.n_kv_heads_swa) as u64;
+        let ffn_inter_max_e = (0..cfg.n_layers).map(|i| cfg.ffn(i)).max().unwrap_or(0) as u64;
 
         let d_logits       = make("scratch.d_logits", vocab_e);
         let loss           = make("scratch.loss", 1);
         let d_hidden_final = make("scratch.d_hidden_final", d_model_e);
+        let d_hidden       = make("scratch.d_hidden", d_model_e);
+        let d_hidden_tmp   = make("scratch.d_hidden_tmp", d_model_e);
 
         let layers = (0..cfg.n_layers)
             .map(|li| {
                 let n_kv = cfg.n_kv_heads(li) as u64;
-                let head_dim = match cfg.layer_kinds[li as usize] {
-                    rullama::model::config::LayerKind::SlidingWindow => cfg.head_dim_swa as u64,
-                    rullama::model::config::LayerKind::Global => cfg.head_dim_global as u64,
-                };
+                let head_dim = cfg.head_dim(li) as u64;
                 let n_heads = cfg.n_heads as u64;
-                let ffn_inter = cfg.ffn_inter[li as usize] as u64;
-                let history = seq_e; // backward at the final position sees the full sequence
+                let ffn_inter = cfg.ffn(li) as u64;
 
                 LayerActivations {
-                    hidden_in:    make("layer.hidden_in",    seq_e * d_model_e),
-                    pre_attn_rms: make("layer.pre_attn_rms", seq_e * d_model_e),
-                    norm_x_attn:  make("layer.norm_x_attn",  seq_e * d_model_e),
-                    q_pre_rope:   make("layer.q_pre_rope",   seq_e * n_heads * head_dim),
-                    k_pre_rope:   make("layer.k_pre_rope",   seq_e * n_kv * head_dim),
-                    attn_probs:   make("layer.attn_probs",   seq_e * n_heads * history),
-                    attn_out:     make("layer.attn_out",     seq_e * n_heads * head_dim),
-                    pre_ffn_rms:  make("layer.pre_ffn_rms",  seq_e * d_model_e),
-                    norm_x_ffn:   make("layer.norm_x_ffn",   seq_e * d_model_e),
-                    ffn_gate:     make("layer.ffn_gate",     seq_e * ffn_inter),
-                    ffn_up:       make("layer.ffn_up",       seq_e * ffn_inter),
-                    ffn_act:      make("layer.ffn_act",      seq_e * ffn_inter),
+                    hidden_in:    make("layer.hidden_in",    d_model_e),
+                    norm_x_attn:  make("layer.norm_x_attn",  d_model_e),
+                    q_pre_norm:   make("layer.q_pre_norm",   n_heads * head_dim),
+                    q_post_rope:  make("layer.q_post_rope",  n_heads * head_dim),
+                    k_pre_norm:   make("layer.k_pre_norm",   n_kv * head_dim),
+                    v_pre_norm:   make("layer.v_pre_norm",   n_kv * head_dim),
+                    attn_out:     make("layer.attn_out",     n_heads * head_dim),
+                    pre_ffn_rms:  make("layer.pre_ffn_rms",  d_model_e),
+                    norm_x_ffn:   make("layer.norm_x_ffn",   d_model_e),
+                    ffn_gate:     make("layer.ffn_gate",     ffn_inter),
+                    ffn_up:       make("layer.ffn_up",       ffn_inter),
+                    ffn_act:      make("layer.ffn_act",      ffn_inter),
                 }
             })
             .collect();
 
-        let attn_d_scores = make("scratch.attn_d_scores", cfg.n_heads as u64 * seq_e);
+        // Max-shape probs/d_scores: at most `n_heads * max_history_len`.
+        // history_len at the final position equals `seq_len`.
+        let attn_probs    = make("scratch.attn_probs",    n_heads_e * seq_e);
+        let attn_d_scores = make("scratch.attn_d_scores", n_heads_e * seq_e);
+
+        let d_q          = make("scratch.d_q",          n_heads_e * head_dim_max_e);
+        let d_k_hist     = make("scratch.d_k_hist",     seq_e * n_kv_max_e * head_dim_max_e);
+        let d_v_hist     = make("scratch.d_v_hist",     seq_e * n_kv_max_e * head_dim_max_e);
+        let d_q_pre_rope = make("scratch.d_q_pre_rope", n_heads_e * head_dim_max_e);
+        let d_k_pre_rope = make("scratch.d_k_pre_rope", n_kv_max_e * head_dim_max_e);
+        let d_q_pre_norm = make("scratch.d_q_pre_norm", n_heads_e * head_dim_max_e);
+        let d_k_pre_norm = make("scratch.d_k_pre_norm", n_kv_max_e * head_dim_max_e);
+        let d_v_pre_norm = make("scratch.d_v_pre_norm", n_kv_max_e * head_dim_max_e);
+        let d_ffn_a      = make("scratch.d_ffn_a",      ffn_inter_max_e);
+        let d_ffn_b      = make("scratch.d_ffn_b",      ffn_inter_max_e);
 
         Self {
             d_logits,
             loss,
             d_hidden_final,
             layers,
+            d_hidden,
+            d_hidden_tmp,
+            attn_probs,
             attn_d_scores,
+            d_q,
+            d_k_hist,
+            d_v_hist,
+            d_q_pre_rope,
+            d_k_pre_rope,
+            d_q_pre_norm,
+            d_k_pre_norm,
+            d_v_pre_norm,
+            d_ffn_a,
+            d_ffn_b,
             max_seq_len,
         }
     }
 
     /// Total byte size of all scratch buffers — useful for logging.
     pub fn byte_size(&self) -> u64 {
-        let mut total = self.d_logits.size() + self.loss.size() + self.d_hidden_final.size() + self.attn_d_scores.size();
+        let mut total = self.d_logits.size()
+            + self.loss.size()
+            + self.d_hidden_final.size()
+            + self.d_hidden.size()
+            + self.d_hidden_tmp.size()
+            + self.attn_probs.size()
+            + self.attn_d_scores.size()
+            + self.d_q.size()
+            + self.d_k_hist.size()
+            + self.d_v_hist.size()
+            + self.d_q_pre_rope.size()
+            + self.d_k_pre_rope.size()
+            + self.d_q_pre_norm.size()
+            + self.d_k_pre_norm.size()
+            + self.d_v_pre_norm.size()
+            + self.d_ffn_a.size()
+            + self.d_ffn_b.size();
         for l in &self.layers {
             total += l.hidden_in.size()
-                + l.pre_attn_rms.size()
                 + l.norm_x_attn.size()
-                + l.q_pre_rope.size()
-                + l.k_pre_rope.size()
-                + l.attn_probs.size()
+                + l.q_pre_norm.size()
+                + l.q_post_rope.size()
+                + l.k_pre_norm.size()
+                + l.v_pre_norm.size()
                 + l.attn_out.size()
                 + l.pre_ffn_rms.size()
                 + l.norm_x_ffn.size()
