@@ -156,6 +156,43 @@ pub fn scale(a: &mut [f32], s: f32) {
 /// token). Matches `u32::MAX`.
 pub const TARGET_MASK: u32 = u32::MAX;
 
+/// Backward of `y = matmul_q4_k(W, x)` w.r.t. the input vector `x`.
+///
+/// Computes `dx[i] = Σ_j dy[j] * dequant(W)[j, i]` where the dequanted
+/// matrix has shape `[n, k]` (row-major). `w_bytes` is the raw Q4_K
+/// byte stream (n × n_blocks × 144 bytes). The CPU path dequants the
+/// matrix once and does a plain f32 transposed matvec.
+///
+/// The weight matrix is frozen (LoRA convention) — no weight gradient
+/// is computed.
+pub fn matmul_q4_k_backward_input(
+    w_bytes: &[u8],
+    dy: &[f32],
+    k: usize,
+    n: usize,
+    dx: &mut [f32],
+) {
+    assert_eq!(dy.len(), n, "dy length mismatch");
+    assert_eq!(dx.len(), k, "dx length mismatch");
+    assert_eq!(k % 256, 0, "k must be divisible by 256 for Q4_K");
+
+    let total = n * k;
+    let mut w_f32 = vec![0.0f32; total];
+    crate::gguf::quant::dequant_q4_k(w_bytes, &mut w_f32).expect("Q4_K dequant");
+
+    // dx[i] = sum_j dy[j] * w_f32[j * k + i]
+    for x in dx.iter_mut() {
+        *x = 0.0;
+    }
+    for j in 0..n {
+        let row = &w_f32[j * k..(j + 1) * k];
+        let dyj = dy[j];
+        for i in 0..k {
+            dx[i] += dyj * row[i];
+        }
+    }
+}
+
 /// Cross-entropy forward + backward over a single logit vector.
 ///
 /// Writes `softmax(logits) - one_hot(target)` into `d_logits` and returns the

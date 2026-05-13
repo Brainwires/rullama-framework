@@ -60,3 +60,5 @@ pub const SOFTCAP: &str = include_str!("wgsl/softcap.wgsl");
 
 // --- Training kernels (M0 backward pass) ---
 pub const CROSS_ENTROPY_BACKWARD: &str = include_str!("wgsl/cross_entropy_backward.wgsl");
+pub const MATMUL_Q4_K_BACKWARD_INPUT: &str =
+    include_str!("wgsl/matmul_q4_k_backward_input.wgsl");

@@ -373,6 +373,39 @@ pub async fn rmsnorm_cached(ctx: &WgpuCtx, p: &Pipelines, x: &[f32], weight: Opt
     read_back_f32(device, &read_buf).await
 }
 
+// ---------- Q4_K backward w.r.t. input (parity-test convenience) ----------
+
+/// Async helper: allocate buffers, run `matmul_q4_k_backward_input`,
+/// read `dx` back. Parity-test convenience; hot training paths should
+/// use the chained dispatcher with pre-allocated persistent buffers.
+pub async fn matmul_q4_k_backward_input_cached(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    w_bytes: &[u8],
+    dy: &[f32],
+    k: usize,
+    n: usize,
+) -> Result<Vec<f32>> {
+    if k == 0 || n == 0 {
+        return Ok(vec![0.0; k]);
+    }
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    let w_buf = write_storage(device, queue, "q4k_bwd.w", w_bytes);
+    let dy_buf = write_storage_f32(device, queue, "q4k_bwd.dy", dy);
+    let n_bytes = (k * 4) as u64;
+    let (dx_buf, dx_read) = make_output_pair(device, "q4k_bwd.dx", n_bytes);
+    let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("q4k_bwd.enc"),
+    });
+    matmul_q4_k_backward_input_chained(
+        ctx, p, &mut enc, &w_buf, &dy_buf, &dx_buf, k, n,
+    );
+    enc.copy_buffer_to_buffer(&dx_buf, 0, &dx_read, 0, n_bytes);
+    queue.submit(Some(enc.finish()));
+    read_back_f32(device, &dx_read).await
+}
+
 // ---------- cross-entropy backward (parity-test convenience) ----------
 
 /// Async helper: build buffers, dispatch `cross_entropy_backward`, read
@@ -2066,6 +2099,42 @@ pub fn rmsnorm_per_row_chained(
     cp.dispatch_workgroups(n_rows as u32, 1, 1);
 }
 
+/// Backward of `y = matmul_q4_k(W, x)` w.r.t. the input.
+///
+/// Computes `dx[i] = Σ_j dy[j] * dequant(W)[j, i]` on the GPU. One
+/// workgroup per block-row of `k` (256 contiguous output elements).
+/// Each thread within a workgroup handles one `i` and iterates over `n`.
+///
+/// `k` must be divisible by 256 (Q4_K block elements). W is frozen by
+/// LoRA convention — no weight gradient is produced.
+pub fn matmul_q4_k_backward_input_chained(
+    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
+    weight: &wgpu::Buffer, dy: &wgpu::Buffer, dx: &wgpu::Buffer,
+    k: usize, n: usize,
+) {
+    assert!(k % 256 == 0, "k must be divisible by 256 for Q4_K backward");
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    let params = MatmulParams { k: k as u32, n: n as u32, _p0: 0, _p1: 0 };
+    let p_buf = write_uniform(device, queue, "q4k_bwd.params", &params);
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("q4k_bwd.bg"),
+        layout: &p.matmul_q4_k_backward_input.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: p_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: weight.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: dy.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: dx.as_entire_binding() },
+        ],
+    });
+    let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("q4k_bwd.pass"), timestamp_writes: None,
+    });
+    cp.set_pipeline(&p.matmul_q4_k_backward_input);
+    cp.set_bind_group(0, &bg, &[]);
+    cp.dispatch_workgroups((k / 256) as u32, 1, 1);
+}
+
 /// Cross-entropy forward + backward over a single logit vector.
 ///
 /// Writes `d_logits = softmax(logits) - one_hot(target)` and the scalar
@@ -2379,6 +2448,73 @@ mod tests {
             }
         }
         assert!(max_diff < 1e-5, "d_logits max_diff = {max_diff}");
+    }
+
+    /// GPU vs CPU parity for `matmul_q4_k_backward_input`. Synthesizes a
+    /// small Q4_K weight buffer from a deterministic byte stream — Q4_K
+    /// block bytes are unconstrained (any pattern parses), so this exercises
+    /// the dequant + transposed-matvec path without needing the local
+    /// Gemma 4 GGUF fixture.
+    #[test]
+    fn matmul_q4_k_backward_input_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+
+        // Small but real: k=256 (one Q4_K block per row), n=16 rows.
+        let k = 256usize;
+        let n = 16usize;
+        let row_bytes = (k / 256) * 144;
+        let total_bytes = n * row_bytes;
+        let mut w_bytes = vec![0u8; total_bytes];
+        let mut state: u32 = 0xDEAD_BEEF;
+        for b in w_bytes.iter_mut() {
+            state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+            *b = (state >> 16) as u8;
+        }
+        // Clamp the f16 scale fields so the dequanted values stay bounded
+        // — random f16 bit patterns can be NaN/Inf and would propagate.
+        for j in 0..n {
+            let off = j * row_bytes;
+            // d at offset 0..2, dmin at 2..4. Use small positive f16s
+            // (0.0625 and 0.03125) for repeatable, finite magnitudes.
+            w_bytes[off + 0] = 0x00;
+            w_bytes[off + 1] = 0x2C; // f16(0.0625)
+            w_bytes[off + 2] = 0x00;
+            w_bytes[off + 3] = 0x28; // f16(0.03125)
+        }
+
+        // Deterministic dy.
+        let dy: Vec<f32> = (0..n).map(|j| ((j as i32 - 8) as f32) * 0.25).collect();
+
+        // CPU oracle
+        let mut cpu_dx = vec![0.0f32; k];
+        crate::reference::ops::matmul_q4_k_backward_input(
+            &w_bytes, &dy, k, n, &mut cpu_dx,
+        );
+
+        // GPU
+        let gpu_dx = pollster::block_on(matmul_q4_k_backward_input_cached(
+            &ctx, &p, &w_bytes, &dy, k, n,
+        ))
+        .expect("gpu");
+
+        let mut max_diff = 0.0f32;
+        let mut max_rel = 0.0f32;
+        for (c, g) in cpu_dx.iter().zip(gpu_dx.iter()) {
+            let d = (c - g).abs();
+            if d > max_diff {
+                max_diff = d;
+            }
+            let denom = c.abs().max(1e-6);
+            let r = d / denom;
+            if r > max_rel {
+                max_rel = r;
+            }
+        }
+        assert!(
+            max_diff < 1e-3 && max_rel < 1e-3,
+            "q4_k_bwd_input max_abs={max_diff} max_rel={max_rel}"
+        );
     }
 
     /// Masked target (`u32::MAX`) emits zero gradient and zero loss on the

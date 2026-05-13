@@ -97,6 +97,10 @@ pub struct Pipelines {
     /// Safe to call on masked positions (`target == u32::MAX`): emits zero
     /// gradient and zero loss.
     pub cross_entropy_backward: wgpu::ComputePipeline,
+    /// Backward of Q4_K matmul w.r.t. the input vector.
+    /// Computes `dx[i] = Σ_j dy[j] * dequant(W)[j, i]`. The weight matrix
+    /// stays in Q4_K (frozen by LoRA convention) — no weight gradient.
+    pub matmul_q4_k_backward_input: wgpu::ComputePipeline,
 }
 
 impl Pipelines {
@@ -187,6 +191,11 @@ impl Pipelines {
                 device,
                 "cross_entropy_backward",
                 kernels::CROSS_ENTROPY_BACKWARD,
+            ),
+            matmul_q4_k_backward_input: build(
+                device,
+                "matmul_q4_k_backward_input",
+                kernels::MATMUL_Q4_K_BACKWARD_INPUT,
             ),
             geglu:             build(device, "geglu",             kernels::GEGLU),
             rope_neox:         build(device, "rope_neox",         kernels::ROPE_NEOX),
