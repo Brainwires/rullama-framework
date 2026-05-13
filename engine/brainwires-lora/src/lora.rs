@@ -80,6 +80,7 @@ pub struct LoraLayer {
     /// `dB = scale · dy ⊗ z` (the dB gradient depends on the captured
     /// `z`, not the input `x`). Size is `[rank]` f32 — trivially small.
     pub z: Buffer,
+}
 
 impl LoraLayer {
     /// Allocate fresh A and B buffers, initialize A with a deterministic

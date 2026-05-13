@@ -1468,12 +1468,15 @@ impl Forward {
                 r, d_model, s, true);
         }
 
-        // V backward — pull d_v at the final position from d_v_hist.
+        // V backward — pull d_v at the final position from d_v_hist into
+        // d_k_pre_norm (free at this point — k backward is done) so it
+        // can serve as the rmsnorm_back `dy` without aliasing the `dx`
+        // output buffer.
         enc.copy_buffer_to_buffer(scratch.d_v_hist, dk_final_off,
-            scratch.d_v_pre_norm, 0, row_bytes);
+            scratch.d_k_pre_norm, 0, row_bytes);
         // V was passed through unweighted rmsnorm_per_row; do the unweighted backward.
         rmsnorm_per_row_backward_chained(&self.ctx, &self.pipes, enc,
-            cap.v_pre_norm, &self.dummy, scratch.d_v_pre_norm, scratch.d_v_pre_norm,
+            cap.v_pre_norm, &self.dummy, scratch.d_k_pre_norm, scratch.d_v_pre_norm,
             n_kv_heads, head_dim, eps, false);
         // d_norm_x_attn_via_v → d_hidden_tmp2.
         match v_w_dtype {

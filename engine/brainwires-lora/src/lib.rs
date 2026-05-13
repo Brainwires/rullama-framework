@@ -34,3 +34,6 @@ pub mod lr_schedule;
 pub mod lora;
 /// Per-step GPU scratch buffers for the backward pass.
 pub mod scratch;
+/// `TrainingSession` — drives one training step end-to-end.
+pub mod session;
+pub use session::TrainingSession;

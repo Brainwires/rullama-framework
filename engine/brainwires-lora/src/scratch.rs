@@ -103,6 +103,10 @@ pub struct TrainingScratch {
     /// Scratch for in-flight d(something) of d_model shape (e.g. dx out of
     /// rmsnorm_backward before residual_add merges it back into d_hidden).
     pub d_hidden_tmp: Buffer,
+    /// Second d_model scratch — pairs with `d_hidden_tmp` for cases
+    /// that accumulate two contributions (gate+up → d_norm_x_ffn,
+    /// q+k+v → d_norm_x_attn).
+    pub d_hidden_tmp2: Buffer,
     /// Scratch `[n_heads · max_history_len]` for the attention probs
     /// recomputed during backward (output of `attention_probs_chained`).
     pub attn_probs: Buffer,
@@ -129,8 +133,10 @@ pub struct TrainingScratch {
     pub d_v_pre_norm: Buffer,
     /// Scratch `[ffn_inter]` — running d through ffn block.
     pub d_ffn_a: Buffer,
-    /// Scratch `[ffn_inter]` — second d through ffn block (gate vs up split).
+    /// Scratch `[ffn_inter]` — d_gate output of geglu_back.
     pub d_ffn_b: Buffer,
+    /// Scratch `[ffn_inter]` — d_up output of geglu_back.
+    pub d_ffn_c: Buffer,
     /// Configured max sequence length the scratch is sized for.
     pub max_seq_len: u32,
 }
@@ -167,6 +173,7 @@ impl TrainingScratch {
         let d_hidden_final = make("scratch.d_hidden_final", d_model_e);
         let d_hidden       = make("scratch.d_hidden", d_model_e);
         let d_hidden_tmp   = make("scratch.d_hidden_tmp", d_model_e);
+        let d_hidden_tmp2  = make("scratch.d_hidden_tmp2", d_model_e);
 
         let layers = (0..cfg.n_layers)
             .map(|li| {
@@ -209,6 +216,7 @@ impl TrainingScratch {
         let d_v_pre_norm = make("scratch.d_v_pre_norm", n_kv_max_e * head_dim_max_e);
         let d_ffn_a      = make("scratch.d_ffn_a",      ffn_inter_max_e);
         let d_ffn_b      = make("scratch.d_ffn_b",      ffn_inter_max_e);
+        let d_ffn_c      = make("scratch.d_ffn_c",      ffn_inter_max_e);
 
         Self {
             d_logits,
@@ -217,6 +225,7 @@ impl TrainingScratch {
             layers,
             d_hidden,
             d_hidden_tmp,
+            d_hidden_tmp2,
             attn_probs,
             attn_d_scores,
             d_q,
@@ -229,6 +238,7 @@ impl TrainingScratch {
             d_v_pre_norm,
             d_ffn_a,
             d_ffn_b,
+            d_ffn_c,
             max_seq_len,
         }
     }
@@ -240,6 +250,7 @@ impl TrainingScratch {
             + self.d_hidden_final.size()
             + self.d_hidden.size()
             + self.d_hidden_tmp.size()
+            + self.d_hidden_tmp2.size()
             + self.attn_probs.size()
             + self.attn_d_scores.size()
             + self.d_q.size()
@@ -251,7 +262,8 @@ impl TrainingScratch {
             + self.d_k_pre_norm.size()
             + self.d_v_pre_norm.size()
             + self.d_ffn_a.size()
-            + self.d_ffn_b.size();
+            + self.d_ffn_b.size()
+            + self.d_ffn_c.size();
         for l in &self.layers {
             total += l.hidden_in.size()
                 + l.norm_x_attn.size()
