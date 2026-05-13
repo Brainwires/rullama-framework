@@ -1024,6 +1024,29 @@ fn run_matmul_into_buf(
     Ok(())
 }
 
+async fn read_buf_stats(ctx: &WgpuCtx, buf: &wgpu::Buffer, n: usize) -> Result<(f32, usize)> {
+    let bytes = (n * 4) as u64;
+    let read_buf = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("trace.read"),
+        size: bytes,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut enc = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("trace.enc"),
+    });
+    enc.copy_buffer_to_buffer(buf, 0, &read_buf, 0, bytes);
+    ctx.queue.submit(Some(enc.finish()));
+    let v = read_back_f32(&ctx.device, &read_buf).await?;
+    let mut max_abs = 0.0f32;
+    let mut nans = 0usize;
+    for &x in &v {
+        if x.is_nan() { nans += 1; }
+        else if x.abs() > max_abs { max_abs = x.abs(); }
+    }
+    Ok((max_abs, nans))
+}
+
 async fn read_back_f32(device: &wgpu::Device, buf: &wgpu::Buffer) -> Result<Vec<f32>> {
     let slice = buf.slice(..);
     let (sender, receiver) = oneshot::channel();
@@ -1208,6 +1231,7 @@ impl Forward {
 
         self.ctx.queue.submit(Some(enc.finish()));
 
+        let trace_hidden = std::env::var("RULLAMA_TRACE_DHIDDEN").is_ok();
         // ===== Walk layers top-down =====
         for li in (0..n_layers).rev() {
             let i = li as u32;
@@ -1219,6 +1243,10 @@ impl Forward {
             });
             self.backward_layer(&mut lenc, i, history_len, pos, cap, lora, grad, scratch).await?;
             self.ctx.queue.submit(Some(lenc.finish()));
+            if trace_hidden {
+                let (max_abs, nans) = read_buf_stats(&self.ctx, scratch.d_hidden, self.cfg.d_model as usize).await?;
+                eprintln!("[trace] after layer {li} bwd: d_hidden max_abs={max_abs:.3e} nan={nans}");
+            }
         }
 
         // ===== Loss readback =====
