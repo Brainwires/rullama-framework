@@ -1,12 +1,12 @@
 [package]
 name = "rullama-finetune"
 version = "0.1.0"
-description = "Local PEFT fine-tuning (LoRA / QLoRA / DoRA) for the rullama Rust runtime — Burn-backed (CPU/WGPU) with safetensors checkpointing. Native-only; the crate is empty on wasm32. Vendored from brainwires-finetune-local."
+description = "Local LoRA fine-tuning for the rullama Rust runtime, built natively on rullama's wgpu kernels. Native-only; the crate is empty on wasm32. Currently a skeleton — see MIGRATION-REPORT.md for context."
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-keywords = ["lora", "qlora", "dora", "burn", "fine-tuning"]
+keywords = ["lora", "fine-tuning", "wgpu", "gemma"]
 categories = ["artificial-intelligence"]
 
 [lib]
@@ -15,35 +15,18 @@ path = "src/lib.rs"
 
 # All deps are cfg-gated to non-wasm32; the crate body is also
 # #![cfg(not(target_arch = "wasm32"))] so on wasm32 it compiles to an
-# empty crate without trying to drag Burn through wasm-bindgen.
+# empty crate. Burn-* and Safetensors deps are gone with the teardown;
+# the rebuild adds wgpu (via rullama-core) plus a thin set of utilities.
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-anyhow = { workspace = true }
-async-trait = { workspace = true }
 tracing = { workspace = true }
-uuid = { workspace = true }
-chrono = { workspace = true }
-
-tokio = { workspace = true, features = ["sync", "time", "rt", "rt-multi-thread", "macros"] }
-# Burn ML framework — individual crates instead of the umbrella `burn`.
-burn-core = { workspace = true }
-burn-nn = { workspace = true }
-burn-optim = { workspace = true }
-burn-autodiff = { workspace = true }
-burn-wgpu = { workspace = true }
-burn-ndarray = { workspace = true }
 tokenizers = { workspace = true }
-safetensors = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-
-[[example]]
-name = "local_training"
 
 [package.metadata.docs.rs]
 all-features = true

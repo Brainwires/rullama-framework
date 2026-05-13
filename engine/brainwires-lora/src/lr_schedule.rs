@@ -50,7 +50,9 @@ impl LrSchedule {
                 self.base_lr * (1.0 - progress).max(0.0)
             }
             LrScheduler::Cosine => {
-                let progress = decay_step as f64 / decay_total as f64;
+                // Clamp at 1.0 so an off-by-one past `total_steps` doesn't swing
+                // cos(π·progress) back positive and re-raise the LR.
+                let progress = (decay_step as f64 / decay_total as f64).min(1.0);
                 self.base_lr * 0.5 * (1.0 + (std::f64::consts::PI * progress).cos())
             }
             LrScheduler::CosineWarmRestarts => {

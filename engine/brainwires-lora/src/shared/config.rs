@@ -1,17 +1,21 @@
 use serde::{Deserialize, Serialize};
 
 /// Training hyperparameters.
+///
+/// All fields are declared knobs that the trainer is intended to honor.
+/// Fields that aren't wired yet are documented as such in the
+/// `TrainingSession::step` path; nothing here is silently no-op.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrainingHyperparams {
     /// Number of training epochs.
     pub epochs: u32,
     /// Batch size per device.
     pub batch_size: u32,
-    /// Initial learning rate.
+    /// Initial (post-warmup) learning rate.
     pub learning_rate: f64,
-    /// Warmup steps for LR scheduler.
+    /// Warmup steps for the LR scheduler.
     pub warmup_steps: u64,
-    /// Weight decay factor.
+    /// Weight decay coefficient (applied inside Adam).
     pub weight_decay: f64,
     /// Learning rate scheduler type.
     pub lr_scheduler: LrScheduler,
@@ -19,9 +23,9 @@ pub struct TrainingHyperparams {
     pub seed: u64,
     /// Maximum sequence length (tokens).
     pub max_seq_len: usize,
-    /// Gradient accumulation steps (effective batch = batch_size * grad_accum).
+    /// Gradient accumulation steps. Effective batch = `batch_size * gradient_accumulation_steps`.
     pub gradient_accumulation_steps: u32,
-    /// Maximum gradient norm for clipping.
+    /// Maximum gradient L2 norm before clipping. `0.0` disables clipping.
     pub max_grad_norm: f64,
 }
 
@@ -46,29 +50,31 @@ impl Default for TrainingHyperparams {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LrScheduler {
-    /// Constant learning rate.
+    /// Constant learning rate after warmup.
     Constant,
-    /// Linear decay to zero.
+    /// Linear decay to zero after warmup.
     Linear,
-    /// Cosine annealing.
+    /// Cosine annealing after warmup.
     Cosine,
     /// Cosine with warm restarts.
     CosineWarmRestarts,
 }
 
 /// LoRA adapter configuration.
+///
+/// Only plain LoRA is supported. QLoRA / DoRA are out of scope for the
+/// initial native rewrite; see the migration report.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoraConfig {
-    /// LoRA rank (typical: 8, 16, 32, 64).
+    /// LoRA rank `r` (typical: 8, 16, 32).
     pub rank: u32,
-    /// LoRA alpha scaling factor (typical: rank * 2).
+    /// LoRA scaling factor α. The forward applies `(α / rank)` as the scale.
     pub alpha: f32,
-    /// Dropout rate on LoRA layers.
+    /// Dropout rate on the LoRA path (applied to the input of the A matmul).
     pub dropout: f32,
-    /// Target modules to apply LoRA to (e.g., ["q_proj", "v_proj"]).
+    /// Target projections to wrap with LoRA. Names match GGUF tensor stems —
+    /// `attn_q`, `attn_k`, `attn_v`, `attn_o`, `ffn_gate`, `ffn_up`, `ffn_down`.
     pub target_modules: Vec<String>,
-    /// Adapter method variant.
-    pub method: AdapterMethod,
 }
 
 impl Default for LoraConfig {
@@ -78,80 +84,12 @@ impl Default for LoraConfig {
             alpha: 32.0,
             dropout: 0.05,
             target_modules: vec![
-                "q_proj".to_string(),
-                "k_proj".to_string(),
-                "v_proj".to_string(),
-                "o_proj".to_string(),
+                "attn_q".to_string(),
+                "attn_k".to_string(),
+                "attn_v".to_string(),
+                "attn_o".to_string(),
             ],
-            method: AdapterMethod::LoRA,
         }
-    }
-}
-
-/// Adapter method for parameter-efficient fine-tuning.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AdapterMethod {
-    /// Low-Rank Adaptation.
-    LoRA,
-    /// Quantized LoRA (4-bit or 8-bit base weights).
-    QLoRA {
-        /// Quantization bit width.
-        bits: u8,
-    },
-    /// Weight-Decomposed Low-Rank Adaptation (direction + magnitude).
-    DoRA,
-    /// Quantized DoRA.
-    QDoRA {
-        /// Quantization bit width.
-        bits: u8,
-    },
-}
-
-impl AdapterMethod {
-    /// Whether this adapter method uses quantization.
-    pub fn is_quantized(&self) -> bool {
-        matches!(self, Self::QLoRA { .. } | Self::QDoRA { .. })
-    }
-
-    /// Return quantization bit width, if applicable.
-    pub fn quantization_bits(&self) -> Option<u8> {
-        match self {
-            Self::QLoRA { bits } | Self::QDoRA { bits } => Some(*bits),
-            _ => None,
-        }
-    }
-}
-
-/// Alignment training method.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[derive(Default)]
-pub enum AlignmentMethod {
-    /// Direct Preference Optimization.
-    DPO {
-        /// DPO beta parameter.
-        beta: f64,
-    },
-    /// Odds Ratio Preference Optimization (single-pass).
-    ORPO {
-        /// ORPO lambda parameter.
-        lambda: f64,
-    },
-    /// No alignment, standard SFT only.
-    #[default]
-    None,
-}
-
-impl AlignmentMethod {
-    /// Create DPO alignment with default beta.
-    pub fn dpo() -> Self {
-        Self::DPO { beta: 0.1 }
-    }
-
-    /// Create ORPO alignment with default lambda.
-    pub fn orpo() -> Self {
-        Self::ORPO { lambda: 0.5 }
     }
 }
 
@@ -172,38 +110,15 @@ mod tests {
         let c = LoraConfig::default();
         assert_eq!(c.rank, 16);
         assert_eq!(c.target_modules.len(), 4);
-    }
-
-    #[test]
-    fn test_adapter_method_quantized() {
-        assert!(!AdapterMethod::LoRA.is_quantized());
-        assert!(AdapterMethod::QLoRA { bits: 4 }.is_quantized());
-        assert_eq!(
-            AdapterMethod::QLoRA { bits: 4 }.quantization_bits(),
-            Some(4)
-        );
-        assert!(AdapterMethod::DoRA.quantization_bits().is_none());
-    }
-
-    #[test]
-    fn test_alignment_methods() {
-        let dpo = AlignmentMethod::dpo();
-        assert!(matches!(dpo, AlignmentMethod::DPO { beta } if (beta - 0.1).abs() < f64::EPSILON));
-
-        let orpo = AlignmentMethod::orpo();
-        assert!(
-            matches!(orpo, AlignmentMethod::ORPO { lambda } if (lambda - 0.5).abs() < f64::EPSILON)
-        );
+        assert!(c.target_modules.contains(&"attn_q".to_string()));
     }
 
     #[test]
     fn test_serialization_roundtrip() {
-        let config = LoraConfig {
-            method: AdapterMethod::QLoRA { bits: 4 },
-            ..Default::default()
-        };
+        let config = LoraConfig::default();
         let json = serde_json::to_string(&config).unwrap();
         let parsed: LoraConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.method, AdapterMethod::QLoRA { bits: 4 });
+        assert_eq!(parsed.rank, config.rank);
+        assert_eq!(parsed.target_modules, config.target_modules);
     }
 }

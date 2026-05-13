@@ -1,11 +1,14 @@
 //! Dataset loading for local training.
 //!
-//! Parses JSONL training files into tokenized batches for the Burn training loop.
-//! Supports instruction-tuning formats: `{"prompt": ..., "completion": ...}` and
-//! `{"messages": [...]}` (chat format).
+//! Parses JSONL training files into tokenized batches. Supports
+//! instruction-tuning formats:
 //!
-//! Also supports preference pair datasets for DPO/ORPO alignment:
-//! `{"prompt": "...", "chosen": "...", "rejected": "..."}`.
+//! - `{"prompt": "...", "completion": "..."}`
+//! - `{"instruction": "...", "input": "...", "output": "..."}` (Alpaca)
+//! - `{"messages": [{"role": "user", "content": "..."}, ...]}` (chat)
+//!
+//! Preference-pair (DPO / ORPO) datasets are out of scope after the
+//! teardown — alignment is deferred until a real loss function exists.
 
 use std::io::BufRead;
 use std::path::Path;
@@ -47,7 +50,12 @@ impl TrainingDataset {
             let line = line.map_err(|e| {
                 TrainingError::Config(format!("Failed to read line {}: {}", line_num + 1, e))
             })?;
-            let line = line.trim().to_string();
+            // Strip a leading UTF-8 BOM (only legal on the first line, but harmless
+            // to attempt every line) before trim/JSON parsing.
+            let line = line
+                .trim_start_matches('\u{feff}')
+                .trim()
+                .to_string();
             if line.is_empty() {
                 continue;
             }
@@ -145,7 +153,7 @@ fn parse_chat_format(
         })?;
 
     let mut prompt_parts = Vec::new();
-    let mut completion = String::new();
+    let mut completion_parts = Vec::new();
 
     for msg in messages {
         let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("");
@@ -153,10 +161,13 @@ fn parse_chat_format(
 
         match role {
             "system" | "user" => prompt_parts.push(content.to_string()),
-            "assistant" => completion = content.to_string(),
+            // Multi-turn assistant traces: concatenate (previously overwrote,
+            // silently dropping earlier turns).
+            "assistant" => completion_parts.push(content.to_string()),
             _ => {}
         }
     }
+    let completion = completion_parts.join("\n");
 
     if prompt_parts.is_empty() {
         return Err(TrainingError::Config(format!(
@@ -227,15 +238,11 @@ impl Tokenizer for SimpleTokenizer {
         input_ids.extend_from_slice(&completion_tokens);
         input_ids.truncate(self.max_seq_len);
 
-        // Targets: shifted input_ids, with prompt portion masked
-        let mut target_ids = vec![u32::MAX; input_ids.len()];
-        target_ids[prompt_len..input_ids.len()].copy_from_slice(&input_ids[prompt_len..]);
-
-        (input_ids, target_ids)
+        next_token_targets(&input_ids, prompt_len)
     }
 
     fn vocab_size(&self) -> usize {
-        257
+        256
     }
 }
 
@@ -304,15 +311,36 @@ impl Tokenizer for ModelTokenizer {
         input_ids.extend_from_slice(&completion_tokens);
         input_ids.truncate(self.max_seq_len);
 
-        let mut target_ids = vec![u32::MAX; input_ids.len()];
-        target_ids[prompt_len..input_ids.len()].copy_from_slice(&input_ids[prompt_len..]);
-
-        (input_ids, target_ids)
+        next_token_targets(&input_ids, prompt_len)
     }
 
     fn vocab_size(&self) -> usize {
         self.tokenizer.get_vocab_size(true)
     }
+}
+
+/// Build next-token-prediction targets from a token stream.
+///
+/// At position `i`, the trainer expects the model to predict `input_ids[i+1]`.
+/// Positions inside the prompt (up to but not including `prompt_len - 1`) are
+/// masked with `u32::MAX` so the loss only fires on the completion. The last
+/// position has no next token and is also masked.
+fn next_token_targets(input_ids: &[u32], prompt_len: usize) -> (Vec<u32>, Vec<u32>) {
+    let n = input_ids.len();
+    let mut targets = vec![u32::MAX; n];
+    if n < 2 {
+        return (input_ids.to_vec(), targets);
+    }
+    // First trained position predicts the first completion token, i.e. the
+    // model sees prompt_tokens[..prompt_len] and must emit
+    // input_ids[prompt_len] = completion_tokens[0]. That prediction
+    // happens at logits position `prompt_len - 1` (1-indexed: the last prompt
+    // token's logits). For prompts shorter than 1 token, start at 0.
+    let start = prompt_len.saturating_sub(1);
+    for i in start..n - 1 {
+        targets[i] = input_ids[i + 1];
+    }
+    (input_ids.to_vec(), targets)
 }
 
 /// Parse `{"instruction": "...", "input": "...", "output": "..."}` Alpaca format.
@@ -346,128 +374,6 @@ fn parse_alpaca_format(
         prompt,
         completion: output.to_string(),
     })
-}
-
-/// A single preference pair example for DPO/ORPO alignment training.
-#[derive(Debug, Clone)]
-pub struct PreferenceExample {
-    /// Input prompt text.
-    pub prompt: String,
-    /// Preferred (chosen) completion.
-    pub chosen: String,
-    /// Dispreferred (rejected) completion.
-    pub rejected: String,
-}
-
-/// Preference pair dataset for alignment training (DPO/ORPO).
-#[derive(Debug)]
-pub struct PreferenceDataset {
-    /// All preference examples.
-    pub examples: Vec<PreferenceExample>,
-}
-
-impl PreferenceDataset {
-    /// Load preference pairs from JSONL.
-    ///
-    /// Each line: `{"prompt": "...", "chosen": "...", "rejected": "..."}`
-    pub fn load_jsonl(path: &Path) -> Result<Self, TrainingError> {
-        let file = std::fs::File::open(path).map_err(|e| {
-            TrainingError::Config(format!(
-                "Failed to open preference dataset: {}: {}",
-                path.display(),
-                e
-            ))
-        })?;
-        let reader = std::io::BufReader::new(file);
-        let mut examples = Vec::new();
-
-        for (line_num, line) in reader.lines().enumerate() {
-            let line = line.map_err(|e| {
-                TrainingError::Config(format!("Failed to read line {}: {}", line_num + 1, e))
-            })?;
-            let line = line.trim().to_string();
-            if line.is_empty() {
-                continue;
-            }
-
-            let value: serde_json::Value = serde_json::from_str(&line).map_err(|e| {
-                TrainingError::Config(format!("Invalid JSON on line {}: {}", line_num + 1, e))
-            })?;
-
-            let prompt = value
-                .get("prompt")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| {
-                    TrainingError::Config(format!(
-                        "Line {}: 'prompt' must be a string",
-                        line_num + 1
-                    ))
-                })?
-                .to_string();
-
-            let chosen = value
-                .get("chosen")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| {
-                    TrainingError::Config(format!(
-                        "Line {}: 'chosen' must be a string",
-                        line_num + 1
-                    ))
-                })?
-                .to_string();
-
-            let rejected = value
-                .get("rejected")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| {
-                    TrainingError::Config(format!(
-                        "Line {}: 'rejected' must be a string",
-                        line_num + 1
-                    ))
-                })?
-                .to_string();
-
-            examples.push(PreferenceExample {
-                prompt,
-                chosen,
-                rejected,
-            });
-        }
-
-        if examples.is_empty() {
-            return Err(TrainingError::Config(
-                "Preference dataset is empty (no valid examples found)".to_string(),
-            ));
-        }
-
-        info!(
-            "Loaded {} preference examples from {:?}",
-            examples.len(),
-            path
-        );
-        Ok(Self { examples })
-    }
-
-    /// Number of examples in the dataset.
-    pub fn len(&self) -> usize {
-        self.examples.len()
-    }
-
-    /// Whether the dataset is empty.
-    pub fn is_empty(&self) -> bool {
-        self.examples.is_empty()
-    }
-
-    /// Calculate steps per epoch given a batch size.
-    pub fn steps_per_epoch(&self, batch_size: usize) -> u64 {
-        (self.examples.len() / batch_size.max(1)).max(1) as u64
-    }
-
-    /// Get a batch of examples by index range.
-    pub fn get_batch(&self, start: usize, batch_size: usize) -> &[PreferenceExample] {
-        let end = (start + batch_size).min(self.examples.len());
-        &self.examples[start..end]
-    }
 }
 
 #[cfg(test)]
@@ -568,18 +474,21 @@ mod tests {
         };
         let (input, target) = tok.encode_example(&example);
         assert_eq!(input.len(), 4); // "Hi" + "Ok"
-        // First 2 tokens (prompt) should be masked
+        // Position 0 ('H') predicts 'i' — but that's still inside the prompt,
+        // so it stays masked.
         assert_eq!(target[0], u32::MAX);
-        assert_eq!(target[1], u32::MAX);
-        // Completion tokens should have actual values
-        assert_eq!(target[2], b'O' as u32);
-        assert_eq!(target[3], b'k' as u32);
+        // Position 1 ('i') predicts the first completion token 'O'.
+        assert_eq!(target[1], b'O' as u32);
+        // Position 2 ('O') predicts 'k'.
+        assert_eq!(target[2], b'k' as u32);
+        // Position 3 ('k') has no next token, masked.
+        assert_eq!(target[3], u32::MAX);
     }
 
     #[test]
     fn test_tokenizer_trait_simple() {
         let tok: Box<dyn Tokenizer> = Box::new(SimpleTokenizer::new(512));
-        assert_eq!(tok.vocab_size(), 257);
+        assert_eq!(tok.vocab_size(), 256);
         let tokens = tok.encode("Hello");
         assert_eq!(tokens.len(), 5);
     }
@@ -627,60 +536,41 @@ mod tests {
         };
         let (input, target) = tok.encode_example(&example);
         assert!(!input.is_empty());
-        // Prompt portion should be masked
+        // Prompt portion (everything before the last prompt token) stays masked.
         let prompt_len = tok.encode("Hello").len();
-        for (i, tok_id) in target.iter().take(prompt_len).enumerate() {
+        for (i, tok_id) in target.iter().take(prompt_len.saturating_sub(1)).enumerate() {
             assert_eq!(*tok_id, u32::MAX, "Prompt token {i} should be masked");
         }
+        // Last position has no next token; masked.
+        assert_eq!(*target.last().unwrap(), u32::MAX);
     }
 
     #[test]
-    fn test_preference_dataset_load() {
+    fn test_bom_stripped_on_first_line() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("prefs.jsonl");
+        let path = dir.path().join("train.jsonl");
+        let mut f = std::fs::File::create(&path).unwrap();
+        // Write a UTF-8 BOM followed by valid JSON.
+        f.write_all(b"\xef\xbb\xbf").unwrap();
+        writeln!(f, r#"{{"prompt": "Hello", "completion": "World"}}"#).unwrap();
+        let dataset = TrainingDataset::load_jsonl(&path).unwrap();
+        assert_eq!(dataset.examples[0].prompt, "Hello");
+    }
+
+    #[test]
+    fn test_chat_format_multi_turn_appends() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("train.jsonl");
         let mut f = std::fs::File::create(&path).unwrap();
         writeln!(
             f,
-            r#"{{"prompt": "What is 2+2?", "chosen": "4", "rejected": "5"}}"#
+            r#"{{"messages": [{{"role": "user", "content": "Hi"}}, {{"role": "assistant", "content": "Hello!"}}, {{"role": "user", "content": "More"}}, {{"role": "assistant", "content": "Sure"}}]}}"#
         )
         .unwrap();
-        writeln!(
-            f,
-            r#"{{"prompt": "Capital of France?", "chosen": "Paris", "rejected": "London"}}"#
-        )
-        .unwrap();
-
-        let dataset = PreferenceDataset::load_jsonl(&path).unwrap();
-        assert_eq!(dataset.len(), 2);
-        assert_eq!(dataset.examples[0].prompt, "What is 2+2?");
-        assert_eq!(dataset.examples[0].chosen, "4");
-        assert_eq!(dataset.examples[0].rejected, "5");
+        let dataset = TrainingDataset::load_jsonl(&path).unwrap();
+        // Earlier assistant turn must not be silently dropped.
+        assert!(dataset.examples[0].completion.contains("Hello!"));
+        assert!(dataset.examples[0].completion.contains("Sure"));
     }
 
-    #[test]
-    fn test_preference_dataset_empty() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("empty.jsonl");
-        std::fs::File::create(&path).unwrap();
-
-        let result = PreferenceDataset::load_jsonl(&path);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_preference_dataset_batching() {
-        let dataset = PreferenceDataset {
-            examples: vec![
-                PreferenceExample {
-                    prompt: "a".into(),
-                    chosen: "b".into(),
-                    rejected: "c".into(),
-                };
-                10
-            ],
-        };
-        assert_eq!(dataset.steps_per_epoch(3), 3);
-        let batch = dataset.get_batch(0, 3);
-        assert_eq!(batch.len(), 3);
-    }
 }
