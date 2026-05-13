@@ -253,6 +253,22 @@ required-features = ["matter"]
 name = "matter_server"
 required-features = ["matter"]
 
+[[example]]
+name = "capture_audio"
+required-features = ["audio"]
+
+[[example]]
+name = "play_audio"
+required-features = ["audio"]
+
+[[example]]
+name = "camera_capture"
+required-features = ["camera"]
+
+[[example]]
+name = "usb_devices"
+required-features = ["usb"]
+
 [[test]]
 name = "matter_integration"
 required-features = ["matter"]
