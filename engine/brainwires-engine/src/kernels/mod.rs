@@ -65,3 +65,5 @@ pub const MATMUL_Q4_K_BACKWARD_INPUT: &str =
 pub const RMSNORM_BACKWARD: &str = include_str!("wgsl/rmsnorm_backward.wgsl");
 pub const GEGLU_BACKWARD: &str = include_str!("wgsl/geglu_backward.wgsl");
 pub const ROPE_NEOX_BACKWARD: &str = include_str!("wgsl/rope_neox_backward.wgsl");
+pub const ATTENTION_BACKWARD_DQ: &str = include_str!("wgsl/attention_backward_dq.wgsl");
+pub const ATTENTION_BACKWARD_DKV: &str = include_str!("wgsl/attention_backward_dkv.wgsl");

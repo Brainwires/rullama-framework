@@ -264,6 +264,174 @@ pub fn rope_neox_backward(
     }
 }
 
+/// Forward softmax attention over a KV history — single-batch, GQA-aware.
+///
+/// Mirrors `kernels/wgsl/attention.wgsl` exactly, including the
+/// **un-scaled** dot-product score (Gemma 4 absorbs the inverse-sqrt-d
+/// factor into the q RMSNorm earlier in the layer). Returns the
+/// post-softmax probabilities alongside the output so the backward
+/// pass can consume them without redoing the forward.
+pub fn attention_forward(
+    q: &[f32],
+    k_hist: &[f32],
+    v_hist: &[f32],
+    out: &mut [f32],
+    probs: &mut [f32],
+    head_dim: usize,
+    n_heads: usize,
+    n_kv_heads: usize,
+    history_len: usize,
+) {
+    assert_eq!(q.len(), n_heads * head_dim);
+    assert_eq!(k_hist.len(), history_len * n_kv_heads * head_dim);
+    assert_eq!(v_hist.len(), history_len * n_kv_heads * head_dim);
+    assert_eq!(out.len(), n_heads * head_dim);
+    assert_eq!(probs.len(), n_heads * history_len);
+    assert!(n_kv_heads > 0 && n_heads % n_kv_heads == 0);
+    let heads_per_kv = n_heads / n_kv_heads;
+
+    for h in 0..n_heads {
+        let kv = h / heads_per_kv;
+        let q_off = h * head_dim;
+
+        // scores
+        let mut scores = vec![0.0f32; history_len];
+        let mut max_s = f32::NEG_INFINITY;
+        for j in 0..history_len {
+            let k_off = (j * n_kv_heads + kv) * head_dim;
+            let mut s = 0f32;
+            for d in 0..head_dim {
+                s += q[q_off + d] * k_hist[k_off + d];
+            }
+            scores[j] = s;
+            if s > max_s {
+                max_s = s;
+            }
+        }
+        // softmax(scores)
+        let mut total = 0f64;
+        for s in scores.iter_mut() {
+            *s = ((*s - max_s) as f64).exp() as f32;
+            total += *s as f64;
+        }
+        let inv = (1.0f64 / total) as f32;
+        for j in 0..history_len {
+            scores[j] *= inv;
+            probs[h * history_len + j] = scores[j];
+        }
+        // out
+        for d in 0..head_dim {
+            let mut acc = 0f32;
+            for j in 0..history_len {
+                let v_off = (j * n_kv_heads + kv) * head_dim;
+                acc += scores[j] * v_hist[v_off + d];
+            }
+            out[q_off + d] = acc;
+        }
+    }
+}
+
+/// Backward of `attention_forward` w.r.t. its three inputs.
+///
+/// Inputs:
+/// - `q`, `k_hist`, `v_hist` — the same tensors fed to the forward.
+/// - `probs` — the saved softmax probabilities from the forward (the
+///   trainer captures these in `LayerActivations`).
+/// - `d_out` — gradient flowing in from above.
+///
+/// Outputs:
+/// - `d_q[h, :]`             — `Σ_j d_scores[h, j] · k_hist[j, kv, :]`
+/// - `d_k_hist[j, kv, :]`    — `Σ_{h in kv} d_scores[h, j] · q[h, :]`
+/// - `d_v_hist[j, kv, :]`    — `Σ_{h in kv} probs[h, j] · d_out[h, :]`
+///
+/// Where `d_probs[h, j] = d_out[h, :] · v_hist[j, kv, :]`,
+/// `sum_pd[h] = Σ_j probs[h, j] · d_probs[h, j]`,
+/// `d_scores[h, j] = probs[h, j] · (d_probs[h, j] - sum_pd[h])`.
+///
+/// All accumulator buffers are zeroed by the function before writing,
+/// so callers can pass scratch buffers without pre-clearing.
+#[allow(clippy::too_many_arguments)]
+pub fn attention_backward(
+    q: &[f32],
+    k_hist: &[f32],
+    v_hist: &[f32],
+    probs: &[f32],
+    d_out: &[f32],
+    d_q: &mut [f32],
+    d_k_hist: &mut [f32],
+    d_v_hist: &mut [f32],
+    head_dim: usize,
+    n_heads: usize,
+    n_kv_heads: usize,
+    history_len: usize,
+) {
+    assert_eq!(q.len(), n_heads * head_dim);
+    assert_eq!(k_hist.len(), history_len * n_kv_heads * head_dim);
+    assert_eq!(v_hist.len(), history_len * n_kv_heads * head_dim);
+    assert_eq!(probs.len(), n_heads * history_len);
+    assert_eq!(d_out.len(), n_heads * head_dim);
+    assert_eq!(d_q.len(), n_heads * head_dim);
+    assert_eq!(d_k_hist.len(), history_len * n_kv_heads * head_dim);
+    assert_eq!(d_v_hist.len(), history_len * n_kv_heads * head_dim);
+    let heads_per_kv = n_heads / n_kv_heads;
+
+    for x in d_q.iter_mut() { *x = 0.0; }
+    for x in d_k_hist.iter_mut() { *x = 0.0; }
+    for x in d_v_hist.iter_mut() { *x = 0.0; }
+
+    for h in 0..n_heads {
+        let kv = h / heads_per_kv;
+        let q_off = h * head_dim;
+        let p_off = h * history_len;
+
+        // d_probs[j] = d_out[h, :] · v_hist[j, kv, :]
+        let mut d_probs = vec![0f32; history_len];
+        for j in 0..history_len {
+            let v_off = (j * n_kv_heads + kv) * head_dim;
+            let mut dp = 0f32;
+            for d in 0..head_dim {
+                dp += d_out[q_off + d] * v_hist[v_off + d];
+            }
+            d_probs[j] = dp;
+        }
+
+        // sum_pd = Σ_j probs[h, j] · d_probs[j]
+        let mut sum_pd = 0f64;
+        for j in 0..history_len {
+            sum_pd += probs[p_off + j] as f64 * d_probs[j] as f64;
+        }
+        let sum_pd = sum_pd as f32;
+
+        // d_scores[j] = probs[h, j] · (d_probs[j] - sum_pd)
+        let mut d_scores = vec![0f32; history_len];
+        for j in 0..history_len {
+            d_scores[j] = probs[p_off + j] * (d_probs[j] - sum_pd);
+        }
+
+        // d_q[h, d] = Σ_j d_scores[j] · k_hist[j, kv, d]
+        for d in 0..head_dim {
+            let mut acc = 0f32;
+            for j in 0..history_len {
+                let k_off = (j * n_kv_heads + kv) * head_dim;
+                acc += d_scores[j] * k_hist[k_off + d];
+            }
+            d_q[q_off + d] = acc;
+        }
+
+        // d_k_hist[j, kv, d] += d_scores[j] · q[h, d]
+        // d_v_hist[j, kv, d] += probs[h, j] · d_out[h, d]
+        for j in 0..history_len {
+            let kv_off = (j * n_kv_heads + kv) * head_dim;
+            let ds = d_scores[j];
+            let pj = probs[p_off + j];
+            for d in 0..head_dim {
+                d_k_hist[kv_off + d] += ds * q[q_off + d];
+                d_v_hist[kv_off + d] += pj * d_out[q_off + d];
+            }
+        }
+    }
+}
+
 /// Backward of `y = matmul_q4_k(W, x)` w.r.t. the input vector `x`.
 ///
 /// Computes `dx[i] = Σ_j dy[j] * dequant(W)[j, i]` where the dequanted
@@ -555,6 +723,97 @@ mod tests {
                 a = d_up[i],
             );
         }
+    }
+
+    /// Finite-difference check for `attention_backward`.
+    ///
+    /// `L(q, k_hist, v_hist) = Σ d_out · attention(q, k_hist, v_hist)`. Numerically
+    /// perturb every element and compare to the analytical gradients.
+    #[test]
+    fn attention_backward_matches_finite_difference() {
+        let n_heads = 2usize;
+        let n_kv_heads = 1usize;
+        let head_dim = 4usize;
+        let history_len = 3usize;
+        let q_len = n_heads * head_dim;
+        let kv_len = history_len * n_kv_heads * head_dim;
+
+        let q: Vec<f32> = (0..q_len).map(|i| (i as f32 * 0.31).sin() * 0.4).collect();
+        let k_hist: Vec<f32> = (0..kv_len).map(|i| (i as f32 * 0.17).cos() * 0.3).collect();
+        let v_hist: Vec<f32> = (0..kv_len).map(|i| (i as f32 * 0.23).sin() * 0.5).collect();
+        let d_out: Vec<f32> = (0..q_len).map(|i| (i as f32 * 0.47).cos() * 0.3 + 0.1).collect();
+
+        // Forward + save probs
+        let mut out = vec![0f32; q_len];
+        let mut probs = vec![0f32; n_heads * history_len];
+        attention_forward(
+            &q, &k_hist, &v_hist, &mut out, &mut probs,
+            head_dim, n_heads, n_kv_heads, history_len,
+        );
+
+        // Analytical
+        let mut d_q = vec![0f32; q_len];
+        let mut d_k = vec![0f32; kv_len];
+        let mut d_v = vec![0f32; kv_len];
+        attention_backward(
+            &q, &k_hist, &v_hist, &probs, &d_out,
+            &mut d_q, &mut d_k, &mut d_v,
+            head_dim, n_heads, n_kv_heads, history_len,
+        );
+
+        let loss = |q_in: &[f32], k_in: &[f32], v_in: &[f32]| -> f32 {
+            let mut o = vec![0f32; q_len];
+            let mut p = vec![0f32; n_heads * history_len];
+            attention_forward(
+                q_in, k_in, v_in, &mut o, &mut p,
+                head_dim, n_heads, n_kv_heads, history_len,
+            );
+            o.iter().zip(d_out.iter()).map(|(a, b)| a * b).sum::<f32>()
+        };
+
+        let h = 1e-3f32;
+        let check = |label: &str, ana: &[f32], v: &[f32], idx_fn: &dyn Fn(usize) -> (Vec<f32>, Vec<f32>, Vec<f32>)| {
+            for i in 0..v.len() {
+                let (qp, kp, vp) = idx_fn(i);
+                let lp = loss(&qp, &kp, &vp);
+                let (qm, km, vm) = idx_fn(i + v.len()); // marker for minus
+                let lm = loss(&qm, &km, &vm);
+                let num = (lp - lm) / (2.0 * h);
+                let denom = ana[i].abs().max(5e-3);
+                assert!(
+                    (ana[i] - num).abs() / denom < 1e-1,
+                    "{label} i={i} analytic={a} numeric={num}",
+                    a = ana[i],
+                );
+            }
+        };
+
+        // q gradient
+        check("d_q", &d_q, &q, &|i| {
+            let mut perturbed = q.clone();
+            let real_i = if i < q.len() { i } else { i - q.len() };
+            let sign = if i < q.len() { 1.0 } else { -1.0 };
+            perturbed[real_i] += sign * h;
+            (perturbed, k_hist.clone(), v_hist.clone())
+        });
+
+        // k_hist gradient
+        check("d_k", &d_k, &k_hist, &|i| {
+            let mut perturbed = k_hist.clone();
+            let real_i = if i < k_hist.len() { i } else { i - k_hist.len() };
+            let sign = if i < k_hist.len() { 1.0 } else { -1.0 };
+            perturbed[real_i] += sign * h;
+            (q.clone(), perturbed, v_hist.clone())
+        });
+
+        // v_hist gradient
+        check("d_v", &d_v, &v_hist, &|i| {
+            let mut perturbed = v_hist.clone();
+            let real_i = if i < v_hist.len() { i } else { i - v_hist.len() };
+            let sign = if i < v_hist.len() { 1.0 } else { -1.0 };
+            perturbed[real_i] += sign * h;
+            (q.clone(), k_hist.clone(), perturbed)
+        });
     }
 
     /// rope_neox followed by rope_neox_backward at the same `pos` should

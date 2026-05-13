@@ -107,6 +107,11 @@ pub struct Pipelines {
     pub geglu_backward: wgpu::ComputePipeline,
     /// NeoX RoPE backward — inverse in-place rotation of `dx`.
     pub rope_neox_backward: wgpu::ComputePipeline,
+    /// Attention backward — pass 1. Produces `d_scores` (staged) and `d_q`.
+    pub attention_backward_dq: wgpu::ComputePipeline,
+    /// Attention backward — pass 2. Consumes pass-1 `d_scores`, produces
+    /// `d_k_hist` and `d_v_hist`.
+    pub attention_backward_dkv: wgpu::ComputePipeline,
 }
 
 impl Pipelines {
@@ -206,6 +211,16 @@ impl Pipelines {
             rmsnorm_backward:   build(device, "rmsnorm_backward",   kernels::RMSNORM_BACKWARD),
             geglu_backward:     build(device, "geglu_backward",     kernels::GEGLU_BACKWARD),
             rope_neox_backward: build(device, "rope_neox_backward", kernels::ROPE_NEOX_BACKWARD),
+            attention_backward_dq: build(
+                device,
+                "attention_backward_dq",
+                kernels::ATTENTION_BACKWARD_DQ,
+            ),
+            attention_backward_dkv: build(
+                device,
+                "attention_backward_dkv",
+                kernels::ATTENTION_BACKWARD_DKV,
+            ),
             geglu:             build(device, "geglu",             kernels::GEGLU),
             rope_neox:         build(device, "rope_neox",         kernels::ROPE_NEOX),
             attention:         build(device, "attention",         kernels::ATTENTION),

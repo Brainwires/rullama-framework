@@ -2099,6 +2099,104 @@ pub fn rmsnorm_per_row_chained(
     cp.dispatch_workgroups(n_rows as u32, 1, 1);
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct AttnBackParams {
+    head_dim:     u32,
+    n_heads:      u32,
+    n_kv_heads:   u32,
+    heads_per_kv: u32,
+    history_len:  u32,
+    _pad0:        u32,
+    _pad1:        u32,
+    _pad2:        u32,
+}
+
+/// Attention backward, pass 1 of 2 — writes `d_q` and a staged
+/// `d_scores` buffer (size `[n_heads, history_len]`) that pass 2 reads.
+/// One workgroup per query head. `q` is intentionally *not* a binding
+/// here — pass 1's outputs don't depend on it; it shows up in pass 2.
+#[allow(clippy::too_many_arguments)]
+pub fn attention_backward_dq_chained(
+    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
+    k_hist: &wgpu::Buffer, v_hist: &wgpu::Buffer,
+    probs: &wgpu::Buffer, d_out: &wgpu::Buffer,
+    d_scores: &wgpu::Buffer, d_q: &wgpu::Buffer,
+    head_dim: usize, n_heads: usize, n_kv_heads: usize, history_len: usize,
+) {
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    let heads_per_kv = n_heads / n_kv_heads;
+    let params = AttnBackParams {
+        head_dim: head_dim as u32, n_heads: n_heads as u32,
+        n_kv_heads: n_kv_heads as u32, heads_per_kv: heads_per_kv as u32,
+        history_len: history_len as u32,
+        _pad0: 0, _pad1: 0, _pad2: 0,
+    };
+    let p_buf = write_uniform(device, queue, "attn_bwd_dq.params", &params);
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("attn_bwd_dq.bg"),
+        layout: &p.attention_backward_dq.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: p_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: k_hist.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: v_hist.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: probs.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 4, resource: d_out.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 5, resource: d_scores.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 6, resource: d_q.as_entire_binding() },
+        ],
+    });
+    let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("attn_bwd_dq.pass"), timestamp_writes: None,
+    });
+    cp.set_pipeline(&p.attention_backward_dq);
+    cp.set_bind_group(0, &bg, &[]);
+    cp.dispatch_workgroups(n_heads as u32, 1, 1);
+}
+
+/// Attention backward, pass 2 of 2 — consumes the staged `d_scores`
+/// from pass 1 and writes `d_k_hist` and `d_v_hist`.
+/// Workgroups dispatched as `(n_kv_heads, history_len, 1)`.
+#[allow(clippy::too_many_arguments)]
+pub fn attention_backward_dkv_chained(
+    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
+    q: &wgpu::Buffer, probs: &wgpu::Buffer, d_out: &wgpu::Buffer,
+    d_scores: &wgpu::Buffer,
+    d_k_hist: &wgpu::Buffer, d_v_hist: &wgpu::Buffer,
+    head_dim: usize, n_heads: usize, n_kv_heads: usize, history_len: usize,
+) {
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    let heads_per_kv = n_heads / n_kv_heads;
+    let params = AttnBackParams {
+        head_dim: head_dim as u32, n_heads: n_heads as u32,
+        n_kv_heads: n_kv_heads as u32, heads_per_kv: heads_per_kv as u32,
+        history_len: history_len as u32,
+        _pad0: 0, _pad1: 0, _pad2: 0,
+    };
+    let p_buf = write_uniform(device, queue, "attn_bwd_dkv.params", &params);
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("attn_bwd_dkv.bg"),
+        layout: &p.attention_backward_dkv.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: p_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: q.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: probs.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: d_out.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 4, resource: d_scores.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 5, resource: d_k_hist.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 6, resource: d_v_hist.as_entire_binding() },
+        ],
+    });
+    let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("attn_bwd_dkv.pass"), timestamp_writes: None,
+    });
+    cp.set_pipeline(&p.attention_backward_dkv);
+    cp.set_bind_group(0, &bg, &[]);
+    cp.dispatch_workgroups(n_kv_heads as u32, history_len as u32, 1);
+}
+
 /// RMSNorm backward w.r.t. the input. Weight `w` is frozen (LoRA
 /// convention) — pass a real `w_buf` with `has_weight = true` or any
 /// dummy `wgpu::Buffer` with `has_weight = false`.
@@ -2690,6 +2788,109 @@ mod tests {
             max_du = max_du.max((cpu_du[i] - gpu_du[i]).abs());
         }
         assert!(max_dg < 1e-5 && max_du < 1e-5, "geglu_bwd max_dg={max_dg} max_du={max_du}");
+    }
+
+    /// GPU two-pass attention backward vs. CPU oracle.
+    ///
+    /// Uses the CPU `attention_forward` to generate inputs + probs, then
+    /// compares both the CPU and GPU backward against each other on the
+    /// same `d_out`. Small shapes (n_heads=2, n_kv_heads=1, head_dim=8,
+    /// history_len=5) — keeps the test fast and exercises the GQA
+    /// aggregation (heads_per_kv = 2).
+    #[test]
+    fn attention_backward_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+
+        let n_heads = 2usize;
+        let n_kv_heads = 1usize;
+        let head_dim = 8usize;
+        let history_len = 5usize;
+        let q_len = n_heads * head_dim;
+        let kv_len = history_len * n_kv_heads * head_dim;
+
+        // Deterministic inputs.
+        let q: Vec<f32> = (0..q_len)
+            .map(|i| (i as f32 * 0.31).sin() * 0.4)
+            .collect();
+        let k_hist: Vec<f32> = (0..kv_len)
+            .map(|i| (i as f32 * 0.17).cos() * 0.3)
+            .collect();
+        let v_hist: Vec<f32> = (0..kv_len)
+            .map(|i| (i as f32 * 0.23).sin() * 0.5)
+            .collect();
+        let d_out: Vec<f32> = (0..q_len)
+            .map(|i| (i as f32 * 0.47).cos() * 0.3 + 0.1)
+            .collect();
+
+        // Forward (CPU) — gives us probs to feed back into both backwards.
+        let mut out_unused = vec![0f32; q_len];
+        let mut probs = vec![0f32; n_heads * history_len];
+        crate::reference::ops::attention_forward(
+            &q, &k_hist, &v_hist, &mut out_unused, &mut probs,
+            head_dim, n_heads, n_kv_heads, history_len,
+        );
+
+        // CPU backward
+        let mut cpu_dq = vec![0f32; q_len];
+        let mut cpu_dk = vec![0f32; kv_len];
+        let mut cpu_dv = vec![0f32; kv_len];
+        crate::reference::ops::attention_backward(
+            &q, &k_hist, &v_hist, &probs, &d_out,
+            &mut cpu_dq, &mut cpu_dk, &mut cpu_dv,
+            head_dim, n_heads, n_kv_heads, history_len,
+        );
+
+        // GPU backward — two passes.
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let q_buf      = write_storage_f32(device, queue, "q",      &q);
+        let k_buf      = write_storage_f32(device, queue, "k_hist", &k_hist);
+        let v_buf      = write_storage_f32(device, queue, "v_hist", &v_hist);
+        let probs_buf  = write_storage_f32(device, queue, "probs",  &probs);
+        let dout_buf   = write_storage_f32(device, queue, "d_out",  &d_out);
+        let (ds_buf, _)  = make_output_pair(device, "d_scores", (n_heads * history_len * 4) as u64);
+        let (dq_buf, dq_read) = make_output_pair(device, "d_q", (q_len * 4) as u64);
+        let (dk_buf, dk_read) = make_output_pair(device, "d_k_hist", (kv_len * 4) as u64);
+        let (dv_buf, dv_read) = make_output_pair(device, "d_v_hist", (kv_len * 4) as u64);
+
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("attn_bwd.enc"),
+        });
+        attention_backward_dq_chained(
+            &ctx, &p, &mut enc,
+            &k_buf, &v_buf, &probs_buf, &dout_buf,
+            &ds_buf, &dq_buf,
+            head_dim, n_heads, n_kv_heads, history_len,
+        );
+        attention_backward_dkv_chained(
+            &ctx, &p, &mut enc,
+            &q_buf, &probs_buf, &dout_buf, &ds_buf,
+            &dk_buf, &dv_buf,
+            head_dim, n_heads, n_kv_heads, history_len,
+        );
+        enc.copy_buffer_to_buffer(&dq_buf, 0, &dq_read, 0, (q_len * 4) as u64);
+        enc.copy_buffer_to_buffer(&dk_buf, 0, &dk_read, 0, (kv_len * 4) as u64);
+        enc.copy_buffer_to_buffer(&dv_buf, 0, &dv_read, 0, (kv_len * 4) as u64);
+        queue.submit(Some(enc.finish()));
+
+        let gpu_dq = pollster::block_on(read_back_f32(device, &dq_read)).expect("dq");
+        let gpu_dk = pollster::block_on(read_back_f32(device, &dk_read)).expect("dk");
+        let gpu_dv = pollster::block_on(read_back_f32(device, &dv_read)).expect("dv");
+
+        let max = |a: &[f32], b: &[f32]| -> f32 {
+            a.iter()
+                .zip(b.iter())
+                .map(|(x, y)| (x - y).abs())
+                .fold(0.0f32, f32::max)
+        };
+        let dq_diff = max(&cpu_dq, &gpu_dq);
+        let dk_diff = max(&cpu_dk, &gpu_dk);
+        let dv_diff = max(&cpu_dv, &gpu_dv);
+        assert!(
+            dq_diff < 1e-5 && dk_diff < 1e-5 && dv_diff < 1e-5,
+            "attn_bwd diffs dq={dq_diff} dk={dk_diff} dv={dv_diff}"
+        );
     }
 
     /// GPU forward+backward round-trip restores the input (rotations are
