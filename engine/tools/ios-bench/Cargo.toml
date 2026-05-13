@@ -10,7 +10,7 @@ publish = false
 crate-type = ["staticlib"]
 
 [dependencies]
-rullama = { path = "../.." }
+rullama = { path = "../../crates/rullama" }
 pollster = "0.4.0"
 wgpu = "29.0.3"
 bytemuck = { version = "1.25", features = ["derive"] }
