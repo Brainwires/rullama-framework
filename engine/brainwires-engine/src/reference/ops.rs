@@ -576,6 +576,64 @@ pub fn matmul_q4_k_backward_input(
     }
 }
 
+/// Backward of `y = matmul_q6_k(W, x)` w.r.t. `x`. Same shape conventions
+/// as the Q4_K variant — `W` is `[n, k]` row-major, `dy` has length `n`,
+/// `dx` has length `k`. Used by the training output-projection backward
+/// for Gemma 4's tied Q6_K embedding.
+pub fn matmul_q6_k_backward_input(
+    w_bytes: &[u8],
+    dy: &[f32],
+    k: usize,
+    n: usize,
+    dx: &mut [f32],
+) {
+    assert_eq!(dy.len(), n, "dy length mismatch");
+    assert_eq!(dx.len(), k, "dx length mismatch");
+    assert_eq!(k % 256, 0, "k must be divisible by 256 for Q6_K");
+
+    let total = n * k;
+    let mut w_f32 = vec![0.0f32; total];
+    crate::gguf::quant::dequant_q6_k(w_bytes, &mut w_f32).expect("Q6_K dequant");
+
+    for x in dx.iter_mut() {
+        *x = 0.0;
+    }
+    for j in 0..n {
+        let row = &w_f32[j * k..(j + 1) * k];
+        let dyj = dy[j];
+        for i in 0..k {
+            dx[i] += dyj * row[i];
+        }
+    }
+}
+
+/// Per-row RMSNorm backward — runs `rmsnorm_backward` independently per
+/// row. `x` is `[n_rows × n]`, `w` is the shared per-element weight
+/// `[n]` (`None` ⇒ unweighted), `dy` and `dx` are both `[n_rows × n]`.
+/// Mirrors the WGSL `rmsnorm_per_row_backward` kernel.
+pub fn rmsnorm_per_row_backward(
+    x: &[f32],
+    w: Option<&[f32]>,
+    dy: &[f32],
+    eps: f32,
+    n_rows: usize,
+    n: usize,
+    dx: &mut [f32],
+) {
+    assert_eq!(x.len(), n_rows * n);
+    assert_eq!(dy.len(), n_rows * n);
+    assert_eq!(dx.len(), n_rows * n);
+    if let Some(ww) = w {
+        assert_eq!(ww.len(), n);
+    }
+    for r in 0..n_rows {
+        let xs = &x[r * n..(r + 1) * n];
+        let dys = &dy[r * n..(r + 1) * n];
+        let dxs = &mut dx[r * n..(r + 1) * n];
+        rmsnorm_backward(xs, w, dys, eps, dxs);
+    }
+}
+
 /// Cross-entropy forward + backward over a single logit vector.
 ///
 /// Writes `softmax(logits) - one_hot(target)` into `d_logits` and returns the
@@ -780,6 +838,51 @@ mod tests {
             let num = (lp - lm) / (2.0 * h);
             let denom = dx[i].abs().max(1e-3);
             assert!((dx[i] - num).abs() / denom < 5e-3);
+        }
+    }
+
+    /// Per-row RMSNorm backward must equal calling the single-row
+    /// `rmsnorm_backward` on each row independently. Verifies the loop
+    /// version matches the well-tested single-row version row-for-row.
+    #[test]
+    fn rmsnorm_per_row_backward_matches_single_row_loop() {
+        let n_rows = 3;
+        let n = 8;
+        let total = n_rows * n;
+        let x: Vec<f32> = (0..total).map(|i| (i as f32 + 1.0) * 0.13).collect();
+        let w: Vec<f32> = (0..n).map(|i| 1.0 + (i as f32) * 0.07).collect();
+        let dy: Vec<f32> = (0..total).map(|i| (i as f32 * 0.31).sin()).collect();
+        let eps = 1e-6f32;
+
+        // Per-row variant.
+        let mut dx = vec![0.0; total];
+        rmsnorm_per_row_backward(&x, Some(&w), &dy, eps, n_rows, n, &mut dx);
+
+        // Reference: loop over rows, call single-row backward.
+        let mut dx_ref = vec![0.0; total];
+        for r in 0..n_rows {
+            let xs = &x[r * n..(r + 1) * n];
+            let dys = &dy[r * n..(r + 1) * n];
+            let dxs = &mut dx_ref[r * n..(r + 1) * n];
+            rmsnorm_backward(xs, Some(&w), dys, eps, dxs);
+        }
+
+        for (a, b) in dx.iter().zip(dx_ref.iter()) {
+            assert!((a - b).abs() < 1e-6, "per-row vs single-row mismatch: {a} vs {b}");
+        }
+
+        // Also unweighted.
+        let mut dx_u = vec![0.0; total];
+        rmsnorm_per_row_backward(&x, None, &dy, eps, n_rows, n, &mut dx_u);
+        let mut dx_u_ref = vec![0.0; total];
+        for r in 0..n_rows {
+            let xs = &x[r * n..(r + 1) * n];
+            let dys = &dy[r * n..(r + 1) * n];
+            let dxs = &mut dx_u_ref[r * n..(r + 1) * n];
+            rmsnorm_backward(xs, None, dys, eps, dxs);
+        }
+        for (a, b) in dx_u.iter().zip(dx_u_ref.iter()) {
+            assert!((a - b).abs() < 1e-6);
         }
     }
 
