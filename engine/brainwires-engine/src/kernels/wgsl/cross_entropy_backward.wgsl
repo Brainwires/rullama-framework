@@ -26,8 +26,10 @@ struct Params {
 
 const WG_SIZE: u32 = 256u;
 const TARGET_MASK: u32 = 0xFFFFFFFFu;
-// Most-negative finite f32; safe init for max-reduce.
-const NEG_INF: f32 = -3.4028235e38;
+// Safe sentinel for max-reduce; matches the convention in attention.wgsl
+// and attention_probs.wgsl. The decimal form `-3.4028235e38` parses to a
+// value slightly past `f32::MIN` and trips Chrome's WGSL validator.
+const NEG_INF: f32 = -1.0e30;
 
 @group(0) @binding(0) var<uniform>             params:   Params;
 @group(0) @binding(1) var<storage, read>       logits:   array<f32>;
