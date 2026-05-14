@@ -21,6 +21,7 @@ use rullama::reference::forward_chained::{
 };
 
 use crate::lora::{LoraKey, LoraState};
+use crate::lr_schedule::LrSchedule;
 use crate::scratch::TrainingScratch;
 use crate::shared::config::{LoraConfig, LossMode, TrainingHyperparams};
 use crate::shared::error::TrainingError;
@@ -34,6 +35,17 @@ pub struct TrainingSession {
     /// Loss objective for `forward_backward`. Picked at session
     /// construction from `TrainingHyperparams::loss_mode`.
     loss_mode: LossMode,
+    /// Optional LR schedule. When `Some`, `optimizer_step` overrides
+    /// `adam_cfg.lr` with `schedule.get_lr(step_num)` per step.
+    /// `None` keeps `hp.learning_rate` constant. Cached
+    /// `lr_scheduler` + `warmup_steps` from `hp` go into this when
+    /// the caller opts in via `set_lr_schedule(total_steps)`.
+    lr_schedule: Option<LrSchedule>,
+    /// Persisted from `TrainingHyperparams` so `set_lr_schedule` can
+    /// build the schedule without forcing the caller to re-pass them.
+    base_lr: f64,
+    warmup_steps: u64,
+    lr_scheduler: crate::shared::config::LrScheduler,
     /// 1-based step counter used by Adam's bias correction. Increments
     /// at the end of every successful `step()` call.
     step_num: u32,
@@ -114,12 +126,52 @@ impl TrainingSession {
             scratch,
             adam_cfg,
             loss_mode: hp.loss_mode,
+            lr_schedule: None,
+            base_lr: hp.learning_rate,
+            warmup_steps: hp.warmup_steps,
+            lr_scheduler: hp.lr_scheduler,
             step_num: 1,
         })
     }
 
     /// The loss objective this session was constructed with.
     pub fn loss_mode(&self) -> LossMode { self.loss_mode }
+
+    /// Opt into LR scheduling for the next `total_steps` optimizer
+    /// steps. The schedule respects `TrainingHyperparams::warmup_steps`
+    /// and `lr_scheduler` (Constant / Linear / Cosine /
+    /// CosineWarmRestarts). With no call, `optimizer_step` uses the
+    /// constant `hp.learning_rate` from `new()`.
+    ///
+    /// `total_steps` should reflect optimizer steps, not micro-batches.
+    /// Calling this resets the schedule's `total_steps` if it had been
+    /// set previously.
+    pub fn set_lr_schedule(&mut self, total_steps: u64) {
+        self.lr_schedule = Some(LrSchedule::new(
+            self.base_lr,
+            self.warmup_steps,
+            total_steps,
+            self.lr_scheduler,
+        ));
+    }
+
+    /// Drop any previously-set LR schedule and revert to constant
+    /// `hp.learning_rate`.
+    pub fn clear_lr_schedule(&mut self) {
+        self.lr_schedule = None;
+    }
+
+    /// Current learning rate (for logging). If a schedule is set,
+    /// returns `schedule.get_lr(step_num)`; otherwise the constant
+    /// base rate. `step_num` is 1-based — call this before
+    /// `optimizer_step` to get the lr that will be applied at the
+    /// next step, or after to get the lr that was applied.
+    pub fn current_lr(&self) -> f64 {
+        match &self.lr_schedule {
+            Some(s) => s.get_lr(self.step_num as u64),
+            None => self.base_lr,
+        }
+    }
 
     /// Zero every LoRA's `dA` / `dB` gradient buffers. Call at the
     /// start of a gradient-accumulation cycle (or `step()` does this
@@ -133,7 +185,11 @@ impl TrainingSession {
     /// drives the bias-correction). Call once at the end of each
     /// gradient-accumulation cycle.
     pub fn optimizer_step(&mut self) {
-        let adam = AdamConfig { step: self.step_num, ..self.adam_cfg };
+        let lr = match &self.lr_schedule {
+            Some(s) => s.get_lr(self.step_num as u64) as f32,
+            None => self.adam_cfg.lr,
+        };
+        let adam = AdamConfig { step: self.step_num, lr, ..self.adam_cfg };
         let ctx = self.model.forward().ctx().clone();
         let pipes = self.model.forward().pipes().clone();
         let mut enc = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

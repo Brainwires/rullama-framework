@@ -29,6 +29,9 @@
 //!   - `RULLAMA_TRAIN_LOSS_MODE` — `next_token` | `per_position`    (default next_token)
 //!   - `RULLAMA_TRAIN_TARGETS`   — comma-separated LoRA targets    (default attn_q,attn_k,attn_v,attn_o)
 //!                                  Valid: attn_q attn_k attn_v attn_o ffn_gate ffn_up ffn_down
+//!   - `RULLAMA_TRAIN_LR_SCHED`  — `none` | `constant` | `linear` | `cosine` | `cosine_warm_restarts`
+//!                                  (default `none` — constant base lr)
+//!   - `RULLAMA_TRAIN_WARMUP`    — warmup steps (default 0)
 //!   - `RULLAMA_ADAPTER_PATH`    — write adapter here when done     (default unset)
 //!   - plus the backward-side knobs honored by `Forward::backward_step`
 //!     (`RULLAMA_CLIP_DHIDDEN`, `RULLAMA_DEBUG_GRADS`,
@@ -41,7 +44,7 @@ use std::path::PathBuf;
 
 use rullama::api::Model;
 use rullama_finetune::dataset_loader::TrainingDataset;
-use rullama_finetune::shared::config::{LoraConfig, LossMode, TrainingHyperparams};
+use rullama_finetune::shared::config::{LoraConfig, LossMode, LrScheduler, TrainingHyperparams};
 use rullama_finetune::TrainingSession;
 
 type BoxError = Box<dyn Error + Send + Sync>;
@@ -92,6 +95,21 @@ async fn run() -> Result<(), BoxError> {
             .into());
         }
     };
+    let lr_sched_str = env::var("RULLAMA_TRAIN_LR_SCHED").ok();
+    let lr_sched: Option<LrScheduler> = match lr_sched_str.as_deref() {
+        None | Some("none") | Some("") => None,
+        Some("constant") => Some(LrScheduler::Constant),
+        Some("linear") => Some(LrScheduler::Linear),
+        Some("cosine") => Some(LrScheduler::Cosine),
+        Some("cosine_warm_restarts") => Some(LrScheduler::CosineWarmRestarts),
+        Some(other) => {
+            return Err(format!(
+                "RULLAMA_TRAIN_LR_SCHED must be one of none/constant/linear/cosine/cosine_warm_restarts, got {other:?}"
+            )
+            .into());
+        }
+    };
+    let warmup = env_u32("RULLAMA_TRAIN_WARMUP", 0) as u64;
 
     eprintln!("[load] gguf = {}", gguf_path.display());
     let bytes = fs::read(&gguf_path)?;
@@ -194,12 +212,21 @@ async fn run() -> Result<(), BoxError> {
     };
     hp.seed = seed;
     hp.loss_mode = loss_mode;
+    hp.warmup_steps = warmup;
+    if let Some(sched) = lr_sched {
+        hp.lr_scheduler = sched;
+    }
     eprintln!(
-        "[hp] lr={lr:.3e} rank={rank} alpha={alpha} accum={accum} steps={n_steps} loss_mode={:?}",
+        "[hp] lr={lr:.3e} rank={rank} alpha={alpha} accum={accum} steps={n_steps} loss_mode={:?} lr_sched={:?} warmup={}",
         loss_mode,
+        lr_sched,
+        warmup,
     );
     let mut session = TrainingSession::new(model, lora_cfg, hp)
         .map_err(|e| -> BoxError { format!("{e:?}").into() })?;
+    if lr_sched.is_some() {
+        session.set_lr_schedule(n_steps as u64);
+    }
     eprintln!(
         "[init] training {} LoRA parameters",
         session.parameter_count()
@@ -235,6 +262,7 @@ async fn run() -> Result<(), BoxError> {
             };
             accum_loss += loss;
         }
+        let lr_now = session.current_lr();
         session.optimizer_step();
         let avg_loss = accum_loss / accum as f32;
         if first_loss.is_none() {
@@ -242,7 +270,7 @@ async fn run() -> Result<(), BoxError> {
         }
         last_loss = avg_loss;
         if step == 1 || step % log_every == 0 || step == n_steps {
-            eprintln!("[step {step:>4}/{n_steps}] loss = {avg_loss:.4}");
+            eprintln!("[step {step:>4}/{n_steps}] loss = {avg_loss:.4} lr = {lr_now:.3e}");
         }
     }
 
