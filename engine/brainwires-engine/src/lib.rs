@@ -1,17 +1,46 @@
 //! rullama — Gemma 4 inference in the browser via wgpu + WASM.
 //!
-//! Crate root. The JS-facing surface lives in [`api`]; everything else is internal.
+//! # Stability
+//!
+//! Three modules are the **stable public API** and follow semver across
+//! 0.x patch releases:
+//!
+//! - [`api`] — the high-level [`api::Model`] handle, [`api::ChatMessage`],
+//!   [`api::ChatRole`], [`api::GenerateOptions`], and the
+//!   `loadFrom*` / `generate` / `stop` entry points. This is what
+//!   `#[wasm_bindgen]` exposes to JS, and what native Rust consumers
+//!   should program against.
+//! - [`error`] — [`error::RullamaError`] and [`error::Result`].
+//! - [`sampling`] — [`sampling::SamplingOptions`] and [`sampling::Sampler`].
+//!
+//! Every other module (`backend`, `gguf`, `kernels`, `model`, `multimodal`,
+//! `reference`, `template`, `tokenizer`) is `#[doc(hidden)]` and is
+//! considered **implementation detail**. They are reachable so that the
+//! sibling workspace crates (`rullama-finetune`, `rullama-ios-bench`) can
+//! link against the wgpu kernel set, the GGUF parser, and the parity
+//! oracles — but their layout, names, and signatures may change in any
+//! patch release without notice. External callers that pin against them
+//! do so at their own risk.
 
 pub mod api;
-pub mod backend;
 pub mod error;
-pub mod gguf;
-pub mod kernels;
-pub mod model;
-pub mod multimodal;
-pub mod reference;
 pub mod sampling;
+
+#[doc(hidden)]
+pub mod backend;
+#[doc(hidden)]
+pub mod gguf;
+#[doc(hidden)]
+pub mod kernels;
+#[doc(hidden)]
+pub mod model;
+#[doc(hidden)]
+pub mod multimodal;
+#[doc(hidden)]
+pub mod reference;
+#[doc(hidden)]
 pub mod template;
+#[doc(hidden)]
 pub mod tokenizer;
 
 pub use error::RullamaError;
