@@ -27,6 +27,8 @@
 //!   - `RULLAMA_TRAIN_SEED`      — RNG seed for LoRA A init         (default 0xC0FFEE)
 //!   - `RULLAMA_TRAIN_LOG_EVERY` — print every N optimizer steps    (default 5)
 //!   - `RULLAMA_TRAIN_LOSS_MODE` — `next_token` | `per_position`    (default next_token)
+//!   - `RULLAMA_TRAIN_TARGETS`   — comma-separated LoRA targets    (default attn_q,attn_k,attn_v,attn_o)
+//!                                  Valid: attn_q attn_k attn_v attn_o ffn_gate ffn_up ffn_down
 //!   - `RULLAMA_ADAPTER_PATH`    — write adapter here when done     (default unset)
 //!   - plus the backward-side knobs honored by `Forward::backward_step`
 //!     (`RULLAMA_CLIP_DHIDDEN`, `RULLAMA_DEBUG_GRADS`,
@@ -158,16 +160,28 @@ async fn run() -> Result<(), BoxError> {
         n_examples, max_prompt_len, max_seq_len,
     );
 
+    let targets: Vec<String> = env::var("RULLAMA_TRAIN_TARGETS")
+        .ok()
+        .map(|s| {
+            s.split(',')
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty())
+                .collect()
+        })
+        .unwrap_or_else(|| {
+            vec![
+                "attn_q".into(),
+                "attn_k".into(),
+                "attn_v".into(),
+                "attn_o".into(),
+            ]
+        });
+    eprintln!("[hp] targets = {:?}", targets);
     let lora_cfg = LoraConfig {
         rank,
         alpha,
         dropout: 0.0,
-        target_modules: vec![
-            "attn_q".into(),
-            "attn_k".into(),
-            "attn_v".into(),
-            "attn_o".into(),
-        ],
+        target_modules: targets,
     };
     let mut hp = TrainingHyperparams::default();
     hp.learning_rate = lr;

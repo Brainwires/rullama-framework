@@ -62,21 +62,26 @@ impl TrainingSession {
             let head_dim = cfg.head_dim(layer);
             let n_heads_dim = cfg.n_heads * head_dim;
             let n_kv_dim = cfg.n_kv_heads(layer) * head_dim;
+            let ffn_n = cfg.ffn(layer);
             for proj in &lora_cfg.target_modules {
                 let (in_dim, out_dim) = match proj.as_str() {
-                    "attn_q" => (d_model, n_heads_dim),
-                    "attn_k" => (d_model, n_kv_dim),
-                    "attn_v" => (d_model, n_kv_dim),
-                    "attn_o" => (n_heads_dim, d_model),
+                    "attn_q"   => (d_model, n_heads_dim),
+                    "attn_k"   => (d_model, n_kv_dim),
+                    "attn_v"   => (d_model, n_kv_dim),
+                    "attn_o"   => (n_heads_dim, d_model),
+                    "ffn_gate" => (d_model, ffn_n),
+                    "ffn_up"   => (d_model, ffn_n),
+                    "ffn_down" => (ffn_n, d_model),
                     other => {
                         return Err(TrainingError::Config(format!(
-                            "M0 supports attn_q/k/v/o LoRA only, got {other}"
+                            "supported LoRA targets: attn_q/k/v/o + ffn_gate/up/down, got {other}"
                         )));
                     }
                 };
                 // Deterministic seed per (layer, proj) so reruns are
                 // reproducible without an extra RNG.
-                let proj_idx = ["attn_q", "attn_k", "attn_v", "attn_o"]
+                let proj_idx = ["attn_q", "attn_k", "attn_v", "attn_o",
+                                "ffn_gate", "ffn_up", "ffn_down"]
                     .iter()
                     .position(|p| *p == proj.as_str())
                     .unwrap_or(0) as u64;
@@ -171,10 +176,13 @@ impl TrainingSession {
         // `self.loras` so we can also mutably borrow `self.model`.
         let lora_slots: Vec<LayerLoraSlots> = (0..n_layers)
             .map(|li| LayerLoraSlots {
-                q: self.loras.get(&LoraKey::new(li as u32, "attn_q")).map(slot_view),
-                k: self.loras.get(&LoraKey::new(li as u32, "attn_k")).map(slot_view),
-                v: self.loras.get(&LoraKey::new(li as u32, "attn_v")).map(slot_view),
-                o: self.loras.get(&LoraKey::new(li as u32, "attn_o")).map(slot_view),
+                q:        self.loras.get(&LoraKey::new(li as u32, "attn_q")).map(slot_view),
+                k:        self.loras.get(&LoraKey::new(li as u32, "attn_k")).map(slot_view),
+                v:        self.loras.get(&LoraKey::new(li as u32, "attn_v")).map(slot_view),
+                o:        self.loras.get(&LoraKey::new(li as u32, "attn_o")).map(slot_view),
+                ffn_gate: self.loras.get(&LoraKey::new(li as u32, "ffn_gate")).map(slot_view),
+                ffn_up:   self.loras.get(&LoraKey::new(li as u32, "ffn_up")).map(slot_view),
+                ffn_down: self.loras.get(&LoraKey::new(li as u32, "ffn_down")).map(slot_view),
             })
             .collect();
 
@@ -223,10 +231,13 @@ impl TrainingSession {
         // Backward.
         let grads: Vec<LayerLoraGrads> = (0..n_layers)
             .map(|li| LayerLoraGrads {
-                q: self.loras.get(&LoraKey::new(li as u32, "attn_q")).map(grad_view),
-                k: self.loras.get(&LoraKey::new(li as u32, "attn_k")).map(grad_view),
-                v: self.loras.get(&LoraKey::new(li as u32, "attn_v")).map(grad_view),
-                o: self.loras.get(&LoraKey::new(li as u32, "attn_o")).map(grad_view),
+                q:        self.loras.get(&LoraKey::new(li as u32, "attn_q")).map(grad_view),
+                k:        self.loras.get(&LoraKey::new(li as u32, "attn_k")).map(grad_view),
+                v:        self.loras.get(&LoraKey::new(li as u32, "attn_v")).map(grad_view),
+                o:        self.loras.get(&LoraKey::new(li as u32, "attn_o")).map(grad_view),
+                ffn_gate: self.loras.get(&LoraKey::new(li as u32, "ffn_gate")).map(grad_view),
+                ffn_up:   self.loras.get(&LoraKey::new(li as u32, "ffn_up")).map(grad_view),
+                ffn_down: self.loras.get(&LoraKey::new(li as u32, "ffn_down")).map(grad_view),
             })
             .collect();
         let s = &self.scratch;

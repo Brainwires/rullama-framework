@@ -82,14 +82,17 @@ pub struct LoraSlot<'a> {
     pub scale: f32,           // alpha / rank
 }
 
-/// Per-layer LoRA slots for the four attention projections. Pass
-/// `None` for projections that aren't LoRA-wrapped. (M2 extends with
-/// ffn slots.)
+/// Per-layer LoRA slots for the four attention projections + three
+/// FFN projections. Pass `None` for any projection that isn't
+/// LoRA-wrapped.
 pub struct LayerLoraSlots<'a> {
-    pub q: Option<LoraSlot<'a>>,
-    pub k: Option<LoraSlot<'a>>,
-    pub v: Option<LoraSlot<'a>>,
-    pub o: Option<LoraSlot<'a>>,
+    pub q:        Option<LoraSlot<'a>>,
+    pub k:        Option<LoraSlot<'a>>,
+    pub v:        Option<LoraSlot<'a>>,
+    pub o:        Option<LoraSlot<'a>>,
+    pub ffn_gate: Option<LoraSlot<'a>>,
+    pub ffn_up:   Option<LoraSlot<'a>>,
+    pub ffn_down: Option<LoraSlot<'a>>,
 }
 use crate::backend::{Pipelines, WeightCache, WgpuCtx};
 use crate::error::{Result, RullamaError};
@@ -884,8 +887,29 @@ impl Forward {
 
         matmul_q4_k_chained(&self.ctx, &self.pipes, enc,
             &gate_w, &self.norm_x, &self.ffn_gate, d_model, ffn_n);
+
+        // ---- LoRA forward correction (ffn_gate): ffn_gate += scale · B · (A · norm_x) ----
+        if let Some(slot) = loras.and_then(|l| l.ffn_gate.as_ref()) {
+            lora_matmul_row_chained(&self.ctx, &self.pipes, enc,
+                slot.a, &self.norm_x, slot.z,
+                d_model, slot.rank as usize, 1.0, false);
+            lora_matmul_row_chained(&self.ctx, &self.pipes, enc,
+                slot.b, slot.z, &self.ffn_gate,
+                slot.rank as usize, ffn_n, slot.scale, true);
+        }
+
         matmul_q4_k_chained(&self.ctx, &self.pipes, enc,
             &up_w, &self.norm_x, &self.ffn_up, d_model, ffn_n);
+
+        // ---- LoRA forward correction (ffn_up): ffn_up += scale · B · (A · norm_x) ----
+        if let Some(slot) = loras.and_then(|l| l.ffn_up.as_ref()) {
+            lora_matmul_row_chained(&self.ctx, &self.pipes, enc,
+                slot.a, &self.norm_x, slot.z,
+                d_model, slot.rank as usize, 1.0, false);
+            lora_matmul_row_chained(&self.ctx, &self.pipes, enc,
+                slot.b, slot.z, &self.ffn_up,
+                slot.rank as usize, ffn_n, slot.scale, true);
+        }
 
         // ---- CAPTURE: ffn_gate, ffn_up (inputs to GEGLU) ----
         if let Some(cap) = capture {
@@ -907,6 +931,16 @@ impl Forward {
             GgmlDtype::Q4_K => matmul_q4_k_chained(&self.ctx, &self.pipes, enc,
                 &down_w, &self.ffn_act, &self.ffn_out, ffn_n, d_model),
             other => return Err(RullamaError::Inference(format!("ffn_down dtype {other:?} unsupported"))),
+        }
+
+        // ---- LoRA forward correction (ffn_down): ffn_out += scale · B · (A · ffn_act) ----
+        if let Some(slot) = loras.and_then(|l| l.ffn_down.as_ref()) {
+            lora_matmul_row_chained(&self.ctx, &self.pipes, enc,
+                slot.a, &self.ffn_act, slot.z,
+                ffn_n, slot.rank as usize, 1.0, false);
+            lora_matmul_row_chained(&self.ctx, &self.pipes, enc,
+                slot.b, slot.z, &self.ffn_out,
+                slot.rank as usize, d_model, slot.scale, true);
         }
 
         // ---- CAPTURE: ffn_out (input to post_ffw_norm rmsnorm) ----
@@ -1092,14 +1126,17 @@ pub struct LoraGradPair<'a> {
 }
 
 /// Per-layer LoRA gradient accumulators for the four attention
-/// projections. Each pair drives both the LoRA backward (computing
-/// dA, dB into d_a, d_b) AND the LoRA contribution to dx
-/// (Aᵀ·Bᵀ·dy added to the running input gradient).
+/// projections + three FFN projections. Each pair drives both the
+/// LoRA backward (computing dA, dB into d_a, d_b) AND the LoRA
+/// contribution to dx (Aᵀ·Bᵀ·dy added to the running input gradient).
 pub struct LayerLoraGrads<'a> {
-    pub q: Option<LoraGradPair<'a>>,
-    pub k: Option<LoraGradPair<'a>>,
-    pub v: Option<LoraGradPair<'a>>,
-    pub o: Option<LoraGradPair<'a>>,
+    pub q:        Option<LoraGradPair<'a>>,
+    pub k:        Option<LoraGradPair<'a>>,
+    pub v:        Option<LoraGradPair<'a>>,
+    pub o:        Option<LoraGradPair<'a>>,
+    pub ffn_gate: Option<LoraGradPair<'a>>,
+    pub ffn_up:   Option<LoraGradPair<'a>>,
+    pub ffn_down: Option<LoraGradPair<'a>>,
 }
 
 /// All scratch buffers the backward orchestration writes into. Sized
@@ -1385,6 +1422,26 @@ impl Forward {
             other => return Err(RullamaError::Inference(format!("ffn_down dtype {other:?} unsupported in backward"))),
         }
 
+        // ffn_down LoRA backward:
+        //   dB += s · d_ffn_out ⊗ z;  u = Bᵀ · d_ffn_out;
+        //   d_ffn_a += s · Aᵀ · u;    dA += s · u ⊗ cap.ffn_act.
+        if let (Some(d_lora), Some(d_grad)) = (lora.ffn_down.as_ref(), grad.ffn_down.as_ref()) {
+            let r = d_lora.rank as usize;
+            let s = d_lora.scale;
+            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                scratch.d_hidden_tmp, d_lora.z, d_grad.d_b,
+                d_model, r, s, true);
+            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                d_lora.b, scratch.d_hidden_tmp, d_lora.z,
+                d_model, r, 1.0, false);
+            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                d_lora.a, d_lora.z, scratch.d_ffn_a,
+                r, ffn_n, s, true);
+            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                d_lora.z, cap.ffn_act, d_grad.d_a,
+                r, ffn_n, s, true);
+        }
+
         // geglu backward → d_ffn_gate (d_ffn_b), d_ffn_up (d_ffn_c).
         geglu_backward_chained(&self.ctx, &self.pipes, enc,
             cap.ffn_gate, cap.ffn_up, scratch.d_ffn_a,
@@ -1393,9 +1450,45 @@ impl Forward {
         // gate matmul backward: d_norm_x_ffn_via_gate = gate_wᵀ · d_ffn_gate → d_hidden_tmp.
         matmul_q4_k_backward_input_chained(&self.ctx, &self.pipes, enc,
             &gate_w, scratch.d_ffn_b, scratch.d_hidden_tmp, d_model, ffn_n);
+        // ffn_gate LoRA backward:
+        //   dB += s · d_ffn_gate ⊗ z;  u = Bᵀ · d_ffn_gate;
+        //   d_hidden_tmp += s · Aᵀ · u; dA += s · u ⊗ cap.norm_x_ffn.
+        if let (Some(g_lora), Some(g_grad)) = (lora.ffn_gate.as_ref(), grad.ffn_gate.as_ref()) {
+            let r = g_lora.rank as usize;
+            let s = g_lora.scale;
+            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                scratch.d_ffn_b, g_lora.z, g_grad.d_b,
+                ffn_n, r, s, true);
+            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                g_lora.b, scratch.d_ffn_b, g_lora.z,
+                ffn_n, r, 1.0, false);
+            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                g_lora.a, g_lora.z, scratch.d_hidden_tmp,
+                r, d_model, s, true);
+            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                g_lora.z, cap.norm_x_ffn, g_grad.d_a,
+                r, d_model, s, true);
+        }
         // up matmul backward: d_norm_x_ffn_via_up → d_hidden_tmp2.
         matmul_q4_k_backward_input_chained(&self.ctx, &self.pipes, enc,
             &up_w, scratch.d_ffn_c, scratch.d_hidden_tmp2, d_model, ffn_n);
+        // ffn_up LoRA backward (mirrors gate but accumulates into d_hidden_tmp2).
+        if let (Some(u_lora), Some(u_grad)) = (lora.ffn_up.as_ref(), grad.ffn_up.as_ref()) {
+            let r = u_lora.rank as usize;
+            let s = u_lora.scale;
+            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                scratch.d_ffn_c, u_lora.z, u_grad.d_b,
+                ffn_n, r, s, true);
+            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                u_lora.b, scratch.d_ffn_c, u_lora.z,
+                ffn_n, r, 1.0, false);
+            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                u_lora.a, u_lora.z, scratch.d_hidden_tmp2,
+                r, d_model, s, true);
+            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                u_lora.z, cap.norm_x_ffn, u_grad.d_a,
+                r, d_model, s, true);
+        }
         // d_hidden_tmp += d_hidden_tmp2 (full d_norm_x_ffn).
         residual_add_chained(&self.ctx, &self.pipes, enc,
             scratch.d_hidden_tmp, scratch.d_hidden_tmp2, d_model);
