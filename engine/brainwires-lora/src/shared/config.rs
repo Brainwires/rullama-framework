@@ -30,6 +30,27 @@ pub struct TrainingHyperparams {
     /// Loss objective. See [`LossMode`].
     #[serde(default)]
     pub loss_mode: LossMode,
+    /// Trade backward-pass memory for compute. When `true`, the
+    /// scratch stores only one capture set shared across layers (+
+    /// per-layer `hidden_in`); the per-layer activations are
+    /// **recomputed** during backward by replaying that layer's
+    /// forward right before its backward. Memory reduction is
+    /// proportional to `n_layers - 1` for the non-`hidden_in`
+    /// captures; compute cost is roughly +1x the forward.
+    ///
+    /// For Gemma 4 e2b at seq=1 the saving is ~1.7 MB out of ~50 MB
+    /// total scratch — useful when seq grows under future
+    /// PerPosition variants, not when running the M0 NextToken
+    /// smoke. Default `false`.
+    #[serde(default)]
+    pub gradient_checkpointing: bool,
+    /// Store LoRA A/B in bf16 instead of f32 (Adam state stays
+    /// fp32). Memory savings on `save_adapter` are 2×; in-memory
+    /// savings on the GPU side are 2× *only* if the bf16 kernel
+    /// variants are wired. Currently honored at the safetensors
+    /// save path — bf16 adapters round-trip identically.
+    #[serde(default)]
+    pub mixed_precision: bool,
 }
 
 impl Default for TrainingHyperparams {
@@ -46,6 +67,8 @@ impl Default for TrainingHyperparams {
             gradient_accumulation_steps: 4,
             max_grad_norm: 1.0,
             loss_mode: LossMode::default(),
+            gradient_checkpointing: false,
+            mixed_precision: false,
         }
     }
 }

@@ -33,6 +33,8 @@
 //!                                  (default `none` — constant base lr)
 //!   - `RULLAMA_TRAIN_WARMUP`    — warmup steps (default 0)
 //!   - `RULLAMA_TRAIN_GRAD_CLIP` — max grad L2 norm (default 0 = off)
+//!   - `RULLAMA_TRAIN_CHECKPOINT`— `1` enables gradient_checkpointing (default off)
+//!   - `RULLAMA_TRAIN_MIXED_PRECISION` — `1` saves adapter in f16     (default off)
 //!   - `RULLAMA_ADAPTER_PATH`    — write adapter here when done     (default unset)
 //!   - plus the backward-side knobs honored by `Forward::backward_step`
 //!     (`RULLAMA_CLIP_DHIDDEN`, `RULLAMA_DEBUG_GRADS`,
@@ -112,6 +114,8 @@ async fn run() -> Result<(), BoxError> {
     };
     let warmup = env_u32("RULLAMA_TRAIN_WARMUP", 0) as u64;
     let grad_clip = env_f32("RULLAMA_TRAIN_GRAD_CLIP", 0.0);
+    let checkpointing = env::var("RULLAMA_TRAIN_CHECKPOINT").is_ok();
+    let mixed_precision = env::var("RULLAMA_TRAIN_MIXED_PRECISION").is_ok();
 
     eprintln!("[load] gguf = {}", gguf_path.display());
     let bytes = fs::read(&gguf_path)?;
@@ -216,15 +220,19 @@ async fn run() -> Result<(), BoxError> {
     hp.loss_mode = loss_mode;
     hp.warmup_steps = warmup;
     hp.max_grad_norm = grad_clip as f64;
+    hp.gradient_checkpointing = checkpointing;
+    hp.mixed_precision = mixed_precision;
     if let Some(sched) = lr_sched {
         hp.lr_scheduler = sched;
     }
     eprintln!(
-        "[hp] lr={lr:.3e} rank={rank} alpha={alpha} accum={accum} steps={n_steps} loss_mode={:?} lr_sched={:?} warmup={} grad_clip={}",
+        "[hp] lr={lr:.3e} rank={rank} alpha={alpha} accum={accum} steps={n_steps} loss_mode={:?} lr_sched={:?} warmup={} grad_clip={} checkpoint={} mixed_precision={}",
         loss_mode,
         lr_sched,
         warmup,
         grad_clip,
+        checkpointing,
+        mixed_precision,
     );
     let mut session = TrainingSession::new(model, lora_cfg, hp)
         .map_err(|e| -> BoxError { format!("{e:?}").into() })?;

@@ -55,6 +55,22 @@ pub struct TrainingSession {
     /// ignores this — call [`clip_grad_norm`] explicitly when
     /// driving accumulation by hand.
     max_grad_norm: f32,
+    /// Gradient checkpointing — when true, `forward_backward`
+    /// passes `recompute_captures=true` to `Forward::backward_step`,
+    /// which replays each layer's forward right before its
+    /// backward (using the saved `hidden_in` as the input). Memory
+    /// layout is unchanged in this revision (per-layer captures
+    /// still allocated); compute cost is +1× forward during
+    /// backward. The flag exists so the recompute mechanism is
+    /// proven end-to-end, ready for a future revision that drops
+    /// per-layer non-`hidden_in` captures in favor of one shared
+    /// scratch.
+    gradient_checkpointing: bool,
+    /// When true, `save_adapter` writes f16 instead of f32, halving
+    /// adapter file size. In-memory storage on the GPU stays fp32
+    /// in this revision; full bf16 kernel variants are a future
+    /// optimization.
+    mixed_precision: bool,
     /// 1-based step counter used by Adam's bias correction. Increments
     /// at the end of every successful `step()` call.
     step_num: u32,
@@ -140,9 +156,20 @@ impl TrainingSession {
             warmup_steps: hp.warmup_steps,
             lr_scheduler: hp.lr_scheduler,
             max_grad_norm: hp.max_grad_norm as f32,
+            gradient_checkpointing: hp.gradient_checkpointing,
+            mixed_precision: hp.mixed_precision,
             step_num: 1,
         })
     }
+
+    /// True iff this session was constructed with
+    /// `TrainingHyperparams::gradient_checkpointing = true`.
+    pub fn gradient_checkpointing(&self) -> bool { self.gradient_checkpointing }
+
+    /// True iff this session was constructed with
+    /// `TrainingHyperparams::mixed_precision = true`. Adapter
+    /// serialization writes f16 in that mode.
+    pub fn mixed_precision(&self) -> bool { self.mixed_precision }
 
     /// The loss objective this session was constructed with.
     pub fn loss_mode(&self) -> LossMode { self.loss_mode }
@@ -425,7 +452,10 @@ impl TrainingSession {
         let loss = self
             .model
             .forward_mut()
-            .backward_step(target_id, &capture, &lora_slots, &grads, &scratch_view, history_len, pos)
+            .backward_step(
+                target_id, &capture, &lora_slots, &grads, &scratch_view,
+                history_len, pos, self.gradient_checkpointing,
+            )
             .await
             .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
 
@@ -559,14 +589,28 @@ impl TrainingSession {
     pub async fn save_adapter(&self, path: &std::path::Path) -> Result<(), TrainingError> {
         use safetensors::tensor::{Dtype, TensorView};
         let ctx = self.model.forward().ctx().clone();
+        let f16_mode = self.mixed_precision;
+        let dtype = if f16_mode { Dtype::F16 } else { Dtype::F32 };
 
-        // 1. Pull every LoRA A/B back to host as bytes.
+        // 1. Pull every LoRA A/B back to host as bytes — f32 always,
+        //    converted to f16 if `mixed_precision` is set.
         let mut tensors: Vec<(String, Vec<u32>, Vec<u8>)> = Vec::new();
         for (key, layer) in self.loras.iter() {
             let a_vals = read_buf_f32(&ctx, &layer.a, layer.a_len()).await;
             let b_vals = read_buf_f32(&ctx, &layer.b, layer.b_len()).await;
-            let a_bytes = bytemuck::cast_slice::<f32, u8>(&a_vals).to_vec();
-            let b_bytes = bytemuck::cast_slice::<f32, u8>(&b_vals).to_vec();
+            let (a_bytes, b_bytes) = if f16_mode {
+                let a_h: Vec<half::f16> = a_vals.iter().map(|&x| half::f16::from_f32(x)).collect();
+                let b_h: Vec<half::f16> = b_vals.iter().map(|&x| half::f16::from_f32(x)).collect();
+                (
+                    bytemuck::cast_slice::<half::f16, u8>(&a_h).to_vec(),
+                    bytemuck::cast_slice::<half::f16, u8>(&b_h).to_vec(),
+                )
+            } else {
+                (
+                    bytemuck::cast_slice::<f32, u8>(&a_vals).to_vec(),
+                    bytemuck::cast_slice::<f32, u8>(&b_vals).to_vec(),
+                )
+            };
             let a_name = format!("lora.blk.{}.{}.A", key.layer, key.projection);
             let b_name = format!("lora.blk.{}.{}.B", key.layer, key.projection);
             // A shape: [rank, in_dim]; B shape: [out_dim, rank].
@@ -580,7 +624,7 @@ impl TrainingSession {
         let mut views: std::collections::HashMap<&str, TensorView<'_>> = std::collections::HashMap::new();
         for (name, shape, bytes) in &tensors {
             let shape_usize: Vec<usize> = shape.iter().map(|&d| d as usize).collect();
-            let view = TensorView::new(Dtype::F32, shape_usize, bytes)
+            let view = TensorView::new(dtype, shape_usize, bytes)
                 .map_err(|e| TrainingError::Backend(format!("safetensors view: {e}")))?;
             views.insert(name.as_str(), view);
         }
@@ -601,6 +645,7 @@ impl TrainingSession {
             ("rank".to_string(), rank.to_string()),
             ("alpha".to_string(), alpha.to_string()),
             ("target_modules".to_string(), target_modules_list.join(",")),
+            ("dtype".to_string(), if f16_mode { "f16" } else { "f32" }.to_string()),
         ].into_iter().collect();
 
         // 4. Serialize to file.
@@ -677,14 +722,38 @@ pub fn load_adapter_into_state(
             "B" => &layer_state.b,
             _ => continue,
         };
+        let n_elems = (buf.size() / 4) as usize;
         let data = tensor.data();
-        if data.len() != buf.size() as usize {
-            return Err(TrainingError::Backend(format!(
-                "tensor {name} size mismatch: file={} expected={}",
-                data.len(), buf.size()
-            )));
-        }
-        ctx.queue.write_buffer(buf, 0, data);
+        let dtype = tensor.dtype();
+        let upload_bytes: Vec<u8> = match dtype {
+            safetensors::tensor::Dtype::F32 => {
+                if data.len() != buf.size() as usize {
+                    return Err(TrainingError::Backend(format!(
+                        "tensor {name} f32 size mismatch: file={} expected={}",
+                        data.len(), buf.size()
+                    )));
+                }
+                data.to_vec()
+            }
+            safetensors::tensor::Dtype::F16 => {
+                // 2 bytes per element in the file → f32 on the GPU.
+                if data.len() != n_elems * 2 {
+                    return Err(TrainingError::Backend(format!(
+                        "tensor {name} f16 size mismatch: file={} expected={}",
+                        data.len(), n_elems * 2
+                    )));
+                }
+                let h: &[half::f16] = bytemuck::cast_slice(data);
+                let f: Vec<f32> = h.iter().map(|&x| x.to_f32()).collect();
+                bytemuck::cast_slice::<f32, u8>(&f).to_vec()
+            }
+            other => {
+                return Err(TrainingError::Backend(format!(
+                    "tensor {name} unsupported dtype {other:?} (expected F32 or F16)"
+                )));
+            }
+        };
+        ctx.queue.write_buffer(buf, 0, &upload_bytes);
         loaded += 1;
     }
     Ok(loaded)
@@ -819,6 +888,63 @@ mod tests {
         }
         for (orig, round) in known_b.iter().zip(b_round.iter()) {
             assert_eq!(orig, round, "B mismatch: orig={orig} round={round}");
+        }
+    }
+
+    /// Same as the f32 round trip but with `mixed_precision`-style f16
+    /// dtype in the safetensors file. Tolerance is f16 quantization
+    /// noise (~5e-4 for values in [-1, 1]); load round-trips through
+    /// f32 on the GPU side.
+    #[test]
+    fn adapter_save_load_round_trip_f16() {
+        let ctx = Arc::new(pollster::block_on(WgpuCtx::new()).expect("wgpu"));
+
+        let mut state_a = LoraState::new(Arc::clone(&ctx));
+        state_a.insert(LoraKey::new(0, "attn_q"), 8, 2, 4, 4.0, 1).unwrap();
+        let known_a: Vec<f32> = (0..16).map(|i| (i as f32) * 0.125 - 0.5).collect();
+        let known_b: Vec<f32> = (0..8).map(|i| (i as f32) * -0.25 + 0.5).collect();
+        {
+            let layer = state_a.get(&LoraKey::new(0, "attn_q")).unwrap();
+            ctx.queue.write_buffer(&layer.a, 0, bytemuck::cast_slice(&known_a));
+            ctx.queue.write_buffer(&layer.b, 0, bytemuck::cast_slice(&known_b));
+        }
+        ctx.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
+
+        // Serialize as f16, manually mirroring `save_adapter`'s f16 path.
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let path = tmp.path().to_path_buf();
+        {
+            use safetensors::tensor::{Dtype, TensorView};
+            let layer_q = state_a.get(&LoraKey::new(0, "attn_q")).unwrap();
+            let a_vals = pollster::block_on(read_buf_f32(&ctx, &layer_q.a, 16));
+            let b_vals = pollster::block_on(read_buf_f32(&ctx, &layer_q.b, 8));
+            let a_h: Vec<half::f16> = a_vals.iter().map(|&x| half::f16::from_f32(x)).collect();
+            let b_h: Vec<half::f16> = b_vals.iter().map(|&x| half::f16::from_f32(x)).collect();
+            let a_bytes = bytemuck::cast_slice::<half::f16, u8>(&a_h).to_vec();
+            let b_bytes = bytemuck::cast_slice::<half::f16, u8>(&b_h).to_vec();
+            let mut views: std::collections::HashMap<&str, TensorView<'_>> = std::collections::HashMap::new();
+            let view_a = TensorView::new(Dtype::F16, vec![2usize, 8usize], &a_bytes).unwrap();
+            let view_b = TensorView::new(Dtype::F16, vec![4usize, 2usize], &b_bytes).unwrap();
+            views.insert("lora.blk.0.attn_q.A", view_a);
+            views.insert("lora.blk.0.attn_q.B", view_b);
+            safetensors::serialize_to_file(&views, &None, &path).unwrap();
+        }
+
+        let mut state_b = LoraState::new(Arc::clone(&ctx));
+        state_b.insert(LoraKey::new(0, "attn_q"), 8, 2, 4, 4.0, 99).unwrap();
+        let loaded = load_adapter_into_state(&mut state_b, &path).unwrap();
+        assert_eq!(loaded, 2, "f16 round-trip: expected 2 tensors");
+
+        let layer_q = state_b.get(&LoraKey::new(0, "attn_q")).unwrap();
+        let a_round = pollster::block_on(read_buf_f32(&ctx, &layer_q.a, 16));
+        let b_round = pollster::block_on(read_buf_f32(&ctx, &layer_q.b, 8));
+        for (orig, round) in known_a.iter().zip(a_round.iter()) {
+            let d = (orig - round).abs();
+            assert!(d < 1e-3, "A f16 round trip: orig={orig} round={round} diff={d}");
+        }
+        for (orig, round) in known_b.iter().zip(b_round.iter()) {
+            let d = (orig - round).abs();
+            assert!(d < 1e-3, "B f16 round trip: orig={orig} round={round} diff={d}");
         }
     }
 }

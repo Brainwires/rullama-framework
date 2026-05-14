@@ -1217,6 +1217,7 @@ impl Forward {
         scratch: &'a BackwardScratchView<'a>,
         history_len: u32,
         pos: u32,
+        recompute_captures: bool,
     ) -> Result<f32> {
         let n_layers = self.cfg.n_layers as usize;
         if capture.len() != n_layers || loras.len() != n_layers || grads.len() != n_layers {
@@ -1289,11 +1290,38 @@ impl Forward {
             eprintln!("[trace] d_logits: max_abs={max_abs_l:.3e} nan={nans_l}");
         }
         // ===== Walk layers top-down =====
+        let d_model_bytes = (self.cfg.d_model as u64) * 4;
         for li in (0..n_layers).rev() {
             let i = li as u32;
             let cap = &capture[li];
             let lora = &loras[li];
             let grad = &grads[li];
+
+            // Gradient-checkpointing replay: rewrite the per-layer
+            // captures by re-running this layer's forward pass.
+            // Uses `cap.hidden_in` (saved at the top of the original
+            // forward) as the input. The K/V cache write at slot
+            // `pos` is idempotent (same value written again);
+            // `kv_lens[i]` is save/restored so the cache-count
+            // bookkeeping survives the replay.
+            if recompute_captures {
+                let mut renc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("bwd.replay"),
+                });
+                renc.copy_buffer_to_buffer(cap.hidden_in, 0, &self.hidden, 0, d_model_bytes);
+                let saved_len = self.kv_lens[li];
+                if self.donor_map[li].is_none() && saved_len > 0 {
+                    self.kv_lens[li] = saved_len - 1;
+                }
+                self.encode_layer(&mut renc, i, pos, Some(cap), Some(lora)).await?;
+                // encode_layer's K/V write re-incremented kv_lens[i]; assert.
+                debug_assert_eq!(
+                    self.kv_lens[li], saved_len,
+                    "replay should leave kv_lens unchanged for layer {li}"
+                );
+                self.ctx.queue.submit(Some(renc.finish()));
+            }
+
             let mut lenc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("bwd.layer"),
             });

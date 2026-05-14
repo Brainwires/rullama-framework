@@ -28,6 +28,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 tokenizers = { workspace = true }
 futures-channel = { workspace = true }
+half = { workspace = true }
 safetensors = "0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
