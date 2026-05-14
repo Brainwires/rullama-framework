@@ -80,6 +80,14 @@ pub struct LoraLayer {
     /// `dB = scale · dy ⊗ z` (the dB gradient depends on the captured
     /// `z`, not the input `x`). Size is `[rank]` f32 — trivially small.
     pub z: Buffer,
+
+    /// 4-byte scratch holding the sum-of-squares of dA after a
+    /// `sum_of_squares_chained` dispatch. Read by `clip_grad_norm` to
+    /// compute the global L2 norm without reading dA itself back to
+    /// host.
+    pub sos_a: Buffer,
+    /// 4-byte scratch holding the sum-of-squares of dB.
+    pub sos_b: Buffer,
 }
 
 impl LoraLayer {
@@ -163,6 +171,8 @@ impl LoraLayer {
         let m_b = make_zero("lora.mB", b_bytes);
         let v_b = make_zero("lora.vB", b_bytes);
         let z = make_zero("lora.z", (rank as usize * 4) as u64);
+        let sos_a = make_zero("lora.sos_a", 4);
+        let sos_b = make_zero("lora.sos_b", 4);
 
         Self {
             in_dim,
@@ -178,6 +188,8 @@ impl LoraLayer {
             m_b,
             v_b,
             z,
+            sos_a,
+            sos_b,
         }
     }
 

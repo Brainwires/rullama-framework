@@ -32,6 +32,7 @@
 //!   - `RULLAMA_TRAIN_LR_SCHED`  — `none` | `constant` | `linear` | `cosine` | `cosine_warm_restarts`
 //!                                  (default `none` — constant base lr)
 //!   - `RULLAMA_TRAIN_WARMUP`    — warmup steps (default 0)
+//!   - `RULLAMA_TRAIN_GRAD_CLIP` — max grad L2 norm (default 0 = off)
 //!   - `RULLAMA_ADAPTER_PATH`    — write adapter here when done     (default unset)
 //!   - plus the backward-side knobs honored by `Forward::backward_step`
 //!     (`RULLAMA_CLIP_DHIDDEN`, `RULLAMA_DEBUG_GRADS`,
@@ -110,6 +111,7 @@ async fn run() -> Result<(), BoxError> {
         }
     };
     let warmup = env_u32("RULLAMA_TRAIN_WARMUP", 0) as u64;
+    let grad_clip = env_f32("RULLAMA_TRAIN_GRAD_CLIP", 0.0);
 
     eprintln!("[load] gguf = {}", gguf_path.display());
     let bytes = fs::read(&gguf_path)?;
@@ -213,14 +215,16 @@ async fn run() -> Result<(), BoxError> {
     hp.seed = seed;
     hp.loss_mode = loss_mode;
     hp.warmup_steps = warmup;
+    hp.max_grad_norm = grad_clip as f64;
     if let Some(sched) = lr_sched {
         hp.lr_scheduler = sched;
     }
     eprintln!(
-        "[hp] lr={lr:.3e} rank={rank} alpha={alpha} accum={accum} steps={n_steps} loss_mode={:?} lr_sched={:?} warmup={}",
+        "[hp] lr={lr:.3e} rank={rank} alpha={alpha} accum={accum} steps={n_steps} loss_mode={:?} lr_sched={:?} warmup={} grad_clip={}",
         loss_mode,
         lr_sched,
         warmup,
+        grad_clip,
     );
     let mut session = TrainingSession::new(model, lora_cfg, hp)
         .map_err(|e| -> BoxError { format!("{e:?}").into() })?;
@@ -262,6 +266,14 @@ async fn run() -> Result<(), BoxError> {
             };
             accum_loss += loss;
         }
+        let pre_clip_norm = if grad_clip > 0.0 {
+            session
+                .clip_grad_norm(grad_clip)
+                .await
+                .map_err(|e| -> BoxError { format!("step {step} clip: {e:?}").into() })?
+        } else {
+            f32::NAN
+        };
         let lr_now = session.current_lr();
         session.optimizer_step();
         let avg_loss = accum_loss / accum as f32;
@@ -270,7 +282,13 @@ async fn run() -> Result<(), BoxError> {
         }
         last_loss = avg_loss;
         if step == 1 || step % log_every == 0 || step == n_steps {
-            eprintln!("[step {step:>4}/{n_steps}] loss = {avg_loss:.4} lr = {lr_now:.3e}");
+            if grad_clip > 0.0 {
+                eprintln!(
+                    "[step {step:>4}/{n_steps}] loss = {avg_loss:.4} lr = {lr_now:.3e} gnorm = {pre_clip_norm:.3e}"
+                );
+            } else {
+                eprintln!("[step {step:>4}/{n_steps}] loss = {avg_loss:.4} lr = {lr_now:.3e}");
+            }
         }
     }
 

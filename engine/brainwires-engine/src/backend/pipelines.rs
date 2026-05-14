@@ -139,6 +139,11 @@ pub struct Pipelines {
     /// the gradient buffer. Standard β₁/β₂ bias correction, decoupled weight
     /// decay. Drives every LoRA A and B at the end of `TrainingSession::step`.
     pub adam_step: wgpu::ComputePipeline,
+    /// Single-workgroup sum-of-squares reduction. Used by
+    /// `TrainingSession`'s global gradient clipping (`max_grad_norm`)
+    /// to compute per-buffer SoS into a tiny scratch scalar without
+    /// reading the whole gradient buffer back to host.
+    pub sum_of_squares: wgpu::ComputePipeline,
 }
 
 impl Pipelines {
@@ -263,6 +268,7 @@ impl Pipelines {
             lora_matmul_col: build(device, "lora_matmul_col", kernels::LORA_MATMUL_COL),
             lora_outer_add:  build(device, "lora_outer_add",  kernels::LORA_OUTER_ADD),
             adam_step:       build(device, "adam_step",       kernels::ADAM_STEP),
+            sum_of_squares:  build(device, "sum_of_squares",  kernels::SUM_OF_SQUARES),
             geglu:             build(device, "geglu",             kernels::GEGLU),
             rope_neox:         build(device, "rope_neox",         kernels::ROPE_NEOX),
             attention:         build(device, "attention",         kernels::ATTENTION),

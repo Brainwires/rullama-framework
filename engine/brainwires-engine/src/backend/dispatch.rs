@@ -2212,6 +2212,49 @@ pub fn adam_step_chained(
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct SumOfSquaresParams {
+    n: u32,
+    scale_in: f32,
+    _p0: u32,
+    _p1: u32,
+}
+
+/// Sum-of-squares reduction: `output[0] = Σ (input[i] · scale_in)²`
+/// for `i in [0, n)`. Output buffer must hold at least 4 bytes.
+/// Single workgroup; no caller-side launch math.
+pub fn sum_of_squares_chained(
+    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
+    input: &wgpu::Buffer, output: &wgpu::Buffer,
+    n: usize, scale_in: f32,
+) {
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    let params = SumOfSquaresParams {
+        n: n as u32,
+        scale_in,
+        _p0: 0,
+        _p1: 0,
+    };
+    let p_buf = write_uniform(device, queue, "sos.params", &params);
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("sos.bg"),
+        layout: &p.sum_of_squares.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: p_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: input.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: output.as_entire_binding() },
+        ],
+    });
+    let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some("sos.pass"), timestamp_writes: None,
+    });
+    cp.set_pipeline(&p.sum_of_squares);
+    cp.set_bind_group(0, &bg, &[]);
+    cp.dispatch_workgroups(1, 1, 1);
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct LoraMatmulParams {
     k: u32,
     n: u32,
@@ -3235,6 +3278,52 @@ mod tests {
             if d > max_diff_u { max_diff_u = d; }
         }
         assert!(max_diff_u < 1e-4, "rmsnorm_per_row_bwd unweighted max_diff = {max_diff_u}");
+    }
+
+    /// GPU vs CPU parity for the single-workgroup sum-of-squares
+    /// reduction. Tests three sizes (under, equal to, and over the
+    /// 256-thread workgroup) plus the `scale_in` path.
+    #[test]
+    fn sum_of_squares_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        for &n in &[63usize, 256usize, 1024usize, 4097usize] {
+            let x: Vec<f32> = (0..n).map(|i| ((i as i32 - 100) as f32) * 0.03).collect();
+            let cpu_sos: f32 = x.iter().map(|&v| v * v).sum();
+
+            let x_buf = write_storage_f32(device, queue, "x", &x);
+            let (out_buf, out_read) = make_output_pair(device, "sos", 4);
+            let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("sos.enc"),
+            });
+            sum_of_squares_chained(&ctx, &p, &mut enc, &x_buf, &out_buf, n, 1.0);
+            enc.copy_buffer_to_buffer(&out_buf, 0, &out_read, 0, 4);
+            queue.submit(Some(enc.finish()));
+            let gpu = pollster::block_on(read_back_f32(device, &out_read)).expect("readback")[0];
+            let denom = cpu_sos.abs().max(1e-6);
+            let rel = (cpu_sos - gpu).abs() / denom;
+            assert!(rel < 1e-4, "n={n} cpu={cpu_sos} gpu={gpu} rel={rel}");
+        }
+
+        // scale_in path: scale every input by 0.5 before squaring, so
+        // sos becomes 0.25× the unscaled sos.
+        let n = 256usize;
+        let x: Vec<f32> = (0..n).map(|i| (i as f32) * 0.1 - 5.0).collect();
+        let cpu_sos: f32 = x.iter().map(|&v| (v * 0.5) * (v * 0.5)).sum();
+        let x_buf = write_storage_f32(device, queue, "x", &x);
+        let (out_buf, out_read) = make_output_pair(device, "sos.scaled", 4);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("sos.scaled.enc"),
+        });
+        sum_of_squares_chained(&ctx, &p, &mut enc, &x_buf, &out_buf, n, 0.5);
+        enc.copy_buffer_to_buffer(&out_buf, 0, &out_read, 0, 4);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &out_read)).expect("readback")[0];
+        let rel = (cpu_sos - gpu).abs() / cpu_sos.abs().max(1e-6);
+        assert!(rel < 1e-4, "scaled cpu={cpu_sos} gpu={gpu} rel={rel}");
     }
 
     /// GPU vs CPU parity for `geglu_backward`.

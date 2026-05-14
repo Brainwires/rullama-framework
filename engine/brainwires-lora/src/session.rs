@@ -14,7 +14,9 @@
 use std::sync::Arc;
 
 use rullama::api::Model;
-use rullama::backend::dispatch::{adam_step_chained, AdamConfig};
+use rullama::backend::dispatch::{
+    adam_step_chained, scale_chained, sum_of_squares_chained, AdamConfig,
+};
 use rullama::reference::forward_chained::{
     BackwardScratchView, LayerCaptureBuffers, LayerLoraGrads, LayerLoraSlots,
     LoraGradPair, LoraSlot,
@@ -46,6 +48,13 @@ pub struct TrainingSession {
     base_lr: f64,
     warmup_steps: u64,
     lr_scheduler: crate::shared::config::LrScheduler,
+    /// Global gradient-norm cap applied inside `step()` between
+    /// `forward_backward` and `optimizer_step`. `0.0` disables
+    /// (matches PyTorch convention). The manual driver path
+    /// (`zero_grads → forward_backward × N → optimizer_step`)
+    /// ignores this — call [`clip_grad_norm`] explicitly when
+    /// driving accumulation by hand.
+    max_grad_norm: f32,
     /// 1-based step counter used by Adam's bias correction. Increments
     /// at the end of every successful `step()` call.
     step_num: u32,
@@ -130,6 +139,7 @@ impl TrainingSession {
             base_lr: hp.learning_rate,
             warmup_steps: hp.warmup_steps,
             lr_scheduler: hp.lr_scheduler,
+            max_grad_norm: hp.max_grad_norm as f32,
             step_num: 1,
         })
     }
@@ -178,6 +188,93 @@ impl TrainingSession {
     /// for you for the single-example case).
     pub fn zero_grads(&self) {
         self.loras.zero_all_grads();
+    }
+
+    /// Compute the L2 norm `||g||` over every LoRA's `dA` and `dB`
+    /// gradient buffer; if `||g|| > max_norm` scale every gradient
+    /// in-place by `max_norm / ||g||`. Mirrors PyTorch's
+    /// `clip_grad_norm_` semantics: norm is over the concatenation
+    /// of all gradient tensors, not per-tensor.
+    ///
+    /// Returns the pre-clip L2 norm, useful for logging /
+    /// `RULLAMA_DEBUG_GRAD_NORM=1`. A non-positive `max_norm` is a
+    /// no-op (clipping disabled) — caller forwards
+    /// `hp.max_grad_norm` whose `0.0` default opts out.
+    ///
+    /// Sequencing: call after the gradient accumulation cycle
+    /// (`forward_backward(...) × N`) and before `optimizer_step()`.
+    pub async fn clip_grad_norm(&mut self, max_norm: f32) -> Result<f32, TrainingError> {
+        if max_norm <= 0.0 || !max_norm.is_finite() {
+            return Ok(0.0);
+        }
+        let ctx = self.model.forward().ctx().clone();
+        let pipes = self.model.forward().pipes().clone();
+
+        // Pass 1: per-LoRA sum-of-squares into each layer's sos_a / sos_b.
+        let mut enc = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("train.sos"),
+        });
+        for (_key, layer) in self.loras.iter() {
+            sum_of_squares_chained(&ctx, &pipes, &mut enc,
+                &layer.da, &layer.sos_a, layer.a_len(), 1.0);
+            sum_of_squares_chained(&ctx, &pipes, &mut enc,
+                &layer.db, &layer.sos_b, layer.b_len(), 1.0);
+        }
+        // Gather all sos scalars into one readback buffer (4 bytes per
+        // grad buffer, two per LoRA).
+        let n_loras = self.loras.len();
+        let read_bytes = (n_loras * 2 * 4) as u64;
+        let read_buf = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("train.sos.read"),
+            size: read_bytes,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        for (i, (_key, layer)) in self.loras.iter().enumerate() {
+            let off_a = (i * 2) as u64 * 4;
+            let off_b = off_a + 4;
+            enc.copy_buffer_to_buffer(&layer.sos_a, 0, &read_buf, off_a, 4);
+            enc.copy_buffer_to_buffer(&layer.sos_b, 0, &read_buf, off_b, 4);
+        }
+        ctx.queue.submit(Some(enc.finish()));
+
+        let slice = read_buf.slice(..);
+        let (tx, rx) = futures_channel::oneshot::channel();
+        slice.map_async(wgpu::MapMode::Read, move |r| { let _ = tx.send(r); });
+        ctx.device
+            .poll(wgpu::PollType::Wait { submission_index: None, timeout: None })
+            .map_err(|e| TrainingError::Backend(format!("poll: {e:?}")))?;
+        rx.await
+            .map_err(|e| TrainingError::Backend(format!("rx: {e:?}")))?
+            .map_err(|e| TrainingError::Backend(format!("map: {e:?}")))?;
+        let view = slice.get_mapped_range();
+        let sos_vals: &[f32] = bytemuck::cast_slice(&view);
+        let total_sos: f64 = sos_vals.iter().map(|&x| x as f64).sum();
+        drop(view);
+        read_buf.unmap();
+
+        if !total_sos.is_finite() {
+            // Numerical disaster — let the caller see NaN/Inf
+            // (Adam will already pollute the params next step). Return
+            // the bogus norm; clipping won't help.
+            return Ok(total_sos as f32);
+        }
+        let l2 = total_sos.sqrt() as f32;
+        if l2 <= max_norm {
+            return Ok(l2);
+        }
+        let s = max_norm / l2;
+
+        // Pass 2: scale every grad buffer by `s` in-place.
+        let mut enc2 = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("train.gradclip.scale"),
+        });
+        for (_key, layer) in self.loras.iter() {
+            scale_chained(&ctx, &pipes, &mut enc2, &layer.da, layer.a_len(), s);
+            scale_chained(&ctx, &pipes, &mut enc2, &layer.db, layer.b_len(), s);
+        }
+        ctx.queue.submit(Some(enc2.finish()));
+        Ok(l2)
     }
 
     /// Apply Adam to every registered LoRA's `(A, m_a, v_a)` and
@@ -359,6 +456,9 @@ impl TrainingSession {
     ) -> Result<f32, TrainingError> {
         self.zero_grads();
         let loss = self.forward_backward(input_ids, target_id).await?;
+        if self.max_grad_norm > 0.0 {
+            self.clip_grad_norm(self.max_grad_norm).await?;
+        }
         self.optimizer_step();
         Ok(loss)
     }
@@ -427,6 +527,9 @@ impl TrainingSession {
     ) -> Result<f32, TrainingError> {
         self.zero_grads();
         let loss = self.forward_backward_per_position(input_ids, targets).await?;
+        if self.max_grad_norm > 0.0 {
+            self.clip_grad_norm(self.max_grad_norm).await?;
+        }
         self.optimizer_step();
         Ok(loss)
     }
