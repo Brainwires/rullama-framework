@@ -1,13 +1,20 @@
 [package]
-name = "rullama-finetune"
-version = "0.1.0"
-description = "Local LoRA fine-tuning for the rullama Rust runtime, built natively on rullama's wgpu kernels. Native-only; the crate is empty on wasm32. Currently a skeleton — see MIGRATION-REPORT.md for context."
-edition.workspace = true
+name        = "rullama-finetune"
+version     = "0.1.0"
+description = "Local LoRA fine-tuning for the rullama Rust runtime, built natively on rullama's wgpu kernels. Native-only; compiles to an empty crate on wasm32. Experimental — M3 skeleton, see the workspace README for status."
+edition.workspace      = true
 rust-version.workspace = true
-license.workspace = true
+license.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+authors.workspace      = true
+readme      = "../../README.md"
+keywords    = ["lora", "fine-tuning", "wgpu", "gemma"]
+categories  = ["science"]
+# Inherits `publish = true` from the workspace. In practice this crate
+# cannot reach crates.io until `rullama` is published first — its path
+# dep on `rullama` needs a resolvable crates.io version too.
 publish.workspace = true
-keywords = ["lora", "fine-tuning", "wgpu", "gemma"]
-categories = ["artificial-intelligence"]
 
 [lib]
 name = "rullama_finetune"
@@ -19,7 +26,10 @@ path = "src/lib.rs"
 # the rebuild adds wgpu (via rullama-core) plus a thin set of utilities.
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-rullama = { path = "../rullama" }
+# `version` is required (alongside `path`) so this dep resolves on
+# crates.io after the next `rullama` publish; locally cargo prefers the
+# path entry.
+rullama = { path = "../rullama", version = "0.1" }
 wgpu = { workspace = true }
 bytemuck = { workspace = true }
 serde = { workspace = true }

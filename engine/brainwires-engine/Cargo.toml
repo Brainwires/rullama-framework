@@ -1,11 +1,21 @@
 [package]
-name = "rullama"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.91"
-description = "Browser-PWA Gemma 4 inference engine: Rust + wgpu + WASM."
-license = "MIT OR Apache-2.0"
-publish = false
+name             = "rullama"
+version          = "0.1.0"
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+authors.workspace      = true
+description      = "Browser-resident Gemma 4 inference: pure Rust → WebAssembly + WebGPU. Loads Ollama's on-disk GGUF blobs and runs the forward pass on the local GPU via hand-written WGSL."
+readme           = "../../README.md"
+keywords         = ["gemma", "webgpu", "wasm", "inference", "llm"]
+categories       = ["wasm", "graphics", "science"]
+# Publishing blocker: the wasm32 build depends on `rsqlite-wasm` via git,
+# which crates.io rejects. Either publish `rsqlite-wasm` to crates.io
+# first or split the PWA-only `WasmDatabase` re-export into a separate
+# (workspace-only) shim crate before flipping this.
+publish          = false
 
 [lib]
 crate-type = ["cdylib", "rlib"]
