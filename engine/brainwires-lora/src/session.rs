@@ -22,7 +22,7 @@ use rullama::reference::forward_chained::{
 
 use crate::lora::{LoraKey, LoraState};
 use crate::scratch::TrainingScratch;
-use crate::shared::config::{LoraConfig, TrainingHyperparams};
+use crate::shared::config::{LoraConfig, LossMode, TrainingHyperparams};
 use crate::shared::error::TrainingError;
 
 /// One LoRA fine-tuning session over a loaded model.
@@ -31,6 +31,9 @@ pub struct TrainingSession {
     loras: LoraState,
     scratch: TrainingScratch,
     adam_cfg: AdamConfig,
+    /// Loss objective for `forward_backward`. Picked at session
+    /// construction from `TrainingHyperparams::loss_mode`.
+    loss_mode: LossMode,
     /// 1-based step counter used by Adam's bias correction. Increments
     /// at the end of every successful `step()` call.
     step_num: u32,
@@ -105,9 +108,13 @@ impl TrainingSession {
             loras,
             scratch,
             adam_cfg,
+            loss_mode: hp.loss_mode,
             step_num: 1,
         })
     }
+
+    /// The loss objective this session was constructed with.
+    pub fn loss_mode(&self) -> LossMode { self.loss_mode }
 
     /// Zero every LoRA's `dA` / `dB` gradient buffers. Call at the
     /// start of a gradient-accumulation cycle (or `step()` does this

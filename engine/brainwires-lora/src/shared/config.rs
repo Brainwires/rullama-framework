@@ -27,6 +27,9 @@ pub struct TrainingHyperparams {
     pub gradient_accumulation_steps: u32,
     /// Maximum gradient L2 norm before clipping. `0.0` disables clipping.
     pub max_grad_norm: f64,
+    /// Loss objective. See [`LossMode`].
+    #[serde(default)]
+    pub loss_mode: LossMode,
 }
 
 impl Default for TrainingHyperparams {
@@ -42,8 +45,32 @@ impl Default for TrainingHyperparams {
             max_seq_len: 2048,
             gradient_accumulation_steps: 4,
             max_grad_norm: 1.0,
+            loss_mode: LossMode::default(),
         }
     }
+}
+
+/// Choice of cross-entropy loss objective.
+///
+/// - [`LossMode::NextToken`] — train on a *single* target token: the
+///   first token of the completion given the full prompt. The forward
+///   only needs logits at the final prompt position (current path); the
+///   backward seeds `dL/d_logits` from one (softmax − one_hot) row.
+///   Cheap and reliable; the M0 acceptance pipeline.
+/// - [`LossMode::PerPosition`] — train on every position of the
+///   completion: logits are emitted at all positions in a configured
+///   range, CE is averaged across the completion (mask-aware), and
+///   `dL/d_logits` is accumulated for each. Closer to standard
+///   causal-LM fine-tuning. Adds an output-projection pass per token
+///   in the range plus a per-row CE-backward pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LossMode {
+    /// CE on the first completion token only (M0/M1 default).
+    #[default]
+    NextToken,
+    /// CE averaged across every completion position (M1.4).
+    PerPosition,
 }
 
 /// Learning rate scheduler types.
