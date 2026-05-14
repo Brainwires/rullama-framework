@@ -112,9 +112,12 @@ impl LoraLayer {
             mapped_at_creation: false,
         });
 
-        // Deterministic pseudo-Kaiming init for A. Tiny LCG keyed by `seed`
-        // (good enough for M0; replace with a real PRNG when `seed` is
-        // wired into `TrainingHyperparams`).
+        // Deterministic pseudo-Kaiming init for A. Tiny LCG keyed by
+        // `seed`. The seed is plumbed from
+        // `TrainingHyperparams::seed` via
+        // `TrainingSession::new` (mixed with layer/projection index
+        // for per-LoRA decorrelation). Determinism is locked in by
+        // `lora_seed_determinism_same_seed_same_init`.
         let mut a_init = vec![0f32; in_dim as usize * rank as usize];
         let mut state: u64 = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let scale_init = 1.0f32 / (in_dim as f32).sqrt();
@@ -346,6 +349,61 @@ mod tests {
         for buf in [&layer.db, &layer.m_b, &layer.v_b] {
             assert_eq!(buf.size() as usize, layer.b_len() * 4);
         }
+    }
+
+    /// Two `LoraLayer::new` calls with identical `(shape, seed)` must
+    /// produce bit-identical A buffers. Determinism on this path is
+    /// the contract behind `TrainingHyperparams::seed` — two training
+    /// sessions with the same seed should diverge only through
+    /// floating-point ordering effects in the GPU dispatches, not
+    /// through the LoRA init RNG.
+    #[test]
+    fn lora_seed_determinism_same_seed_same_init() {
+        let ctx = Arc::new(pollster::block_on(WgpuCtx::new()).expect("wgpu"));
+        let key = LoraKey::new(0, "attn_q");
+        // A is `[rank, in_dim] = [4, 16] = 64` elements; readback those bytes.
+        let mut state_a = LoraState::new(Arc::clone(&ctx));
+        let mut state_b = LoraState::new(Arc::clone(&ctx));
+        state_a.insert(key.clone(), 16, 4, 12, 8.0, 0xC0FFEE).unwrap();
+        state_b.insert(key.clone(), 16, 4, 12, 8.0, 0xC0FFEE).unwrap();
+        let layer_a = state_a.get(&key).unwrap();
+        let layer_b = state_b.get(&key).unwrap();
+        let a_vals = read_a(&ctx, &layer_a.a, layer_a.a_len());
+        let b_vals = read_a(&ctx, &layer_b.a, layer_b.a_len());
+        assert_eq!(a_vals, b_vals, "same seed must produce identical A init");
+
+        // And a different seed must produce a different init (otherwise
+        // the LCG would be ignoring `seed`).
+        let mut state_c = LoraState::new(Arc::clone(&ctx));
+        state_c.insert(key.clone(), 16, 4, 12, 8.0, 0xC0FFEE ^ 1).unwrap();
+        let layer_c = state_c.get(&key).unwrap();
+        let c_vals = read_a(&ctx, &layer_c.a, layer_c.a_len());
+        assert_ne!(a_vals, c_vals, "different seed must produce different A init");
+    }
+
+    fn read_a(ctx: &WgpuCtx, buf: &wgpu::Buffer, n: usize) -> Vec<f32> {
+        let bytes = (n * 4) as u64;
+        let read = ctx.device.create_buffer(&BufferDescriptor {
+            label: Some("read.A"),
+            size: bytes,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut enc = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("read.enc"),
+        });
+        enc.copy_buffer_to_buffer(buf, 0, &read, 0, bytes);
+        ctx.queue.submit(Some(enc.finish()));
+        let slice = read.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |r| { tx.send(r).ok(); });
+        ctx.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
+        rx.recv().unwrap().unwrap();
+        let view = slice.get_mapped_range();
+        let v: Vec<f32> = bytemuck::cast_slice(&view).to_vec();
+        drop(view);
+        read.unmap();
+        v
     }
 
     #[test]
