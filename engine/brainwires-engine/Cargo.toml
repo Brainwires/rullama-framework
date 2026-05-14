@@ -11,11 +11,11 @@ description      = "Browser-resident Gemma 4 inference: pure Rust → WebAssembl
 readme           = "../../README.md"
 keywords         = ["gemma", "webgpu", "wasm", "inference", "llm"]
 categories       = ["wasm", "graphics", "science"]
-# Publishing blocker: the wasm32 build depends on `rsqlite-wasm` via git,
-# which crates.io rejects. Either publish `rsqlite-wasm` to crates.io
-# first or split the PWA-only `WasmDatabase` re-export into a separate
-# (workspace-only) shim crate before flipping this.
-publish          = false
+# Inherits `publish = true` from `[workspace.package]`. The wasm32-only
+# `rsqlite-wasm` git dep is kept as-is — crates.io's upload step accepts
+# git+rev entries; downstream resolution behavior is being verified via
+# `cargo publish --dry-run` before any real publish.
+publish.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]
