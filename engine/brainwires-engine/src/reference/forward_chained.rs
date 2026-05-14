@@ -66,6 +66,13 @@ pub struct LayerCaptureBuffers<'a> {
     pub ffn_act:     &'a wgpu::Buffer,
     /// ffn_down matmul output, input to post_ffw_norm rmsnorm ([d_model]).
     pub ffn_out:     &'a wgpu::Buffer,
+    /// PLE: `inp_gate_w · hidden` (input to PLE GEGLU's gate branch).
+    /// Only written when `cfg.has_ple()`. `[ple_dim]`.
+    pub ple_state:   &'a wgpu::Buffer,
+    /// PLE: output of GEGLU (input to `proj_w` matmul). `[ple_dim]`.
+    pub ple_act:     &'a wgpu::Buffer,
+    /// PLE: output of `proj_w` matmul (input to PLE rmsnorm). `[d_model]`.
+    pub ple_proj:    &'a wgpu::Buffer,
 }
 
 /// One LoRA wrapper's GPU state — A, B, and a small `z` scratch that
@@ -964,6 +971,12 @@ impl Forward {
             // ple_state = matmul(hidden, inp_gate_w) [d_model -> ple_dim]
             matmul_q4_k_chained(&self.ctx, &self.pipes, enc,
                 &inp_gate_w, &self.hidden, &self.ple_state, d_model, ple_dim);
+
+            // ---- CAPTURE: ple_state (input gate branch to PLE GEGLU) ----
+            if let Some(cap) = capture {
+                enc.copy_buffer_to_buffer(&self.ple_state, 0, cap.ple_state, 0, (ple_dim * 4) as u64);
+            }
+
             // Need the per-layer slice of `per_layer` as the second geglu input.
             // geglu_chained currently binds entire buffers — we'd need a sliced bind.
             // For simplicity, do a copy_buffer_to_buffer of the layer-i slice into
@@ -979,9 +992,20 @@ impl Forward {
             geglu_chained(&self.ctx, &self.pipes, enc,
                 &self.ple_state, &self.ple_proj, &self.ple_act, ple_dim);
 
+            // ---- CAPTURE: ple_act (input to proj_w matmul) ----
+            if let Some(cap) = capture {
+                enc.copy_buffer_to_buffer(&self.ple_act, 0, cap.ple_act, 0, (ple_dim * 4) as u64);
+            }
+
             // projected = matmul(ple_act, proj_w) [ple_dim -> d_model]
             matmul_q4_k_chained(&self.ctx, &self.pipes, enc,
                 &proj_w, &self.ple_act, &self.ple_proj, ple_dim, d_model);
+
+            // ---- CAPTURE: ple_proj (input to PLE rmsnorm) ----
+            if let Some(cap) = capture {
+                enc.copy_buffer_to_buffer(&self.ple_proj, 0, cap.ple_proj, 0, (d_model * 4) as u64);
+            }
+
             // norm_y = rmsnorm(ple_proj, post_norm_w)
             rmsnorm_chained(&self.ctx, &self.pipes, enc,
                 &self.ple_proj, Some(&post_norm_w), &self.dummy,
@@ -1186,6 +1210,15 @@ pub struct BackwardScratchView<'a> {
     pub d_ffn_b: &'a wgpu::Buffer,
     /// `[ffn_inter]` — d_ffn_up (geglu_back output).
     pub d_ffn_c: &'a wgpu::Buffer,
+    /// `[ple_dim]` — d_gate output of PLE geglu_back.
+    pub d_ple_state: &'a wgpu::Buffer,
+    /// `[ple_dim]` — d input to PLE geglu_back (= proj_w matmul-back output).
+    pub d_ple_act: &'a wgpu::Buffer,
+    /// `[ple_dim]` — discarded `d_up` output of PLE geglu_back.
+    pub d_ple_up_discard: &'a wgpu::Buffer,
+    /// `[ple_dim]` — staging copy of `self.per_layer[i*ple_dim..]` for
+    /// PLE geglu_back's read-only `up` input.
+    pub ple_per_layer_tmp: &'a wgpu::Buffer,
 }
 
 impl Forward {
@@ -1424,9 +1457,56 @@ impl Forward {
             scale_chained(&self.ctx, &self.pipes, enc, scratch.d_hidden, d_model, s);
         }
 
-        // PLE injection backward: skipped for M0 (no LoRA on PLE; the
-        // gradient leakage through inp_gate_w is dropped). residual_add
-        // backward passes d_hidden through unchanged.
+        // ----- PLE injection backward -----
+        //
+        // Forward order:
+        //   ple_state  = matmul(inp_gate_w, hidden, ple_dim)
+        //   ple_act    = geglu(ple_state, per_layer[i*ple_dim..])
+        //   ple_proj   = matmul(proj_w, ple_act, d_model)
+        //   norm_y     = rmsnorm(ple_proj, post_norm_w)
+        //   hidden    += norm_y
+        //
+        // Reverse: residual_add back (d_norm_y = d_hidden, then
+        // accumulate d_hidden_from_ple) → rmsnorm back (post_norm_w)
+        // → matmul back (proj_w) → geglu back (drop d_up — per_layer
+        // is not a trainable parameter) → matmul back (inp_gate_w) →
+        // add into running d_hidden.
+        if self.cfg.has_ple() {
+            let ple_dim = self.cfg.ple_dim as usize;
+            let inp_gate_w = wc.buffer_async(&format!("{prefix}inp_gate.weight")).await?;
+            let proj_w = wc.buffer_async("per_layer_model_proj.weight").await?;
+            let post_norm_w = wc.buffer_async("per_layer_proj_norm.weight").await?;
+
+            // d_norm_y = d_hidden (residual_add backward — both
+            // additive branches carry d_hidden_out through unchanged).
+            // post_ffw_norm rmsnorm backward of the PLE rmsnorm:
+            // d_ple_proj = rmsnorm_back(cap.ple_proj, post_norm_w, d_hidden) → d_hidden_tmp
+            rmsnorm_backward_chained(&self.ctx, &self.pipes, enc,
+                cap.ple_proj, &post_norm_w, scratch.d_hidden, scratch.d_hidden_tmp,
+                d_model, eps, true);
+            // matmul back through proj_w: d_ple_act = proj_wᵀ · d_ple_proj.
+            matmul_q4_k_backward_input_chained(&self.ctx, &self.pipes, enc,
+                &proj_w, scratch.d_hidden_tmp, scratch.d_ple_act, ple_dim, d_model);
+            // Copy per_layer[i*ple_dim..] into the staging buf so
+            // geglu_back's `up` binding is read-only and distinct
+            // from `dy` / `d_gate` / `d_up`.
+            let layer_off = (i as u64) * (ple_dim as u64) * 4;
+            let layer_bytes = (ple_dim as u64) * 4;
+            enc.copy_buffer_to_buffer(&self.per_layer, layer_off,
+                scratch.ple_per_layer_tmp, 0, layer_bytes);
+            // geglu back: d_gate → d_ple_state, d_up → d_ple_up_discard.
+            geglu_backward_chained(&self.ctx, &self.pipes, enc,
+                cap.ple_state, scratch.ple_per_layer_tmp, scratch.d_ple_act,
+                scratch.d_ple_state, scratch.d_ple_up_discard, ple_dim);
+            // matmul back through inp_gate_w: d_hidden_from_ple = inp_gate_wᵀ · d_ple_state
+            //   → d_hidden_tmp (safe to overwrite at this point).
+            matmul_q4_k_backward_input_chained(&self.ctx, &self.pipes, enc,
+                &inp_gate_w, scratch.d_ple_state, scratch.d_hidden_tmp, d_model, ple_dim);
+            // d_hidden += d_hidden_from_ple (residual_add backward
+            // combines PLE branch's input grad with the through-path).
+            residual_add_chained(&self.ctx, &self.pipes, enc,
+                scratch.d_hidden, scratch.d_hidden_tmp, d_model);
+        }
 
         // ----- FFN block backward -----
         // residual_add backward (ffn): d_norm_y_ffn = d_hidden (alias).

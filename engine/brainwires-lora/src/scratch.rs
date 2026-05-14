@@ -77,6 +77,15 @@ pub struct LayerActivations {
     pub ffn_act: Buffer,
     /// ffn_down matmul output (= input to post_ffw_norm rmsnorm).
     pub ffn_out: Buffer,
+    /// `self.ple_state` snapshot — output of `inp_gate_w · hidden`,
+    /// input (gate branch) to PLE GEGLU. `[ple_dim]`.
+    pub ple_state: Buffer,
+    /// `self.ple_act` snapshot — output of PLE GEGLU, input to
+    /// `proj_w` matmul. `[ple_dim]`.
+    pub ple_act: Buffer,
+    /// `self.ple_proj` snapshot — output of `proj_w` matmul, input
+    /// to PLE rmsnorm (`post_norm_w`). `[d_model]`.
+    pub ple_proj: Buffer,
 }
 
 /// Top-level scratch for a training step.
@@ -137,6 +146,19 @@ pub struct TrainingScratch {
     pub d_ffn_b: Buffer,
     /// Scratch `[ffn_inter]` — d_up output of geglu_back.
     pub d_ffn_c: Buffer,
+    /// Scratch `[ple_dim]` — d output of PLE geglu_back gate branch.
+    /// `0`-sized when the model has no PLE.
+    pub d_ple_state: Buffer,
+    /// Scratch `[ple_dim]` — d input to PLE geglu_back (= matmul-back
+    /// output through `proj_w`).
+    pub d_ple_act: Buffer,
+    /// Scratch `[ple_dim]` — discarded `d_up` output of PLE
+    /// geglu_back. The per-layer input has no LoRA / no grad sink.
+    pub d_ple_up_discard: Buffer,
+    /// Scratch `[ple_dim]` — copy of `self.per_layer[i*ple_dim..]`
+    /// uploaded each PLE backward step to feed geglu_back's `up`
+    /// input.
+    pub ple_per_layer_tmp: Buffer,
     /// Configured max sequence length the scratch is sized for.
     pub max_seq_len: u32,
 }
@@ -167,6 +189,7 @@ impl TrainingScratch {
         let head_dim_max_e = cfg.head_dim_global.max(cfg.head_dim_swa) as u64;
         let n_kv_max_e = cfg.n_kv_heads_global.max(cfg.n_kv_heads_swa) as u64;
         let ffn_inter_max_e = (0..cfg.n_layers).map(|i| cfg.ffn(i)).max().unwrap_or(0) as u64;
+        let ple_dim_e = if cfg.has_ple() { cfg.ple_dim as u64 } else { 0 };
 
         let d_logits       = make("scratch.d_logits", vocab_e);
         let loss           = make("scratch.loss", 1);
@@ -197,6 +220,13 @@ impl TrainingScratch {
                     ffn_up:       make("layer.ffn_up",       ffn_inter),
                     ffn_act:      make("layer.ffn_act",      ffn_inter),
                     ffn_out:      make("layer.ffn_out",      d_model_e),
+                    ple_state:    make("layer.ple_state",    ple_dim_e),
+                    ple_act:      make("layer.ple_act",      ple_dim_e),
+                    // ple_proj only allocated when the model has PLE
+                    // (otherwise the capture site doesn't fire); use a
+                    // 4-byte stub to keep the buffer non-empty so the
+                    // STORAGE binding stays valid.
+                    ple_proj:     make("layer.ple_proj", if ple_dim_e > 0 { d_model_e } else { 0 }),
                 }
             })
             .collect();
@@ -217,6 +247,13 @@ impl TrainingScratch {
         let d_ffn_a      = make("scratch.d_ffn_a",      ffn_inter_max_e);
         let d_ffn_b      = make("scratch.d_ffn_b",      ffn_inter_max_e);
         let d_ffn_c      = make("scratch.d_ffn_c",      ffn_inter_max_e);
+        // PLE backward scratch — `ple_dim` sized; 4-byte stub if !has_ple
+        // (so storage bindings stay valid even though the backward block
+        // doesn't fire).
+        let d_ple_state      = make("scratch.d_ple_state",      ple_dim_e);
+        let d_ple_act        = make("scratch.d_ple_act",        ple_dim_e);
+        let d_ple_up_discard = make("scratch.d_ple_up_discard", ple_dim_e);
+        let ple_per_layer_tmp = make("scratch.ple_per_layer_tmp", ple_dim_e);
 
         Self {
             d_logits,
@@ -239,6 +276,10 @@ impl TrainingScratch {
             d_ffn_a,
             d_ffn_b,
             d_ffn_c,
+            d_ple_state,
+            d_ple_act,
+            d_ple_up_discard,
+            ple_per_layer_tmp,
             max_seq_len,
         }
     }

@@ -386,6 +386,9 @@ impl TrainingSession {
                 ffn_up:      &l.ffn_up,
                 ffn_act:     &l.ffn_act,
                 ffn_out:     &l.ffn_out,
+                ple_state:   &l.ple_state,
+                ple_act:     &l.ple_act,
+                ple_proj:    &l.ple_proj,
             })
             .collect();
 
@@ -446,6 +449,10 @@ impl TrainingSession {
             d_ffn_a:        &s.d_ffn_a,
             d_ffn_b:        &s.d_ffn_b,
             d_ffn_c:        &s.d_ffn_c,
+            d_ple_state:        &s.d_ple_state,
+            d_ple_act:          &s.d_ple_act,
+            d_ple_up_discard:   &s.d_ple_up_discard,
+            ple_per_layer_tmp:  &s.ple_per_layer_tmp,
         };
         let history_len = input_ids.len() as u32;
         let pos = (input_ids.len() - 1) as u32;
