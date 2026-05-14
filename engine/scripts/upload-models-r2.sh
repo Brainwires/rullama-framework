@@ -195,7 +195,7 @@ done
 
 echo
 echo "All done. Verify with:"
-echo "  curl -sI -H 'Origin: https://gemma.brainwires.dev' \\"
+echo "  curl -sI -H 'Origin: https://rullama.com' \\"
 echo "       -H 'Range: bytes=0-15' \\"
 echo "       https://<your-domain>/${MODELS[0]/:/-}.gguf | grep -iE 'content-range|access-control'"
 echo
