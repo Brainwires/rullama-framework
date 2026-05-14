@@ -2,10 +2,13 @@
 //!
 //! Surface: `train_jsonl <gguf> <jsonl>`. Reads `(prompt, completion)`
 //! examples, tokenizes via the model's BPE, and runs LoRA SGD over
-//! `attn_q`/`k`/`v`/`o` with **NextToken** cross-entropy on the first
-//! completion token. Gradient accumulation is honored via
-//! `RULLAMA_TRAIN_ACCUM` (default 1) — within each optimizer step the
-//! loop calls `zero_grads → N × forward_backward → optimizer_step`.
+//! `attn_q`/`k`/`v`/`o`. Loss objective is configurable via
+//! `RULLAMA_TRAIN_LOSS_MODE` — `next_token` (the M0 default: CE on
+//! the first completion token given the prompt) or `per_position`
+//! (CE averaged across every completion position). Gradient
+//! accumulation is honored via `RULLAMA_TRAIN_ACCUM` (default 1) —
+//! within each optimizer step the loop calls
+//! `zero_grads → N × forward_backward → optimizer_step`.
 //!
 //! Usage:
 //!
@@ -23,14 +26,11 @@
 //!   - `RULLAMA_TRAIN_ALPHA`     — LoRA alpha                       (default 16)
 //!   - `RULLAMA_TRAIN_SEED`      — RNG seed for LoRA A init         (default 0xC0FFEE)
 //!   - `RULLAMA_TRAIN_LOG_EVERY` — print every N optimizer steps    (default 5)
+//!   - `RULLAMA_TRAIN_LOSS_MODE` — `next_token` | `per_position`    (default next_token)
 //!   - `RULLAMA_ADAPTER_PATH`    — write adapter here when done     (default unset)
 //!   - plus the backward-side knobs honored by `Forward::backward_step`
 //!     (`RULLAMA_CLIP_DHIDDEN`, `RULLAMA_DEBUG_GRADS`,
 //!     `RULLAMA_TRACE_DHIDDEN`).
-//!
-//! M0 loss surface is NextToken — the trainer predicts the *first*
-//! completion token given the full prompt. PerPosition (predict every
-//! position of the completion, averaged) is the M1.4 follow-up.
 
 use std::env;
 use std::error::Error;
@@ -39,7 +39,7 @@ use std::path::PathBuf;
 
 use rullama::api::Model;
 use rullama_finetune::dataset_loader::TrainingDataset;
-use rullama_finetune::shared::config::{LoraConfig, TrainingHyperparams};
+use rullama_finetune::shared::config::{LoraConfig, LossMode, TrainingHyperparams};
 use rullama_finetune::TrainingSession;
 
 type BoxError = Box<dyn Error + Send + Sync>;
@@ -76,6 +76,20 @@ async fn run() -> Result<(), BoxError> {
     let alpha = env_f32("RULLAMA_TRAIN_ALPHA", 16.0);
     let seed = env_u64("RULLAMA_TRAIN_SEED", 0xC0FFEE);
     let log_every = env_u32("RULLAMA_TRAIN_LOG_EVERY", 5).max(1);
+    let loss_mode = match env::var("RULLAMA_TRAIN_LOSS_MODE")
+        .ok()
+        .as_deref()
+        .unwrap_or("next_token")
+    {
+        "next_token" => LossMode::NextToken,
+        "per_position" => LossMode::PerPosition,
+        other => {
+            return Err(format!(
+                "RULLAMA_TRAIN_LOSS_MODE must be 'next_token' or 'per_position', got {other:?}"
+            )
+            .into());
+        }
+    };
 
     eprintln!("[load] gguf = {}", gguf_path.display());
     let bytes = fs::read(&gguf_path)?;
@@ -90,9 +104,20 @@ async fn run() -> Result<(), BoxError> {
     eprintln!("[load] {} examples in dataset", dataset.len());
 
     // Tokenize up front so the training loop is just forward+backward,
-    // no string handling. Skip examples whose prompt or completion
-    // tokenizes to nothing.
-    let mut tokenized: Vec<(Vec<u32>, u32)> = Vec::new();
+    // no string handling. Layout differs per loss mode:
+    //
+    //   NextToken    — `(prompt_tokens, completion_tokens[0])`
+    //                  forward sees `prompt_tokens`, predicts the
+    //                  first completion token.
+    //   PerPosition  — `(prompt_tokens ++ completion_tokens, targets)`
+    //                  where `targets` is the next-token-shifted
+    //                  parallel array with prompt positions masked
+    //                  (`u32::MAX`).
+    //
+    // Skip examples whose prompt or completion tokenizes to nothing.
+    let mut tokenized_next: Vec<(Vec<u32>, u32)> = Vec::new();
+    let mut tokenized_per: Vec<(Vec<u32>, Vec<u32>)> = Vec::new();
+    let mut max_seq_len = 0usize;
     let mut max_prompt_len = 0usize;
     for ex in &dataset.examples {
         let prompt = model.encode_tokens(&ex.prompt);
@@ -101,15 +126,36 @@ async fn run() -> Result<(), BoxError> {
             continue;
         }
         max_prompt_len = max_prompt_len.max(prompt.len());
-        tokenized.push((prompt, completion[0]));
+        max_seq_len = max_seq_len.max(prompt.len() + completion.len());
+        match loss_mode {
+            LossMode::NextToken => {
+                tokenized_next.push((prompt, completion[0]));
+            }
+            LossMode::PerPosition => {
+                let mut input_ids = prompt.clone();
+                input_ids.extend_from_slice(&completion);
+                let n = input_ids.len();
+                let mut targets = vec![u32::MAX; n];
+                // Active positions span [prompt_len - 1 .. n - 1]
+                // inclusive; each `targets[i]` is `input_ids[i+1]`.
+                let start = prompt.len().saturating_sub(1);
+                for i in start..n.saturating_sub(1) {
+                    targets[i] = input_ids[i + 1];
+                }
+                tokenized_per.push((input_ids, targets));
+            }
+        }
     }
-    if tokenized.is_empty() {
+    let n_examples = match loss_mode {
+        LossMode::NextToken => tokenized_next.len(),
+        LossMode::PerPosition => tokenized_per.len(),
+    };
+    if n_examples == 0 {
         return Err("dataset has no usable examples after tokenization".into());
     }
     eprintln!(
-        "[tok] {} examples kept, longest prompt = {} tokens",
-        tokenized.len(),
-        max_prompt_len,
+        "[tok] {} examples kept; longest prompt={} toks; longest prompt+completion={} toks",
+        n_examples, max_prompt_len, max_seq_len,
     );
 
     let lora_cfg = LoraConfig {
@@ -126,10 +172,17 @@ async fn run() -> Result<(), BoxError> {
     let mut hp = TrainingHyperparams::default();
     hp.learning_rate = lr;
     hp.weight_decay = 0.0;
-    hp.max_seq_len = max_prompt_len.max(32);
+    // PerPosition forwards run over prompt+completion; NextToken only
+    // ever sees prompt tokens. Size scratch for the longest possible.
+    hp.max_seq_len = match loss_mode {
+        LossMode::NextToken => max_prompt_len.max(32),
+        LossMode::PerPosition => max_seq_len.max(32),
+    };
     hp.seed = seed;
+    hp.loss_mode = loss_mode;
     eprintln!(
-        "[hp] lr={lr:.3e} rank={rank} alpha={alpha} accum={accum} steps={n_steps}"
+        "[hp] lr={lr:.3e} rank={rank} alpha={alpha} accum={accum} steps={n_steps} loss_mode={:?}",
+        loss_mode,
     );
     let mut session = TrainingSession::new(model, lora_cfg, hp)
         .map_err(|e| -> BoxError { format!("{e:?}").into() })?;
@@ -148,12 +201,24 @@ async fn run() -> Result<(), BoxError> {
         session.zero_grads();
         let mut accum_loss = 0.0f32;
         for _ in 0..accum {
-            let (input_ids, target_id) = &tokenized[idx % tokenized.len()];
-            idx += 1;
-            let loss = session
-                .forward_backward(input_ids, *target_id)
-                .await
-                .map_err(|e| -> BoxError { format!("step {step}: {e:?}").into() })?;
+            let loss = match loss_mode {
+                LossMode::NextToken => {
+                    let (input_ids, target_id) = &tokenized_next[idx % tokenized_next.len()];
+                    idx += 1;
+                    session
+                        .forward_backward(input_ids, *target_id)
+                        .await
+                        .map_err(|e| -> BoxError { format!("step {step}: {e:?}").into() })?
+                }
+                LossMode::PerPosition => {
+                    let (input_ids, targets) = &tokenized_per[idx % tokenized_per.len()];
+                    idx += 1;
+                    session
+                        .forward_backward_per_position(input_ids, targets)
+                        .await
+                        .map_err(|e| -> BoxError { format!("step {step}: {e:?}").into() })?
+                }
+            };
             accum_loss += loss;
         }
         session.optimizer_step();

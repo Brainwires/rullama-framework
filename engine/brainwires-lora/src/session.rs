@@ -296,6 +296,74 @@ impl TrainingSession {
         Ok(loss)
     }
 
+    /// PerPosition forward+backward: for every position whose
+    /// `targets[p] != u32::MAX`, run a fresh forward sweep over
+    /// `input_ids[..=p]`, capture activations at position `p`, and
+    /// run backward seeded with `dL/d_logits` at `p`. Gradients
+    /// accumulate into the same LoRA `dA`/`dB` across positions — the
+    /// caller drives the accumulation cycle (`zero_grads` once before,
+    /// `optimizer_step` once after, or call [`step_per_position`]).
+    ///
+    /// Returns the **mean** cross-entropy across the active
+    /// positions. Like [`forward_backward`], does *not* zero or step.
+    ///
+    /// Build `targets` with
+    /// [`crate::dataset_loader::Tokenizer::encode_example`] (or the
+    /// `next_token_targets` helper inside the dataset loader) so the
+    /// prompt positions stay masked and only completion positions
+    /// contribute to the loss.
+    ///
+    /// Trade-off: each non-masked position runs a full forward sweep
+    /// from scratch. For a completion of length `C` over a prompt of
+    /// length `P`, total forward work is `O(C * (P + C/2))`. The
+    /// alternative — capture activations at every position in a
+    /// single forward and walk positions in reverse during backward —
+    /// would be more efficient but requires multi-position activation
+    /// storage and a multi-position dL/dlogits seed; deferred to a
+    /// future optimization pass. Adam's scale invariance keeps the
+    /// update direction equivalent regardless of summing-vs-averaging
+    /// the per-position gradients before the optimizer.
+    pub async fn forward_backward_per_position(
+        &mut self,
+        input_ids: &[u32],
+        targets: &[u32],
+    ) -> Result<f32, TrainingError> {
+        if targets.len() != input_ids.len() {
+            return Err(TrainingError::Config(format!(
+                "forward_backward_per_position: targets.len()={} must equal input_ids.len()={}",
+                targets.len(),
+                input_ids.len()
+            )));
+        }
+        let n_active = targets.iter().filter(|&&t| t != u32::MAX).count();
+        if n_active == 0 {
+            return Ok(0.0);
+        }
+        let mut total_loss = 0.0f32;
+        for (p, &target_id) in targets.iter().enumerate() {
+            if target_id == u32::MAX {
+                continue;
+            }
+            let prefix = &input_ids[..=p];
+            total_loss += self.forward_backward(prefix, target_id).await?;
+        }
+        Ok(total_loss / n_active as f32)
+    }
+
+    /// One PerPosition training step: zeroes gradients, runs
+    /// [`forward_backward_per_position`], applies Adam. Returns the
+    /// mean cross-entropy across active positions.
+    pub async fn step_per_position(
+        &mut self,
+        input_ids: &[u32],
+        targets: &[u32],
+    ) -> Result<f32, TrainingError> {
+        self.zero_grads();
+        let loss = self.forward_backward_per_position(input_ids, targets).await?;
+        self.optimizer_step();
+        Ok(loss)
+    }
+
     /// Number of LoRA parameters currently being trained.
     pub fn parameter_count(&self) -> u64 {
         self.loras.parameter_count()
