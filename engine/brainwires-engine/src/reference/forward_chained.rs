@@ -1591,83 +1591,97 @@ impl Forward {
                 r, d_model, s, true);
         }
 
-        // K backward — pull d_k at the final position from d_k_hist.
-        // For M0 we only consume the final-position slice (history positions
-        // before `pos` get zero LoRA grad contribution — see plan).
-        let row_bytes = (n_kv_heads * head_dim * 4) as u64;
-        let dk_final_off = pos as u64 * row_bytes;
-        enc.copy_buffer_to_buffer(scratch.d_k_hist, dk_final_off,
-            scratch.d_k_pre_rope, 0, row_bytes);
-        rope_neox_backward_chained(&self.ctx, &self.pipes, enc,
-            scratch.d_k_pre_rope, factors_w.as_ref(), &self.dummy,
-            head_dim, n_kv_heads, pos as usize, rope_dims, rope_base);
-        rmsnorm_per_row_backward_chained(&self.ctx, &self.pipes, enc,
-            cap.k_pre_norm, &k_norm_w, scratch.d_k_pre_rope, scratch.d_k_pre_norm,
-            n_kv_heads, head_dim, eps, true);
-        // d_norm_x_attn_via_k → d_hidden_tmp2.
-        matmul_q4_k_backward_input_chained(&self.ctx, &self.pipes, enc,
-            &k_w, scratch.d_k_pre_norm, scratch.d_hidden_tmp2,
-            d_model, n_kv_heads * head_dim);
-        residual_add_chained(&self.ctx, &self.pipes, enc,
-            scratch.d_hidden_tmp, scratch.d_hidden_tmp2, d_model);
-        if let (Some(k_lora), Some(k_grad)) = (lora.k.as_ref(), grad.k.as_ref()) {
-            let r = k_lora.rank as usize;
-            let s = k_lora.scale;
-            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
-                scratch.d_k_pre_norm, k_lora.z, k_grad.d_b,
-                n_kv_heads * head_dim, r, s, true);
-            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
-                k_lora.b, scratch.d_k_pre_norm, k_lora.z,
-                n_kv_heads * head_dim, r, 1.0, false);
-            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
-                k_lora.a, k_lora.z, scratch.d_hidden_tmp,
-                r, d_model, s, true);
-            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
-                k_lora.z, cap.norm_x_attn, k_grad.d_a,
-                r, d_model, s, true);
-        }
+        // K/V backward — only on layers that own their own K/V (i.e.
+        // `donor.is_none()`). KV-shared layers (`donor.is_some()`) read
+        // K/V from the donor's cache during forward, so they have no
+        // K/V matmul or norm of their own to differentiate. Running
+        // the chain anyway on donor layers would consume stale captures
+        // (cap.k_pre_norm / cap.v_pre_norm carry the donor's last
+        // values, not this layer's, because forward never wrote them
+        // here). For now the shared layers' contribution to the
+        // donor's K/V LoRA gradient is dropped — a small M0
+        // approximation; the correct fix is to route d_k_hist /
+        // d_v_hist into the donor's grad accumulators.
+        let donor = self.donor_map[i as usize];
+        if donor.is_none() {
+            // K backward — pull d_k at the final position from d_k_hist.
+            // For M0 we only consume the final-position slice (history positions
+            // before `pos` get zero LoRA grad contribution — see plan).
+            let row_bytes = (n_kv_heads * head_dim * 4) as u64;
+            let dk_final_off = pos as u64 * row_bytes;
+            enc.copy_buffer_to_buffer(scratch.d_k_hist, dk_final_off,
+                scratch.d_k_pre_rope, 0, row_bytes);
+            rope_neox_backward_chained(&self.ctx, &self.pipes, enc,
+                scratch.d_k_pre_rope, factors_w.as_ref(), &self.dummy,
+                head_dim, n_kv_heads, pos as usize, rope_dims, rope_base);
+            rmsnorm_per_row_backward_chained(&self.ctx, &self.pipes, enc,
+                cap.k_pre_norm, &k_norm_w, scratch.d_k_pre_rope, scratch.d_k_pre_norm,
+                n_kv_heads, head_dim, eps, true);
+            // d_norm_x_attn_via_k → d_hidden_tmp2.
+            matmul_q4_k_backward_input_chained(&self.ctx, &self.pipes, enc,
+                &k_w, scratch.d_k_pre_norm, scratch.d_hidden_tmp2,
+                d_model, n_kv_heads * head_dim);
+            residual_add_chained(&self.ctx, &self.pipes, enc,
+                scratch.d_hidden_tmp, scratch.d_hidden_tmp2, d_model);
+            if let (Some(k_lora), Some(k_grad)) = (lora.k.as_ref(), grad.k.as_ref()) {
+                let r = k_lora.rank as usize;
+                let s = k_lora.scale;
+                lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                    scratch.d_k_pre_norm, k_lora.z, k_grad.d_b,
+                    n_kv_heads * head_dim, r, s, true);
+                lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                    k_lora.b, scratch.d_k_pre_norm, k_lora.z,
+                    n_kv_heads * head_dim, r, 1.0, false);
+                lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                    k_lora.a, k_lora.z, scratch.d_hidden_tmp,
+                    r, d_model, s, true);
+                lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                    k_lora.z, cap.norm_x_attn, k_grad.d_a,
+                    r, d_model, s, true);
+            }
 
-        // V backward — pull d_v at the final position from d_v_hist into
-        // d_k_pre_norm (free at this point — k backward is done) so it
-        // can serve as the rmsnorm_back `dy` without aliasing the `dx`
-        // output buffer.
-        enc.copy_buffer_to_buffer(scratch.d_v_hist, dk_final_off,
-            scratch.d_k_pre_norm, 0, row_bytes);
-        // V was passed through unweighted rmsnorm_per_row; do the unweighted backward.
-        rmsnorm_per_row_backward_chained(&self.ctx, &self.pipes, enc,
-            cap.v_pre_norm, &self.dummy, scratch.d_k_pre_norm, scratch.d_v_pre_norm,
-            n_kv_heads, head_dim, eps, false);
-        // d_norm_x_attn_via_v → d_hidden_tmp2.
-        match v_w_dtype {
-            GgmlDtype::Q6_K => matmul_q6_k_backward_input_chained(
-                &self.ctx, &self.pipes, enc,
-                &v_w, scratch.d_v_pre_norm, scratch.d_hidden_tmp2,
-                d_model, n_kv_heads * head_dim,
-            ),
-            GgmlDtype::Q4_K => matmul_q4_k_backward_input_chained(
-                &self.ctx, &self.pipes, enc,
-                &v_w, scratch.d_v_pre_norm, scratch.d_hidden_tmp2,
-                d_model, n_kv_heads * head_dim,
-            ),
-            other => return Err(RullamaError::Inference(format!("attn_v dtype {other:?} unsupported in backward"))),
-        }
-        residual_add_chained(&self.ctx, &self.pipes, enc,
-            scratch.d_hidden_tmp, scratch.d_hidden_tmp2, d_model);
-        if let (Some(v_lora), Some(v_grad)) = (lora.v.as_ref(), grad.v.as_ref()) {
-            let r = v_lora.rank as usize;
-            let s = v_lora.scale;
-            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
-                scratch.d_v_pre_norm, v_lora.z, v_grad.d_b,
-                n_kv_heads * head_dim, r, s, true);
-            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
-                v_lora.b, scratch.d_v_pre_norm, v_lora.z,
-                n_kv_heads * head_dim, r, 1.0, false);
-            lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
-                v_lora.a, v_lora.z, scratch.d_hidden_tmp,
-                r, d_model, s, true);
-            lora_outer_add_chained(&self.ctx, &self.pipes, enc,
-                v_lora.z, cap.norm_x_attn, v_grad.d_a,
-                r, d_model, s, true);
+            // V backward — pull d_v at the final position from d_v_hist into
+            // d_k_pre_norm (free at this point — k backward is done) so it
+            // can serve as the rmsnorm_back `dy` without aliasing the `dx`
+            // output buffer.
+            enc.copy_buffer_to_buffer(scratch.d_v_hist, dk_final_off,
+                scratch.d_k_pre_norm, 0, row_bytes);
+            // V was passed through unweighted rmsnorm_per_row; do the unweighted backward.
+            rmsnorm_per_row_backward_chained(&self.ctx, &self.pipes, enc,
+                cap.v_pre_norm, &self.dummy, scratch.d_k_pre_norm, scratch.d_v_pre_norm,
+                n_kv_heads, head_dim, eps, false);
+            // d_norm_x_attn_via_v → d_hidden_tmp2.
+            match v_w_dtype {
+                GgmlDtype::Q6_K => matmul_q6_k_backward_input_chained(
+                    &self.ctx, &self.pipes, enc,
+                    &v_w, scratch.d_v_pre_norm, scratch.d_hidden_tmp2,
+                    d_model, n_kv_heads * head_dim,
+                ),
+                GgmlDtype::Q4_K => matmul_q4_k_backward_input_chained(
+                    &self.ctx, &self.pipes, enc,
+                    &v_w, scratch.d_v_pre_norm, scratch.d_hidden_tmp2,
+                    d_model, n_kv_heads * head_dim,
+                ),
+                other => return Err(RullamaError::Inference(format!("attn_v dtype {other:?} unsupported in backward"))),
+            }
+            residual_add_chained(&self.ctx, &self.pipes, enc,
+                scratch.d_hidden_tmp, scratch.d_hidden_tmp2, d_model);
+            if let (Some(v_lora), Some(v_grad)) = (lora.v.as_ref(), grad.v.as_ref()) {
+                let r = v_lora.rank as usize;
+                let s = v_lora.scale;
+                lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                    scratch.d_v_pre_norm, v_lora.z, v_grad.d_b,
+                    n_kv_heads * head_dim, r, s, true);
+                lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                    v_lora.b, scratch.d_v_pre_norm, v_lora.z,
+                    n_kv_heads * head_dim, r, 1.0, false);
+                lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                    v_lora.a, v_lora.z, scratch.d_hidden_tmp,
+                    r, d_model, s, true);
+                lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                    v_lora.z, cap.norm_x_attn, v_grad.d_a,
+                    r, d_model, s, true);
+            }
         }
 
         // attn_norm rmsnorm backward — flows the attn block contribution
