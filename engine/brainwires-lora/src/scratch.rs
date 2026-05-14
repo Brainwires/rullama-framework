@@ -159,6 +159,17 @@ pub struct TrainingScratch {
     /// uploaded each PLE backward step to feed geglu_back's `up`
     /// input.
     pub ple_per_layer_tmp: Buffer,
+    /// `[d_model]` window into a layer's seq-sized `norm_x_attn`
+    /// capture. Pre-copied per backward iteration so kernel
+    /// bindings stay single-position (`as_entire_binding`-shaped)
+    /// without paying storage-buffer offset-alignment friction.
+    pub norm_x_attn_window: Buffer,
+    /// `[n_kv_max · head_dim_max]` window into a layer's seq-sized
+    /// `k_pre_norm` capture.
+    pub k_pre_norm_window: Buffer,
+    /// `[n_kv_max · head_dim_max]` window into a layer's seq-sized
+    /// `v_pre_norm` capture.
+    pub v_pre_norm_window: Buffer,
     /// Configured max sequence length the scratch is sized for.
     pub max_seq_len: u32,
 }
@@ -207,11 +218,17 @@ impl TrainingScratch {
 
                 LayerActivations {
                     hidden_in:    make("layer.hidden_in",    d_model_e),
-                    norm_x_attn:  make("layer.norm_x_attn",  d_model_e),
+                    // Per-position seq-sized: read by per-history K/V
+                    // LoRA backward. Final-position chain copies the
+                    // `pos`-slice into a scratch window. Other 11
+                    // captures stay single-position because their
+                    // backward chain is final-position-only (Q,
+                    // FFN, attn_proj, PLE).
+                    norm_x_attn:  make("layer.norm_x_attn_seq",  d_model_e * seq_e),
                     q_pre_norm:   make("layer.q_pre_norm",   n_heads * head_dim),
                     q_post_rope:  make("layer.q_post_rope",  n_heads * head_dim),
-                    k_pre_norm:   make("layer.k_pre_norm",   n_kv * head_dim),
-                    v_pre_norm:   make("layer.v_pre_norm",   n_kv * head_dim),
+                    k_pre_norm:   make("layer.k_pre_norm_seq",   n_kv * head_dim * seq_e),
+                    v_pre_norm:   make("layer.v_pre_norm_seq",   n_kv * head_dim * seq_e),
                     attn_out:     make("layer.attn_out",     n_heads * head_dim),
                     attn_proj:    make("layer.attn_proj",    d_model_e),
                     pre_ffn_rms:  make("layer.pre_ffn_rms",  d_model_e),
@@ -254,6 +271,9 @@ impl TrainingScratch {
         let d_ple_act        = make("scratch.d_ple_act",        ple_dim_e);
         let d_ple_up_discard = make("scratch.d_ple_up_discard", ple_dim_e);
         let ple_per_layer_tmp = make("scratch.ple_per_layer_tmp", ple_dim_e);
+        let norm_x_attn_window = make("scratch.norm_x_attn_window", d_model_e);
+        let k_pre_norm_window  = make("scratch.k_pre_norm_window",  n_kv_max_e * head_dim_max_e);
+        let v_pre_norm_window  = make("scratch.v_pre_norm_window",  n_kv_max_e * head_dim_max_e);
 
         Self {
             d_logits,
@@ -280,6 +300,9 @@ impl TrainingScratch {
             d_ple_act,
             d_ple_up_discard,
             ple_per_layer_tmp,
+            norm_x_attn_window,
+            k_pre_norm_window,
+            v_pre_norm_window,
             max_seq_len,
         }
     }

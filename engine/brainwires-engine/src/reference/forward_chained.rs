@@ -434,6 +434,38 @@ impl Forward {
         self.step_inner(token_id, None, Some(loras)).await
     }
 
+    /// Same as [`step_with_lora`] but ALSO captures the per-position
+    /// seq-shaped activations (`norm_x_attn`, `k_pre_norm`,
+    /// `v_pre_norm`) into the supplied capture buffers at offset
+    /// `pos·per_position_size`. Used during training prefill so the
+    /// per-history K/V LoRA backward can read each position's
+    /// activations without re-running forward.
+    ///
+    /// The 11 non-seq captures (q*, attn_out, attn_proj, hidden_in,
+    /// pre_ffn_rms, norm_x_ffn, ffn_*, ple_*) are STILL written by
+    /// `encode_layer` at offset 0 — they get overwritten by every
+    /// position. Only the seq captures are position-stable.
+    pub async fn step_with_lora_seqcap<'a>(
+        &mut self,
+        token_id: u32,
+        loras: &'a [LayerLoraSlots<'a>],
+        capture: &'a [LayerCaptureBuffers<'a>],
+    ) -> Result<Vec<f32>> {
+        if loras.len() != self.cfg.n_layers as usize {
+            return Err(RullamaError::Inference(format!(
+                "step_with_lora_seqcap: got {} lora slots, expected {}",
+                loras.len(), self.cfg.n_layers
+            )));
+        }
+        if capture.len() != self.cfg.n_layers as usize {
+            return Err(RullamaError::Inference(format!(
+                "step_with_lora_seqcap: got {} captures, expected {}",
+                capture.len(), self.cfg.n_layers
+            )));
+        }
+        self.step_inner(token_id, Some(capture), Some(loras)).await
+    }
+
     async fn step_inner<'a>(
         &mut self,
         token_id: u32,
@@ -726,7 +758,10 @@ impl Forward {
 
         // ---- CAPTURE: norm_x_attn (input to q/k/v matmul + LoRA) ----
         if let Some(cap) = capture {
-            enc.copy_buffer_to_buffer(&self.norm_x, 0, cap.norm_x_attn, 0, (d_model * 4) as u64);
+            // Per-position seq capture: write at `pos·d_model` offset.
+            enc.copy_buffer_to_buffer(&self.norm_x, 0,
+                cap.norm_x_attn, (pos as u64) * (d_model as u64) * 4,
+                (d_model * 4) as u64);
         }
 
         // Q/K/V projections from norm_x
@@ -789,7 +824,10 @@ impl Forward {
 
             // ---- CAPTURE: k_pre_norm (k matmul output, input to k_norm rmsnorm) ----
             if let Some(cap) = capture {
-                enc.copy_buffer_to_buffer(&self.k, 0, cap.k_pre_norm, 0, (n_kv_heads * head_dim * 4) as u64);
+                // Per-position seq capture: write at `pos·(n_kv·head_dim)` offset.
+                enc.copy_buffer_to_buffer(&self.k, 0,
+                    cap.k_pre_norm, (pos as u64) * (n_kv_heads as u64) * (head_dim as u64) * 4,
+                    (n_kv_heads * head_dim * 4) as u64);
             }
 
             rmsnorm_per_row_chained(&self.ctx, &self.pipes, enc,
@@ -819,7 +857,10 @@ impl Forward {
 
             // ---- CAPTURE: v_pre_norm (v matmul output, input to unweighted v_norm rmsnorm) ----
             if let Some(cap) = capture {
-                enc.copy_buffer_to_buffer(&self.v, 0, cap.v_pre_norm, 0, (n_kv_heads * head_dim * 4) as u64);
+                // Per-position seq capture.
+                enc.copy_buffer_to_buffer(&self.v, 0,
+                    cap.v_pre_norm, (pos as u64) * (n_kv_heads as u64) * (head_dim as u64) * 4,
+                    (n_kv_heads * head_dim * 4) as u64);
             }
 
             // V-norm is unweighted
@@ -1219,6 +1260,15 @@ pub struct BackwardScratchView<'a> {
     /// `[ple_dim]` — staging copy of `self.per_layer[i*ple_dim..]` for
     /// PLE geglu_back's read-only `up` input.
     pub ple_per_layer_tmp: &'a wgpu::Buffer,
+    /// `[d_model]` window into a layer's seq-sized `norm_x_attn`
+    /// capture — pre-copied per backward iteration.
+    pub norm_x_attn_window: &'a wgpu::Buffer,
+    /// `[n_kv · head_dim]` window into a layer's seq-sized
+    /// `k_pre_norm` capture.
+    pub k_pre_norm_window: &'a wgpu::Buffer,
+    /// `[n_kv · head_dim]` window into a layer's seq-sized
+    /// `v_pre_norm` capture.
+    pub v_pre_norm_window: &'a wgpu::Buffer,
 }
 
 impl Forward {
@@ -1456,6 +1506,20 @@ impl Forward {
         if let Some(s) = self.layer_scalars[i as usize] {
             scale_chained(&self.ctx, &self.pipes, enc, scratch.d_hidden, d_model, s);
         }
+
+        // Pre-copy the `pos`-slices of the seq-sized captures into
+        // single-position windows so the rest of backward_layer can
+        // bind them via `as_entire_binding()` without paying offset
+        // alignment friction. The per-history K/V LoRA backward
+        // re-copies *other* positions into the same windows.
+        let d_model_bytes = (d_model as u64) * 4;
+        let kv_row_bytes  = (n_kv_heads as u64) * (head_dim as u64) * 4;
+        enc.copy_buffer_to_buffer(cap.norm_x_attn, (pos as u64) * d_model_bytes,
+            scratch.norm_x_attn_window, 0, d_model_bytes);
+        enc.copy_buffer_to_buffer(cap.k_pre_norm,  (pos as u64) * kv_row_bytes,
+            scratch.k_pre_norm_window,  0, kv_row_bytes);
+        enc.copy_buffer_to_buffer(cap.v_pre_norm,  (pos as u64) * kv_row_bytes,
+            scratch.v_pre_norm_window,  0, kv_row_bytes);
 
         // ----- PLE injection backward -----
         //
@@ -1695,7 +1759,7 @@ impl Forward {
                 q_lora.a, q_lora.z, scratch.d_hidden_tmp,
                 r, d_model, s, true);
             lora_outer_add_chained(&self.ctx, &self.pipes, enc,
-                q_lora.z, cap.norm_x_attn, q_grad.d_a,
+                q_lora.z, scratch.norm_x_attn_window, q_grad.d_a,
                 r, d_model, s, true);
         }
 
@@ -1723,7 +1787,7 @@ impl Forward {
                 scratch.d_k_pre_rope, factors_w.as_ref(), &self.dummy,
                 head_dim, n_kv_heads, pos as usize, rope_dims, rope_base);
             rmsnorm_per_row_backward_chained(&self.ctx, &self.pipes, enc,
-                cap.k_pre_norm, &k_norm_w, scratch.d_k_pre_rope, scratch.d_k_pre_norm,
+                scratch.k_pre_norm_window, &k_norm_w, scratch.d_k_pre_rope, scratch.d_k_pre_norm,
                 n_kv_heads, head_dim, eps, true);
             // d_norm_x_attn_via_k → d_hidden_tmp2.
             matmul_q4_k_backward_input_chained(&self.ctx, &self.pipes, enc,
@@ -1744,7 +1808,7 @@ impl Forward {
                     k_lora.a, k_lora.z, scratch.d_hidden_tmp,
                     r, d_model, s, true);
                 lora_outer_add_chained(&self.ctx, &self.pipes, enc,
-                    k_lora.z, cap.norm_x_attn, k_grad.d_a,
+                    k_lora.z, scratch.norm_x_attn_window, k_grad.d_a,
                     r, d_model, s, true);
             }
 
@@ -1756,7 +1820,7 @@ impl Forward {
                 scratch.d_k_pre_norm, 0, row_bytes);
             // V was passed through unweighted rmsnorm_per_row; do the unweighted backward.
             rmsnorm_per_row_backward_chained(&self.ctx, &self.pipes, enc,
-                cap.v_pre_norm, &self.dummy, scratch.d_k_pre_norm, scratch.d_v_pre_norm,
+                scratch.v_pre_norm_window, &self.dummy, scratch.d_k_pre_norm, scratch.d_v_pre_norm,
                 n_kv_heads, head_dim, eps, false);
             // d_norm_x_attn_via_v → d_hidden_tmp2.
             match v_w_dtype {
@@ -1787,10 +1851,100 @@ impl Forward {
                     v_lora.a, v_lora.z, scratch.d_hidden_tmp,
                     r, d_model, s, true);
                 lora_outer_add_chained(&self.ctx, &self.pipes, enc,
-                    v_lora.z, cap.norm_x_attn, v_grad.d_a,
+                    v_lora.z, scratch.norm_x_attn_window, v_grad.d_a,
                     r, d_model, s, true);
             }
+
+            // ----- Per-history K/V LoRA backward -----
+            //
+            // For each history position `hp != pos`, accumulate dA/dB
+            // contributions into the K and V LoRAs using the
+            // per-position seq captures + d_k_hist[hp] / d_v_hist[hp].
+            // We do NOT update the running `d_hidden` (which is a
+            // single-position scratch carrying the gradient at the
+            // FINAL position only); the matmul-back-through-k_w /
+            // v_w contributions to d_hidden_at_hp are dropped — that's
+            // the per-position-d_hidden story owned by the
+            // single-forward PerPosition variant.
+            //
+            // `z` per LoRA is recomputed inline as A · norm_x_attn[hp]
+            // (cheap rank·d_model matmul) so we don't need per-position
+            // `z` storage.
+            for hp_u in 0..history_len {
+                if hp_u == pos { continue; }
+                let hp = hp_u as usize;
+                let p_kv_off = hp_u as u64 * row_bytes;
+                let p_dm_off = hp_u as u64 * d_model_bytes;
+                // Refresh windows for this history position.
+                enc.copy_buffer_to_buffer(cap.norm_x_attn, p_dm_off,
+                    scratch.norm_x_attn_window, 0, d_model_bytes);
+                enc.copy_buffer_to_buffer(cap.k_pre_norm, p_kv_off,
+                    scratch.k_pre_norm_window, 0, row_bytes);
+
+                // K at history position hp.
+                enc.copy_buffer_to_buffer(scratch.d_k_hist, p_kv_off,
+                    scratch.d_k_pre_rope, 0, row_bytes);
+                rope_neox_backward_chained(&self.ctx, &self.pipes, enc,
+                    scratch.d_k_pre_rope, factors_w.as_ref(), &self.dummy,
+                    head_dim, n_kv_heads, hp, rope_dims, rope_base);
+                rmsnorm_per_row_backward_chained(&self.ctx, &self.pipes, enc,
+                    scratch.k_pre_norm_window, &k_norm_w,
+                    scratch.d_k_pre_rope, scratch.d_k_pre_norm,
+                    n_kv_heads, head_dim, eps, true);
+                if let (Some(k_lora), Some(k_grad)) = (lora.k.as_ref(), grad.k.as_ref()) {
+                    let r = k_lora.rank as usize;
+                    let s = k_lora.scale;
+                    // z_k[hp] = A_k · norm_x_attn[hp]
+                    lora_matmul_row_chained(&self.ctx, &self.pipes, enc,
+                        k_lora.a, scratch.norm_x_attn_window, k_lora.z,
+                        d_model, r, 1.0, false);
+                    lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                        scratch.d_k_pre_norm, k_lora.z, k_grad.d_b,
+                        n_kv_heads * head_dim, r, s, true);
+                    lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                        k_lora.b, scratch.d_k_pre_norm, k_lora.z,
+                        n_kv_heads * head_dim, r, 1.0, false);
+                    lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                        k_lora.z, scratch.norm_x_attn_window, k_grad.d_a,
+                        r, d_model, s, true);
+                }
+
+                // V at history position hp.
+                enc.copy_buffer_to_buffer(cap.v_pre_norm, p_kv_off,
+                    scratch.v_pre_norm_window, 0, row_bytes);
+                enc.copy_buffer_to_buffer(scratch.d_v_hist, p_kv_off,
+                    scratch.d_k_pre_norm, 0, row_bytes);
+                rmsnorm_per_row_backward_chained(&self.ctx, &self.pipes, enc,
+                    scratch.v_pre_norm_window, &self.dummy,
+                    scratch.d_k_pre_norm, scratch.d_v_pre_norm,
+                    n_kv_heads, head_dim, eps, false);
+                if let (Some(v_lora), Some(v_grad)) = (lora.v.as_ref(), grad.v.as_ref()) {
+                    let r = v_lora.rank as usize;
+                    let s = v_lora.scale;
+                    lora_matmul_row_chained(&self.ctx, &self.pipes, enc,
+                        v_lora.a, scratch.norm_x_attn_window, v_lora.z,
+                        d_model, r, 1.0, false);
+                    lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                        scratch.d_v_pre_norm, v_lora.z, v_grad.d_b,
+                        n_kv_heads * head_dim, r, s, true);
+                    lora_matmul_col_chained(&self.ctx, &self.pipes, enc,
+                        v_lora.b, scratch.d_v_pre_norm, v_lora.z,
+                        n_kv_heads * head_dim, r, 1.0, false);
+                    lora_outer_add_chained(&self.ctx, &self.pipes, enc,
+                        v_lora.z, scratch.norm_x_attn_window, v_grad.d_a,
+                        r, d_model, s, true);
+                }
+            }
         }
+
+        // After the per-history loop, the windows hold the LAST
+        // history position's values. Restore them to the `pos`-slice
+        // so any downstream code that relies on the windows holding
+        // the final-position activations (currently only the
+        // `attn_norm` backward below, which doesn't read these) sees
+        // the right state.
+        enc.copy_buffer_to_buffer(cap.norm_x_attn, (pos as u64) * d_model_bytes,
+            scratch.norm_x_attn_window, 0, d_model_bytes);
 
         // attn_norm rmsnorm backward — flows the attn block contribution
         // into d_hidden_tmp2, then accumulates into running d_hidden.

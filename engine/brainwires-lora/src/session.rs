@@ -392,13 +392,16 @@ impl TrainingSession {
             })
             .collect();
 
-        // Prefill prompt — every position 0..N-2 uses LoRA correction
-        // but no activation capture (their K/V are stored into the
-        // cache, that's all we need for backward).
+        // Prefill prompt — capture the seq-shaped per-position
+        // activations (norm_x_attn, k_pre_norm, v_pre_norm) into the
+        // shared `capture` buffers at each position's offset. The
+        // 11 non-seq captures get overwritten per position; only
+        // the final-position values stick (which is what the regular
+        // backward chain needs).
         for &tok in &input_ids[..input_ids.len() - 1] {
             self.model
                 .forward_mut()
-                .step_with_lora(tok, &lora_slots)
+                .step_with_lora_seqcap(tok, &lora_slots, &capture)
                 .await
                 .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
         }
@@ -453,6 +456,9 @@ impl TrainingSession {
             d_ple_act:          &s.d_ple_act,
             d_ple_up_discard:   &s.d_ple_up_discard,
             ple_per_layer_tmp:  &s.ple_per_layer_tmp,
+            norm_x_attn_window: &s.norm_x_attn_window,
+            k_pre_norm_window:  &s.k_pre_norm_window,
+            v_pre_norm_window:  &s.v_pre_norm_window,
         };
         let history_len = input_ids.len() as u32;
         let pos = (input_ids.len() - 1) as u32;
