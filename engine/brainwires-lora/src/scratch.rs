@@ -170,6 +170,41 @@ pub struct TrainingScratch {
     /// `[n_kv_max · head_dim_max]` window into a layer's seq-sized
     /// `v_pre_norm` capture.
     pub v_pre_norm_window: Buffer,
+    /// `[d_model]` window into `hidden_in` capture (input to attn rmsnorm).
+    pub hidden_in_window: Buffer,
+    /// `[n_heads · head_dim_max]` window into `q_pre_norm` capture.
+    pub q_pre_norm_window: Buffer,
+    /// `[n_heads · head_dim_max]` window into `q_post_rope` capture
+    /// (the rope-rotated, normed Q at the layer's query position).
+    pub q_post_rope_window: Buffer,
+    /// `[n_heads · head_dim_max]` window into `attn_out` capture.
+    pub attn_out_window: Buffer,
+    /// `[d_model]` window into `attn_proj` capture.
+    pub attn_proj_window: Buffer,
+    /// `[d_model]` window into `pre_ffn_rms` capture.
+    pub pre_ffn_rms_window: Buffer,
+    /// `[d_model]` window into `norm_x_ffn` capture.
+    pub norm_x_ffn_window: Buffer,
+    /// `[ffn_inter_max]` window into `ffn_gate` capture.
+    pub ffn_gate_window: Buffer,
+    /// `[ffn_inter_max]` window into `ffn_up` capture.
+    pub ffn_up_window: Buffer,
+    /// `[ffn_inter_max]` window into `ffn_act` capture.
+    pub ffn_act_window: Buffer,
+    /// `[d_model]` window into `ffn_out` capture.
+    pub ffn_out_window: Buffer,
+    /// `[ple_dim]` window into `ple_state` capture.
+    pub ple_state_window: Buffer,
+    /// `[ple_dim]` window into `ple_act` capture.
+    pub ple_act_window: Buffer,
+    /// `[d_model]` window into `ple_proj` capture.
+    pub ple_proj_window: Buffer,
+    /// `[seq · d_model]` — per-position snapshot of `self.hidden`
+    /// AFTER the layer stack and BEFORE the final rmsnorm. Captured
+    /// by the single-forward PerPosition orchestrator during the
+    /// one-shot forward sweep, then read back per active completion
+    /// position to drive the final-norm + output projection chain.
+    pub seq_pre_final_norm: Buffer,
     /// Configured max sequence length the scratch is sized for.
     pub max_seq_len: u32,
 }
@@ -216,34 +251,32 @@ impl TrainingScratch {
                 let n_heads = cfg.n_heads as u64;
                 let ffn_inter = cfg.ffn(li) as u64;
 
+                // All captures are seq-sized: forward writes at
+                // offset `pos·per_position_size` per position. The
+                // final-position backward chain pre-copies the
+                // `pos`-slice into single-position windows on
+                // `TrainingScratch`. The per-history K/V LoRA loop
+                // and the single-forward PerPosition variant
+                // re-copy *other* positions into the same windows.
+                let ple_d = if ple_dim_e > 0 { d_model_e } else { 0 };
                 LayerActivations {
-                    hidden_in:    make("layer.hidden_in",    d_model_e),
-                    // Per-position seq-sized: read by per-history K/V
-                    // LoRA backward. Final-position chain copies the
-                    // `pos`-slice into a scratch window. Other 11
-                    // captures stay single-position because their
-                    // backward chain is final-position-only (Q,
-                    // FFN, attn_proj, PLE).
+                    hidden_in:    make("layer.hidden_in_seq",    d_model_e * seq_e),
                     norm_x_attn:  make("layer.norm_x_attn_seq",  d_model_e * seq_e),
-                    q_pre_norm:   make("layer.q_pre_norm",   n_heads * head_dim),
-                    q_post_rope:  make("layer.q_post_rope",  n_heads * head_dim),
+                    q_pre_norm:   make("layer.q_pre_norm_seq",   n_heads * head_dim * seq_e),
+                    q_post_rope:  make("layer.q_post_rope_seq",  n_heads * head_dim * seq_e),
                     k_pre_norm:   make("layer.k_pre_norm_seq",   n_kv * head_dim * seq_e),
                     v_pre_norm:   make("layer.v_pre_norm_seq",   n_kv * head_dim * seq_e),
-                    attn_out:     make("layer.attn_out",     n_heads * head_dim),
-                    attn_proj:    make("layer.attn_proj",    d_model_e),
-                    pre_ffn_rms:  make("layer.pre_ffn_rms",  d_model_e),
-                    norm_x_ffn:   make("layer.norm_x_ffn",   d_model_e),
-                    ffn_gate:     make("layer.ffn_gate",     ffn_inter),
-                    ffn_up:       make("layer.ffn_up",       ffn_inter),
-                    ffn_act:      make("layer.ffn_act",      ffn_inter),
-                    ffn_out:      make("layer.ffn_out",      d_model_e),
-                    ple_state:    make("layer.ple_state",    ple_dim_e),
-                    ple_act:      make("layer.ple_act",      ple_dim_e),
-                    // ple_proj only allocated when the model has PLE
-                    // (otherwise the capture site doesn't fire); use a
-                    // 4-byte stub to keep the buffer non-empty so the
-                    // STORAGE binding stays valid.
-                    ple_proj:     make("layer.ple_proj", if ple_dim_e > 0 { d_model_e } else { 0 }),
+                    attn_out:     make("layer.attn_out_seq",     n_heads * head_dim * seq_e),
+                    attn_proj:    make("layer.attn_proj_seq",    d_model_e * seq_e),
+                    pre_ffn_rms:  make("layer.pre_ffn_rms_seq",  d_model_e * seq_e),
+                    norm_x_ffn:   make("layer.norm_x_ffn_seq",   d_model_e * seq_e),
+                    ffn_gate:     make("layer.ffn_gate_seq",     ffn_inter * seq_e),
+                    ffn_up:       make("layer.ffn_up_seq",       ffn_inter * seq_e),
+                    ffn_act:      make("layer.ffn_act_seq",      ffn_inter * seq_e),
+                    ffn_out:      make("layer.ffn_out_seq",      d_model_e * seq_e),
+                    ple_state:    make("layer.ple_state_seq",    ple_dim_e * seq_e),
+                    ple_act:      make("layer.ple_act_seq",      ple_dim_e * seq_e),
+                    ple_proj:     make("layer.ple_proj_seq",     ple_d * seq_e),
                 }
             })
             .collect();
@@ -274,6 +307,21 @@ impl TrainingScratch {
         let norm_x_attn_window = make("scratch.norm_x_attn_window", d_model_e);
         let k_pre_norm_window  = make("scratch.k_pre_norm_window",  n_kv_max_e * head_dim_max_e);
         let v_pre_norm_window  = make("scratch.v_pre_norm_window",  n_kv_max_e * head_dim_max_e);
+        let hidden_in_window   = make("scratch.hidden_in_window",   d_model_e);
+        let q_pre_norm_window  = make("scratch.q_pre_norm_window",  n_heads_e * head_dim_max_e);
+        let q_post_rope_window = make("scratch.q_post_rope_window", n_heads_e * head_dim_max_e);
+        let attn_out_window    = make("scratch.attn_out_window",    n_heads_e * head_dim_max_e);
+        let attn_proj_window   = make("scratch.attn_proj_window",   d_model_e);
+        let pre_ffn_rms_window = make("scratch.pre_ffn_rms_window", d_model_e);
+        let norm_x_ffn_window  = make("scratch.norm_x_ffn_window",  d_model_e);
+        let ffn_gate_window    = make("scratch.ffn_gate_window",    ffn_inter_max_e);
+        let ffn_up_window      = make("scratch.ffn_up_window",      ffn_inter_max_e);
+        let ffn_act_window     = make("scratch.ffn_act_window",     ffn_inter_max_e);
+        let ffn_out_window     = make("scratch.ffn_out_window",     d_model_e);
+        let ple_state_window   = make("scratch.ple_state_window",   ple_dim_e);
+        let ple_act_window     = make("scratch.ple_act_window",     ple_dim_e);
+        let ple_proj_window    = make("scratch.ple_proj_window",    if ple_dim_e > 0 { d_model_e } else { 0 });
+        let seq_pre_final_norm = make("scratch.seq_pre_final_norm", d_model_e * seq_e);
 
         Self {
             d_logits,
@@ -303,6 +351,21 @@ impl TrainingScratch {
             norm_x_attn_window,
             k_pre_norm_window,
             v_pre_norm_window,
+            hidden_in_window,
+            q_pre_norm_window,
+            q_post_rope_window,
+            attn_out_window,
+            attn_proj_window,
+            pre_ffn_rms_window,
+            norm_x_ffn_window,
+            ffn_gate_window,
+            ffn_up_window,
+            ffn_act_window,
+            ffn_out_window,
+            ple_state_window,
+            ple_act_window,
+            ple_proj_window,
+            seq_pre_final_norm,
             max_seq_len,
         }
     }

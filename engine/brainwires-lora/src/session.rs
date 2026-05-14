@@ -459,6 +459,20 @@ impl TrainingSession {
             norm_x_attn_window: &s.norm_x_attn_window,
             k_pre_norm_window:  &s.k_pre_norm_window,
             v_pre_norm_window:  &s.v_pre_norm_window,
+            hidden_in_window:   &s.hidden_in_window,
+            q_pre_norm_window:  &s.q_pre_norm_window,
+            q_post_rope_window: &s.q_post_rope_window,
+            attn_out_window:    &s.attn_out_window,
+            attn_proj_window:   &s.attn_proj_window,
+            pre_ffn_rms_window: &s.pre_ffn_rms_window,
+            norm_x_ffn_window:  &s.norm_x_ffn_window,
+            ffn_gate_window:    &s.ffn_gate_window,
+            ffn_up_window:      &s.ffn_up_window,
+            ffn_act_window:     &s.ffn_act_window,
+            ffn_out_window:     &s.ffn_out_window,
+            ple_state_window:   &s.ple_state_window,
+            ple_act_window:     &s.ple_act_window,
+            ple_proj_window:    &s.ple_proj_window,
         };
         let history_len = input_ids.len() as u32;
         let pos = (input_ids.len() - 1) as u32;
@@ -506,33 +520,32 @@ impl TrainingSession {
         Ok(loss)
     }
 
-    /// PerPosition forward+backward: for every position whose
-    /// `targets[p] != u32::MAX`, run a fresh forward sweep over
-    /// `input_ids[..=p]`, capture activations at position `p`, and
-    /// run backward seeded with `dL/d_logits` at `p`. Gradients
-    /// accumulate into the same LoRA `dA`/`dB` across positions — the
-    /// caller drives the accumulation cycle (`zero_grads` once before,
-    /// `optimizer_step` once after, or call [`step_per_position`]).
+    /// PerPosition forward+backward: single-forward variant.
     ///
-    /// Returns the **mean** cross-entropy across the active
-    /// positions. Like [`forward_backward`], does *not* zero or step.
+    /// 1. Reset KV. Run **one** forward sweep through the full
+    ///    `input_ids` capturing per-position activations into the
+    ///    seq-sized `LayerActivations` (every layer's captures are
+    ///    written at offset `pos·per_position_size`).
+    /// 2. Save each token's pre-final-norm `self.hidden` into
+    ///    `scratch.seq_pre_final_norm` at offset `pos·d_model`.
+    /// 3. For each position `p` with `targets[p] != u32::MAX`:
+    ///    a. Point `self.hidden` at the saved `seq_pre_final_norm[p]`.
+    ///    b. Run final rmsnorm + tiled output projection to fill
+    ///       `self.logits` with position-`p`'s vocab distribution.
+    ///    c. Call `backward_step` at `pos=p`, `history_len=p+1`,
+    ///       `target_id=targets[p]`. Pre-copies window slices from
+    ///       offset `p·size` for all 14 captures and walks the
+    ///       layer chain (including the per-history K/V LoRA loop
+    ///       over positions `0..p`).
+    /// 4. Return the mean cross-entropy across active positions.
     ///
-    /// Build `targets` with
-    /// [`crate::dataset_loader::Tokenizer::encode_example`] (or the
-    /// `next_token_targets` helper inside the dataset loader) so the
-    /// prompt positions stay masked and only completion positions
-    /// contribute to the loss.
+    /// Forward cost: `O(N)` layer-ops (one sweep). Backward cost:
+    /// `O(C·N)` layer-ops (`C` active positions × `N` layers per
+    /// position). Total: `O(N + C·N)` vs. the old loop variant's
+    /// `O(C·N/2 + C·N) = O(C·N)`. ~`C/2`× forward speedup.
     ///
-    /// Trade-off: each non-masked position runs a full forward sweep
-    /// from scratch. For a completion of length `C` over a prompt of
-    /// length `P`, total forward work is `O(C * (P + C/2))`. The
-    /// alternative — capture activations at every position in a
-    /// single forward and walk positions in reverse during backward —
-    /// would be more efficient but requires multi-position activation
-    /// storage and a multi-position dL/dlogits seed; deferred to a
-    /// future optimization pass. Adam's scale invariance keeps the
-    /// update direction equivalent regardless of summing-vs-averaging
-    /// the per-position gradients before the optimizer.
+    /// Like [`forward_backward`], does NOT zero gradients or step
+    /// Adam — caller drives the accumulation cycle.
     pub async fn forward_backward_per_position(
         &mut self,
         input_ids: &[u32],
@@ -549,14 +562,156 @@ impl TrainingSession {
         if n_active == 0 {
             return Ok(0.0);
         }
+        let n_layers = self.model.forward().cfg().n_layers as usize;
+        let d_model = self.model.forward().cfg().d_model as u64;
+        let d_model_bytes = d_model * 4;
+
+        self.model.forward_mut().reset();
+
+        let lora_slots: Vec<LayerLoraSlots> = (0..n_layers)
+            .map(|li| LayerLoraSlots {
+                q:        self.loras.get(&LoraKey::new(li as u32, "attn_q")).map(slot_view),
+                k:        self.loras.get(&LoraKey::new(li as u32, "attn_k")).map(slot_view),
+                v:        self.loras.get(&LoraKey::new(li as u32, "attn_v")).map(slot_view),
+                o:        self.loras.get(&LoraKey::new(li as u32, "attn_o")).map(slot_view),
+                ffn_gate: self.loras.get(&LoraKey::new(li as u32, "ffn_gate")).map(slot_view),
+                ffn_up:   self.loras.get(&LoraKey::new(li as u32, "ffn_up")).map(slot_view),
+                ffn_down: self.loras.get(&LoraKey::new(li as u32, "ffn_down")).map(slot_view),
+            })
+            .collect();
+        let capture: Vec<LayerCaptureBuffers> = self
+            .scratch
+            .layers
+            .iter()
+            .map(|l| LayerCaptureBuffers {
+                hidden_in:   &l.hidden_in,
+                norm_x_attn: &l.norm_x_attn,
+                q_pre_norm:  &l.q_pre_norm,
+                q_post_rope: &l.q_post_rope,
+                k_pre_norm:  &l.k_pre_norm,
+                v_pre_norm:  &l.v_pre_norm,
+                attn_out:    &l.attn_out,
+                attn_proj:   &l.attn_proj,
+                pre_ffn_rms: &l.pre_ffn_rms,
+                norm_x_ffn:  &l.norm_x_ffn,
+                ffn_gate:    &l.ffn_gate,
+                ffn_up:      &l.ffn_up,
+                ffn_act:     &l.ffn_act,
+                ffn_out:     &l.ffn_out,
+                ple_state:   &l.ple_state,
+                ple_act:     &l.ple_act,
+                ple_proj:    &l.ple_proj,
+            })
+            .collect();
+
+        // 1. Single forward sweep — every token's encode_layer
+        //    writes seq-position-shifted captures, AND we snapshot
+        //    `self.hidden` (= pre-final-norm) into the seq buffer
+        //    right after the call returns.
+        let ctx = self.model.forward().ctx().clone();
+        for &tok in input_ids {
+            self.model
+                .forward_mut()
+                .step_with_lora_seqcap(tok, &lora_slots, &capture)
+                .await
+                .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
+            let pos_just_finished = (self.model.forward().pos() as u64).saturating_sub(1);
+            let mut enc = ctx
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("train.save_pre_final_norm"),
+                });
+            enc.copy_buffer_to_buffer(
+                self.model.forward().hidden_buffer(), 0,
+                &self.scratch.seq_pre_final_norm, pos_just_finished * d_model_bytes,
+                d_model_bytes,
+            );
+            ctx.queue.submit(Some(enc.finish()));
+        }
+
+        // 2. Build grad views + scratch view (mirrors `forward_backward`).
+        let grads: Vec<LayerLoraGrads> = (0..n_layers)
+            .map(|li| LayerLoraGrads {
+                q:        self.loras.get(&LoraKey::new(li as u32, "attn_q")).map(grad_view),
+                k:        self.loras.get(&LoraKey::new(li as u32, "attn_k")).map(grad_view),
+                v:        self.loras.get(&LoraKey::new(li as u32, "attn_v")).map(grad_view),
+                o:        self.loras.get(&LoraKey::new(li as u32, "attn_o")).map(grad_view),
+                ffn_gate: self.loras.get(&LoraKey::new(li as u32, "ffn_gate")).map(grad_view),
+                ffn_up:   self.loras.get(&LoraKey::new(li as u32, "ffn_up")).map(grad_view),
+                ffn_down: self.loras.get(&LoraKey::new(li as u32, "ffn_down")).map(grad_view),
+            })
+            .collect();
+        let s = &self.scratch;
+        let scratch_view = BackwardScratchView {
+            d_logits:       &s.d_logits,
+            loss:           &s.loss,
+            d_hidden_final: &s.d_hidden_final,
+            d_hidden:       &s.d_hidden,
+            d_hidden_tmp:   &s.d_hidden_tmp,
+            d_hidden_tmp2:  &s.d_hidden_tmp2,
+            attn_probs:     &s.attn_probs,
+            attn_d_scores:  &s.attn_d_scores,
+            d_attn_out:     &s.d_q_pre_rope,
+            d_q:            &s.d_q,
+            d_k_hist:       &s.d_k_hist,
+            d_v_hist:       &s.d_v_hist,
+            d_q_pre_rope:   &s.d_q_pre_rope,
+            d_k_pre_rope:   &s.d_k_pre_rope,
+            d_q_pre_norm:   &s.d_q_pre_norm,
+            d_k_pre_norm:   &s.d_k_pre_norm,
+            d_v_pre_norm:   &s.d_v_pre_norm,
+            d_ffn_a:        &s.d_ffn_a,
+            d_ffn_b:        &s.d_ffn_b,
+            d_ffn_c:        &s.d_ffn_c,
+            d_ple_state:        &s.d_ple_state,
+            d_ple_act:          &s.d_ple_act,
+            d_ple_up_discard:   &s.d_ple_up_discard,
+            ple_per_layer_tmp:  &s.ple_per_layer_tmp,
+            norm_x_attn_window: &s.norm_x_attn_window,
+            k_pre_norm_window:  &s.k_pre_norm_window,
+            v_pre_norm_window:  &s.v_pre_norm_window,
+            hidden_in_window:   &s.hidden_in_window,
+            q_pre_norm_window:  &s.q_pre_norm_window,
+            q_post_rope_window: &s.q_post_rope_window,
+            attn_out_window:    &s.attn_out_window,
+            attn_proj_window:   &s.attn_proj_window,
+            pre_ffn_rms_window: &s.pre_ffn_rms_window,
+            norm_x_ffn_window:  &s.norm_x_ffn_window,
+            ffn_gate_window:    &s.ffn_gate_window,
+            ffn_up_window:      &s.ffn_up_window,
+            ffn_act_window:     &s.ffn_act_window,
+            ffn_out_window:     &s.ffn_out_window,
+            ple_state_window:   &s.ple_state_window,
+            ple_act_window:     &s.ple_act_window,
+            ple_proj_window:    &s.ple_proj_window,
+        };
+
+        // 3. Per active position: point hidden at that position's
+        //    pre-final-norm slice, run final norm + output proj,
+        //    then backward_step.
         let mut total_loss = 0.0f32;
         for (p, &target_id) in targets.iter().enumerate() {
-            if target_id == u32::MAX {
-                continue;
-            }
-            let prefix = &input_ids[..=p];
-            total_loss += self.forward_backward(prefix, target_id).await?;
+            if target_id == u32::MAX { continue; }
+            self.model
+                .forward()
+                .set_hidden_from(&self.scratch.seq_pre_final_norm, (p as u64) * d_model_bytes);
+            self.model
+                .forward_mut()
+                .run_final_norm_and_output_proj_only()
+                .await
+                .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
+            let loss = self
+                .model
+                .forward_mut()
+                .backward_step(
+                    target_id, &capture, &lora_slots, &grads, &scratch_view,
+                    (p + 1) as u32, p as u32, false,
+                )
+                .await
+                .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
+            total_loss += loss;
         }
+
         Ok(total_loss / n_active as f32)
     }
 

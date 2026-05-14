@@ -373,6 +373,69 @@ impl Forward {
     /// scratch.
     pub fn logits_buffer(&self) -> &wgpu::Buffer { &self.logits }
 
+    /// Access the running `hidden` residual buffer. Exposed for the
+    /// training crate's single-forward PerPosition orchestrator,
+    /// which captures `self.hidden` (= pre-final-norm) per position.
+    pub fn hidden_buffer(&self) -> &wgpu::Buffer { &self.hidden }
+
+    /// Run final rmsnorm + the tiled output projection (no
+    /// softcap) over the current `self.hidden`, leaving the result
+    /// in `self.logits`. Used by the single-forward PerPosition
+    /// backward to compute logits at any captured pre-final-norm
+    /// position without re-running the layer stack.
+    pub async fn run_final_norm_and_output_proj_only(&mut self) -> Result<()> {
+        let d_model = self.cfg.d_model as usize;
+        let eps = self.cfg.rms_norm_eps;
+        let wc = self.wcache.clone();
+        let final_norm = wc.buffer_async("output_norm.weight").await?;
+        let token_embd_dtype = wc.dtype("token_embd.weight")?;
+
+        let mut enc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("fwd.out_proj_only"),
+        });
+        rmsnorm_chained(&self.ctx, &self.pipes, &mut enc,
+            &self.hidden, Some(&final_norm), &self.dummy,
+            &self.norm_x, d_model, eps);
+        self.ctx.queue.submit(Some(enc.finish()));
+
+        // Tiled output projection — same MAX_TILE_BYTES discipline as
+        // the in-line one in `run_forward_from_hidden`.
+        const MAX_TILE_BYTES: usize = 8 * 1024 * 1024;
+        let tiles = wc.buffer_tiles_async("token_embd.weight", MAX_TILE_BYTES).await?;
+        for tile in &tiles {
+            let mut enc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("fwd.out_proj_only.tile"),
+            });
+            run_matmul_into_buf(
+                &self.ctx, &self.pipes, &mut enc,
+                token_embd_dtype, &tile.buffer, &self.norm_x,
+                &self.logits_tile, tile.n_rows, d_model,
+                "fwd.out_proj_only_tile",
+            )?;
+            enc.copy_buffer_to_buffer(
+                &self.logits_tile, 0,
+                &self.logits, (tile.row_start as u64) * 4,
+                (tile.n_rows as u64) * 4,
+            );
+            self.ctx.queue.submit(Some(enc.finish()));
+        }
+        Ok(())
+    }
+
+    /// Overwrite `self.hidden` from a slice of `src` at byte offset
+    /// `src_offset`. Used by the single-forward PerPosition
+    /// orchestrator to point the final-norm + output proj at a
+    /// previously captured per-position pre-final-norm slice.
+    pub fn set_hidden_from(&self, src: &wgpu::Buffer, src_offset: u64) {
+        let d_model = self.cfg.d_model as usize;
+        let bytes = (d_model as u64) * 4;
+        let mut enc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("fwd.set_hidden_from"),
+        });
+        enc.copy_buffer_to_buffer(src, src_offset, &self.hidden, 0, bytes);
+        self.ctx.queue.submit(Some(enc.finish()));
+    }
+
     pub fn reset(&mut self) {
         self.pos = 0;
         for l in self.kv_lens.iter_mut() { *l = 0; }
@@ -706,7 +769,9 @@ impl Forward {
 
         // ---- CAPTURE: hidden_in (start-of-layer residual stream) ----
         if let Some(cap) = capture {
-            enc.copy_buffer_to_buffer(&self.hidden, 0, cap.hidden_in, 0, (d_model * 4) as u64);
+            enc.copy_buffer_to_buffer(&self.hidden, 0,
+                cap.hidden_in, (pos as u64) * (d_model as u64) * 4,
+                (d_model * 4) as u64);
         }
 
         // Pre-fetch all weights this layer needs (each is cached after first call).
@@ -782,7 +847,9 @@ impl Forward {
 
         // ---- CAPTURE: q_pre_norm (q matmul output, input to q_norm rmsnorm) ----
         if let Some(cap) = capture {
-            enc.copy_buffer_to_buffer(&self.q, 0, cap.q_pre_norm, 0, (n_heads * head_dim * 4) as u64);
+            enc.copy_buffer_to_buffer(&self.q, 0,
+                cap.q_pre_norm, (pos as u64) * (n_heads as u64) * (head_dim as u64) * 4,
+                (n_heads * head_dim * 4) as u64);
         }
 
         // per-head q_norm (weighted)
@@ -800,7 +867,9 @@ impl Forward {
 
         // ---- CAPTURE: q_post_rope (input to attention; reused in dkv pass) ----
         if let Some(cap) = capture {
-            enc.copy_buffer_to_buffer(&self.q_norm, 0, cap.q_post_rope, 0, (n_heads * head_dim * 4) as u64);
+            enc.copy_buffer_to_buffer(&self.q_norm, 0,
+                cap.q_post_rope, (pos as u64) * (n_heads as u64) * (head_dim as u64) * 4,
+                (n_heads * head_dim * 4) as u64);
         }
 
         if donor.is_none() {
@@ -888,7 +957,9 @@ impl Forward {
 
         // ---- CAPTURE: attn_out (input to o_proj) ----
         if let Some(cap) = capture {
-            enc.copy_buffer_to_buffer(&self.attn_out_buf, 0, cap.attn_out, 0, (n_heads * head_dim * 4) as u64);
+            enc.copy_buffer_to_buffer(&self.attn_out_buf, 0,
+                cap.attn_out, (pos as u64) * (n_heads as u64) * (head_dim as u64) * 4,
+                (n_heads * head_dim * 4) as u64);
         }
 
         // attn_proj = matmul(attn_out_buf, attn_output.weight)
@@ -907,7 +978,9 @@ impl Forward {
 
         // ---- CAPTURE: attn_proj (input to post_attn_norm rmsnorm) ----
         if let Some(cap) = capture {
-            enc.copy_buffer_to_buffer(&self.attn_proj, 0, cap.attn_proj, 0, (d_model * 4) as u64);
+            enc.copy_buffer_to_buffer(&self.attn_proj, 0,
+                cap.attn_proj, (pos as u64) * (d_model as u64) * 4,
+                (d_model * 4) as u64);
         }
 
         // norm_y = rmsnorm(attn_proj, post_attn_norm.weight)
@@ -920,7 +993,9 @@ impl Forward {
 
         // ---- CAPTURE: pre_ffn_rms (hidden after attn residual add) ----
         if let Some(cap) = capture {
-            enc.copy_buffer_to_buffer(&self.hidden, 0, cap.pre_ffn_rms, 0, (d_model * 4) as u64);
+            enc.copy_buffer_to_buffer(&self.hidden, 0,
+                cap.pre_ffn_rms, (pos as u64) * (d_model as u64) * 4,
+                (d_model * 4) as u64);
         }
 
         // ===== MLP =====
@@ -930,7 +1005,9 @@ impl Forward {
 
         // ---- CAPTURE: norm_x_ffn (input to gate/up matmul + LoRA) ----
         if let Some(cap) = capture {
-            enc.copy_buffer_to_buffer(&self.norm_x, 0, cap.norm_x_ffn, 0, (d_model * 4) as u64);
+            enc.copy_buffer_to_buffer(&self.norm_x, 0,
+                cap.norm_x_ffn, (pos as u64) * (d_model as u64) * 4,
+                (d_model * 4) as u64);
         }
 
         matmul_q4_k_chained(&self.ctx, &self.pipes, enc,
@@ -961,8 +1038,9 @@ impl Forward {
 
         // ---- CAPTURE: ffn_gate, ffn_up (inputs to GEGLU) ----
         if let Some(cap) = capture {
-            enc.copy_buffer_to_buffer(&self.ffn_gate, 0, cap.ffn_gate, 0, (ffn_n * 4) as u64);
-            enc.copy_buffer_to_buffer(&self.ffn_up,   0, cap.ffn_up,   0, (ffn_n * 4) as u64);
+            let ffn_pos_off = (pos as u64) * (ffn_n as u64) * 4;
+            enc.copy_buffer_to_buffer(&self.ffn_gate, 0, cap.ffn_gate, ffn_pos_off, (ffn_n * 4) as u64);
+            enc.copy_buffer_to_buffer(&self.ffn_up,   0, cap.ffn_up,   ffn_pos_off, (ffn_n * 4) as u64);
         }
 
         geglu_chained(&self.ctx, &self.pipes, enc,
@@ -970,7 +1048,9 @@ impl Forward {
 
         // ---- CAPTURE: ffn_act (input to ffn_down matmul) ----
         if let Some(cap) = capture {
-            enc.copy_buffer_to_buffer(&self.ffn_act, 0, cap.ffn_act, 0, (ffn_n * 4) as u64);
+            enc.copy_buffer_to_buffer(&self.ffn_act, 0,
+                cap.ffn_act, (pos as u64) * (ffn_n as u64) * 4,
+                (ffn_n * 4) as u64);
         }
 
         match down_dtype {
@@ -993,7 +1073,9 @@ impl Forward {
 
         // ---- CAPTURE: ffn_out (input to post_ffw_norm rmsnorm) ----
         if let Some(cap) = capture {
-            enc.copy_buffer_to_buffer(&self.ffn_out, 0, cap.ffn_out, 0, (d_model * 4) as u64);
+            enc.copy_buffer_to_buffer(&self.ffn_out, 0,
+                cap.ffn_out, (pos as u64) * (d_model as u64) * 4,
+                (d_model * 4) as u64);
         }
 
         rmsnorm_chained(&self.ctx, &self.pipes, enc,
@@ -1015,7 +1097,9 @@ impl Forward {
 
             // ---- CAPTURE: ple_state (input gate branch to PLE GEGLU) ----
             if let Some(cap) = capture {
-                enc.copy_buffer_to_buffer(&self.ple_state, 0, cap.ple_state, 0, (ple_dim * 4) as u64);
+                enc.copy_buffer_to_buffer(&self.ple_state, 0,
+                    cap.ple_state, (pos as u64) * (ple_dim as u64) * 4,
+                    (ple_dim * 4) as u64);
             }
 
             // Need the per-layer slice of `per_layer` as the second geglu input.
@@ -1035,7 +1119,9 @@ impl Forward {
 
             // ---- CAPTURE: ple_act (input to proj_w matmul) ----
             if let Some(cap) = capture {
-                enc.copy_buffer_to_buffer(&self.ple_act, 0, cap.ple_act, 0, (ple_dim * 4) as u64);
+                enc.copy_buffer_to_buffer(&self.ple_act, 0,
+                    cap.ple_act, (pos as u64) * (ple_dim as u64) * 4,
+                    (ple_dim * 4) as u64);
             }
 
             // projected = matmul(ple_act, proj_w) [ple_dim -> d_model]
@@ -1044,7 +1130,9 @@ impl Forward {
 
             // ---- CAPTURE: ple_proj (input to PLE rmsnorm) ----
             if let Some(cap) = capture {
-                enc.copy_buffer_to_buffer(&self.ple_proj, 0, cap.ple_proj, 0, (d_model * 4) as u64);
+                enc.copy_buffer_to_buffer(&self.ple_proj, 0,
+                    cap.ple_proj, (pos as u64) * (d_model as u64) * 4,
+                    (d_model * 4) as u64);
             }
 
             // norm_y = rmsnorm(ple_proj, post_norm_w)
@@ -1269,6 +1357,34 @@ pub struct BackwardScratchView<'a> {
     /// `[n_kv · head_dim]` window into a layer's seq-sized
     /// `v_pre_norm` capture.
     pub v_pre_norm_window: &'a wgpu::Buffer,
+    /// `[d_model]` window into `hidden_in` capture.
+    pub hidden_in_window: &'a wgpu::Buffer,
+    /// `[n_heads · head_dim]` window into `q_pre_norm` capture.
+    pub q_pre_norm_window: &'a wgpu::Buffer,
+    /// `[n_heads · head_dim]` window into `q_post_rope` capture.
+    pub q_post_rope_window: &'a wgpu::Buffer,
+    /// `[n_heads · head_dim]` window into `attn_out` capture.
+    pub attn_out_window: &'a wgpu::Buffer,
+    /// `[d_model]` window into `attn_proj` capture.
+    pub attn_proj_window: &'a wgpu::Buffer,
+    /// `[d_model]` window into `pre_ffn_rms` capture.
+    pub pre_ffn_rms_window: &'a wgpu::Buffer,
+    /// `[d_model]` window into `norm_x_ffn` capture.
+    pub norm_x_ffn_window: &'a wgpu::Buffer,
+    /// `[ffn_inter]` window into `ffn_gate` capture.
+    pub ffn_gate_window: &'a wgpu::Buffer,
+    /// `[ffn_inter]` window into `ffn_up` capture.
+    pub ffn_up_window: &'a wgpu::Buffer,
+    /// `[ffn_inter]` window into `ffn_act` capture.
+    pub ffn_act_window: &'a wgpu::Buffer,
+    /// `[d_model]` window into `ffn_out` capture.
+    pub ffn_out_window: &'a wgpu::Buffer,
+    /// `[ple_dim]` window into `ple_state` capture.
+    pub ple_state_window: &'a wgpu::Buffer,
+    /// `[ple_dim]` window into `ple_act` capture.
+    pub ple_act_window: &'a wgpu::Buffer,
+    /// `[d_model]` window into `ple_proj` capture.
+    pub ple_proj_window: &'a wgpu::Buffer,
 }
 
 impl Forward {
@@ -1391,7 +1507,9 @@ impl Forward {
                 let mut renc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("bwd.replay"),
                 });
-                renc.copy_buffer_to_buffer(cap.hidden_in, 0, &self.hidden, 0, d_model_bytes);
+                renc.copy_buffer_to_buffer(cap.hidden_in,
+                    (pos as u64) * d_model_bytes,
+                    &self.hidden, 0, d_model_bytes);
                 let saved_len = self.kv_lens[li];
                 if self.donor_map[li].is_none() && saved_len > 0 {
                     self.kv_lens[li] = saved_len - 1;
@@ -1510,16 +1628,57 @@ impl Forward {
         // Pre-copy the `pos`-slices of the seq-sized captures into
         // single-position windows so the rest of backward_layer can
         // bind them via `as_entire_binding()` without paying offset
-        // alignment friction. The per-history K/V LoRA backward
-        // re-copies *other* positions into the same windows.
+        // alignment friction. The per-history K/V LoRA backward and
+        // single-forward PerPosition both re-copy *other* positions
+        // into the same windows.
         let d_model_bytes = (d_model as u64) * 4;
         let kv_row_bytes  = (n_kv_heads as u64) * (head_dim as u64) * 4;
-        enc.copy_buffer_to_buffer(cap.norm_x_attn, (pos as u64) * d_model_bytes,
+        let n_heads_row_bytes = (n_heads as u64) * (head_dim as u64) * 4;
+        let ffn_row_bytes = (ffn_n as u64) * 4;
+        let pos_off = pos as u64;
+        // Three were already pre-copied (norm_x_attn, k_pre_norm,
+        // v_pre_norm) for per-history K/V LoRA backward; the rest
+        // (hidden_in, q_pre_norm, q_post_rope, attn_out, attn_proj,
+        // pre_ffn_rms, norm_x_ffn, ffn_gate, ffn_up, ffn_act,
+        // ffn_out, plus PLE if applicable) are needed for the full
+        // backward_layer chain to work uniformly across positions.
+        enc.copy_buffer_to_buffer(cap.norm_x_attn, pos_off * d_model_bytes,
             scratch.norm_x_attn_window, 0, d_model_bytes);
-        enc.copy_buffer_to_buffer(cap.k_pre_norm,  (pos as u64) * kv_row_bytes,
+        enc.copy_buffer_to_buffer(cap.k_pre_norm,  pos_off * kv_row_bytes,
             scratch.k_pre_norm_window,  0, kv_row_bytes);
-        enc.copy_buffer_to_buffer(cap.v_pre_norm,  (pos as u64) * kv_row_bytes,
+        enc.copy_buffer_to_buffer(cap.v_pre_norm,  pos_off * kv_row_bytes,
             scratch.v_pre_norm_window,  0, kv_row_bytes);
+        enc.copy_buffer_to_buffer(cap.hidden_in,   pos_off * d_model_bytes,
+            scratch.hidden_in_window,  0, d_model_bytes);
+        enc.copy_buffer_to_buffer(cap.q_pre_norm,  pos_off * n_heads_row_bytes,
+            scratch.q_pre_norm_window, 0, n_heads_row_bytes);
+        enc.copy_buffer_to_buffer(cap.q_post_rope, pos_off * n_heads_row_bytes,
+            scratch.q_post_rope_window, 0, n_heads_row_bytes);
+        enc.copy_buffer_to_buffer(cap.attn_out,    pos_off * n_heads_row_bytes,
+            scratch.attn_out_window,   0, n_heads_row_bytes);
+        enc.copy_buffer_to_buffer(cap.attn_proj,   pos_off * d_model_bytes,
+            scratch.attn_proj_window,  0, d_model_bytes);
+        enc.copy_buffer_to_buffer(cap.pre_ffn_rms, pos_off * d_model_bytes,
+            scratch.pre_ffn_rms_window, 0, d_model_bytes);
+        enc.copy_buffer_to_buffer(cap.norm_x_ffn,  pos_off * d_model_bytes,
+            scratch.norm_x_ffn_window, 0, d_model_bytes);
+        enc.copy_buffer_to_buffer(cap.ffn_gate,    pos_off * ffn_row_bytes,
+            scratch.ffn_gate_window,   0, ffn_row_bytes);
+        enc.copy_buffer_to_buffer(cap.ffn_up,      pos_off * ffn_row_bytes,
+            scratch.ffn_up_window,     0, ffn_row_bytes);
+        enc.copy_buffer_to_buffer(cap.ffn_act,     pos_off * ffn_row_bytes,
+            scratch.ffn_act_window,    0, ffn_row_bytes);
+        enc.copy_buffer_to_buffer(cap.ffn_out,     pos_off * d_model_bytes,
+            scratch.ffn_out_window,    0, d_model_bytes);
+        if self.cfg.has_ple() {
+            let ple_dim_bytes = (self.cfg.ple_dim as u64) * 4;
+            enc.copy_buffer_to_buffer(cap.ple_state, pos_off * ple_dim_bytes,
+                scratch.ple_state_window, 0, ple_dim_bytes);
+            enc.copy_buffer_to_buffer(cap.ple_act,   pos_off * ple_dim_bytes,
+                scratch.ple_act_window,   0, ple_dim_bytes);
+            enc.copy_buffer_to_buffer(cap.ple_proj,  pos_off * d_model_bytes,
+                scratch.ple_proj_window,  0, d_model_bytes);
+        }
 
         // ----- PLE injection backward -----
         //
@@ -1546,7 +1705,7 @@ impl Forward {
             // post_ffw_norm rmsnorm backward of the PLE rmsnorm:
             // d_ple_proj = rmsnorm_back(cap.ple_proj, post_norm_w, d_hidden) → d_hidden_tmp
             rmsnorm_backward_chained(&self.ctx, &self.pipes, enc,
-                cap.ple_proj, &post_norm_w, scratch.d_hidden, scratch.d_hidden_tmp,
+                scratch.ple_proj_window, &post_norm_w, scratch.d_hidden, scratch.d_hidden_tmp,
                 d_model, eps, true);
             // matmul back through proj_w: d_ple_act = proj_wᵀ · d_ple_proj.
             matmul_q4_k_backward_input_chained(&self.ctx, &self.pipes, enc,
@@ -1560,7 +1719,7 @@ impl Forward {
                 scratch.ple_per_layer_tmp, 0, layer_bytes);
             // geglu back: d_gate → d_ple_state, d_up → d_ple_up_discard.
             geglu_backward_chained(&self.ctx, &self.pipes, enc,
-                cap.ple_state, scratch.ple_per_layer_tmp, scratch.d_ple_act,
+                scratch.ple_state_window, scratch.ple_per_layer_tmp, scratch.d_ple_act,
                 scratch.d_ple_state, scratch.d_ple_up_discard, ple_dim);
             // matmul back through inp_gate_w: d_hidden_from_ple = inp_gate_wᵀ · d_ple_state
             //   → d_hidden_tmp (safe to overwrite at this point).
@@ -1578,7 +1737,7 @@ impl Forward {
         //
         // post_ffw_norm rmsnorm backward → d_ffn_out into d_hidden_tmp.
         rmsnorm_backward_chained(&self.ctx, &self.pipes, enc,
-            cap.ffn_out, &post_ffw_w, scratch.d_hidden, scratch.d_hidden_tmp,
+            scratch.ffn_out_window, &post_ffw_w, scratch.d_hidden, scratch.d_hidden_tmp,
             d_model, eps, true);
 
         // ffn_down matmul backward: d_ffn_act = down_wᵀ · d_ffn_out → d_ffn_a.
@@ -1610,13 +1769,13 @@ impl Forward {
                 d_lora.a, d_lora.z, scratch.d_ffn_a,
                 r, ffn_n, s, true);
             lora_outer_add_chained(&self.ctx, &self.pipes, enc,
-                d_lora.z, cap.ffn_act, d_grad.d_a,
+                d_lora.z, scratch.ffn_act_window, d_grad.d_a,
                 r, ffn_n, s, true);
         }
 
         // geglu backward → d_ffn_gate (d_ffn_b), d_ffn_up (d_ffn_c).
         geglu_backward_chained(&self.ctx, &self.pipes, enc,
-            cap.ffn_gate, cap.ffn_up, scratch.d_ffn_a,
+            scratch.ffn_gate_window, scratch.ffn_up_window, scratch.d_ffn_a,
             scratch.d_ffn_b, scratch.d_ffn_c, ffn_n);
 
         // gate matmul backward: d_norm_x_ffn_via_gate = gate_wᵀ · d_ffn_gate → d_hidden_tmp.
@@ -1638,7 +1797,7 @@ impl Forward {
                 g_lora.a, g_lora.z, scratch.d_hidden_tmp,
                 r, d_model, s, true);
             lora_outer_add_chained(&self.ctx, &self.pipes, enc,
-                g_lora.z, cap.norm_x_ffn, g_grad.d_a,
+                g_lora.z, scratch.norm_x_ffn_window, g_grad.d_a,
                 r, d_model, s, true);
         }
         // up matmul backward: d_norm_x_ffn_via_up → d_hidden_tmp2.
@@ -1658,7 +1817,7 @@ impl Forward {
                 u_lora.a, u_lora.z, scratch.d_hidden_tmp2,
                 r, d_model, s, true);
             lora_outer_add_chained(&self.ctx, &self.pipes, enc,
-                u_lora.z, cap.norm_x_ffn, u_grad.d_a,
+                u_lora.z, scratch.norm_x_ffn_window, u_grad.d_a,
                 r, d_model, s, true);
         }
         // d_hidden_tmp += d_hidden_tmp2 (full d_norm_x_ffn).
@@ -1667,7 +1826,7 @@ impl Forward {
 
         // mlp_norm rmsnorm backward → d_pre_ffn_rms into d_hidden_tmp2.
         rmsnorm_backward_chained(&self.ctx, &self.pipes, enc,
-            cap.pre_ffn_rms, &mlp_norm_w, scratch.d_hidden_tmp, scratch.d_hidden_tmp2,
+            scratch.pre_ffn_rms_window, &mlp_norm_w, scratch.d_hidden_tmp, scratch.d_hidden_tmp2,
             d_model, eps, true);
         // Accumulate FFN block branch contribution into running d_hidden.
         residual_add_chained(&self.ctx, &self.pipes, enc,
@@ -1678,7 +1837,7 @@ impl Forward {
         //
         // post_attn_norm rmsnorm backward → d_attn_proj into d_hidden_tmp.
         rmsnorm_backward_chained(&self.ctx, &self.pipes, enc,
-            cap.attn_proj, &post_attn_w, scratch.d_hidden, scratch.d_hidden_tmp,
+            scratch.attn_proj_window, &post_attn_w, scratch.d_hidden, scratch.d_hidden_tmp,
             d_model, eps, true);
 
         // o_proj matmul backward: d_attn_out = o_wᵀ · d_attn_proj → scratch.d_attn_out.
@@ -1704,7 +1863,7 @@ impl Forward {
                 r, n_heads * head_dim, s, true);
             // dA_o += s · u_o ⊗ attn_out (= cap.attn_out).
             lora_outer_add_chained(&self.ctx, &self.pipes, enc,
-                o_lora.z, cap.attn_out, o_grad.d_a,
+                o_lora.z, scratch.attn_out_window, o_grad.d_a,
                 r, n_heads * head_dim, s, true);
         }
 
@@ -1713,7 +1872,7 @@ impl Forward {
             self.cfg.sliding_window as usize
         } else { 0 };
         attention_probs_chained(&self.ctx, &self.pipes, enc,
-            cap.q_post_rope, &self.kv_k[i as usize], scratch.attn_probs,
+            scratch.q_post_rope_window, &self.kv_k[i as usize], scratch.attn_probs,
             head_dim, n_heads, n_kv_heads,
             pos as usize, history_len as usize, window);
 
@@ -1725,7 +1884,7 @@ impl Forward {
             head_dim, n_heads, n_kv_heads, history_len as usize);
         // Attn backward pass 2: d_k_hist, d_v_hist.
         attention_backward_dkv_chained(&self.ctx, &self.pipes, enc,
-            cap.q_post_rope, scratch.attn_probs, scratch.d_attn_out,
+            scratch.q_post_rope_window, scratch.attn_probs, scratch.d_attn_out,
             scratch.attn_d_scores, scratch.d_k_hist, scratch.d_v_hist,
             head_dim, n_heads, n_kv_heads, history_len as usize);
 
@@ -1739,7 +1898,7 @@ impl Forward {
             head_dim, n_heads, pos as usize, rope_dims, rope_base);
         // q_norm rmsnorm backward → d_q_pre_norm.
         rmsnorm_per_row_backward_chained(&self.ctx, &self.pipes, enc,
-            cap.q_pre_norm, &q_norm_w, scratch.d_q, scratch.d_q_pre_norm,
+            scratch.q_pre_norm_window, &q_norm_w, scratch.d_q, scratch.d_q_pre_norm,
             n_heads, head_dim, eps, true);
         // q matmul backward: d_norm_x_attn_via_q → d_hidden_tmp (overwrites d_attn_proj).
         matmul_q4_k_backward_input_chained(&self.ctx, &self.pipes, enc,
@@ -1949,7 +2108,7 @@ impl Forward {
         // attn_norm rmsnorm backward — flows the attn block contribution
         // into d_hidden_tmp2, then accumulates into running d_hidden.
         rmsnorm_backward_chained(&self.ctx, &self.pipes, enc,
-            cap.hidden_in, &attn_norm_w, scratch.d_hidden_tmp, scratch.d_hidden_tmp2,
+            scratch.hidden_in_window, &attn_norm_w, scratch.d_hidden_tmp, scratch.d_hidden_tmp2,
             d_model, eps, true);
         residual_add_chained(&self.ctx, &self.pipes, enc,
             scratch.d_hidden, scratch.d_hidden_tmp2, d_model);
