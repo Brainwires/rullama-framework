@@ -190,6 +190,29 @@ impl Model {
         Some((begin, end))
     }
 
+    /// Evict cached vision-tower weights from GPU memory. The next
+    /// `encode_image` call will re-upload. Returns the number of cache entries
+    /// freed. Useful on memory-constrained devices (e.g. iPhone) where holding
+    /// text + vision + audio simultaneously exceeds the RAM cap; call this
+    /// between turns when the next message won't include an image.
+    pub fn release_vision_weights_native(&self) -> usize {
+        let wc = self.forward.wcache();
+        wc.drop_prefix("v.") + wc.drop_prefix("mm.input_projection")
+    }
+
+    /// Evict cached audio-tower weights from GPU memory. Symmetric to
+    /// [`release_vision_weights_native`].
+    pub fn release_audio_weights_native(&self) -> usize {
+        let wc = self.forward.wcache();
+        wc.drop_prefix("a.") + wc.drop_prefix("mm.a.")
+    }
+
+    /// Total bytes currently held in the shared `WeightCache`. Useful for
+    /// memory accounting / regression checks around `release_*_weights`.
+    pub fn cached_weight_bytes_native(&self) -> u64 {
+        self.forward.wcache().cached_bytes()
+    }
+
     /// Native-friendly constructor: takes ownership of GGUF bytes, initializes WebGPU,
     /// and prepares all the on-GPU resources (compute pipelines, weight cache).
     pub async fn load_native(bytes: Vec<u8>) -> Result<Self> {
@@ -483,6 +506,26 @@ impl Model {
         let begin = self.tokenizer.str_to_id("<|audio>")?;
         let end   = self.tokenizer.str_to_id("<audio|>")?;
         Some(vec![begin, end])
+    }
+
+    /// Evict cached vision-tower weights from GPU memory. Returns the number
+    /// of cache entries freed. Call between turns on iPhone when the next
+    /// message won't include an image to free ~3 GB.
+    #[wasm_bindgen(js_name = releaseVisionWeights)]
+    pub fn release_vision_weights_js(&self) -> usize {
+        self.release_vision_weights_native()
+    }
+
+    /// Evict cached audio-tower weights from GPU memory.
+    #[wasm_bindgen(js_name = releaseAudioWeights)]
+    pub fn release_audio_weights_js(&self) -> usize {
+        self.release_audio_weights_native()
+    }
+
+    /// Total bytes currently held in the shared GPU weight cache.
+    #[wasm_bindgen(js_name = cachedWeightBytes, getter)]
+    pub fn cached_weight_bytes_js(&self) -> u64 {
+        self.cached_weight_bytes_native()
     }
 
     /// Render a single user message (and optional system message) into the Gemma 4
