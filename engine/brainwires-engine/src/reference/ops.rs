@@ -100,21 +100,31 @@ pub fn softmax(x: &mut [f32]) {
 }
 
 /// `y = gelu(gate) * up` — Gemma 4's GeGLU MLP activation.
-/// Uses the tanh-approximation GELU that ggml's `ggml_geglu_split` actually
-/// computes (see `ggml-cpu/vec.h: ggml_gelu_f32`). Note: ggml ALSO has an
-/// `ggml_geglu_erf_split` variant; Ollama's `Tensor.GELU` routes to the
-/// tanh-approximation `ggml_geglu_split`, so we use that here for parity.
+/// Uses the exact (erf-based) GELU, matching ggml's `ggml_geglu_split`.
 pub fn geglu_split(gate: &[f32], up: &[f32], out: &mut [f32]) {
     debug_assert_eq!(gate.len(), up.len());
     debug_assert_eq!(out.len(), gate.len());
-    const SQRT_2_OVER_PI: f32 = 0.797_884_56;
-    const GELU_COEF_A: f32 = 0.044_715;
+    const SQRT_HALF: f32 = 0.707_106_77;
     for i in 0..gate.len() {
         let g = gate[i];
-        let inner = SQRT_2_OVER_PI * g * (1.0 + GELU_COEF_A * g * g);
-        let gelu = 0.5 * g * (1.0 + inner.tanh());
+        let gelu = 0.5 * g * (1.0 + erf_approx(g * SQRT_HALF));
         out[i] = gelu * up[i];
     }
+}
+
+/// Abramowitz & Stegun 7.1.26 erf approximation; max error ~1.5e-7. Matches ggml's GELU.
+fn erf_approx(x: f32) -> f32 {
+    let sign = if x < 0.0 { -1.0 } else { 1.0 };
+    let x = x.abs();
+    const A1: f32 = 0.254_829_592;
+    const A2: f32 = -0.284_496_736;
+    const A3: f32 = 1.421_413_741;
+    const A4: f32 = -1.453_152_027;
+    const A5: f32 = 1.061_405_429;
+    const P:  f32 = 0.327_591_1;
+    let t = 1.0 / (1.0 + P * x);
+    let y = 1.0 - (((((A5 * t + A4) * t) + A3) * t + A2) * t + A1) * t * (-x * x).exp();
+    sign * y
 }
 
 /// `y = cap * tanh(x / cap)` element-wise. Used for Gemma 4's final logit softcap.
@@ -189,11 +199,8 @@ pub fn rmsnorm_backward(
 
 /// GeGLU backward — produces `d_gate` and `d_up` given `dy`, `gate`, `up`.
 ///
-/// Matches the tanh-approximation GELU used by [`geglu_split`]:
-///   `gelu(g) = 0.5 · g · (1 + tanh(φ))`, where
-///   `φ(g)   = √(2/π) · g · (1 + α·g²)`, `α = 0.044715`.
-/// So `gelu'(g) = 0.5·(1 + tanh φ) + 0.5·g·sech²(φ)·φ'(g)`,
-/// with `φ'(g) = √(2/π) · (1 + 3·α·g²)`.
+/// `d_gate[i] = dy[i] · gelu'(gate[i]) · up[i]`,
+/// `d_up[i]   = dy[i] · gelu(gate[i])`.
 pub fn geglu_backward(
     gate: &[f32],
     up: &[f32],
@@ -206,15 +213,14 @@ pub fn geglu_backward(
     assert_eq!(dy.len(), n);
     assert_eq!(d_gate.len(), n);
     assert_eq!(d_up.len(), n);
-    const SQRT_2_OVER_PI: f32 = 0.797_884_56;
-    const GELU_COEF_A: f32 = 0.044_715;
+    let sqrt_half: f32 = std::f32::consts::FRAC_1_SQRT_2;
+    let sqrt_2_over_pi: f32 = (2.0 / std::f32::consts::PI).sqrt();
     for i in 0..n {
         let g = gate[i];
-        let inner = SQRT_2_OVER_PI * g * (1.0 + GELU_COEF_A * g * g);
-        let t = inner.tanh();
-        let dphi = SQRT_2_OVER_PI * (1.0 + 3.0 * GELU_COEF_A * g * g);
-        let gelu = 0.5 * g * (1.0 + t);
-        let gelu_prime = 0.5 * (1.0 + t) + 0.5 * g * (1.0 - t * t) * dphi;
+        let phi = 1.0 + erf_approx(g * sqrt_half);
+        let dphi = sqrt_2_over_pi * (-0.5 * g * g).exp();
+        let gelu = 0.5 * g * phi;
+        let gelu_prime = 0.5 * phi + 0.5 * g * dphi;
         d_gate[i] = dy[i] * gelu_prime * up[i];
         d_up[i] = dy[i] * gelu;
     }
