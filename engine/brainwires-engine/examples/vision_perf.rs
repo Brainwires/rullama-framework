@@ -75,17 +75,11 @@ print(f"{{ow}}x{{oh}} -> {{tw}}x{{th}}")
         return ExitCode::from(2);
     }
 
-    let baseline = model.cached_weight_bytes_native();
-    println!("cached_weight_bytes before encode: {} MiB", baseline / (1024 * 1024));
-
     println!("\nFIRST encode (cold cache):");
     let t = Instant::now();
     let soft1 = pollster::block_on(model.encode_image_native(&pixels, th, tw, None)).expect("encode");
     let dt1 = t.elapsed();
     println!("  encoded {} f32 in {:?}", soft1.len(), dt1);
-    let after_cold = model.cached_weight_bytes_native();
-    println!("  cached_weight_bytes after cold: {} MiB (+{} MiB)",
-        after_cold / (1024 * 1024), (after_cold - baseline) / (1024 * 1024));
 
     println!("\nSECOND encode (warm cache):");
     let t = Instant::now();
@@ -98,11 +92,6 @@ print(f"{{ow}}x{{oh}} -> {{tw}}x{{th}}")
     let _soft3 = pollster::block_on(model.encode_image_native(&pixels, th, tw, None)).expect("encode");
     let dt3 = t.elapsed();
     println!("  encoded in {:?}", dt3);
-
-    let freed = model.release_vision_weights_native();
-    let after_release = model.cached_weight_bytes_native();
-    println!("\nrelease_vision_weights freed {} entries; cache now {} MiB",
-        freed, after_release / (1024 * 1024));
 
     // Sanity: outputs should be identical (deterministic).
     let mut max_abs = 0f32;

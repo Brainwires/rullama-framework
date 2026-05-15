@@ -371,43 +371,58 @@ impl VisionForward {
         self.ctx.queue.write_buffer(&self.pos_x_buf, 0, cast_slice(&pos_x));
         self.ctx.queue.write_buffer(&self.pos_y_buf, 0, cast_slice(&pos_y));
 
-        // Prefetch both prologue/epilogue weights from cache before recording —
-        // this lets the entire encode (prologue + 16 layers + epilogue) live in
-        // a single CommandEncoder with a single terminal queue.submit().
-        let patch_w = self.wcache.buffer_async("v.patch_embd.weight").await?;
-        let proj_w = self.wcache.buffer_async("mm.input_projection.weight").await?;
+        // Prologue: patch embed + position add. Submit separately so the
+        // patch_w buffer (fetched ephemerally) drops as soon as its block
+        // is in flight, and the subsequent per-block submits start with
+        // a clean recording scope.
+        //
+        // `patch_w` is tiny (~0.5 MB F16); could've gone in the cache, but
+        // making it ephemeral too keeps the residency model uniform — only
+        // `v.position_embd.weight` and `v.clamp_data` (loaded in `new()`)
+        // and the projector (`proj_w`, fetched below) stay resident.
+        let patch_w = self.wcache.buffer_async_ephemeral("v.patch_embd.weight").await?;
+        {
+            let mut enc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("vfwd.prologue.encoder"),
+            });
 
-        let mut enc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("vfwd.encoder"),
-        });
+            // ---- 1. Patch embedding via Conv2D (k=ps, s=ps, pad=0) ----
+            // Output is in channel-LAST layout [patches_y, patches_x, hidden] (per
+            // conv2d.wgsl), which we read as [n_patches, hidden] downstream.
+            conv2d_chained(
+                &self.ctx, &self.pipes, &mut enc,
+                &patch_w, &self.pixel_buf, &self.hidden_a,
+                cfg.num_channels as usize, img_h, img_w,
+                hidden, patches_y, patches_x,
+                ps, ps, ps, ps, 0, 0,
+            );
 
-        // ---- 1. Patch embedding via Conv2D (k=ps, s=ps, pad=0) ----
-        // Output is in channel-LAST layout [patches_y, patches_x, hidden] (per
-        // conv2d.wgsl), which we read as [n_patches, hidden] downstream.
-        conv2d_chained(
-            &self.ctx, &self.pipes, &mut enc,
-            &patch_w, &self.pixel_buf, &self.hidden_a,
-            cfg.num_channels as usize, img_h, img_w,
-            hidden, patches_y, patches_x,
-            ps, ps, ps, ps, 0, 0,
-        );
+            // ---- 2. Add 2D position embeddings ----
+            pos_embed_add_chained(
+                &self.ctx, &self.pipes, &mut enc,
+                &self.hidden_a, &self.pos_embd, &self.pos_x_buf, &self.pos_y_buf,
+                n_patches, hidden, cfg.pos_size as usize,
+            );
 
-        // ---- 2. Add 2D position embeddings ----
-        pos_embed_add_chained(
-            &self.ctx, &self.pipes, &mut enc,
-            &self.hidden_a, &self.pos_embd, &self.pos_x_buf, &self.pos_y_buf,
-            n_patches, hidden, cfg.pos_size as usize,
-        );
+            self.ctx.queue.submit(Some(enc.finish()));
+        }
+        drop(patch_w);
 
-        // ---- 3. Transformer layers, all chained into the same encoder ----
-        // The progress callback fires after each layer is *recorded*, not when
-        // GPU work completes — all 16 blocks now flush together at the final
-        // submit below. This trades fine-grained GPU progress for ~16× fewer
-        // CPU↔GPU sync points.
+        // ---- 3. Transformer layers (each submits its own encoder) ----
         for i in 0..cfg.n_layers {
-            self.encode_layer(&mut enc, i, n_patches, hidden, ffn_inter, n_heads, head_dim, eps).await?;
+            self.encode_layer(i, n_patches, hidden, ffn_inter, n_heads, head_dim, eps).await?;
             if let Some(cb) = progress { cb(i + 1, cfg.n_layers); }
         }
+
+        // Epilogue: pool, scale, projector, final norm, readback. The
+        // projector weight (`mm.input_projection`, ~2.4 MB F16) is fetched
+        // ephemerally too — small but consistent with the policy. The
+        // epilogue is its own encoder so the per-block submit cadence
+        // doesn't leak into the readback path.
+        let proj_w = self.wcache.buffer_async_ephemeral("mm.input_projection.weight").await?;
+        let mut enc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("vfwd.epilogue.encoder"),
+        });
 
         // ---- 4. AvgPool2D 3×3 ----
         // hidden_a is [patches_y, patches_x, hidden] (patch-major matches our
@@ -470,15 +485,16 @@ impl VisionForward {
         Ok(result)
     }
 
-    /// Run one ViT block. The 13 per-block weight handles are fetched from
-    /// the shared `WeightCache` — first encode pays the upload, subsequent
-    /// encodes reuse cached Arc handles. Total resident vision weight after
-    /// all 16 blocks have been touched is ~3 GB on gemma4:e2b; release via
-    /// `Model::release_vision_weights()` when switching modes on a
-    /// memory-constrained device.
+    /// Run one ViT block. Owns its own CommandEncoder + submit so the
+    /// 13 per-block weight buffers fetched ephemerally below can actually
+    /// be released by wgpu before the next block's weights upload — wgpu
+    /// keeps bind-group refs to buffers until the recording submission
+    /// completes, so a single encoder spanning all 16 blocks would still
+    /// hold ~3 GB of vision weights at peak even with `buffer_async_ephemeral`.
+    /// Per-block submit caps peak vision-weight residency at one block
+    /// (~200 MB), which is what makes multimodal load fit on iPhone.
     async fn encode_layer(
         &self,
-        enc: &mut wgpu::CommandEncoder,
         i: u32,
         n_patches: usize,
         hidden: usize,
@@ -490,19 +506,31 @@ impl VisionForward {
         let prefix = format!("v.blk.{i}.");
         let clamps = &self.layer_clamps[i as usize];
 
-        let ln1_w  = self.wcache.buffer_async(&format!("{prefix}ln1.weight")).await?;
-        let ln2_w  = self.wcache.buffer_async(&format!("{prefix}ln2.weight")).await?;
-        let post_attn_w = self.wcache.buffer_async(&format!("{prefix}attn_post_norm.weight")).await?;
-        let post_ffn_w  = self.wcache.buffer_async(&format!("{prefix}ffn_post_norm.weight")).await?;
-        let q_w = self.wcache.buffer_async(&format!("{prefix}attn_q.weight")).await?;
-        let k_w = self.wcache.buffer_async(&format!("{prefix}attn_k.weight")).await?;
-        let v_w = self.wcache.buffer_async(&format!("{prefix}attn_v.weight")).await?;
-        let o_w = self.wcache.buffer_async(&format!("{prefix}attn_out.weight")).await?;
-        let q_norm_w = self.wcache.buffer_async(&format!("{prefix}attn_q_norm.weight")).await?;
-        let k_norm_w = self.wcache.buffer_async(&format!("{prefix}attn_k_norm.weight")).await?;
-        let gate_w = self.wcache.buffer_async(&format!("{prefix}ffn_gate.weight")).await?;
-        let up_w   = self.wcache.buffer_async(&format!("{prefix}ffn_up.weight")).await?;
-        let down_w = self.wcache.buffer_async(&format!("{prefix}ffn_down.weight")).await?;
+        // Per-layer weights, fetched fresh each call. Drop at end of scope →
+        // wgpu releases the GPU allocations once this submission's bind
+        // groups are also dropped.
+        let ln1_w  = self.wcache.buffer_async_ephemeral(&format!("{prefix}ln1.weight")).await?;
+        let ln2_w  = self.wcache.buffer_async_ephemeral(&format!("{prefix}ln2.weight")).await?;
+        let post_attn_w = self.wcache.buffer_async_ephemeral(&format!("{prefix}attn_post_norm.weight")).await?;
+        let post_ffn_w  = self.wcache.buffer_async_ephemeral(&format!("{prefix}ffn_post_norm.weight")).await?;
+        let q_w = self.wcache.buffer_async_ephemeral(&format!("{prefix}attn_q.weight")).await?;
+        let k_w = self.wcache.buffer_async_ephemeral(&format!("{prefix}attn_k.weight")).await?;
+        let v_w = self.wcache.buffer_async_ephemeral(&format!("{prefix}attn_v.weight")).await?;
+        let o_w = self.wcache.buffer_async_ephemeral(&format!("{prefix}attn_out.weight")).await?;
+        let q_norm_w = self.wcache.buffer_async_ephemeral(&format!("{prefix}attn_q_norm.weight")).await?;
+        let k_norm_w = self.wcache.buffer_async_ephemeral(&format!("{prefix}attn_k_norm.weight")).await?;
+        let gate_w = self.wcache.buffer_async_ephemeral(&format!("{prefix}ffn_gate.weight")).await?;
+        let up_w   = self.wcache.buffer_async_ephemeral(&format!("{prefix}ffn_up.weight")).await?;
+        let down_w = self.wcache.buffer_async_ephemeral(&format!("{prefix}ffn_down.weight")).await?;
+
+        let mut owned_enc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some(&format!("vfwd.block{i}.encoder")),
+        });
+        // Reborrow as `&mut` so the existing dispatch calls (which expect
+        // a `&mut wgpu::CommandEncoder`) compile unchanged. The NLL borrow
+        // ends at the explicit `drop(enc)` below, freeing `owned_enc` for
+        // `finish()`.
+        let enc: &mut wgpu::CommandEncoder = &mut owned_enc;
 
         // ---- Pre-attention norm into hidden_b (residual stays in hidden_a) ----
         rmsnorm_per_row_chained(
@@ -677,6 +705,16 @@ impl VisionForward {
             scale_chained(&self.ctx, &self.pipes, enc,
                 &self.hidden_a, n_patches * hidden, s);
         }
+
+        // Submit this block. NLL ends the `enc` reborrow at its last use
+        // (the scale_chained / residual_add above), so `owned_enc` is
+        // free to consume here. The submit-and-drop releases wgpu's
+        // internal bind-group refs to the per-block weight buffers;
+        // combined with the local `ln1_w`/`q_w`/… ephemeral handles
+        // going out of scope when this function returns, the GPU memory
+        // for this block's weights is freed before the next block fetches
+        // its own.
+        self.ctx.queue.submit(Some(owned_enc.finish()));
 
         Ok(())
     }
