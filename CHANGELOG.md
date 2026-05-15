@@ -5,9 +5,82 @@ All notable changes to the Brainwires Framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.0] - 2026-05-15
 
 ### Refactored (BREAKING)
+
+#### Home automation moved out to `future/home-automation/`
+
+The `brainwires-hardware` crate sheds its home-automation surface. The
+`homeauto` module (Matter 1.3, Zigbee 3.0, Z-Wave Plus v2, Thread 1.3.0) and
+the `matter-tool` CLI moved to a standalone workspace at
+`future/home-automation/` — outside the framework workspace and not
+published to crates.io. The Matter / Zigbee / Z-Wave / Thread protocol code
+itself is intact, but a handful of surfaces (Matter event subscription,
+BLE transport on Windows, NetworkCommissioning write, full ZCL value-type
+encoding) were unfinished, so the whole stack got parked rather than
+shipping as `Err("not yet implemented")` returns.
+
+- **`crates/brainwires-hardware/src/homeauto/` deleted** — all four protocol
+  subtrees (62 .rs files, ~18,500 LOC) moved to
+  `future/home-automation/brainwires-homeauto/`.
+- **`brainwires-hardware` features dropped**: `zigbee`, `zwave`, `thread`,
+  `matter`, `matter-ble`, `homeauto`, `homeauto-full`. The `full` feature no
+  longer pulls in any home-auto features.
+- **`extras/matter-tool/` deleted** — moved to
+  `future/home-automation/matter-tool/`.
+- **Workspace deps dropped from `brainwires-hardware`**: matter crypto stack
+  (`mdns-sd`, `gethostname`, `p256`, `ecdsa`, `hmac`, `hkdf`, `pbkdf2`,
+  `aes`, `ccm`, `der`, `pkcs8`, `sha2`, `rand_core`, `zeroize`, `hex`),
+  zigbee/zwave serial (`tokio-serial`, `crc`, `bytes`), and thread
+  (`reqwest`).
+
+API breakage:
+- `brainwires_hardware::homeauto::*` — gone. Use `brainwires_homeauto::*`
+  from `future/home-automation/brainwires-homeauto`. Re-folding into the
+  framework will happen once the unfinished pieces are closed.
+
+#### `EmailProvider::Gmail` OAuth2 variant removed
+
+The Gmail OAuth2 backend variant on `brainwires_tool_builtins::email::EmailProvider`
+was a stub returning `Err("Gmail OAuth2 ... not yet implemented")` for send,
+search, read, and list. It's gone.
+
+- **`EmailProvider::Gmail` enum variant deleted** along with its four
+  `bail!()` match arms.
+- IMAP/SMTP still works against Gmail with an app password — that path is
+  the supported Gmail integration.
+- The separate `email::gmail_push::GmailPushHandler` (Google Cloud Pub/Sub
+  webhook ingestion) is **unchanged** and continues to work. The two
+  surfaces share the "Gmail" name but are independent.
+
+API breakage:
+- `EmailProvider::Gmail { client_id, client_secret, refresh_token }` — gone.
+  Switch to `EmailProvider::ImapSmtp { ... }` with a Gmail app password.
+
+#### Stack-graphs name-resolution stub removed
+
+The `brainwires_rag::code_analysis::stack_graphs` module was scaffolded as
+an empty stub in commit `d772b21` (pre-release review, 2026-03-06) only to
+satisfy a dangling `pub mod` declaration that had survived a refactor — it
+had no real implementation and no plan or PRD calling for one. The
+`HybridRelationsProvider` already falls through to the tree-sitter
+(`RepoMap`) path for actual definition/reference extraction, so the stub
+contributed nothing.
+
+- **`code_analysis::stack_graphs` module deleted**.
+- **`PrecisionLevel::High` variant removed** from
+  `brainwires_rag::code_analysis::types::PrecisionLevel`. The remaining
+  variants are `Medium` (AST-based) and `Low` (text-based).
+- **`HybridRelationsProvider::new()` signature simplified** — the
+  `_enable_stack_graphs: bool` parameter is gone. Constructor is no-arg.
+- **`HybridRelationsProvider::has_stack_graphs_for()` removed**.
+- **`RelationsConfig::use_stack_graphs` field removed**.
+
+API breakage:
+- `HybridRelationsProvider::new(false)` → `HybridRelationsProvider::new()`.
+- Matching on `PrecisionLevel::High` no longer compiles.
+- `RelationsConfig { use_stack_graphs: ..., .. }` no longer compiles.
 
 #### Low-level inference + training crates moved out to `rullama`
 

@@ -77,35 +77,6 @@ rustpotter = { version = "3.0.3-candle-0.10", optional = true }
 # Voice Activity Detection — WebRTC VAD (vad feature)
 webrtc-vad = { version = "0.4", optional = true }
 
-# Home automation serial transport (zigbee + zwave features)
-tokio-serial = { workspace = true, optional = true }
-# CRC-16-CCITT for Zigbee EZSP/ASH framing
-crc = { workspace = true, optional = true }
-# Byte buffer manipulation (zigbee + zwave framing)
-bytes = { workspace = true, optional = true }
-# HTTP client for Thread OTBR REST API (reuse workspace reqwest)
-reqwest = { workspace = true, optional = true }
-# mDNS service discovery — Matter device/controller discovery via DNS-SD
-mdns-sd = { workspace = true, optional = true }
-# Hostname lookup (used by Matter mDNS advertisement)
-gethostname = { workspace = true, optional = true }
-
-# Matter cryptographic stack
-p256   = { workspace = true, optional = true }
-ecdsa  = { workspace = true, optional = true }
-hmac   = { workspace = true, optional = true }
-hkdf   = { workspace = true, optional = true }
-pbkdf2 = { workspace = true, optional = true }
-aes    = { workspace = true, optional = true }
-ccm    = { workspace = true, optional = true }
-der    = { workspace = true, optional = true }
-pkcs8  = { workspace = true, optional = true }
-# Hashing, RNG, and encoding shared by the matter crypto stack
-sha2      = { workspace = true, optional = true }
-rand_core = { workspace = true, optional = true }
-zeroize   = { workspace = true, optional = true }
-hex       = { workspace = true, optional = true }
-
 [features]
 default = []
 
@@ -150,58 +121,8 @@ wake-word-rustpotter = ["dep:rustpotter", "wake-word"]
 # Full voice assistant pipeline (capture → wake word → VAD → STT → handler → TTS → playback)
 voice-assistant = ["audio", "vad", "wake-word"]
 
-# Zigbee: ZigbeeCoordinator trait + EZSP (Silicon Labs) + ZNP (TI Z-Stack) backends
-zigbee = [
-    "dep:tokio-serial",
-    "dep:crc",
-    "dep:bytes",
-    "dep:async-stream",
-    "dep:tokio-stream",
-]
-
-# Z-Wave: ZWaveController trait + full Z-Wave Serial API (ZAPI) over USB stick
-zwave = [
-    "dep:tokio-serial",
-    "dep:bytes",
-    "dep:async-stream",
-    "dep:tokio-stream",
-]
-
-# Thread: ThreadBorderRouter client for OpenThread Border Router REST API
-thread = ["dep:reqwest"]
-
-# Matter: MatterController (commission + control) + MatterDeviceServer (device side).
-# Implemented using our own Matter protocol stack (TLV, commissioning, UDP, mDNS)
-# to avoid embassy-time links conflict between rs-matter and the burn ML ecosystem.
-matter = [
-    "dep:mdns-sd",
-    "dep:gethostname",
-    "dep:tokio-stream",
-    "dep:async-stream",
-    "dep:p256",
-    "dep:ecdsa",
-    "dep:hmac",
-    "dep:hkdf",
-    "dep:pbkdf2",
-    "dep:aes",
-    "dep:ccm",
-    "dep:der",
-    "dep:pkcs8",
-    "dep:sha2",
-    "dep:rand_core",
-    "dep:zeroize",
-    "dep:hex",
-]
-
-# Matter over BLE (adds BLE transport layer)
-matter-ble = ["matter", "dep:btleplug", "dep:uuid"]
-
-# All home automation protocols + Matter BLE
-homeauto = ["zigbee", "zwave", "thread", "matter"]
-homeauto-full = ["homeauto", "matter-ble"]
-
-# Convenience: everything
-full = ["audio", "gpio", "bluetooth", "camera", "usb", "vad", "wake-word", "voice-assistant", "homeauto-full"]
+# Convenience: everything in the published hardware surface
+full = ["audio", "gpio", "bluetooth", "camera", "usb", "vad", "wake-word", "voice-assistant"]
 
 [dev-dependencies]
 tokio = { workspace = true }
@@ -209,9 +130,6 @@ anyhow = { workspace = true }
 tracing-subscriber = { workspace = true }
 ctrlc = { version = "3", features = ["termination"] }
 wiremock = "0.6"
-# Used by matter integration tests (CASE handshake with real keys)
-p256      = { workspace = true }
-rand_core = { workspace = true }
 
 [[example]]
 name = "speech_to_text"
@@ -234,26 +152,6 @@ name = "voice_assistant"
 required-features = ["voice-assistant"]
 
 [[example]]
-name = "zigbee_scan"
-required-features = ["zigbee"]
-
-[[example]]
-name = "zwave_nodes"
-required-features = ["zwave"]
-
-[[example]]
-name = "thread_info"
-required-features = ["thread"]
-
-[[example]]
-name = "matter_on_off"
-required-features = ["matter"]
-
-[[example]]
-name = "matter_server"
-required-features = ["matter"]
-
-[[example]]
 name = "capture_audio"
 required-features = ["audio"]
 
@@ -268,10 +166,6 @@ required-features = ["camera"]
 [[example]]
 name = "usb_devices"
 required-features = ["usb"]
-
-[[test]]
-name = "matter_integration"
-required-features = ["matter"]
 
 [package.metadata.docs.rs]
 all-features = true

@@ -13,6 +13,7 @@ Nothing here is active. Do not depend on, build, or modify these crates. Active 
 - `brainwires-code-interpreters`
 - `brainwires-cognition`
 - `brainwires-datasets`
+- `brainwires-finetune-local` — moved to `rullama-finetune` in 0.11
 - `brainwires-mdap`
 - `brainwires-mesh`
 - `brainwires-prompting`
@@ -22,4 +23,5 @@ Nothing here is active. Do not depend on, build, or modify these crates. Active 
 - `brainwires-skills`
 - `brainwires-system`
 - `brainwires-tool-system`
+- `brainwires-training` — moved to `rullama-training` in 0.11
 - `brainwires-wasm`

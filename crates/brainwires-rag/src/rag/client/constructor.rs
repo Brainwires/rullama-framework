@@ -124,7 +124,7 @@ impl RagClient {
 
         // Initialize relations provider for code navigation
         let relations_provider = Arc::new(
-            HybridRelationsProvider::new(false) // stack-graphs disabled by default
+            HybridRelationsProvider::new()
                 .context("Failed to initialize relations provider")?,
         );
 
@@ -183,7 +183,7 @@ impl RagClient {
 
         // Initialize relations provider for code navigation
         let relations_provider = Arc::new(
-            HybridRelationsProvider::new(false)
+            HybridRelationsProvider::new()
                 .context("Failed to initialize relations provider")?,
         );
 

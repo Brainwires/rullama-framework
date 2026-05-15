@@ -210,7 +210,7 @@ impl WebRtcSignaling for ChannelMessageSignaling {
     ) -> Result<()> {
         // Outbound path: the adapter should serialize the message as JSON and include
         // it as the text body of a ChannelMessage with metadata key SIGNALING_METADATA_KEY.
-        // This method is intentionally not implemented here — the adapter drives sending.
+        // This method intentionally returns an error — the adapter drives sending.
         Err(anyhow::anyhow!(
             "ChannelMessageSignaling outbound sending must be handled by the channel adapter; \
              serialize the SignalingMessage as JSON and send it via Channel::send_message"

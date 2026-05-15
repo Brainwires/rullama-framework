@@ -407,10 +407,6 @@ pub struct CallEdge {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PrecisionLevel {
-    /// High precision: reserved for the stack-graphs provider once its
-    /// `extract_definitions`/`extract_references` are fully implemented.
-    /// Currently unused — no provider returns `High` in practice.
-    High,
     /// Medium precision: AST-based with heuristic matching.
     Medium,
     /// Low precision: text-based pattern matching.
@@ -421,7 +417,6 @@ impl PrecisionLevel {
     /// Get a human-readable description
     pub fn description(&self) -> &'static str {
         match self {
-            Self::High => "high (reserved — stack-graphs stub)",
             Self::Medium => "medium (AST-based)",
             Self::Low => "low (text-based)",
         }
@@ -658,10 +653,6 @@ mod tests {
 
     #[test]
     fn test_precision_level_description() {
-        assert_eq!(
-            PrecisionLevel::High.description(),
-            "high (reserved — stack-graphs stub)"
-        );
         assert_eq!(PrecisionLevel::Medium.description(), "medium (AST-based)");
         assert_eq!(PrecisionLevel::Low.description(), "low (text-based)");
     }

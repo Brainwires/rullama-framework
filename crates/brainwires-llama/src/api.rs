@@ -214,7 +214,7 @@ impl Model {
     }
 }
 
-// ---------- (legacy) options shapes — retained from M0 stub for future use ----------
+// ---------- Options shapes ----------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {

@@ -84,7 +84,7 @@ The Brainwires Framework is a workspace of 32 framework crates plus 18 extras (i
 | [**brainwires-network**](crates/brainwires-network/README.md) | Agent networking — IPC, remote bridge, mesh, WebRTC, LAN discovery |
 | [**brainwires-reasoning**](crates/brainwires-reasoning/README.md) | Reasoning scorers — complexity, entity enhancer, relevance, retrieval classifier, router, strategy selector, summarizer, validator |
 | [**brainwires-call-policy**](crates/brainwires-call-policy/README.md) | Policies on outbound provider calls — retry with backoff, circuit breaker, budget caps, response cache, error classification |
-| [**brainwires-hardware**](crates/brainwires-hardware/README.md) | Hardware I/O — audio (STT/TTS), GPIO, Bluetooth, Matter (experimental PASE), home automation, camera/webcam, raw USB |
+| [**brainwires-hardware**](crates/brainwires-hardware/README.md) | Hardware I/O — audio (STT/TTS), GPIO, Bluetooth, camera/webcam, raw USB |
 | [**brainwires-finetune**](crates/brainwires-finetune/README.md) | Cloud fine-tune APIs (OpenAI, Anthropic, Together, Fireworks, Anyscale, Bedrock, Vertex AI) + dataset pipelines. Local PEFT (LoRA / QLoRA / DoRA) and training-from-scratch live in the sibling `rullama` workspace. |
 | [**brainwires-llama**](crates/brainwires-llama/README.md) | Gemma 4 inference engine — pure Rust + wgpu + WASM, GGUF-native (no candle). Powers the chat-PWA local model path. |
 | [**brainwires-telemetry**](crates/brainwires-telemetry/README.md) | OutcomeMetrics, Prometheus export, anomaly detection, billing-hook trait |
@@ -111,7 +111,6 @@ The Brainwires Framework is a workspace of 32 framework crates plus 18 extras (i
 | [**brainwires-skill-registry**](extras/brainclaw/mcp-skill-registry/README.md) | Skill registry HTTP server — SQLite FTS5, publish/search/download endpoints |
 | [**brainclaw-mcp-github**](extras/brainclaw/mcp-github/README.md) | GitHub channel adapter — webhook receiver, REST API, MCP server mode |
 | [**brainwires-memory-server**](extras/brainwires-memory-server/README.md) | Mem0-compatible memory REST API backed by Brainwires knowledge |
-| [**matter-tool**](extras/matter-tool/README.md) | Brainwires-native Matter CLI (experimental) — PASE pairing, mDNS discovery, basic control |
 | [**claude-brain**](extras/claude-brain/README.md) | Brainwires context management for Claude Code — persistent context across compaction |
 | [**brainwires-cli**](extras/brainwires-cli/README.md) | AI-powered agentic CLI tool for autonomous coding assistance |
 | [**brainwires-issues**](extras/brainwires-issues/README.md) | MCP-native issue tracking server |
@@ -150,14 +149,14 @@ The simplest way to use the framework is through the `brainwires` facade crate, 
 
 ```toml
 [dependencies]
-brainwires = "0.10"  # defaults: tools + agents
+brainwires = "0.11"  # defaults: tools + agents
 ```
 
 Enable only what you need:
 
 ```toml
 [dependencies]
-brainwires = { version = "0.10", features = ["providers", "rag"] }
+brainwires = { version = "0.11", features = ["provider", "rag"] }
 ```
 
 ### Using Individual Crates
@@ -166,9 +165,9 @@ Each crate is independently publishable and usable:
 
 ```toml
 [dependencies]
-brainwires-core = "0.10"
-brainwires-providers = "0.10"
-brainwires-agent = "0.10"
+brainwires-core = "0.11"
+brainwires-provider = "0.11"
+brainwires-agent = "0.11"
 ```
 
 ### Minimal Example

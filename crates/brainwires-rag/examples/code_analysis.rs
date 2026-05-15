@@ -25,7 +25,7 @@ fn main() -> anyhow::Result<()> {
     // ── Step 1: Create the hybrid relations provider ─────────────────
     println!("--- Step 1: Initialize Relations Provider ---\n");
 
-    let provider = HybridRelationsProvider::new(false)?;
+    let provider = HybridRelationsProvider::new()?;
 
     // Check language support and precision levels
     let languages = ["Rust", "Python", "JavaScript", "TypeScript", "Go", "Java"];
@@ -275,17 +275,12 @@ fn main() {
 
     let config = brainwires_rag::code_analysis::RelationsConfig::default();
     println!("Default RelationsConfig:");
-    println!("  enabled:          {}", config.enabled);
-    println!("  use_stack_graphs: {}", config.use_stack_graphs);
-    println!("  max_call_depth:   {}", config.max_call_depth);
+    println!("  enabled:        {}", config.enabled);
+    println!("  max_call_depth: {}", config.max_call_depth);
     println!();
 
     println!("Precision levels:");
-    for level in [
-        PrecisionLevel::High,
-        PrecisionLevel::Medium,
-        PrecisionLevel::Low,
-    ] {
+    for level in [PrecisionLevel::Medium, PrecisionLevel::Low] {
         println!("  {:?} — {}", level, level.description());
     }
 

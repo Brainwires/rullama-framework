@@ -71,7 +71,7 @@ impl WebSpeechStt {
     /// constructor and falling back to `webkitSpeechRecognition`.
     ///
     /// Returns an error if neither constructor is present on `globalThis`
-    /// (e.g. Firefox, where the API is not implemented at the time of writing).
+    /// (e.g. Firefox, where the API is unavailable at the time of writing).
     pub fn new() -> Result<Self, JsValue> {
         let recognition = construct_speech_recognition()?;
         Ok(Self {

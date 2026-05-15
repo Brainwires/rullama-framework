@@ -25,7 +25,7 @@ case "${1:-}" in
     --live)
         DRY_RUN=false
         echo "=== LIVE PUBLISH MODE ==="
-        echo "This will publish all 23 workspace crates + any unpublished deprecated crates to crates.io."
+        echo "This will publish all 21 workspace crates + any unpublished deprecated crates to crates.io."
         echo "Estimated time: ~5 minutes (burst 30, then 1/min)"
         echo "Press Ctrl+C within 5 seconds to abort..."
         sleep 5
@@ -35,20 +35,17 @@ case "${1:-}" in
         ;;
 esac
 
-# 23 publishable workspace crates in strict dependency order (leaves → facade).
+# 21 publishable workspace crates in strict dependency order (leaves → facade).
 # Within each layer, crates have no mutual dependencies.
-# Excluded (publish = false): brainwires-autonomy, brainwires-wasm
+# Excluded (publish = false): brainwires-autonomy, brainwires-wasm, brainwires-llama, brainwires-sandbox-proxy
 # Excluded (webrtc git-only dep): brainwires-channels (tombstone only)
 # Retired (deprecated/, picked up by the auto-detect loop below):
 #   brainwires-tools — split into brainwires-tool-runtime + brainwires-tool-builtins.
 #   brainwires-permissions, brainwires-providers, brainwires-mcp,
 #   brainwires-resilience, brainwires-agents — singularized.
 #   brainwires-resilience also got a content-rename to brainwires-call-policy.
-#
-# brainwires-training stays in the active CRATES list — the v0.10 content
-# (which was actually fine-tune code) was renamed to brainwires-finetune,
-# and the brainwires-training name is now a v0.11 placeholder reserved
-# for future training-from-scratch work. No tombstone.
+#   brainwires-finetune-local — moved to rullama-finetune in 0.11.
+#   brainwires-training — moved to rullama-training in 0.11.
 CRATES=(
     # Layer 0: Contracts
     brainwires-core
@@ -113,10 +110,8 @@ CRATES=(
     # agent for coordination types (CommunicationHub, FileLockManager, etc.).
     brainwires-inference
 
-    # Layer 6: Fine-tuning + training placeholder
+    # Layer 6: Fine-tuning
     brainwires-finetune           # cloud fine-tune APIs + dataset pipelines
-    brainwires-finetune-local     # local LoRA/QLoRA/DoRA via Burn (heavy)
-    brainwires-training           # placeholder for training-from-scratch (no code yet)
 
     # Facade (must be last)
     brainwires

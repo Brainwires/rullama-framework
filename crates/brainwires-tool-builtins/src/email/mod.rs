@@ -64,15 +64,6 @@ pub enum EmailProvider {
         /// Whether to use TLS.
         tls: bool,
     },
-    /// Gmail via OAuth2 (future extension).
-    Gmail {
-        /// OAuth2 client ID.
-        client_id: String,
-        /// OAuth2 client secret.
-        client_secret: String,
-        /// OAuth2 refresh token.
-        refresh_token: String,
-    },
 }
 
 /// Configuration for the email tool.
@@ -285,9 +276,6 @@ impl EmailTool {
                     )
                     .await
             }
-            EmailProvider::Gmail { .. } => {
-                anyhow::bail!("Gmail OAuth2 sending is not yet implemented")
-            }
         }
     }
 
@@ -335,9 +323,6 @@ impl EmailTool {
 
                 Ok(serde_json::to_string_pretty(&uids)?)
             }
-            EmailProvider::Gmail { .. } => {
-                anyhow::bail!("Gmail OAuth2 search is not yet implemented")
-            }
         }
     }
 
@@ -375,9 +360,6 @@ impl EmailTool {
 
                 Ok(serde_json::to_string_pretty(&msg)?)
             }
-            EmailProvider::Gmail { .. } => {
-                anyhow::bail!("Gmail OAuth2 read is not yet implemented")
-            }
         }
     }
 
@@ -407,9 +389,6 @@ impl EmailTool {
                 let _ = client.logout().await;
 
                 Ok(serde_json::to_string_pretty(&messages)?)
-            }
-            EmailProvider::Gmail { .. } => {
-                anyhow::bail!("Gmail OAuth2 list is not yet implemented")
             }
         }
     }
