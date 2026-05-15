@@ -57,13 +57,11 @@ struct GpuAudioBlockMeta {
     cl_conv_pw2:     Clamp,
 }
 
-/// Transient per-block weight buffers, fetched fresh on each encode() call
-/// via `WeightCache::buffer_async_ephemeral`. The whole struct's lifetime
-/// is one Conformer block's dispatch + submit: drop it and the ~170 MB
-/// (BF16, gemma4:e2b) of GPU weights is released before the next block's
-/// fetch begins. This is what makes audio fit on a memory-constrained
-/// device — old code uploaded all 12 blocks (~2 GB) at construction time
-/// and held them for the model's lifetime.
+/// Per-block weight buffer handles. Storage is the shared `WeightCache`, so
+/// the first encode() call uploads all blocks and subsequent calls reuse them
+/// — wgpu::Buffer clones are cheap Arc handles into the cache. Memory budget
+/// (~2 GB BF16 for gemma4:e2b's 12 audio blocks) is handled by explicit
+/// eviction (`Model::release_audio_weights`), not per-encode churn.
 struct GpuAudioBlockWeights {
     pre_norm:        wgpu::Buffer,    // [hidden] f32  (final block RMSNorm)
     // FFW start
@@ -287,18 +285,18 @@ impl GpuAudioForward {
         let queue = &self.ctx.queue;
         queue.write_buffer(&self.scratch.h_main, 0, cast_slice(&h_cpu));
 
-        // 3. Per-block encode loop. Each iteration:
-        //    a) fetches the block's 21 weight buffers ephemerally,
-        //    b) records the block's dispatches into a fresh encoder,
-        //    c) submits and drops both the encoder and the weight handles,
-        //    so the GPU memory for this block's BF16 weights can be released
-        //    before the next block's fetch begins. Peak resident audio
-        //    weight memory caps at ~2 blocks (current + previous in-flight).
+        // 3. Single encoder spanning all 12 blocks + projector + readback.
+        //    Weights are cached in the shared WeightCache, so a chained
+        //    encoder doesn't change peak GPU residency vs the old per-block
+        //    submit pattern (cached buffers are simultaneously live either
+        //    way). The caller is responsible for
+        //    `Model::release_audio_weights()` when running on a
+        //    memory-constrained device that needs to evict between modes.
+        let mut enc = self.ctx.device.create_command_encoder(
+            &wgpu::CommandEncoderDescriptor { label: Some("aud.encoder") }
+        );
         for b in 0..self.blocks.len() {
             let w = fetch_gpu_block_weights(&self.wcache, b as u32).await?;
-            let mut enc = self.ctx.device.create_command_encoder(
-                &wgpu::CommandEncoderDescriptor { label: Some(&format!("aud.block{b}")) }
-            );
             self.dispatch_block(
                 &mut enc, &self.blocks[b], &w,
                 seq, padded_len, k_padded_len,
@@ -306,14 +304,9 @@ impl GpuAudioForward {
                 context_size, max_span, max_past, max_future,
                 pad_left, logit_cap, k_scale,
             );
-            self.ctx.queue.submit(Some(enc.finish()));
-            drop(w);
         }
 
-        // 4. Projector + readback in a final encoder.
-        let mut enc = self.ctx.device.create_command_encoder(
-            &wgpu::CommandEncoderDescriptor { label: Some("aud.projector") }
-        );
+        // 4. Projector + readback chained into the same encoder.
         self.dispatch_projector(&mut enc, seq, hidden, d_text);
         let read_bytes = (seq * d_text * 4) as u64;
         enc.copy_buffer_to_buffer(&self.scratch.soft, 0, &self.scratch.soft_read, 0, read_bytes);
@@ -801,19 +794,19 @@ async fn load_gpu_block_meta(
     })
 }
 
-/// Fetch one block's 21 weight buffers ephemerally — none of these go in
-/// the WeightCache HashMap, so dropping the returned struct (after submit)
-/// releases the GPU allocation. This is the core of the M16 multimodal
-/// memory budget: gemma4:e2b's audio tower has ~170 MB of BF16 weights per
-/// block, and 12 blocks × held-forever was ~2 GB of resident audio weight
-/// alone. Now: only one block's worth lives at a time.
+/// Fetch one block's 21 weight buffer handles from the shared `WeightCache`.
+/// First call per `(model, block_idx, tensor)` triple uploads the tensor;
+/// subsequent calls return cached Arc clones. Total resident BF16 audio
+/// weight after all blocks have been touched is ~2 GB on gemma4:e2b — release
+/// via `Model::release_audio_weights()` when switching to a text-only or
+/// vision turn on a memory-constrained device.
 async fn fetch_gpu_block_weights(
     wcache: &Arc<WeightCache>, i: u32,
 ) -> Result<GpuAudioBlockWeights> {
     let p = format!("a.blk.{i}.");
     let buf = |suffix: &str| -> _ {
         let name = format!("{p}{suffix}");
-        async move { wcache.buffer_async_ephemeral(&name).await }
+        async move { wcache.buffer_async(&name).await }
     };
     Ok(GpuAudioBlockWeights {
         pre_norm:        buf("layer_pre_norm.weight").await?,

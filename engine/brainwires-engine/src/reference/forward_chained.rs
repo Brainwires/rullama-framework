@@ -359,6 +359,9 @@ impl Forward {
 
     pub fn cfg(&self) -> &Gemma4Config { &self.cfg }
     pub fn pos(&self) -> u32 { self.pos }
+    /// Borrow the shared GPU weight cache. Exposed so `Model` can evict
+    /// multimodal tower weights between turns.
+    pub fn wcache(&self) -> &Arc<WeightCache> { &self.wcache }
     /// Borrow the GPU context (`WgpuCtx` is internally `Arc`-backed and
     /// cheap to clone). Used by `rullama-finetune` to allocate LoRA and
     /// scratch buffers on the same device + queue as the model.
