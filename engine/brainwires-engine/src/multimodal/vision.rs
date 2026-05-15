@@ -318,6 +318,7 @@ impl VisionForward {
     pub async fn encode(
         &self, pixels: &[f32], img_h: usize, img_w: usize,
         progress: Option<&dyn Fn(u32, u32)>,
+        cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     ) -> Result<Vec<f32>> {
         let cfg = &self.cfg;
         let ps = cfg.patch_size as usize;
@@ -405,6 +406,14 @@ impl VisionForward {
         // submit below. This trades fine-grained GPU progress for ~16× fewer
         // CPU↔GPU sync points.
         for i in 0..cfg.n_layers {
+            // Cooperative cancel point: checked once per layer. The work
+            // we discard is small (one block's already-recorded ops in
+            // `enc`); the encoder is just dropped without submitting.
+            if let Some(c) = cancel.as_ref() {
+                if c.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err(RullamaError::Cancelled);
+                }
+            }
             self.encode_layer(&mut enc, i, n_patches, hidden, ffn_inter, n_heads, head_dim, eps).await?;
             if let Some(cb) = progress { cb(i + 1, cfg.n_layers); }
         }
@@ -490,19 +499,50 @@ impl VisionForward {
         let prefix = format!("v.blk.{i}.");
         let clamps = &self.layer_clamps[i as usize];
 
-        let ln1_w  = self.wcache.buffer_async(&format!("{prefix}ln1.weight")).await?;
-        let ln2_w  = self.wcache.buffer_async(&format!("{prefix}ln2.weight")).await?;
-        let post_attn_w = self.wcache.buffer_async(&format!("{prefix}attn_post_norm.weight")).await?;
-        let post_ffn_w  = self.wcache.buffer_async(&format!("{prefix}ffn_post_norm.weight")).await?;
-        let q_w = self.wcache.buffer_async(&format!("{prefix}attn_q.weight")).await?;
-        let k_w = self.wcache.buffer_async(&format!("{prefix}attn_k.weight")).await?;
-        let v_w = self.wcache.buffer_async(&format!("{prefix}attn_v.weight")).await?;
-        let o_w = self.wcache.buffer_async(&format!("{prefix}attn_out.weight")).await?;
-        let q_norm_w = self.wcache.buffer_async(&format!("{prefix}attn_q_norm.weight")).await?;
-        let k_norm_w = self.wcache.buffer_async(&format!("{prefix}attn_k_norm.weight")).await?;
-        let gate_w = self.wcache.buffer_async(&format!("{prefix}ffn_gate.weight")).await?;
-        let up_w   = self.wcache.buffer_async(&format!("{prefix}ffn_up.weight")).await?;
-        let down_w = self.wcache.buffer_async(&format!("{prefix}ffn_down.weight")).await?;
+        // All 13 per-block weight fetches concurrently. On a cold cache
+        // the wasm streaming reader issues 13 overlapping Range requests
+        // instead of the previous sequential 13× per block (208 total
+        // round-trips before any GPU work dispatched). On a warm cache
+        // every fetch is an `Arc::clone` early-exit, so the join is
+        // effectively free. wasm32 is single-threaded so no `Send`
+        // bound is needed; `WeightCache::buffer_async` releases its
+        // `RefCell` borrows before each `.await`, so polling these
+        // futures concurrently against the same cache is sound.
+        let names = [
+            "ln1.weight",
+            "ln2.weight",
+            "attn_post_norm.weight",
+            "ffn_post_norm.weight",
+            "attn_q.weight",
+            "attn_k.weight",
+            "attn_v.weight",
+            "attn_out.weight",
+            "attn_q_norm.weight",
+            "attn_k_norm.weight",
+            "ffn_gate.weight",
+            "ffn_up.weight",
+            "ffn_down.weight",
+        ];
+        let weights: Vec<wgpu::Buffer> = futures_util::future::try_join_all(
+            names.iter().map(|n| {
+                let full = format!("{prefix}{n}");
+                async move { self.wcache.buffer_async(&full).await }
+            }),
+        ).await?;
+        let mut weights = weights.into_iter();
+        let ln1_w       = weights.next().unwrap();
+        let ln2_w       = weights.next().unwrap();
+        let post_attn_w = weights.next().unwrap();
+        let post_ffn_w  = weights.next().unwrap();
+        let q_w         = weights.next().unwrap();
+        let k_w         = weights.next().unwrap();
+        let v_w         = weights.next().unwrap();
+        let o_w         = weights.next().unwrap();
+        let q_norm_w    = weights.next().unwrap();
+        let k_norm_w    = weights.next().unwrap();
+        let gate_w      = weights.next().unwrap();
+        let up_w        = weights.next().unwrap();
+        let down_w      = weights.next().unwrap();
 
         // ---- Pre-attention norm into hidden_b (residual stays in hidden_a) ----
         rmsnorm_per_row_chained(

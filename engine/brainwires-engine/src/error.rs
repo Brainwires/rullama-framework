@@ -25,6 +25,9 @@ pub enum RullamaError {
 
     #[error("buffer mapping failed: {0}")]
     BufferMap(String),
+
+    #[error("cancelled by caller")]
+    Cancelled,
 }
 
 pub type Result<T, E = RullamaError> = core::result::Result<T, E>;

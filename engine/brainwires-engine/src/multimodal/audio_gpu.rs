@@ -250,7 +250,10 @@ impl GpuAudioForward {
     pub fn cfg(&self) -> &AudioConfig { &self.cfg }
 
     /// Encode 16 kHz mono PCM into `[n_audio_tokens × d_text]` soft tokens.
-    pub async fn encode(&self, pcm: &[f32]) -> Result<Vec<f32>> {
+    pub async fn encode(
+        &self, pcm: &[f32],
+        cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
+    ) -> Result<Vec<f32>> {
         // 1. CPU prefix: mel + SSCP + pre_encode → [seq, hidden] f32.
         let (h_cpu, seq) = self.cpu_prefix.prefix_to_hidden(pcm)?;
         if seq == 0 { return Ok(Vec::new()); }
@@ -296,6 +299,13 @@ impl GpuAudioForward {
             &wgpu::CommandEncoderDescriptor { label: Some("aud.encoder") }
         );
         for b in 0..self.blocks.len() {
+            // Cooperative cancel check between blocks. Same shape as
+            // vision: drop the not-yet-submitted encoder and bail.
+            if let Some(c) = cancel.as_ref() {
+                if c.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err(RullamaError::Cancelled);
+                }
+            }
             let w = fetch_gpu_block_weights(&self.wcache, b as u32).await?;
             self.dispatch_block(
                 &mut enc, &self.blocks[b], &w,
@@ -804,31 +814,62 @@ async fn fetch_gpu_block_weights(
     wcache: &Arc<WeightCache>, i: u32,
 ) -> Result<GpuAudioBlockWeights> {
     let p = format!("a.blk.{i}.");
-    let buf = |suffix: &str| -> _ {
-        let name = format!("{p}{suffix}");
-        async move { wcache.buffer_async(&name).await }
-    };
+    // All 20 per-block fetches concurrently. Cold cache: 20 overlapping
+    // Range requests instead of 20 sequential round-trips per block.
+    // Warm cache: every fetch is an Arc::clone early-exit. wasm32 is
+    // single-threaded so no `Send` bound; `WeightCache::buffer_async`
+    // releases its `RefCell` borrows before each `.await` so concurrent
+    // polling against one cache is sound.
+    let names = [
+        "layer_pre_norm.weight",
+        "ffn_norm.weight",
+        "ffn_up.weight",
+        "ffn_down.weight",
+        "ffn_post_norm.weight",
+        "ffn_norm_1.weight",
+        "ffn_up_1.weight",
+        "ffn_down_1.weight",
+        "ffn_post_norm_1.weight",
+        "ln1.weight",
+        "ln2.weight",
+        "attn_q.weight",
+        "attn_k.weight",
+        "attn_v.weight",
+        "attn_out.weight",
+        "linear_pos.weight",
+        "conv_norm.weight",
+        "norm_conv.weight",
+        "conv_pw1.weight",
+        "conv_pw2.weight",
+    ];
+    let buffers: Vec<wgpu::Buffer> = futures_util::future::try_join_all(
+        names.iter().map(|n| {
+            let full = format!("{p}{n}");
+            async move { wcache.buffer_async(&full).await }
+        }),
+    ).await?;
+    let mut it = buffers.into_iter();
     Ok(GpuAudioBlockWeights {
-        pre_norm:        buf("layer_pre_norm.weight").await?,
-        ffw_norm:        buf("ffn_norm.weight").await?,
-        ffw_up:          buf("ffn_up.weight").await?,
-        ffw_down:        buf("ffn_down.weight").await?,
-        ffw_post_norm:   buf("ffn_post_norm.weight").await?,
-        ffw_norm_1:      buf("ffn_norm_1.weight").await?,
-        ffw_up_1:        buf("ffn_up_1.weight").await?,
-        ffw_down_1:      buf("ffn_down_1.weight").await?,
-        ffw_post_norm_1: buf("ffn_post_norm_1.weight").await?,
-        attn_pre_norm:   buf("ln1.weight").await?,
-        attn_post_norm:  buf("ln2.weight").await?,
-        attn_q:          buf("attn_q.weight").await?,
-        attn_k:          buf("attn_k.weight").await?,
-        attn_v:          buf("attn_v.weight").await?,
-        attn_o:          buf("attn_out.weight").await?,
-        linear_pos:      buf("linear_pos.weight").await?,
-        conv_norm:       buf("conv_norm.weight").await?,
-        norm_conv:       buf("norm_conv.weight").await?,
-        conv_pw1:        buf("conv_pw1.weight").await?,
-        conv_pw2:        buf("conv_pw2.weight").await?,
+        pre_norm:        it.next().unwrap(),
+        ffw_norm:        it.next().unwrap(),
+        ffw_up:          it.next().unwrap(),
+        ffw_down:        it.next().unwrap(),
+        ffw_post_norm:   it.next().unwrap(),
+        ffw_norm_1:      it.next().unwrap(),
+        ffw_up_1:        it.next().unwrap(),
+        ffw_down_1:      it.next().unwrap(),
+        ffw_post_norm_1: it.next().unwrap(),
+        attn_pre_norm:   it.next().unwrap(),
+        attn_post_norm:  it.next().unwrap(),
+        attn_q:          it.next().unwrap(),
+        attn_k:          it.next().unwrap(),
+        attn_v:          it.next().unwrap(),
+        attn_o:          it.next().unwrap(),
+        linear_pos:      it.next().unwrap(),
+        conv_norm:       it.next().unwrap(),
+        norm_conv:       it.next().unwrap(),
+        conv_pw1:        it.next().unwrap(),
+        conv_pw2:        it.next().unwrap(),
     })
 }
 

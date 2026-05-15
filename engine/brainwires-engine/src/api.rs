@@ -15,6 +15,7 @@
 //! A `ReadableStream<string>` wrapper lands in v0.2.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 
@@ -61,6 +62,12 @@ pub struct Model {
     /// `None` for text-only or vision-only checkpoints.
     audio: Option<GpuAudioForward>,
     sampler: Sampler,
+    /// Cooperative cancel flag for in-flight multimodal encodes. Flipped
+    /// via `cancelMultimodalEncode()` from JS; the vision and audio
+    /// encoders check this between transformer layers and bail with
+    /// `RullamaError::Cancelled`. Cleared at the start of each encode so
+    /// a stale flag from a previous cancel doesn't poison the next call.
+    encode_cancel: Arc<AtomicBool>,
 }
 
 impl Model {
@@ -119,6 +126,7 @@ impl Model {
             vision,
             audio,
             sampler: Sampler::new(SamplingOptions::default()),
+            encode_cancel: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -139,7 +147,10 @@ impl Model {
                 "encode_image: this checkpoint has no vision tower".into()
             )
         })?;
-        v.encode(pixels, h, w, progress).await
+        // Clear any flag left over from a previous cancel so it doesn't
+        // poison this encode.
+        self.encode_cancel.store(false, Ordering::Relaxed);
+        v.encode(pixels, h, w, progress, Some(self.encode_cancel.clone())).await
     }
 
     /// Number of soft tokens an image of `h × w` pixels produces (after AvgPool 3×3
@@ -165,7 +176,17 @@ impl Model {
                 "encode_audio: this checkpoint has no audio tower".into()
             )
         })?;
-        a.encode(pcm).await
+        self.encode_cancel.store(false, Ordering::Relaxed);
+        a.encode(pcm, Some(self.encode_cancel.clone())).await
+    }
+
+    /// Flip the cooperative cancel flag for any in-flight multimodal
+    /// encode. The vision and audio loops check this between layer
+    /// dispatches and bail with `RullamaError::Cancelled`. No-op when
+    /// no encode is running; the flag is cleared at the start of the
+    /// next encode either way.
+    pub fn cancel_multimodal_encode_native(&self) {
+        self.encode_cancel.store(true, Ordering::Relaxed);
     }
 
     /// Decode a WAV file (RIFF/WAVE PCM 8/16/24/32 or float32) into 16 kHz
@@ -498,6 +519,16 @@ impl Model {
     #[wasm_bindgen(js_name = decodeWav)]
     pub fn decode_wav_js(bytes: Vec<u8>) -> std::result::Result<Vec<f32>, JsError> {
         Self::decode_wav_native(&bytes).map_err(|e| JsError::new(&format!("{e}")))
+    }
+
+    /// Cooperatively cancel an in-flight `encodeImage` / `encodeAudio`. The
+    /// in-flight `Promise` rejects with a "cancelled" error on the next
+    /// transformer-layer boundary (≤500 ms in practice). Safe to call when
+    /// no encode is running — the flag is cleared at the start of the
+    /// next encode regardless.
+    #[wasm_bindgen(js_name = cancelMultimodalEncode)]
+    pub fn cancel_multimodal_encode_js(&self) {
+        self.cancel_multimodal_encode_native();
     }
 
     /// `[<|audio> token id, <audio|> token id]` if both sentinels exist; else `null`.
