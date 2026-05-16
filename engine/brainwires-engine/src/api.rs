@@ -302,6 +302,71 @@ impl Model {
         self.sampler.clear_history();
     }
 
+    /// Snapshot KV cache + position + sampler state into a single byte
+    /// blob suitable for OPFS-backed suspend/resume. Layout:
+    ///
+    /// ```text
+    ///   [0..4]   magic = "RLMS"
+    ///   [4]      version = 1
+    ///   [5..8]   reserved
+    ///   [8..12]  sampler_len (u32 LE)
+    ///   [12..16] kv_len (u32 LE)
+    ///   [16..16+sampler_len]      sampler bytes (Sampler::dump_state)
+    ///   [16+sampler_len..]        kv bytes      (Forward::dump_kv)
+    /// ```
+    ///
+    /// On resume both pieces must be applied together — the sampler RNG
+    /// state matters for non-greedy sampling determinism (matching the
+    /// trajectory the user was already seeing).
+    pub async fn save_kv_state_native(&self) -> Result<Vec<u8>> {
+        let sampler_bytes = self.sampler.dump_state();
+        let kv_bytes = self.forward.dump_kv().await?;
+        let mut out = Vec::with_capacity(16 + sampler_bytes.len() + kv_bytes.len());
+        out.extend_from_slice(b"RLMS");
+        out.push(1u8);
+        out.extend_from_slice(&[0u8, 0u8, 0u8]);
+        out.extend_from_slice(&(sampler_bytes.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(kv_bytes.len() as u32).to_le_bytes());
+        out.extend_from_slice(&sampler_bytes);
+        out.extend_from_slice(&kv_bytes);
+        Ok(out)
+    }
+
+    /// Inverse of [`save_kv_state_native`]. Applies sampler state first
+    /// (cheap), then KV state (writes 26 layers × 2 buffers to GPU). On
+    /// any validation error the model state is left untouched and the
+    /// caller can fall back to token replay.
+    pub fn restore_kv_state_native(&mut self, bytes: &[u8]) -> Result<()> {
+        if bytes.len() < 16 || &bytes[0..4] != b"RLMS" {
+            return Err(crate::error::RullamaError::Inference(
+                "model state snapshot: bad magic".into(),
+            ));
+        }
+        let version = bytes[4];
+        if version != 1 {
+            return Err(crate::error::RullamaError::Inference(format!(
+                "model state snapshot: unknown version {version}"
+            )));
+        }
+        let sampler_len = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+        let kv_len      = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+        let sampler_off = 16usize;
+        let kv_off      = sampler_off + sampler_len;
+        if bytes.len() < kv_off + kv_len {
+            return Err(crate::error::RullamaError::Inference(format!(
+                "model state snapshot: truncated (have {}, need {})",
+                bytes.len(), kv_off + kv_len,
+            )));
+        }
+        // Validate KV first (it's the larger / more failure-prone piece);
+        // we can do this without mutating state because load_kv only
+        // mutates after it has validated.
+        self.forward.load_kv(&bytes[kv_off..kv_off + kv_len])?;
+        self.sampler.load_state(&bytes[sampler_off..sampler_off + sampler_len])
+            .map_err(|e| crate::error::RullamaError::Inference(format!("sampler restore: {e}")))?;
+        Ok(())
+    }
+
     /// Configure sampling. Defaults: temperature=0.7, top_k=40, top_p=0.95, no rep penalty.
     pub fn set_sampling_native(&mut self, opts: SamplingOptions) {
         self.sampler.set_options(opts);
@@ -332,6 +397,17 @@ impl Model {
     /// next sampled token starts the assistant reply.
     pub fn render_chat_native(&self, messages: &[ChatMessage], with_bos: bool) -> String {
         gemma4_small::render_for_completion(messages, with_bos)
+    }
+
+    /// Like [`render_chat_native`] but leaves a trailing assistant turn
+    /// open if the last message has `role: Model`. Used by suspend/resume
+    /// when rebuilding KV from a conversation that already contains a
+    /// partial assistant response — the model continues *that* response
+    /// rather than starting a new one.
+    pub fn render_chat_for_continuation_native(
+        &self, messages: &[ChatMessage], with_bos: bool,
+    ) -> String {
+        gemma4_small::render_for_continuation(messages, with_bos)
     }
 }
 
@@ -424,6 +500,22 @@ impl Model {
 
     #[wasm_bindgen(js_name = reset)]
     pub fn reset_js(&mut self) { self.reset_native() }
+
+    /// Snapshot KV cache + sampler state into a single Uint8Array. Caller
+    /// writes the result to OPFS / IndexedDB for suspend/resume.
+    #[wasm_bindgen(js_name = saveKvState)]
+    pub async fn save_kv_state_js(&self) -> std::result::Result<Vec<u8>, JsError> {
+        self.save_kv_state_native().await.map_err(|e| JsError::new(&format!("{e}")))
+    }
+
+    /// Inverse of [`saveKvState`]. Validates the snapshot against the
+    /// currently-loaded model (layout hash) and refuses to apply if it's
+    /// from a different model architecture — caller should fall back to
+    /// token-replay rebuild in that case.
+    #[wasm_bindgen(js_name = restoreKvState)]
+    pub fn restore_kv_state_js(&mut self, bytes: Vec<u8>) -> std::result::Result<(), JsError> {
+        self.restore_kv_state_native(&bytes).map_err(|e| JsError::new(&format!("{e}")))
+    }
 
     /// Feed one token, advance pos, return sampled next token id.
     #[wasm_bindgen(js_name = step)]
@@ -566,6 +658,19 @@ impl Model {
         let msgs: Vec<ChatMessage> = serde_wasm_bindgen::from_value(messages_json)
             .map_err(|e| JsError::new(&format!("invalid messages: {e}")))?;
         Ok(self.render_chat_native(&msgs, with_bos))
+    }
+
+    /// Like [`renderChat`] but leaves a trailing assistant turn OPEN if
+    /// the last message has `role: "model"`. Used by suspend/resume to
+    /// rebuild KV cache from a conversation that includes a partial
+    /// assistant response.
+    #[wasm_bindgen(js_name = renderChatForContinuation)]
+    pub fn render_chat_for_continuation_js(
+        &self, messages_json: JsValue, with_bos: bool,
+    ) -> std::result::Result<String, JsError> {
+        let msgs: Vec<ChatMessage> = serde_wasm_bindgen::from_value(messages_json)
+            .map_err(|e| JsError::new(&format!("invalid messages: {e}")))?;
+        Ok(self.render_chat_for_continuation_native(&msgs, with_bos))
     }
 }
 

@@ -444,6 +444,223 @@ impl Forward {
         for l in self.kv_lens.iter_mut() { *l = 0; }
     }
 
+    /// Hash of the per-layer KV geometry. Used to refuse a `load_kv` from a
+    /// snapshot taken under a different model architecture (e.g. user
+    /// switched gemma4 variants between sessions).
+    fn kv_layout_hash(&self) -> u32 {
+        let mut h: u32 = 0x811C9DC5;  // FNV-1a offset basis
+        for i in 0..self.cfg.n_layers {
+            let nkv = self.cfg.n_kv_heads(i) as u32;
+            let hd  = self.cfg.head_dim(i) as u32;
+            for byte in nkv.to_le_bytes().iter().chain(hd.to_le_bytes().iter()) {
+                h ^= *byte as u32;
+                h = h.wrapping_mul(0x01000193);
+            }
+        }
+        h
+    }
+
+    /// Snapshot the KV cache + position counter into a versioned byte blob
+    /// for suspend/resume. Format (little-endian):
+    ///
+    /// ```text
+    ///   [0..4]    magic = "RLKV"
+    ///   [4]       version = 1
+    ///   [5]       n_owned_layers (u8) — non-donor layer count
+    ///   [6..8]    reserved
+    ///   [8..12]   position (u32) — Forward.pos at snapshot time
+    ///   [12..16]  layout_hash (u32)
+    ///   per owned layer (12 bytes each):
+    ///     layer_idx  (u32)
+    ///     kv_len     (u32) — tokens, not bytes
+    ///     n_kv_heads (u16)
+    ///     head_dim   (u16)
+    ///   raw payload, same order as headers:
+    ///     K bytes [kv_len * n_kv_heads * head_dim * 4]
+    ///     V bytes [same]
+    /// ```
+    ///
+    /// Donor layers carry no separate data — on `load_kv` they pick up the
+    /// donor's KV via their shared Arc. `kv_lens` is per-layer; donor /
+    /// dependent layers' counters stay at 0 by construction.
+    pub async fn dump_kv(&self) -> Result<Vec<u8>> {
+        let n_layers = self.cfg.n_layers as usize;
+
+        struct Section { layer_idx: u32, kv_len: u32, n_kv_heads: u16, head_dim: u16, bytes: u64 }
+        let mut sections: Vec<Section> = Vec::new();
+        let mut total_payload: u64 = 0;
+        for i in 0..n_layers {
+            if self.donor_map[i].is_some() { continue; }
+            let kv_len = self.kv_lens[i];
+            if kv_len == 0 { continue; }
+            let nkv = self.cfg.n_kv_heads(i as u32) as u32;
+            let hd  = self.cfg.head_dim(i as u32) as u32;
+            let bytes = (kv_len as u64) * (nkv as u64) * (hd as u64) * 4;
+            sections.push(Section {
+                layer_idx: i as u32, kv_len,
+                n_kv_heads: nkv as u16, head_dim: hd as u16,
+                bytes,
+            });
+            total_payload += bytes * 2;  // K + V
+        }
+
+        let mut header = Vec::<u8>::with_capacity(16 + 12 * sections.len());
+        header.extend_from_slice(b"RLKV");
+        header.push(1u8);
+        header.push(sections.len() as u8);
+        header.extend_from_slice(&[0u8, 0u8]);
+        header.extend_from_slice(&self.pos.to_le_bytes());
+        header.extend_from_slice(&self.kv_layout_hash().to_le_bytes());
+        for s in &sections {
+            header.extend_from_slice(&s.layer_idx.to_le_bytes());
+            header.extend_from_slice(&s.kv_len.to_le_bytes());
+            header.extend_from_slice(&s.n_kv_heads.to_le_bytes());
+            header.extend_from_slice(&s.head_dim.to_le_bytes());
+        }
+
+        if total_payload == 0 {
+            return Ok(header);
+        }
+
+        // One staging buffer + one encoder for all K/V copies — minimizes
+        // submission overhead on the suspension-warning hot path.
+        let staging = self.ctx.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("fwd.kv_dump.staging"),
+            size: total_payload,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut enc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("fwd.kv_dump.enc"),
+        });
+        let mut offset: u64 = 0;
+        for s in &sections {
+            let i = s.layer_idx as usize;
+            enc.copy_buffer_to_buffer(&self.kv_k[i], 0, &staging, offset, s.bytes);
+            offset += s.bytes;
+            enc.copy_buffer_to_buffer(&self.kv_v[i], 0, &staging, offset, s.bytes);
+            offset += s.bytes;
+        }
+        self.ctx.queue.submit(Some(enc.finish()));
+        let payload = read_back_bytes(&self.ctx.device, &staging).await?;
+
+        let mut out = header;
+        out.extend_from_slice(&payload);
+        Ok(out)
+    }
+
+    /// Inverse of [`dump_kv`]. Validates the header (magic, version,
+    /// layout_hash), uploads payload bytes back into the existing
+    /// pre-allocated K/V buffers, and restores `pos` + `kv_lens`.
+    ///
+    /// Returns an error (without mutating self) if the snapshot is from a
+    /// different model architecture, the format is unknown, or the byte
+    /// count doesn't match the headers.
+    pub fn load_kv(&mut self, bytes: &[u8]) -> Result<()> {
+        if bytes.len() < 16 {
+            return Err(RullamaError::Inference(format!(
+                "kv snapshot too short: {} bytes", bytes.len()
+            )));
+        }
+        if &bytes[0..4] != b"RLKV" {
+            return Err(RullamaError::Inference("kv snapshot: bad magic".into()));
+        }
+        let version = bytes[4];
+        if version != 1 {
+            return Err(RullamaError::Inference(format!(
+                "kv snapshot: unknown version {version}"
+            )));
+        }
+        let n_owned = bytes[5] as usize;
+        let position = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
+        let layout_hash = u32::from_le_bytes(bytes[12..16].try_into().unwrap());
+        let expected_hash = self.kv_layout_hash();
+        if layout_hash != expected_hash {
+            return Err(RullamaError::Inference(format!(
+                "kv snapshot: layout_hash mismatch (snapshot=0x{layout_hash:08X}, model=0x{expected_hash:08X})"
+            )));
+        }
+        let header_size = 16 + 12 * n_owned;
+        if bytes.len() < header_size {
+            return Err(RullamaError::Inference("kv snapshot: truncated header".into()));
+        }
+        if position > self.max_context {
+            return Err(RullamaError::Inference(format!(
+                "kv snapshot: position {position} exceeds max_context {}", self.max_context
+            )));
+        }
+
+        struct Section { layer_idx: u32, kv_len: u32, bytes: u64 }
+        let mut sections: Vec<Section> = Vec::with_capacity(n_owned);
+        let mut total_payload: u64 = 0;
+        for s in 0..n_owned {
+            let off = 16 + 12 * s;
+            let layer_idx = u32::from_le_bytes(bytes[off..off+4].try_into().unwrap());
+            let kv_len    = u32::from_le_bytes(bytes[off+4..off+8].try_into().unwrap());
+            let nkv       = u16::from_le_bytes(bytes[off+8..off+10].try_into().unwrap());
+            let hd        = u16::from_le_bytes(bytes[off+10..off+12].try_into().unwrap());
+
+            if (layer_idx as usize) >= self.kv_lens.len() {
+                return Err(RullamaError::Inference(format!(
+                    "kv snapshot: layer_idx {layer_idx} out of range"
+                )));
+            }
+            if self.donor_map[layer_idx as usize].is_some() {
+                return Err(RullamaError::Inference(format!(
+                    "kv snapshot: layer {layer_idx} marked as donor in current model but snapshot has data"
+                )));
+            }
+            let exp_nkv = self.cfg.n_kv_heads(layer_idx) as u16;
+            let exp_hd  = self.cfg.head_dim(layer_idx) as u16;
+            if nkv != exp_nkv || hd != exp_hd {
+                return Err(RullamaError::Inference(format!(
+                    "kv snapshot: layer {layer_idx} geometry mismatch \
+                     (snapshot n_kv={nkv} hd={hd}, model n_kv={exp_nkv} hd={exp_hd})"
+                )));
+            }
+            if kv_len > self.max_context {
+                return Err(RullamaError::Inference(format!(
+                    "kv snapshot: layer {layer_idx} kv_len {kv_len} exceeds max_context {}", self.max_context
+                )));
+            }
+            let layer_bytes = (kv_len as u64) * (nkv as u64) * (hd as u64) * 4;
+            sections.push(Section { layer_idx, kv_len, bytes: layer_bytes });
+            total_payload += layer_bytes * 2;
+        }
+        let payload_off = header_size;
+        if (bytes.len() as u64) < (payload_off as u64) + total_payload {
+            return Err(RullamaError::Inference(format!(
+                "kv snapshot: payload truncated (have {}, need {})",
+                bytes.len() - payload_off, total_payload,
+            )));
+        }
+
+        // Validation passed — commit. write_buffer is synchronous from the
+        // caller's POV; the queue copies on submit.
+        let queue = &self.ctx.queue;
+        let mut off: usize = payload_off;
+        for s in &sections {
+            let i = s.layer_idx as usize;
+            let n = s.bytes as usize;
+            queue.write_buffer(&self.kv_k[i], 0, &bytes[off..off + n]);
+            off += n;
+            queue.write_buffer(&self.kv_v[i], 0, &bytes[off..off + n]);
+            off += n;
+            self.kv_lens[i] = s.kv_len;
+        }
+        // Clear non-owned layers (donor-dependents stay at 0; non-snapshot
+        // owned layers reset to 0 so the model behaves like an empty cache
+        // for them).
+        for i in 0..self.kv_lens.len() {
+            if self.donor_map[i].is_some() { continue; }
+            if !sections.iter().any(|s| s.layer_idx as usize == i) {
+                self.kv_lens[i] = 0;
+            }
+        }
+        self.pos = position;
+        Ok(())
+    }
+
     /// Run one forward step from a token id. Looks up the token's embedding row,
     /// uploads it to the hidden buffer, then runs the rest of the forward.
     pub async fn step(&mut self, token_id: u32) -> Result<Vec<f32>> {
@@ -1250,6 +1467,27 @@ async fn read_back_f32(device: &wgpu::Device, buf: &wgpu::Buffer) -> Result<Vec<
         .map_err(|e| RullamaError::BufferMap(format!("{e}")))?;
     let data = slice.get_mapped_range();
     let v: Vec<f32> = bytemuck::cast_slice(&data).to_vec();
+    drop(data);
+    buf.unmap();
+    Ok(v)
+}
+
+/// Same as [`read_back_f32`] but returns raw bytes — for snapshotting the
+/// KV cache where we don't care about the f32 alignment, only the byte
+/// stream.
+async fn read_back_bytes(device: &wgpu::Device, buf: &wgpu::Buffer) -> Result<Vec<u8>> {
+    let slice = buf.slice(..);
+    let (sender, receiver) = oneshot::channel();
+    slice.map_async(wgpu::MapMode::Read, move |r| { let _ = sender.send(r); });
+    device
+        .poll(wgpu::PollType::Wait { submission_index: None, timeout: None })
+        .map_err(|e| RullamaError::Inference(format!("{e:?}")))?;
+    receiver
+        .await
+        .map_err(|e| RullamaError::BufferMap(format!("{e}")))?
+        .map_err(|e| RullamaError::BufferMap(format!("{e}")))?;
+    let data = slice.get_mapped_range();
+    let v: Vec<u8> = data.to_vec();
     drop(data);
     buf.unmap();
     Ok(v)
