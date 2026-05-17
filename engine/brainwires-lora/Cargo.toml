@@ -1,6 +1,6 @@
 [package]
 name        = "rullama-finetune"
-version     = "0.1.0"
+version     = "0.2.0"
 description = "Local LoRA fine-tuning for the rullama Rust runtime, built natively on rullama's wgpu kernels. Native-only; compiles to an empty crate on wasm32. Experimental — M3 skeleton, see the workspace README for status."
 edition.workspace      = true
 rust-version.workspace = true
@@ -29,7 +29,7 @@ path = "src/lib.rs"
 # `version` is required (alongside `path`) so this dep resolves on
 # crates.io after the next `rullama` publish; locally cargo prefers the
 # path entry.
-rullama = { path = "../rullama", version = "0.1" }
+rullama = { path = "../rullama", version = "0.2" }
 wgpu = { workspace = true }
 bytemuck = { workspace = true }
 serde = { workspace = true }
