@@ -88,6 +88,31 @@ struct StepReport {
     step: u32,
 }
 
+/// Wrap an optional JS function as a Rust `TrainingProgressCb`
+/// closure. The returned `Box<dyn Fn>` is borrowed (`.as_deref()`)
+/// by the training methods — its lifetime is the await — so the
+/// `'static` requirement on the closure trades cheaply against the
+/// extra allocation per step.
+///
+/// Mirrors `Model::encode_image_js`'s wrapping pattern in
+/// `crates/rullama/src/api.rs`.
+fn wrap_progress_cb(
+    cb: Option<js_sys::Function>,
+) -> Option<Box<dyn Fn(&str, u32, u32)>> {
+    cb.map(|f| {
+        Box::new(move |phase: &str, current: u32, total: u32| {
+            // Best-effort: failure to call the JS function (e.g. it
+            // threw) just drops the beacon; training continues.
+            let _ = f.call3(
+                &JsValue::NULL,
+                &JsValue::from_str(phase),
+                &JsValue::from(current),
+                &JsValue::from(total),
+            );
+        }) as Box<dyn Fn(&str, u32, u32)>
+    })
+}
+
 #[wasm_bindgen]
 impl TrainingSession {
     /// Build a new session over the supplied `Model`. The Model is
@@ -114,15 +139,24 @@ impl TrainingSession {
 
     /// One NextToken training step. Zeros grads, runs forward+backward,
     /// applies Adam. Resolves with `{loss, lr, step}`.
+    ///
+    /// Optional `progressCb` is a JS function called at phase
+    /// boundaries: `(phase: string, current: number, total: number)`.
+    /// Phases: `"prefill"` per prompt token, `"forward"` once on
+    /// capture-step end, `"backward"` per layer (top-down), `"clip"`
+    /// once, `"optimizer"` once. Used by the PWA to drive a
+    /// VisionProgress-style status strip.
     #[wasm_bindgen(js_name = step)]
     pub async fn step_js(
         &mut self,
         input_ids: Vec<u32>,
         target_id: u32,
+        progress_cb: Option<js_sys::Function>,
     ) -> std::result::Result<JsValue, JsError> {
+        let cb = wrap_progress_cb(progress_cb);
         let loss = self
             .inner
-            .step(&input_ids, target_id)
+            .step_with_progress(&input_ids, target_id, cb.as_deref())
             .await
             .map_err(|e| JsError::new(&format!("{e}")))?;
         Self::step_report(loss, &self.inner)
@@ -137,10 +171,12 @@ impl TrainingSession {
         &mut self,
         input_ids: Vec<u32>,
         targets: Vec<u32>,
+        progress_cb: Option<js_sys::Function>,
     ) -> std::result::Result<JsValue, JsError> {
+        let cb = wrap_progress_cb(progress_cb);
         let loss = self
             .inner
-            .step_per_position(&input_ids, &targets)
+            .step_per_position_with_progress(&input_ids, &targets, cb.as_deref())
             .await
             .map_err(|e| JsError::new(&format!("{e}")))?;
         Self::step_report(loss, &self.inner)

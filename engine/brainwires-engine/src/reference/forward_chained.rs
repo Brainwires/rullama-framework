@@ -92,6 +92,16 @@ pub struct LoraSlot<'a> {
     pub scale: f32, // alpha / rank
 }
 
+/// Per-layer progress callback fired between encoder submits during
+/// a forward + backward layer walk. Signature:
+/// `(phase, current, total)` where `phase` is one of `"forward"` /
+/// `"backward"` and `current` is 1-based logical layer index. Used
+/// by training to drive a VisionProgress-style status strip (see
+/// `examples/web/src/components/TrainingProgress.tsx`) — without the
+/// per-layer beacons the user stares at a "step 0 / N" counter while
+/// a 30 s pipeline-compile + first step grinds in silence.
+pub type LayerProgressCb<'a> = dyn Fn(&str, u32, u32) + 'a;
+
 /// Per-layer LoRA slots for the four attention projections + three
 /// FFN projections. Pass `None` for any projection that isn't
 /// LoRA-wrapped.
@@ -879,6 +889,21 @@ impl Forward {
         loras: &'a [LayerLoraSlots<'a>],
         capture: &'a [LayerCaptureBuffers<'a>],
     ) -> Result<Vec<f32>> {
+        self.step_with_lora_seqcap_with_progress(token_id, loras, capture, None).await
+    }
+
+    /// Variant of [`step_with_lora_seqcap`] that fires
+    /// `progress_cb(layer_index, total_layers, "forward")` between
+    /// per-layer encoder submits. Used by training to drive a
+    /// detailed status indicator without rewriting the existing
+    /// callers that don't care about per-layer ticks.
+    pub async fn step_with_lora_seqcap_with_progress<'a>(
+        &mut self,
+        token_id: u32,
+        loras: &'a [LayerLoraSlots<'a>],
+        capture: &'a [LayerCaptureBuffers<'a>],
+        progress_cb: Option<&LayerProgressCb<'_>>,
+    ) -> Result<Vec<f32>> {
         if loras.len() != self.cfg.n_layers as usize {
             return Err(RullamaError::Inference(format!(
                 "step_with_lora_seqcap: got {} lora slots, expected {}",
@@ -893,7 +918,7 @@ impl Forward {
                 self.cfg.n_layers
             )));
         }
-        self.step_inner(token_id, Some(capture), Some(loras)).await
+        self.step_inner_with_progress(token_id, Some(capture), Some(loras), progress_cb).await
     }
 
     async fn step_inner<'a>(
@@ -901,6 +926,16 @@ impl Forward {
         token_id: u32,
         capture: Option<&'a [LayerCaptureBuffers<'a>]>,
         loras: Option<&'a [LayerLoraSlots<'a>]>,
+    ) -> Result<Vec<f32>> {
+        self.step_inner_with_progress(token_id, capture, loras, None).await
+    }
+
+    async fn step_inner_with_progress<'a>(
+        &mut self,
+        token_id: u32,
+        capture: Option<&'a [LayerCaptureBuffers<'a>]>,
+        loras: Option<&'a [LayerLoraSlots<'a>]>,
+        progress_cb: Option<&LayerProgressCb<'_>>,
     ) -> Result<Vec<f32>> {
         if (token_id as u64) >= self.cfg.vocab_size as u64 {
             return Err(RullamaError::Inference(format!(
@@ -946,7 +981,7 @@ impl Forward {
             drop(ple_in);
         }
 
-        self.run_forward_from_hidden(capture, loras).await
+        self.run_forward_from_hidden_with_progress(capture, loras, progress_cb).await
     }
 
     /// Run one forward step from a pre-computed `[d_model]` embedding (vision soft
@@ -1025,6 +1060,19 @@ impl Forward {
         &mut self,
         capture: Option<&'a [LayerCaptureBuffers<'a>]>,
         loras: Option<&'a [LayerLoraSlots<'a>]>,
+    ) -> Result<Vec<f32>> {
+        self.run_forward_from_hidden_with_progress(capture, loras, None).await
+    }
+
+    /// Variant of [`run_forward_from_hidden`] that fires
+    /// `progress_cb(layer_index, total_layers, "forward")` between
+    /// per-layer encoder submits. Used by training; chat-side
+    /// inference passes `None`.
+    async fn run_forward_from_hidden_with_progress<'a>(
+        &mut self,
+        capture: Option<&'a [LayerCaptureBuffers<'a>]>,
+        loras: Option<&'a [LayerLoraSlots<'a>]>,
+        progress_cb: Option<&LayerProgressCb<'_>>,
     ) -> Result<Vec<f32>> {
         // Clear any stale cancel flag from a previous step so this
         // call starts fresh; the per-layer loop below checks it after
@@ -1139,6 +1187,13 @@ impl Forward {
             // this submission strategy. Bounded latency: one layer
             // (~300 ms - 1 s on browser) instead of one full step.
             self.check_cancelled()?;
+            // Per-layer progress beacon — fired AFTER the submit so
+            // the caller's "layer N done" message correlates with the
+            // GPU having actually finished it. `i + 1` is 1-based for
+            // "N of n_layers" UX semantics.
+            if let Some(cb) = progress_cb {
+                cb("forward", i + 1, n_layers as u32);
+            }
             enc = self
                 .ctx
                 .device
@@ -2467,6 +2522,32 @@ impl Forward {
         pos: u32,
         recompute_captures: bool,
     ) -> Result<f32> {
+        self.backward_step_with_progress(
+            target_id, capture, loras, grads, scratch,
+            history_len, pos, recompute_captures, None,
+        ).await
+    }
+
+    /// Variant of [`backward_step`] that fires
+    /// `progress_cb(layer_index, total_layers, "backward")` between
+    /// per-layer encoder submits. The layer index in the callback is
+    /// the **logical position** (1..=n_layers walking top-down), so
+    /// a 35-layer model fires `(1, 35) ... (35, 35)` mirroring the
+    /// forward beacon order — friendlier for the UI to render than
+    /// the actual reverse-walk index `(n_layers-1) ... 0`.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn backward_step_with_progress<'a>(
+        &mut self,
+        target_id: u32,
+        capture: &'a [LayerCaptureBuffers<'a>],
+        loras: &'a [LayerLoraSlots<'a>],
+        grads: &'a [LayerLoraGrads<'a>],
+        scratch: &'a BackwardScratchView<'a>,
+        history_len: u32,
+        pos: u32,
+        recompute_captures: bool,
+        progress_cb: Option<&LayerProgressCb<'_>>,
+    ) -> Result<f32> {
         // Clear any stale cancel flag from a previous step; the layer
         // walk below checks it after each `backward_layer` submit.
         self.reset_cancel();
@@ -2632,6 +2713,15 @@ impl Forward {
             // uses. Cancellation latency is bounded by one
             // `backward_layer` (~300 ms - 1 s on browser).
             self.check_cancelled()?;
+            // Per-layer progress beacon. Convert reverse-walk index
+            // `li` (counting top-down from n_layers-1) into the
+            // logical 1-based position so UI shows "backward 1/35,
+            // 2/35, …" mirroring the forward order — easier to read
+            // than the underlying reverse walk.
+            if let Some(cb) = progress_cb {
+                let logical = (n_layers as u32) - i;
+                cb("backward", logical, n_layers as u32);
+            }
 
             // Adaptive renorm of d_hidden — if max-abs exceeds the
             // configured ceiling, scale d_hidden in-place to bring

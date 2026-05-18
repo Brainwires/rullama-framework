@@ -32,6 +32,26 @@ use crate::scratch::TrainingScratch;
 use crate::shared::config::{LoraConfig, LossMode, TrainingHyperparams};
 use crate::shared::error::TrainingError;
 
+/// Per-step progress callback fired at phase boundaries inside a
+/// training step. Signature: `(phase, current, total)` where:
+///
+/// - `phase = "prefill"`: prompt-token forward sweep. `current` is the
+///   1-based prompt-token index, `total` is the number of prefill
+///   tokens (`input_ids.len() - 1`).
+/// - `phase = "forward"`: final-position forward + activation capture.
+///   Single tick `(total_layers, total_layers, "forward")` at the
+///   end of the forward pass — coarse signal that the prefill+capture
+///   phase finished and backward is about to start.
+/// - `phase = "backward"`: per-layer backward sweep. `current` is the
+///   1-based logical layer index (top-down), `total` is `n_layers`.
+/// - `phase = "clip"`: gradient clipping just finished. `(0, 1, "clip")`.
+/// - `phase = "optimizer"`: Adam step just finished. `(0, 1, "optimizer")`.
+///
+/// The browser worker translates this into a `trainingProgress`
+/// notify the UI subscribes to; the chat-side `VisionProgress`
+/// component is the visual template (see `TrainingProgress.tsx`).
+pub type TrainingProgressCb<'a> = dyn Fn(&str, u32, u32) + 'a;
+
 /// One LoRA fine-tuning session over a loaded model.
 pub struct TrainingSession {
     model: Model,
@@ -492,6 +512,22 @@ impl TrainingSession {
         input_ids: &[u32],
         target_id: u32,
     ) -> Result<f32, TrainingError> {
+        self.forward_backward_with_progress(input_ids, target_id, None).await
+    }
+
+    /// Variant of [`forward_backward`] that fires `progress_cb` at
+    /// phase boundaries: `"prefill"` per prompt token, `"forward"`
+    /// once at end of capture step, `"backward"` per layer (top-down),
+    /// `"clip"` once after gradient clip. The optimizer step is
+    /// reported by [`step_with_progress`]; manual gradient
+    /// accumulation drivers fire `"optimizer"` themselves around
+    /// their `optimizer_step()` call.
+    pub async fn forward_backward_with_progress<'cb>(
+        &mut self,
+        input_ids: &[u32],
+        target_id: u32,
+        progress_cb: Option<&'cb TrainingProgressCb<'cb>>,
+    ) -> Result<f32, TrainingError> {
         if input_ids.is_empty() {
             return Err(TrainingError::Config(
                 "forward_backward: input_ids must be non-empty".into(),
@@ -572,12 +608,16 @@ impl TrainingSession {
         // 11 non-seq captures get overwritten per position; only
         // the final-position values stick (which is what the regular
         // backward chain needs).
-        for &tok in &input_ids[..input_ids.len() - 1] {
+        let prefill_total = (input_ids.len().saturating_sub(1)) as u32;
+        for (i, &tok) in input_ids[..input_ids.len() - 1].iter().enumerate() {
             self.model
                 .forward_mut()
                 .step_with_lora_seqcap(tok, &lora_slots, &capture)
                 .await
                 .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
+            if let Some(cb) = progress_cb {
+                cb("prefill", (i + 1) as u32, prefill_total);
+            }
         }
         // Final position — capture activations + compute logits.
         let final_tok = *input_ids.last().unwrap();
@@ -587,6 +627,9 @@ impl TrainingSession {
             .step_capture(final_tok, &capture, Some(&lora_slots))
             .await
             .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
+        if let Some(cb) = progress_cb {
+            cb("forward", n_layers as u32, n_layers as u32);
+        }
 
         // Backward.
         let grads: Vec<LayerLoraGrads> = (0..n_layers)
@@ -671,10 +714,12 @@ impl TrainingSession {
         };
         let history_len = input_ids.len() as u32;
         let pos = (input_ids.len() - 1) as u32;
+        // Forward the progress callback into the backward layer walk
+        // — it'll fire `"backward"` per logical layer (top-down).
         let loss = self
             .model
             .forward_mut()
-            .backward_step(
+            .backward_step_with_progress(
                 target_id,
                 &capture,
                 &lora_slots,
@@ -683,6 +728,7 @@ impl TrainingSession {
                 history_len,
                 pos,
                 self.gradient_checkpointing,
+                progress_cb,
             )
             .await
             .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
@@ -711,12 +757,31 @@ impl TrainingSession {
     /// `zero_grads()` once, `forward_backward()` for each
     /// micro-batch, then `optimizer_step()` once.
     pub async fn step(&mut self, input_ids: &[u32], target_id: u32) -> Result<f32, TrainingError> {
+        self.step_with_progress(input_ids, target_id, None).await
+    }
+
+    /// Variant of [`step`] that fires `progress_cb` at phase
+    /// boundaries — see [`TrainingProgressCb`] for the surface. Used
+    /// by the wasm-bindgen `TrainingSession::step` JS entry point so
+    /// the PWA can render a VisionProgress-style status strip.
+    pub async fn step_with_progress<'cb>(
+        &mut self,
+        input_ids: &[u32],
+        target_id: u32,
+        progress_cb: Option<&'cb TrainingProgressCb<'cb>>,
+    ) -> Result<f32, TrainingError> {
         self.zero_grads();
-        let loss = self.forward_backward(input_ids, target_id).await?;
+        let loss = self.forward_backward_with_progress(input_ids, target_id, progress_cb).await?;
         if self.max_grad_norm > 0.0 {
             self.clip_grad_norm(self.max_grad_norm).await?;
+            if let Some(cb) = progress_cb {
+                cb("clip", 0, 1);
+            }
         }
         self.optimizer_step();
+        if let Some(cb) = progress_cb {
+            cb("optimizer", 0, 1);
+        }
         Ok(loss)
     }
 
@@ -745,6 +810,20 @@ impl TrainingSession {
         &mut self,
         input_ids: &[u32],
         targets: &[u32],
+    ) -> Result<f32, TrainingError> {
+        self.forward_backward_per_position_with_progress(input_ids, targets, None).await
+    }
+
+    /// Variant of [`forward_backward_per_position`] that fires
+    /// `progress_cb` at phase boundaries — same semantics as
+    /// [`forward_backward_with_progress`] but adapted to the
+    /// PerPosition loop (single forward sweep, then C backward
+    /// sweeps over the active positions).
+    pub async fn forward_backward_per_position_with_progress<'cb>(
+        &mut self,
+        input_ids: &[u32],
+        targets: &[u32],
+        progress_cb: Option<&'cb TrainingProgressCb<'cb>>,
     ) -> Result<f32, TrainingError> {
         if targets.len() != input_ids.len() {
             return Err(TrainingError::Config(format!(
@@ -825,7 +904,8 @@ impl TrainingSession {
         //    `self.hidden` (= pre-final-norm) into the seq buffer
         //    right after the call returns.
         let ctx = self.model.forward().ctx().clone();
-        for &tok in input_ids {
+        let prefill_total = input_ids.len() as u32;
+        for (idx, &tok) in input_ids.iter().enumerate() {
             self.model
                 .forward_mut()
                 .step_with_lora_seqcap(tok, &lora_slots, &capture)
@@ -845,6 +925,9 @@ impl TrainingSession {
                 d_model_bytes,
             );
             ctx.queue.submit(Some(enc.finish()));
+            if let Some(cb) = progress_cb {
+                cb("prefill", (idx + 1) as u32, prefill_total);
+            }
         }
 
         // 2. Build grad views + scratch view (mirrors `forward_backward`).
@@ -944,7 +1027,7 @@ impl TrainingSession {
             let loss = self
                 .model
                 .forward_mut()
-                .backward_step(
+                .backward_step_with_progress(
                     target_id,
                     &capture,
                     &lora_slots,
@@ -953,6 +1036,7 @@ impl TrainingSession {
                     (p + 1) as u32,
                     p as u32,
                     false,
+                    progress_cb,
                 )
                 .await
                 .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
@@ -970,14 +1054,31 @@ impl TrainingSession {
         input_ids: &[u32],
         targets: &[u32],
     ) -> Result<f32, TrainingError> {
+        self.step_per_position_with_progress(input_ids, targets, None).await
+    }
+
+    /// Variant of [`step_per_position`] with the same progress-callback
+    /// surface as [`step_with_progress`].
+    pub async fn step_per_position_with_progress<'cb>(
+        &mut self,
+        input_ids: &[u32],
+        targets: &[u32],
+        progress_cb: Option<&'cb TrainingProgressCb<'cb>>,
+    ) -> Result<f32, TrainingError> {
         self.zero_grads();
         let loss = self
-            .forward_backward_per_position(input_ids, targets)
+            .forward_backward_per_position_with_progress(input_ids, targets, progress_cb)
             .await?;
         if self.max_grad_norm > 0.0 {
             self.clip_grad_norm(self.max_grad_norm).await?;
+            if let Some(cb) = progress_cb {
+                cb("clip", 0, 1);
+            }
         }
         self.optimizer_step();
+        if let Some(cb) = progress_cb {
+            cb("optimizer", 0, 1);
+        }
         Ok(loss)
     }
 
