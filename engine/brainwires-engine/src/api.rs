@@ -55,12 +55,22 @@ pub async fn compute_spike_js(input: Vec<f32>) -> std::result::Result<Vec<f32>, 
 pub struct Model {
     tokenizer: BpeTokenizer,
     forward: Forward,
-    /// Built only when the GGUF carries vision tensors (e.g. gemma4:e2b/e4b);
-    /// `None` for text-only checkpoints.
+    /// Vision tower — lazily allocated. `None` either because the GGUF
+    /// has no vision tensors *or* because `release_vision_weights`
+    /// dropped the previous instance to free its ~250 MB scratch.
+    /// `vision_capable` distinguishes the two: a `None + capable=true`
+    /// state is the "released, will be rebuilt on next encode" case.
     vision: Option<VisionForward>,
-    /// Built only when the GGUF carries audio tensors (e.g. gemma4:e2b/e4b);
-    /// `None` for text-only or vision-only checkpoints.
+    /// True iff the loaded GGUF carries the vision tensors (presence
+    /// of `v.patch_embd.weight`). Stable for the lifetime of the
+    /// Model — `hasVision` reports this, not `vision.is_some()`, so
+    /// releasing the tower doesn't make the UI think vision is
+    /// unavailable.
+    vision_capable: bool,
+    /// Audio tower — same lazy-allocation contract as `vision`.
     audio: Option<GpuAudioForward>,
+    /// True iff the loaded GGUF carries the audio tensors.
+    audio_capable: bool,
     sampler: Sampler,
     /// Cooperative cancel flag for in-flight multimodal encodes. Flipped
     /// via `cancelMultimodalEncode()` from JS; the vision and audio
@@ -119,7 +129,8 @@ impl Model {
 
         // Detect vision tower (presence of v.patch_embd.weight). Build VisionForward
         // before consuming `ctx`/`pipes`/`wcache` into the text Forward.
-        let vision = if with_vision && r_arc.tensor("v.patch_embd.weight").is_ok() {
+        let vision_capable = r_arc.tensor("v.patch_embd.weight").is_ok();
+        let vision = if with_vision && vision_capable {
             let vcfg = VisionConfig::from_gguf(&r_arc, d_text)?;
             Some(VisionForward::new(vcfg, ctx.clone(), pipes.clone(), wcache.clone()).await?)
         } else {
@@ -130,7 +141,8 @@ impl Model {
         // encoder runs the 12 Conformer blocks + projector on the GPU; mel
         // features + SSCP convs + pre-encode linear stay on CPU (small, and
         // their data layouts don't pay off vs the bulk of the work).
-        let audio = if with_audio && r_arc.tensor("a.conv1d.0.weight").is_ok() {
+        let audio_capable = r_arc.tensor("a.conv1d.0.weight").is_ok();
+        let audio = if with_audio && audio_capable {
             let acfg = AudioConfig::from_gguf(&r_arc, d_text)?;
             Some(GpuAudioForward::new(acfg, ctx.clone(), pipes.clone(), wcache.clone()).await?)
         } else {
@@ -143,7 +155,9 @@ impl Model {
             tokenizer,
             forward,
             vision,
+            vision_capable: with_vision && vision_capable,
             audio,
+            audio_capable: with_audio && audio_capable,
             sampler: Sampler::new(SamplingOptions::default()),
             encode_cancel: Arc::new(AtomicBool::new(false)),
             adapter: None,
@@ -151,8 +165,30 @@ impl Model {
     }
 
     /// True iff this checkpoint carries a vision tower (gemma4:e2b/e4b).
+    /// Stable for the lifetime of the Model — returns `true` even when
+    /// `release_vision_weights` has temporarily dropped the tower
+    /// (the next encode will rebuild it).
     pub fn has_vision_native(&self) -> bool {
-        self.vision.is_some()
+        self.vision_capable
+    }
+
+    /// Ensure the vision tower is allocated. Re-builds the
+    /// `VisionForward` struct (allocating ~250 MB of per-image
+    /// scratch buffers) if a prior `release_vision_weights` dropped
+    /// it. No-op when the tower is already live or the GGUF has no
+    /// vision tensors.
+    async fn ensure_vision(&mut self) -> Result<()> {
+        if self.vision.is_some() || !self.vision_capable {
+            return Ok(());
+        }
+        let reader = self.forward.wcache().reader_arc();
+        let d_text = self.forward.cfg().d_model;
+        let ctx = self.forward.ctx().clone();
+        let pipes = self.forward.pipes().clone();
+        let wcache = self.forward.wcache().clone();
+        let vcfg = VisionConfig::from_gguf(&reader, d_text)?;
+        self.vision = Some(VisionForward::new(vcfg, ctx, pipes, wcache).await?);
+        Ok(())
     }
 
     /// Encode an RGB image into a flat sequence of soft-token embeddings.
@@ -160,13 +196,18 @@ impl Model {
     /// `pixels`: `[3 * h * w]` f32, channel-first `[R..., G..., B...]`, normalised
     /// to `[-1, 1]`. `h` and `w` must be multiples of `patch_size * n_merge` (= 48).
     /// Returns `[n_pooled_patches * d_text]` f32 — one row of d_text per soft token.
+    ///
+    /// Rebuilds the vision tower if a prior `release_vision_weights`
+    /// dropped it — see `ensure_vision`. This is `&mut self` (was
+    /// `&self`) so the rebuild can happen without interior mutability.
     pub async fn encode_image_native(
-        &self,
+        &mut self,
         pixels: &[f32],
         h: usize,
         w: usize,
         progress: Option<&dyn Fn(u32, u32)>,
     ) -> Result<Vec<f32>> {
+        self.ensure_vision().await?;
         let v = self.vision.as_ref().ok_or_else(|| {
             crate::error::RullamaError::Inference(
                 "encode_image: this checkpoint has no vision tower".into(),
@@ -181,10 +222,21 @@ impl Model {
 
     /// Number of soft tokens an image of `h × w` pixels produces (after AvgPool 3×3
     /// of patch grid). Useful for sizing prompt buffers without running the encoder.
+    ///
+    /// Falls back to deriving from `patch_size=16`, `n_merge=3` (the
+    /// gemma4 vision constants) when the tower has been released and
+    /// the cfg isn't reachable through a `VisionForward` instance.
     pub fn image_soft_token_count_native(&self, h: usize, w: usize) -> Option<usize> {
-        let v = self.vision.as_ref()?;
-        let cfg = v.cfg();
-        let align = (cfg.patch_size * cfg.n_merge) as usize;
+        if !self.vision_capable {
+            return None;
+        }
+        let align: usize = match self.vision.as_ref() {
+            Some(v) => {
+                let cfg = v.cfg();
+                (cfg.patch_size * cfg.n_merge) as usize
+            }
+            None => 48, // gemma4 constants: patch_size=16, n_merge=3
+        };
         if !h.is_multiple_of(align) || !w.is_multiple_of(align) {
             return None;
         }
@@ -193,14 +245,32 @@ impl Model {
         Some(pooled_h * pooled_w)
     }
 
-    /// True iff this checkpoint carries an audio tower.
+    /// True iff this checkpoint carries an audio tower. Like
+    /// `has_vision_native`, stable across `release_audio_weights`.
     pub fn has_audio_native(&self) -> bool {
-        self.audio.is_some()
+        self.audio_capable
+    }
+
+    /// Re-build the `GpuAudioForward` struct if `release_audio_weights`
+    /// dropped it. Mirrors [`Self::ensure_vision`].
+    async fn ensure_audio(&mut self) -> Result<()> {
+        if self.audio.is_some() || !self.audio_capable {
+            return Ok(());
+        }
+        let reader = self.forward.wcache().reader_arc();
+        let d_text = self.forward.cfg().d_model;
+        let ctx = self.forward.ctx().clone();
+        let pipes = self.forward.pipes().clone();
+        let wcache = self.forward.wcache().clone();
+        let acfg = AudioConfig::from_gguf(&reader, d_text)?;
+        self.audio = Some(GpuAudioForward::new(acfg, ctx, pipes, wcache).await?);
+        Ok(())
     }
 
     /// Encode raw 16 kHz mono PCM (`Vec<f32>` in `[-1, 1]`) into a flat sequence
     /// of soft-token embeddings. Returns `[n_audio_tokens * d_text]` f32.
-    pub async fn encode_audio_native(&self, pcm: &[f32]) -> Result<Vec<f32>> {
+    pub async fn encode_audio_native(&mut self, pcm: &[f32]) -> Result<Vec<f32>> {
+        self.ensure_audio().await?;
         let a = self.audio.as_ref().ok_or_else(|| {
             crate::error::RullamaError::Inference(
                 "encode_audio: this checkpoint has no audio tower".into(),
@@ -241,21 +311,42 @@ impl Model {
         Some((begin, end))
     }
 
-    /// Evict cached vision-tower weights from GPU memory. The next
-    /// `encode_image` call will re-upload. Returns the number of cache entries
-    /// freed. Useful on memory-constrained devices (e.g. iPhone) where holding
-    /// text + vision + audio simultaneously exceeds the RAM cap; call this
-    /// between turns when the next message won't include an image.
-    pub fn release_vision_weights_native(&self) -> usize {
-        let wc = self.forward.wcache();
-        wc.drop_prefix("v.") + wc.drop_prefix("mm.input_projection")
+    /// Evict the vision tower entirely — both the cached weights
+    /// (~650 MB on gemma4:e2b) AND the `VisionForward` struct's
+    /// per-image scratch (~250 MB of `MAX_PATCHES`-sized intermediates
+    /// that `drop_prefix` alone won't touch because they're owned
+    /// fields on the struct, not entries in `WeightCache`). Returns
+    /// the number of cache entries freed.
+    ///
+    /// `hasVision` keeps returning `true` after this call — the next
+    /// `encode_image` rebuilds the tower automatically via
+    /// `ensure_vision`. The rebuild allocates the scratch buffers but
+    /// doesn't upload weights until the encode itself touches them
+    /// (lazy `WeightCache::buffer_async` path).
+    ///
+    /// Used on memory-constrained devices (iPhone Safari WebContent
+    /// ~3 GB cap) where holding text weights + vision scratch +
+    /// vision weights + KV cache simultaneously exceeds the budget.
+    pub fn release_vision_weights_native(&mut self) -> usize {
+        let freed = {
+            let wc = self.forward.wcache();
+            wc.drop_prefix("v.") + wc.drop_prefix("mm.input_projection")
+        };
+        // Dropping `vision` releases the `MAX_PATCHES`-sized
+        // intermediates (~250 MB) that `drop_prefix` can't reach.
+        self.vision = None;
+        freed
     }
 
-    /// Evict cached audio-tower weights from GPU memory. Symmetric to
-    /// [`release_vision_weights_native`].
-    pub fn release_audio_weights_native(&self) -> usize {
-        let wc = self.forward.wcache();
-        wc.drop_prefix("a.") + wc.drop_prefix("mm.a.")
+    /// Symmetric to [`release_vision_weights_native`]: drops cached
+    /// audio-tower weights AND the `GpuAudioForward` struct's scratch.
+    pub fn release_audio_weights_native(&mut self) -> usize {
+        let freed = {
+            let wc = self.forward.wcache();
+            wc.drop_prefix("a.") + wc.drop_prefix("mm.a.")
+        };
+        self.audio = None;
+        freed
     }
 
     /// Total bytes currently held in the shared `WeightCache`. Useful for
@@ -729,7 +820,7 @@ impl Model {
     /// `w` are integer pixel dims aligned to `patch_size * n_merge` (= 48).
     #[wasm_bindgen(js_name = encodeImage)]
     pub async fn encode_image_js(
-        &self,
+        &mut self,
         pixels: Vec<f32>,
         h: u32,
         w: u32,
@@ -776,7 +867,7 @@ impl Model {
     /// Float32Array of soft-token embeddings. Caller is responsible for
     /// resampling to 16 kHz if the source is at a different rate.
     #[wasm_bindgen(js_name = encodeAudio)]
-    pub async fn encode_audio_js(&self, pcm: Vec<f32>) -> std::result::Result<Vec<f32>, JsError> {
+    pub async fn encode_audio_js(&mut self, pcm: Vec<f32>) -> std::result::Result<Vec<f32>, JsError> {
         self.encode_audio_native(&pcm)
             .await
             .map_err(|e| JsError::new(&format!("{e}")))
@@ -811,13 +902,13 @@ impl Model {
     /// of cache entries freed. Call between turns on iPhone when the next
     /// message won't include an image to free ~3 GB.
     #[wasm_bindgen(js_name = releaseVisionWeights)]
-    pub fn release_vision_weights_js(&self) -> usize {
+    pub fn release_vision_weights_js(&mut self) -> usize {
         self.release_vision_weights_native()
     }
 
     /// Evict cached audio-tower weights from GPU memory.
     #[wasm_bindgen(js_name = releaseAudioWeights)]
-    pub fn release_audio_weights_js(&self) -> usize {
+    pub fn release_audio_weights_js(&mut self) -> usize {
         self.release_audio_weights_native()
     }
 
