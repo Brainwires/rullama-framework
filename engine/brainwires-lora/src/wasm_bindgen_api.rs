@@ -19,6 +19,58 @@ use wasm_bindgen::prelude::*;
 use crate::session::TrainingSession as NativeSession;
 use crate::shared::config::{LoraConfig, TrainingHyperparams};
 
+#[derive(Serialize)]
+struct ProbeReport {
+    ok: bool,
+    /// Coarse GPU-byte estimate of what a `TrainingSession::new` call
+    /// would allocate. Useful for "you'd need X MB" diagnostics even
+    /// on the success path.
+    #[serde(rename = "estimatedBytes")]
+    estimated_bytes: u64,
+    /// Present when `ok=false` — the wgpu/probe error message verbatim.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
+
+/// Try the training-side allocations without consuming the Model so the
+/// chat path stays alive on memory-tight devices. Returns
+/// `{ok: true, estimatedBytes}` if the trial succeeded, `{ok: false,
+/// estimatedBytes, reason}` if any allocation failed or wgpu surfaced
+/// an OOM error.
+///
+/// JS pattern:
+/// ```js
+/// const probe = await TrainingSession.probeFit(model, loraJson, hpJson);
+/// if (!probe.ok) { showError(probe.reason); return; }
+/// const session = new TrainingSession(model, loraJson, hpJson);
+/// ```
+#[wasm_bindgen(js_name = probeTrainingFit)]
+pub async fn probe_training_fit_js(
+    model: &Model,
+    lora_config_json: &str,
+    hp_json: &str,
+) -> std::result::Result<JsValue, JsError> {
+    let lora_cfg: LoraConfig = serde_json::from_str(lora_config_json)
+        .map_err(|e| JsError::new(&format!("invalid loraConfig JSON: {e}")))?;
+    let hp: TrainingHyperparams = serde_json::from_str(hp_json)
+        .map_err(|e| JsError::new(&format!("invalid hyperparams JSON: {e}")))?;
+
+    let report = match NativeSession::probe(model, &lora_cfg, &hp).await {
+        Ok(bytes) => ProbeReport { ok: true, estimated_bytes: bytes, reason: None },
+        Err(e) => ProbeReport {
+            ok: false,
+            estimated_bytes: crate::session::estimate_training_bytes(
+                model.forward().cfg(),
+                &lora_cfg,
+                &hp,
+            ),
+            reason: Some(format!("{e}")),
+        },
+    };
+    serde_wasm_bindgen::to_value(&report)
+        .map_err(|e| JsError::new(&format!("serialize probe report: {e}")))
+}
+
 /// JS-facing wrapper around the native `TrainingSession`.
 ///
 /// All async methods return `Promise<JsValue>` resolving to a small

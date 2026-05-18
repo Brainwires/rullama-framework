@@ -80,6 +80,109 @@ pub struct TrainingSession {
     step_num: u32,
 }
 
+/// Shape table the LoRA inserter walks. Pulled out so [`build_lora_state`]
+/// and the probe path see the same per-layer shapes without duplicating
+/// the match arms.
+fn lora_projection_dims(
+    cfg: &rullama::model::config::Gemma4Config,
+    layer: u32,
+    proj: &str,
+) -> Result<(u32, u32), TrainingError> {
+    let d_model = cfg.d_model;
+    let head_dim = cfg.head_dim(layer);
+    let n_heads_dim = cfg.n_heads * head_dim;
+    let n_kv_dim = cfg.n_kv_heads(layer) * head_dim;
+    let ffn_n = cfg.ffn(layer);
+    Ok(match proj {
+        "attn_q" => (d_model, n_heads_dim),
+        "attn_k" => (d_model, n_kv_dim),
+        "attn_v" => (d_model, n_kv_dim),
+        "attn_o" => (n_heads_dim, d_model),
+        "ffn_gate" => (d_model, ffn_n),
+        "ffn_up" => (d_model, ffn_n),
+        "ffn_down" => (ffn_n, d_model),
+        other => {
+            return Err(TrainingError::Config(format!(
+                "supported LoRA targets: attn_q/k/v/o + ffn_gate/up/down, got {other}"
+            )));
+        }
+    })
+}
+
+/// Build a fresh `LoraState` for every `(layer, projection)` pair in
+/// `lora_cfg.target_modules`. Shared by [`TrainingSession::new`] and
+/// the probe path so they allocate identical shapes.
+fn build_lora_state(
+    ctx: Arc<rullama::backend::WgpuCtx>,
+    cfg: &rullama::model::config::Gemma4Config,
+    lora_cfg: &LoraConfig,
+    seed_base: u64,
+) -> Result<LoraState, TrainingError> {
+    let mut loras = LoraState::new(ctx);
+    for layer in 0..cfg.n_layers {
+        for proj in &lora_cfg.target_modules {
+            let (in_dim, out_dim) = lora_projection_dims(cfg, layer, proj)?;
+            // Deterministic seed per (layer, proj) so reruns are
+            // reproducible without an extra RNG.
+            let proj_idx = [
+                "attn_q", "attn_k", "attn_v", "attn_o", "ffn_gate", "ffn_up", "ffn_down",
+            ]
+            .iter()
+            .position(|p| *p == proj.as_str())
+            .unwrap_or(0) as u64;
+            let seed = seed_base
+                .wrapping_add(layer as u64 * 7919)
+                .wrapping_add(proj_idx * 17);
+            loras.insert(
+                LoraKey::new(layer, proj.clone()),
+                in_dim,
+                lora_cfg.rank,
+                out_dim,
+                lora_cfg.alpha,
+                seed,
+            )?;
+        }
+    }
+    Ok(loras)
+}
+
+/// Coarse estimate of the GPU bytes a training session would consume:
+/// LoRA A/B/grad/Adam-moments per `(layer, projection)` + per-layer
+/// activation captures sized for `max_seq_len`. Used by the probe so
+/// the UI can show "this would need X MB" before committing the Model.
+pub fn estimate_training_bytes(
+    cfg: &rullama::model::config::Gemma4Config,
+    lora_cfg: &LoraConfig,
+    hp: &TrainingHyperparams,
+) -> u64 {
+    let seq = hp.max_seq_len as u64;
+    let d_model = cfg.d_model as u64;
+    let mut bytes: u64 = 0;
+    // LoRA state — A, B, dA, dB, m_A, v_A, m_B, v_B (= 4× A + 4× B).
+    for layer in 0..cfg.n_layers {
+        for proj in &lora_cfg.target_modules {
+            if let Ok((in_dim, out_dim)) = lora_projection_dims(cfg, layer, proj) {
+                let a_elems = (in_dim as u64) * (lora_cfg.rank as u64);
+                let b_elems = (out_dim as u64) * (lora_cfg.rank as u64);
+                bytes += 4 * a_elems * 4 + 4 * b_elems * 4; // 4-buffer set ×4 bytes f32
+            }
+        }
+    }
+    // Activation captures per layer × n_layers. Dominated by FFN intermediates.
+    // Per layer: 17 seq-sized buffers, the big ones are ffn_gate/up/act/down each
+    // `ffn_inter × seq × 4`. Sum approximation per layer.
+    for layer in 0..cfg.n_layers {
+        let ffn = cfg.ffn(layer) as u64;
+        let head_dim = cfg.head_dim(layer) as u64;
+        let n_heads_dim = (cfg.n_heads as u64) * head_dim;
+        let n_kv_dim = (cfg.n_kv_heads(layer) as u64) * head_dim;
+        let ple_dim = if cfg.has_ple() { cfg.ple_dim as u64 } else { 0 };
+        let per_layer = (3 * ffn + 2 * n_heads_dim + 2 * n_kv_dim + 6 * d_model + 3 * ple_dim) * seq * 4;
+        bytes += per_layer;
+    }
+    bytes
+}
+
 impl TrainingSession {
     /// Allocate all training state for `model`:
     /// - One `LoraLayer` per `(layer, projection)` pair specified in
@@ -96,51 +199,7 @@ impl TrainingSession {
         let ctx = Arc::new(model.forward().ctx().clone());
         let max_seq_len = hp.max_seq_len as u32;
         let scratch = TrainingScratch::new(&ctx, &cfg, max_seq_len);
-
-        let mut loras = LoraState::new(Arc::clone(&ctx));
-        let d_model = cfg.d_model;
-        for layer in 0..cfg.n_layers {
-            let head_dim = cfg.head_dim(layer);
-            let n_heads_dim = cfg.n_heads * head_dim;
-            let n_kv_dim = cfg.n_kv_heads(layer) * head_dim;
-            let ffn_n = cfg.ffn(layer);
-            for proj in &lora_cfg.target_modules {
-                let (in_dim, out_dim) = match proj.as_str() {
-                    "attn_q" => (d_model, n_heads_dim),
-                    "attn_k" => (d_model, n_kv_dim),
-                    "attn_v" => (d_model, n_kv_dim),
-                    "attn_o" => (n_heads_dim, d_model),
-                    "ffn_gate" => (d_model, ffn_n),
-                    "ffn_up" => (d_model, ffn_n),
-                    "ffn_down" => (ffn_n, d_model),
-                    other => {
-                        return Err(TrainingError::Config(format!(
-                            "supported LoRA targets: attn_q/k/v/o + ffn_gate/up/down, got {other}"
-                        )));
-                    }
-                };
-                // Deterministic seed per (layer, proj) so reruns are
-                // reproducible without an extra RNG.
-                let proj_idx = [
-                    "attn_q", "attn_k", "attn_v", "attn_o", "ffn_gate", "ffn_up", "ffn_down",
-                ]
-                .iter()
-                .position(|p| *p == proj.as_str())
-                .unwrap_or(0) as u64;
-                let seed = hp
-                    .seed
-                    .wrapping_add(layer as u64 * 7919)
-                    .wrapping_add(proj_idx * 17);
-                loras.insert(
-                    LoraKey::new(layer, proj.clone()),
-                    in_dim,
-                    lora_cfg.rank,
-                    out_dim,
-                    lora_cfg.alpha,
-                    seed,
-                )?;
-            }
-        }
+        let loras = build_lora_state(Arc::clone(&ctx), &cfg, &lora_cfg, hp.seed)?;
 
         let adam_cfg = AdamConfig {
             lr: hp.learning_rate as f32,
@@ -166,6 +225,41 @@ impl TrainingSession {
             mixed_precision: hp.mixed_precision,
             step_num: 1,
         })
+    }
+
+    /// Try the allocations a real session would do — `TrainingScratch`
+    /// + `LoraState` — against a *borrowed* Model, then drop them.
+    /// Returns the estimated GPU bytes on success; `Err` if any
+    /// allocation fails or wgpu surfaces an OOM error during the
+    /// trial. Used by the UI to refuse a `TrainingSession::new` call
+    /// that would consume the Model and then fail.
+    pub async fn probe(
+        model: &Model,
+        lora_cfg: &LoraConfig,
+        hp: &TrainingHyperparams,
+    ) -> Result<u64, TrainingError> {
+        let cfg = model.forward().cfg().clone();
+        let ctx = Arc::new(model.forward().ctx().clone());
+        let estimated = estimate_training_bytes(&cfg, lora_cfg, hp);
+
+        let scope = ctx.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+        let alloc_result: Result<(), TrainingError> = (|| {
+            let _scratch = TrainingScratch::new(&ctx, &cfg, hp.max_seq_len as u32);
+            let _loras = build_lora_state(Arc::clone(&ctx), &cfg, lora_cfg, hp.seed)?;
+            drop(_scratch);
+            drop(_loras);
+            Ok(())
+        })();
+        let oom = scope.pop().await;
+
+        match (alloc_result, oom) {
+            (Ok(()), None) => Ok(estimated),
+            (Err(e), _) => Err(e),
+            (_, Some(err)) => Err(TrainingError::Backend(format!(
+                "GPU rejected training scratch allocation (need ~{} MB): {err}",
+                estimated / (1024 * 1024),
+            ))),
+        }
     }
 
     /// True iff this session was constructed with
