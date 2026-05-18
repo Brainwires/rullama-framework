@@ -15,7 +15,10 @@
 //!     → ClippableLinear `mm.input_projection` → unweighted RMSNorm
 //!   = soft-token embeddings [n_pooled_patches, d_text=1536].
 //!
-//! Single `wgpu::CommandEncoder` per image; one final readback.
+//! Three submit groups per image: prologue (patch_embd + pos_embed),
+//! one encoder + submit + GPU fence per ViT block (so a progress callback
+//! can fire at real GPU pace), and an epilogue (pool → projector → rmsnorm
+//! → readback).
 
 use std::sync::Arc;
 
@@ -372,19 +375,18 @@ impl VisionForward {
         self.ctx.queue.write_buffer(&self.pos_x_buf, 0, cast_slice(&pos_x));
         self.ctx.queue.write_buffer(&self.pos_y_buf, 0, cast_slice(&pos_y));
 
-        // Prefetch both prologue/epilogue weights from cache before recording —
-        // this lets the entire encode (prologue + 16 layers + epilogue) live in
-        // a single CommandEncoder with a single terminal queue.submit().
+        // Prefetch prologue/epilogue weights from cache. Cheap Arc clones
+        // once the cache is warm; on a cold cache they ride the same
+        // streaming reader the per-layer fetches do.
         let patch_w = self.wcache.buffer_async("v.patch_embd.weight").await?;
         let proj_w = self.wcache.buffer_async("mm.input_projection.weight").await?;
 
+        // ---- Prologue: Conv2D patch_embd + 2D position embeddings ----
+        // hidden_a lives on the GPU across encoder boundaries, so the
+        // per-layer encoders below pick up where this leaves off.
         let mut enc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("vfwd.encoder"),
+            label: Some("vfwd.prologue"),
         });
-
-        // ---- 1. Patch embedding via Conv2D (k=ps, s=ps, pad=0) ----
-        // Output is in channel-LAST layout [patches_y, patches_x, hidden] (per
-        // conv2d.wgsl), which we read as [n_patches, hidden] downstream.
         conv2d_chained(
             &self.ctx, &self.pipes, &mut enc,
             &patch_w, &self.pixel_buf, &self.hidden_a,
@@ -392,57 +394,60 @@ impl VisionForward {
             hidden, patches_y, patches_x,
             ps, ps, ps, ps, 0, 0,
         );
-
-        // ---- 2. Add 2D position embeddings ----
         pos_embed_add_chained(
             &self.ctx, &self.pipes, &mut enc,
             &self.hidden_a, &self.pos_embd, &self.pos_x_buf, &self.pos_y_buf,
             n_patches, hidden, cfg.pos_size as usize,
         );
+        self.ctx.queue.submit(Some(enc.finish()));
 
-        // ---- 3. Transformer layers, all chained into the same encoder ----
-        // The progress callback fires after each layer is *recorded*, not when
-        // GPU work completes — all 16 blocks now flush together at the final
-        // submit below. This trades fine-grained GPU progress for ~16× fewer
-        // CPU↔GPU sync points.
+        // ---- Transformer layers: one CommandEncoder + submit + fence per
+        // block. The fence ensures `progress(i+1, ...)` only fires after the
+        // GPU has actually completed layer i — not after the CPU has
+        // recorded it. Without this, on a warm weight-cache all 16 progress
+        // events fire in microseconds and the UI freezes at 16/16 while the
+        // GPU still chews through ~30 s of work. Matches the per-layer
+        // submit pattern the text path (`forward_chained.rs`) already uses
+        // (CLAUDE.md: "One CommandEncoder per transformer layer").
         for i in 0..cfg.n_layers {
-            // Cooperative cancel point: checked once per layer. The work
-            // we discard is small (one block's already-recorded ops in
-            // `enc`); the encoder is just dropped without submitting.
             if let Some(c) = cancel.as_ref() {
                 if c.load(std::sync::atomic::Ordering::Relaxed) {
                     return Err(RullamaError::Cancelled);
                 }
             }
-            self.encode_layer(&mut enc, i, n_patches, hidden, ffn_inter, n_heads, head_dim, eps).await?;
+            let mut lenc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("vfwd.layer"),
+            });
+            self.encode_layer(&mut lenc, i, n_patches, hidden, ffn_inter, n_heads, head_dim, eps).await?;
+            self.ctx.queue.submit(Some(lenc.finish()));
+            fence_submitted_work(&self.ctx.device, &self.ctx.queue).await?;
             if let Some(cb) = progress { cb(i + 1, cfg.n_layers); }
         }
 
-        // ---- 4. AvgPool2D 3×3 ----
-        // hidden_a is [patches_y, patches_x, hidden] (patch-major matches our
-        // post-conv layout). Pool with k=stride=n_merge → [pooled_y, pooled_x, hidden].
+        // ---- Epilogue: AvgPool → scale → projector → final RMSNorm → readback ----
+        let mut enc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("vfwd.epilogue"),
+        });
+
+        // AvgPool2D 3×3 — hidden_a is [patches_y, patches_x, hidden]; pool
+        // with k=stride=n_merge → [pooled_y, pooled_x, hidden].
         avg_pool2d_chained(
             &self.ctx, &self.pipes, &mut enc,
             &self.hidden_a, &self.pool_buf,
             patches_y, patches_x, hidden, nm,
         );
 
-        // ---- 5. Scale by sqrt(hidden) ----
+        // Scale by sqrt(hidden).
         scale_chained(
             &self.ctx, &self.pipes, &mut enc,
             &self.pool_buf, n_pooled * hidden, (hidden as f32).sqrt(),
         );
 
-        // ---- 6. Optional std_bias subtract + std_scale multiply ----
-        // (Implement as a small per-row elementwise: we don't have a sub kernel
-        // yet; skip for now if std_bias/std_scale are absent. Most Gemma 4 e2b
-        // checkpoints don't ship these — Ollama's path also no-ops when nil.)
-        // TODO if a checkpoint does ship them: use a residual_add with negated
-        // std_bias broadcast across patches, then a multiply broadcast. Same
-        // applies to std_scale. Adding a dedicated batched_bias_scale kernel
-        // is cleaner. Defer to a follow-up commit.
+        // Optional std_bias / std_scale: Most Gemma 4 e2b checkpoints don't
+        // ship these and Ollama's path also no-ops when nil; defer to a
+        // follow-up commit with a dedicated batched_bias_scale kernel.
 
-        // ---- 7. Projector: clamp(in) → matmul mm.input_projection → clamp(out) ----
+        // Projector: clamp(in) → matmul mm.input_projection → clamp(out)
         if self.proj_clamp.has_in_clamp() {
             clamp_chained(
                 &self.ctx, &self.pipes, &mut enc,
@@ -463,14 +468,13 @@ impl VisionForward {
             );
         }
 
-        // ---- 8. Final RMSNorm without weight (out-of-place into soft_tmp) ----
+        // Final RMSNorm without weight (out-of-place into soft_tmp).
         rmsnorm_per_row_chained(
             &self.ctx, &self.pipes, &mut enc,
             &self.soft_tokens, None, &self.dummy, &self.soft_tmp,
             n_pooled, d_text, eps,
         );
 
-        // ---- 9. Submit + readback (read from soft_tmp) ----
         let out_bytes = (n_pooled * d_text * 4) as u64;
         enc.copy_buffer_to_buffer(&self.soft_tmp, 0, &self.soft_tokens_read, 0, out_bytes);
         self.ctx.queue.submit(Some(enc.finish()));
@@ -720,6 +724,22 @@ impl VisionForward {
 
         Ok(())
     }
+}
+
+/// Block (asynchronously) until all currently-submitted GPU work on `queue`
+/// has finished. Used between per-layer submits in `encode()` so the progress
+/// callback fires at real GPU pace rather than at recording pace. Mirrors the
+/// existing `read_back_f32` oneshot idiom — on wasm32 this resolves via
+/// `GPUQueue.onSubmittedWorkDone()` (Promise), letting the JS event loop
+/// render UI updates between layers; on native the executor drives the poll.
+async fn fence_submitted_work(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<()> {
+    let (tx, rx) = oneshot::channel();
+    queue.on_submitted_work_done(move || { let _ = tx.send(()); });
+    device
+        .poll(wgpu::PollType::Wait { submission_index: None, timeout: None })
+        .map_err(|e| RullamaError::Inference(format!("{e:?}")))?;
+    rx.await.map_err(|e| RullamaError::BufferMap(format!("{e}")))?;
+    Ok(())
 }
 
 async fn read_back_f32(device: &wgpu::Device, buf: &wgpu::Buffer, n_bytes: u64) -> Result<Vec<f32>> {
