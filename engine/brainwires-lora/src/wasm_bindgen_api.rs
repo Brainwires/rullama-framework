@@ -218,6 +218,15 @@ impl TrainingSession {
         self.inner.into_model()
     }
 
+    /// Cooperatively cancel an in-flight step. Forward + backward
+    /// layer walks check the flag between per-layer encoder submits;
+    /// the awaited `step()` promise rejects with a "cancelled" error
+    /// on the next layer boundary. No-op when nothing is in flight.
+    #[wasm_bindgen(js_name = cancel)]
+    pub fn cancel_js(&self) {
+        self.inner.cancel()
+    }
+
     /// Current learning rate (post-warmup, post-schedule). Useful for
     /// the loss-chart label.
     #[wasm_bindgen(js_name = lr, getter)]

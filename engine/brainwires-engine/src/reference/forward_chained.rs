@@ -20,6 +20,7 @@
 //! remains the parity oracle and is now invoked only by `examples/forward_parity`.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::backend::dispatch::{
     attention_backward_dkv_chained, attention_backward_dq_chained, attention_chained,
@@ -183,6 +184,14 @@ pub struct Forward {
     /// `MAX_CONTEXT`, so a mobile build with a smaller cache can still
     /// surface a clean "context length exceeded" error.
     max_context: u32,
+
+    /// Cooperative cancel flag for in-flight forward + backward layer
+    /// walks. The training cancel button flips this; the per-layer
+    /// loops in `run_forward_from_hidden` and `backward_step` check it
+    /// after each `encode_layer`. Bounded latency: one layer (~300 ms-
+    /// 1 s on browser) instead of one full step (10-30 s). Mirrors
+    /// the `Model::encode_cancel` pattern used for multimodal.
+    cancel_flag: Arc<AtomicBool>,
 
     // Cached scale factor for the final logits softcap dispatch.
     pos: u32,
@@ -379,8 +388,41 @@ impl Forward {
             layer_scalars,
             dummy,
             max_context,
+            cancel_flag: Arc::new(AtomicBool::new(false)),
             pos: 0,
         })
+    }
+
+    /// Flip the cooperative cancel flag. Any in-flight forward or
+    /// backward layer walk bails with `RullamaError::Cancelled` at
+    /// the next layer boundary. Safe to call when no work is
+    /// in-flight — the flag is cleared at the top of each `step` /
+    /// `step_with_lora*` / `backward_step` call.
+    pub fn cancel(&self) {
+        self.cancel_flag.store(true, Ordering::Release);
+    }
+
+    /// Clear the cancel flag. Called at the top of each layer-walking
+    /// entry point so a stale flag from a previous cancel doesn't
+    /// poison the next step.
+    fn reset_cancel(&self) {
+        self.cancel_flag.store(false, Ordering::Release);
+    }
+
+    /// Check the cancel flag — returns `Err(Cancelled)` if it's set.
+    /// Called between per-layer encoder submits.
+    fn check_cancelled(&self) -> Result<()> {
+        if self.cancel_flag.load(Ordering::Acquire) {
+            Err(RullamaError::Cancelled)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Shared cancel-flag handle so `TrainingSession::cancel` can
+    /// reach the flag without taking a `&mut` borrow on the model.
+    pub fn cancel_flag(&self) -> Arc<AtomicBool> {
+        self.cancel_flag.clone()
     }
 
     pub fn cfg(&self) -> &Gemma4Config {
@@ -955,6 +997,10 @@ impl Forward {
         capture: Option<&'a [LayerCaptureBuffers<'a>]>,
         loras: Option<&'a [LayerLoraSlots<'a>]>,
     ) -> Result<Vec<f32>> {
+        // Clear any stale cancel flag from a previous step so this
+        // call starts fresh; the per-layer loop below checks it after
+        // each `encode_layer`.
+        self.reset_cancel();
         let d_model = self.cfg.d_model as usize;
         let n_layers = self.cfg.n_layers as usize;
         let ple_dim = self.cfg.ple_dim as usize;
@@ -1059,6 +1105,11 @@ impl Forward {
             let lora = loras.map(|l| &l[i as usize]);
             self.encode_layer(&mut enc, i, pos, cap, lora).await?;
             self.ctx.queue.submit(Some(enc.finish()));
+            // Per-layer cancel check. Encoder submits are the natural
+            // boundary because the GPU is idle between layers under
+            // this submission strategy. Bounded latency: one layer
+            // (~300 ms - 1 s on browser) instead of one full step.
+            self.check_cancelled()?;
             enc = self
                 .ctx
                 .device
@@ -2387,6 +2438,9 @@ impl Forward {
         pos: u32,
         recompute_captures: bool,
     ) -> Result<f32> {
+        // Clear any stale cancel flag from a previous step; the layer
+        // walk below checks it after each `backward_layer` submit.
+        self.reset_cancel();
         let n_layers = self.cfg.n_layers as usize;
         if capture.len() != n_layers || loras.len() != n_layers || grads.len() != n_layers {
             return Err(RullamaError::Inference(
@@ -2545,6 +2599,10 @@ impl Forward {
             self.backward_layer(&mut lenc, i, history_len, pos, cap, lora, grad, scratch)
                 .await?;
             self.ctx.queue.submit(Some(lenc.finish()));
+            // Per-layer cancel check — same boundary the forward loop
+            // uses. Cancellation latency is bounded by one
+            // `backward_layer` (~300 ms - 1 s on browser).
+            self.check_cancelled()?;
 
             // Adaptive renorm of d_hidden — if max-abs exceeds the
             // configured ceiling, scale d_hidden in-place to bring

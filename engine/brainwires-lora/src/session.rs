@@ -1006,6 +1006,17 @@ impl TrainingSession {
         self.model
     }
 
+    /// Cooperatively cancel any in-flight `step` / `forward_backward` /
+    /// `step_per_position` call. The in-progress forward + backward
+    /// layer walks check the flag between per-layer encoder submits
+    /// (~300 ms - 1 s latency on browser); the awaited `step` resolves
+    /// with `TrainingError::Backend("cancelled by caller")` so the JS
+    /// driver loop exits cleanly. Safe to call when no step is in
+    /// flight — the flag is reset at the top of each layer walk.
+    pub fn cancel(&self) {
+        self.model.forward().cancel();
+    }
+
     /// Serialize the current LoRA A/B matrices into a safetensors byte
     /// buffer. Caller decides where the bytes go — disk (native) or
     /// OPFS / download blob (browser).
