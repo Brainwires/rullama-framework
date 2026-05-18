@@ -19,7 +19,7 @@ use futures_channel::oneshot;
 
 use crate::backend::dispatch::{
     add_bias_batched_chained, block_local_attention_chained, clamp_chained,
-    depthwise_conv1d_chained, glu_split_chained, half_residual_add_chained,
+    depthwise_conv1d_chained, fence_submitted_work, glu_split_chained, half_residual_add_chained,
     matmul_bf16_batched_chained, matmul_f16_batched_chained, rmsnorm_per_row_chained,
     scale_chained, scale_per_inner_dim_chained, silu_chained,
 };
@@ -324,30 +324,32 @@ impl GpuAudioForward {
         let queue = &self.ctx.queue;
         queue.write_buffer(&self.scratch.h_main, 0, cast_slice(&h_cpu));
 
-        // 3. Single encoder spanning all 12 blocks + projector + readback.
-        //    Weights are cached in the shared WeightCache, so a chained
-        //    encoder doesn't change peak GPU residency vs the old per-block
-        //    submit pattern (cached buffers are simultaneously live either
-        //    way). The caller is responsible for
-        //    `Model::release_audio_weights()` when running on a
-        //    memory-constrained device that needs to evict between modes.
-        let mut enc = self
-            .ctx
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("aud.encoder"),
-            });
+        // 3. One CommandEncoder + submit + fence per Conformer block, mirroring
+        //    the post-cee9869 vision pattern. A single encoder spanning all 12
+        //    blocks records hundreds of dispatches + bind-group changes against
+        //    transient resources, which on iOS Safari WebGPU pushes WebKit's
+        //    per-encoder budget hard enough that the *next* operation (the
+        //    first text `step()`) dies silently — even though map_async reads
+        //    the soft tokens back fine. Splitting per-block drains the GPU in
+        //    small chunks; output is bit-identical because the dispatch order
+        //    and kernel inputs/outputs are unchanged.
         for b in 0..self.blocks.len() {
-            // Cooperative cancel check between blocks. Same shape as
-            // vision: drop the not-yet-submitted encoder and bail.
+            // Cooperative cancel check between blocks. Drop the not-yet-
+            // submitted encoder and bail.
             if let Some(c) = cancel.as_ref()
                 && c.load(std::sync::atomic::Ordering::Relaxed)
             {
                 return Err(RullamaError::Cancelled);
             }
             let w = fetch_gpu_block_weights(&self.wcache, b as u32).await?;
+            let mut benc =
+                self.ctx
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("aud.block"),
+                    });
             self.dispatch_block(
-                &mut enc,
+                &mut benc,
                 &self.blocks[b],
                 &w,
                 seq,
@@ -365,9 +367,18 @@ impl GpuAudioForward {
                 logit_cap,
                 k_scale,
             );
+            self.ctx.queue.submit(Some(benc.finish()));
+            fence_submitted_work(&self.ctx.device, &self.ctx.queue).await?;
         }
 
-        // 4. Projector + readback chained into the same encoder.
+        // 4. Projector + readback in their own encoder. Small relative to a
+        //    Conformer block, so one submit covers it cleanly.
+        let mut enc = self
+            .ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("aud.epilogue"),
+            });
         self.dispatch_projector(&mut enc, seq, hidden, d_text);
         let read_bytes = (seq * d_text * 4) as u64;
         enc.copy_buffer_to_buffer(

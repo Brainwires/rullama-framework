@@ -30,7 +30,7 @@ use bytemuck::cast_slice;
 use futures_channel::oneshot;
 
 use crate::backend::dispatch::{
-    avg_pool2d_chained, clamp_chained, conv2d_chained, make_dummy_storage,
+    avg_pool2d_chained, clamp_chained, conv2d_chained, fence_submitted_work, make_dummy_storage,
     matmul_f16_batched_chained, pos_embed_add_chained, quick_geglu_chained, residual_add_chained,
     rmsnorm_per_row_chained, rope_2d_chained, scale_chained, vision_attention_chained,
 };
@@ -1181,28 +1181,6 @@ impl VisionForward {
 
         Ok(())
     }
-}
-
-/// Block (asynchronously) until all currently-submitted GPU work on `queue`
-/// has finished. Used between per-layer submits in `encode()` so the progress
-/// callback fires at real GPU pace rather than at recording pace. Mirrors the
-/// existing `read_back_f32` oneshot idiom — on wasm32 this resolves via
-/// `GPUQueue.onSubmittedWorkDone()` (Promise), letting the JS event loop
-/// render UI updates between layers; on native the executor drives the poll.
-async fn fence_submitted_work(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<()> {
-    let (tx, rx) = oneshot::channel();
-    queue.on_submitted_work_done(move || {
-        let _ = tx.send(());
-    });
-    device
-        .poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: None,
-        })
-        .map_err(|e| RullamaError::Inference(format!("{e:?}")))?;
-    rx.await
-        .map_err(|e| RullamaError::BufferMap(format!("{e}")))?;
-    Ok(())
 }
 
 async fn read_back_f32(

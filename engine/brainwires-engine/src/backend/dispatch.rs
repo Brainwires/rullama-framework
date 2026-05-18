@@ -21,6 +21,36 @@ use crate::backend::WgpuCtx;
 use crate::backend::pipelines::Pipelines;
 use crate::error::{Result, RullamaError};
 
+/// Block (asynchronously) until all currently-submitted GPU work on `queue`
+/// has finished. Used between per-layer encoder submits in the multimodal
+/// towers so the next submit sees a fully-drained queue — on iOS Safari
+/// WebGPU, a single CommandEncoder that spans every block of an encoder
+/// (vision: 16 blocks, audio: 12 blocks) records hundreds of dispatches +
+/// bind-group changes against transient resources and pushes WebKit's
+/// per-encoder budget hard enough that the *next* operation (typically
+/// the first text `step()`) dies silently. Splitting each block into its
+/// own encoder + submit, with this fence between submits, drains the GPU
+/// in small chunks and clears WebKit's working set between blocks.
+///
+/// On wasm32 this resolves via `GPUQueue.onSubmittedWorkDone()` (Promise),
+/// also letting the JS event loop service UI updates between blocks; on
+/// native the executor drives the poll.
+pub async fn fence_submitted_work(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<()> {
+    let (tx, rx) = oneshot::channel();
+    queue.on_submitted_work_done(move || {
+        let _ = tx.send(());
+    });
+    device
+        .poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        })
+        .map_err(|e| RullamaError::Inference(format!("{e:?}")))?;
+    rx.await
+        .map_err(|e| RullamaError::BufferMap(format!("{e}")))?;
+    Ok(())
+}
+
 // ---------- shared param structs ----------
 
 #[repr(C)]
