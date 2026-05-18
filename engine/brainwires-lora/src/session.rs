@@ -188,17 +188,33 @@ pub fn estimate_training_bytes(
             }
         }
     }
-    // Activation captures per layer × n_layers. Dominated by FFN intermediates.
-    // Per layer: 17 seq-sized buffers, the big ones are ffn_gate/up/act/down each
-    // `ffn_inter × seq × 4`. Sum approximation per layer.
-    for layer in 0..cfg.n_layers {
-        let ffn = cfg.ffn(layer) as u64;
-        let head_dim = cfg.head_dim(layer) as u64;
-        let n_heads_dim = (cfg.n_heads as u64) * head_dim;
-        let n_kv_dim = (cfg.n_kv_heads(layer) as u64) * head_dim;
-        let ple_dim = if cfg.has_ple() { cfg.ple_dim as u64 } else { 0 };
-        let per_layer = (3 * ffn + 2 * n_heads_dim + 2 * n_kv_dim + 6 * d_model + 3 * ple_dim) * seq * 4;
-        bytes += per_layer;
+    // Activation captures. Two layouts:
+    //   - Standard: full LayerActivations × n_layers. The big ones are
+    //     ffn_gate/up/act each `ffn_inter × seq × 4` + several
+    //     d_model-sized + n_heads*head_dim + n_kv*head_dim. Sum per
+    //     layer × n_layers.
+    //   - Checkpointed: one shared LayerActivations (max-shape sized)
+    //     + per-layer `hidden_in` (d_model × seq × 4).
+    let ple_dim = if cfg.has_ple() { cfg.ple_dim as u64 } else { 0 };
+    if hp.gradient_checkpointing {
+        // Shared set sized at max across layers.
+        let head_dim_max = cfg.head_dim_global.max(cfg.head_dim_swa) as u64;
+        let n_heads_dim = (cfg.n_heads as u64) * head_dim_max;
+        let n_kv_max = cfg.n_kv_heads_global.max(cfg.n_kv_heads_swa) as u64;
+        let n_kv_dim = n_kv_max * head_dim_max;
+        let ffn_max = (0..cfg.n_layers).map(|i| cfg.ffn(i) as u64).max().unwrap_or(0);
+        let shared = (3 * ffn_max + 2 * n_heads_dim + 2 * n_kv_dim + 6 * d_model + 3 * ple_dim) * seq * 4;
+        let per_layer_hidden_in = d_model * seq * 4 * (cfg.n_layers as u64);
+        bytes += shared + per_layer_hidden_in;
+    } else {
+        for layer in 0..cfg.n_layers {
+            let ffn = cfg.ffn(layer) as u64;
+            let head_dim = cfg.head_dim(layer) as u64;
+            let n_heads_dim = (cfg.n_heads as u64) * head_dim;
+            let n_kv_dim = (cfg.n_kv_heads(layer) as u64) * head_dim;
+            let per_layer = (3 * ffn + 2 * n_heads_dim + 2 * n_kv_dim + 6 * d_model + 3 * ple_dim) * seq * 4;
+            bytes += per_layer;
+        }
     }
     bytes
 }
@@ -218,7 +234,15 @@ impl TrainingSession {
         let cfg = model.forward().cfg().clone();
         let ctx = Arc::new(model.forward().ctx().clone());
         let max_seq_len = hp.max_seq_len as u32;
-        let scratch = TrainingScratch::new(&ctx, &cfg, max_seq_len);
+        // `gradient_checkpointing=true` collapses the per-layer scratch
+        // to one shared `LayerActivations` (cloned references) +
+        // per-layer `hidden_in`, ~10× smaller on gemma4-e2b at
+        // seq=64. The backward path already passes
+        // `recompute_captures=true` in that mode so it replays each
+        // layer's forward into the shared buffers before reading.
+        let scratch = TrainingScratch::new_with_checkpointing(
+            &ctx, &cfg, max_seq_len, hp.gradient_checkpointing,
+        );
         let loras = build_lora_state(Arc::clone(&ctx), &cfg, &lora_cfg, hp.seed)?;
 
         let adam_cfg = AdamConfig {
@@ -264,7 +288,9 @@ impl TrainingSession {
 
         let scope = ctx.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
         let alloc_result: Result<(), TrainingError> = (|| {
-            let _scratch = TrainingScratch::new(&ctx, &cfg, hp.max_seq_len as u32);
+            let _scratch = TrainingScratch::new_with_checkpointing(
+                &ctx, &cfg, hp.max_seq_len as u32, hp.gradient_checkpointing,
+            );
             let _loras = build_lora_state(Arc::clone(&ctx), &cfg, lora_cfg, hp.seed)?;
             drop(_scratch);
             drop(_loras);
@@ -1085,6 +1111,13 @@ impl TrainingSession {
     /// Number of LoRA parameters currently being trained.
     pub fn parameter_count(&self) -> u64 {
         self.loras.parameter_count()
+    }
+
+    /// Immutable handle on the LoRA state — for tests + debug
+    /// inspection of accumulated A/B gradient buffers between
+    /// `forward_backward` and `optimizer_step`.
+    pub fn lora_state(&self) -> &LoraState {
+        &self.loras
     }
 
     /// Immutable handle on the wrapped model — for token encoding /
