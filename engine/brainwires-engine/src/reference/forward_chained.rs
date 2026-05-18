@@ -960,6 +960,35 @@ impl Forward {
     /// Ollama's behaviour: multimodal soft tokens flow through the LM as frozen
     /// inputs and don't get PLE injection.
     pub async fn step_with_embedding(&mut self, embedding: &[f32]) -> Result<Vec<f32>> {
+        self.step_with_embedding_inner(embedding, None).await
+    }
+
+    /// Variant of [`step_with_embedding`] that applies a LoRA adapter
+    /// to every layer's q/k/v/o (+ optional FFN) during the forward.
+    /// Used by `Model::step_with_embedding_native` when an inference
+    /// adapter is active — without this, image and audio soft-token
+    /// steps would silently bypass the loaded adapter while pure-text
+    /// steps respect it.
+    pub async fn step_with_embedding_with_lora<'a>(
+        &mut self,
+        embedding: &[f32],
+        loras: &'a [LayerLoraSlots<'a>],
+    ) -> Result<Vec<f32>> {
+        if loras.len() != self.cfg.n_layers as usize {
+            return Err(RullamaError::Inference(format!(
+                "step_with_embedding_with_lora: got {} lora slots, expected {}",
+                loras.len(),
+                self.cfg.n_layers
+            )));
+        }
+        self.step_with_embedding_inner(embedding, Some(loras)).await
+    }
+
+    async fn step_with_embedding_inner<'a>(
+        &mut self,
+        embedding: &[f32],
+        loras: Option<&'a [LayerLoraSlots<'a>]>,
+    ) -> Result<Vec<f32>> {
         let d_model = self.cfg.d_model as usize;
         if embedding.len() != d_model {
             return Err(RullamaError::Inference(format!(
@@ -987,7 +1016,7 @@ impl Forward {
                 .write_buffer(&self.per_layer_residual, 0, bytemuck::cast_slice(&zeros));
         }
 
-        self.run_forward_from_hidden(None, None).await
+        self.run_forward_from_hidden(None, loras).await
     }
 
     /// Forward pass starting from `self.hidden` already populated. Shared by

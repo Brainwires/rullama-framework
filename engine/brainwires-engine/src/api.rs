@@ -282,6 +282,25 @@ impl Model {
         Self::from_reader(reader).await
     }
 
+    /// Streaming load with an explicit KV-cache cap but vision + audio
+    /// towers still built (when the GGUF carries them). Lets a mobile
+    /// caller load a multimodal model with a smaller KV pre-alloc —
+    /// e.g. iPhone passes `max_context = 2048` and saves ~600 MB
+    /// against the compile-time `MAX_CONTEXT = 4096` budget. `0` keeps
+    /// the default.
+    pub async fn load_streaming_with_max_context(
+        fetcher: std::sync::Arc<dyn crate::gguf::TensorFetcher>,
+        max_context: u32,
+    ) -> Result<Self> {
+        let reader = GgufReader::new_streaming(fetcher).await?;
+        let cap = if max_context == 0 {
+            crate::reference::forward_chained::MAX_CONTEXT
+        } else {
+            max_context
+        };
+        Self::from_reader_with_modes(reader, true, true, cap).await
+    }
+
     /// Text-only streaming load. Skips the vision and audio towers even if the
     /// GGUF contains them and caps the KV cache to `max_context` tokens
     /// (rather than the compile-time `MAX_CONTEXT = 4096`). The pair makes
@@ -469,7 +488,19 @@ impl Model {
     /// sampled next token id, just like `step_native`. The sampler is *not* given
     /// an "observed token" — soft tokens have no id to penalise.
     pub async fn step_with_embedding_native(&mut self, embedding: &[f32]) -> Result<u32> {
-        let logits = self.forward.step_with_embedding(embedding).await?;
+        // Mirror the adapter routing in `step_native` so multimodal
+        // soft-token steps respect a loaded LoRA adapter. Without
+        // this, image/audio prefill silently bypasses the adapter
+        // even though the matching text steps honour it.
+        let logits = match &self.adapter {
+            Some(adapter) => {
+                let slots = adapter.layer_slots(self.forward.cfg().n_layers);
+                self.forward
+                    .step_with_embedding_with_lora(embedding, &slots)
+                    .await?
+            }
+            None => self.forward.step_with_embedding(embedding).await?,
+        };
         let next = self.sampler.sample(&logits);
         Ok(next)
     }
@@ -534,10 +565,16 @@ impl Model {
     /// This is the path that bypasses iOS Safari's ~5.6 GiB single-Blob cap and
     /// ~2 GiB live-JS-heap cap — bytes are read directly from the disk-backed
     /// OPFS file in slices and never aggregate in JS memory.
+    /// JS entry point: stream the GGUF from an OPFS-resident file with
+    /// vision + audio towers built. Optional `max_context` caps the KV
+    /// pre-allocation; pass 0 to use the compile-time `MAX_CONTEXT`
+    /// (4096). On iPhone, supplying 2048 saves ~600 MB of KV buffer
+    /// against the multimodal weight budget.
     #[wasm_bindgen(js_name = loadFromOpfs)]
     pub async fn load_from_opfs_js(
         read_fn: js_sys::Function,
         total_bytes: f64,
+        max_context: u32,
     ) -> std::result::Result<Model, JsError> {
         if !total_bytes.is_finite() || total_bytes < 0.0 {
             return Err(JsError::new(
@@ -547,7 +584,7 @@ impl Model {
         let total = total_bytes as u64;
         let fetcher = crate::gguf::OpfsFetcher::new(read_fn, total);
         let arc: std::sync::Arc<dyn crate::gguf::TensorFetcher> = std::sync::Arc::new(fetcher);
-        Self::load_streaming(arc)
+        Self::load_streaming_with_max_context(arc, max_context)
             .await
             .map_err(|e| JsError::new(&format!("{e}")))
     }
