@@ -489,6 +489,9 @@ impl TrainingSession {
         // Debug readback of LoRA gradient norms — set
         // `RULLAMA_DEBUG_GRADS=1` to print each layer's dA/dB max-abs +
         // NaN count. Used to localise NaN sources in the backward path.
+        // Native-only: env vars aren't available in wasm32 + the browser
+        // path uses console-level logging through the worker instead.
+        #[cfg(not(target_arch = "wasm32"))]
         if std::env::var("RULLAMA_DEBUG_GRADS").is_ok() {
             self.debug_grad_norms().await;
         }
@@ -741,20 +744,32 @@ impl TrainingSession {
     /// inference between training steps.
     pub fn model(&self) -> &Model { &self.model }
 
-    /// Serialize the current LoRA A/B matrices into a safetensors file.
+    /// 1-based step counter. Increments at the end of every successful
+    /// `step()` / `step_per_position()` call.
+    pub fn step_num(&self) -> u32 { self.step_num }
+
+    /// Consume the session and hand the wrapped `Model` back to the
+    /// caller. Used by the browser path so chat can resume against the
+    /// same `Model` handle after training ends, without re-loading the
+    /// (multi-GB) weights from OPFS.
+    pub fn into_model(self) -> Model { self.model }
+
+    /// Serialize the current LoRA A/B matrices into a safetensors byte
+    /// buffer. Caller decides where the bytes go — disk (native) or
+    /// OPFS / download blob (browser).
     ///
     /// Tensor naming: `lora.blk.{layer}.{projection}.{A|B}`. Stored as
-    /// f32 row-major. Metadata sidecar (safetensors header `__metadata__`)
-    /// carries rank/alpha/target_modules so a loader can rebuild the
-    /// `LoraState` without external context.
+    /// f32 row-major (or f16 if `mixed_precision` was set on the session).
+    /// Metadata sidecar carries rank/alpha/target_modules so a loader
+    /// can rebuild the `LoraState` without external context.
     ///
     /// Note: the `m_a/v_a/m_b/v_b` Adam state and gradient accumulators
     /// are *not* persisted — only the trainable parameters. To resume
     /// training, instantiate a fresh `TrainingSession` and call
-    /// `load_adapter_into` to seed A/B from disk; Adam state restarts
-    /// at step 1 (acceptable for downstream fine-tunes; matches what
-    /// HF Transformers does).
-    pub async fn save_adapter(&self, path: &std::path::Path) -> Result<(), TrainingError> {
+    /// `load_adapter_into_state*` to seed A/B; Adam state restarts at
+    /// step 1 (acceptable for downstream fine-tunes; matches what HF
+    /// Transformers does).
+    pub async fn save_adapter_to_bytes(&self) -> Result<Vec<u8>, TrainingError> {
         use safetensors::tensor::{Dtype, TensorView};
         let ctx = self.model.forward().ctx().clone();
         let f16_mode = self.mixed_precision;
@@ -816,12 +831,23 @@ impl TrainingSession {
             ("dtype".to_string(), if f16_mode { "f16" } else { "f32" }.to_string()),
         ].into_iter().collect();
 
-        // 4. Serialize to file.
-        safetensors::serialize_to_file(&views, &Some(metadata), path)
-            .map_err(|e| TrainingError::Backend(format!("safetensors write: {e}")))?;
+        // 4. Serialize to bytes.
+        safetensors::serialize(&views, &Some(metadata))
+            .map_err(|e| TrainingError::Backend(format!("safetensors serialize: {e}")))
+    }
+
+    /// Native-only convenience wrapper: serialize the adapter and write
+    /// it to disk. Browser code calls [`Self::save_adapter_to_bytes`]
+    /// and writes to OPFS via `FileSystemSyncAccessHandle` directly.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn save_adapter(&self, path: &std::path::Path) -> Result<(), TrainingError> {
+        let bytes = self.save_adapter_to_bytes().await?;
+        std::fs::write(path, bytes)
+            .map_err(|e| TrainingError::Backend(format!("write adapter: {e}")))?;
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     async fn debug_grad_norms(&self) {
         let ctx = self.model.forward().ctx().clone();
         for (key, layer) in self.loras.iter() {
@@ -838,8 +864,22 @@ impl TrainingSession {
 }
 
 /// Load LoRA A/B tensors from a safetensors file into the given
-/// `LoraState`. Each named tensor in the file (`lora.blk.{layer}.{proj}.{A|B}`)
-/// is written to the matching `LoraLayer` buffer.
+/// `LoraState`. Native-only convenience wrapper around
+/// [`load_adapter_into_state_from_bytes`].
+#[cfg(not(target_arch = "wasm32"))]
+pub fn load_adapter_into_state(
+    state: &mut crate::lora::LoraState,
+    path: &std::path::Path,
+) -> Result<usize, TrainingError> {
+    let bytes = std::fs::read(path)
+        .map_err(|e| TrainingError::Backend(format!("read {}: {e}", path.display())))?;
+    load_adapter_into_state_from_bytes(state, &bytes)
+}
+
+/// Load LoRA A/B tensors from a safetensors byte buffer into the given
+/// `LoraState`. Each named tensor in the buffer
+/// (`lora.blk.{layer}.{proj}.{A|B}`) is written to the matching
+/// `LoraLayer` buffer.
 ///
 /// The `LoraState` must already have all the expected LoRA slots
 /// registered with matching shapes — i.e. caller built it via
@@ -847,15 +887,13 @@ impl TrainingSession {
 /// that don't have a matching slot are skipped (with a tracing
 /// warning); slots with no matching tensor are left at whatever the
 /// caller's initialiser produced.
-pub fn load_adapter_into_state(
+pub fn load_adapter_into_state_from_bytes(
     state: &mut crate::lora::LoraState,
-    path: &std::path::Path,
+    bytes: &[u8],
 ) -> Result<usize, TrainingError> {
     use safetensors::SafeTensors;
 
-    let bytes = std::fs::read(path)
-        .map_err(|e| TrainingError::Backend(format!("read {}: {e}", path.display())))?;
-    let st = SafeTensors::deserialize(&bytes)
+    let st = SafeTensors::deserialize(bytes)
         .map_err(|e| TrainingError::Backend(format!("safetensors parse: {e}")))?;
 
     let mut loaded = 0usize;
@@ -927,6 +965,7 @@ pub fn load_adapter_into_state(
     Ok(loaded)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn stats(v: &[f32]) -> (f32, usize) {
     let mut max_abs = 0.0f32;
     let mut nans = 0usize;

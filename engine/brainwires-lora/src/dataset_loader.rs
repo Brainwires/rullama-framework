@@ -10,9 +10,10 @@
 //! Preference-pair (DPO / ORPO) datasets are out of scope after the
 //! teardown — alignment is deferred until a real loss function exists.
 
-use std::io::BufRead;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
+#[cfg(not(target_arch = "wasm32"))]
 use tracing::info;
 
 use crate::shared::error::TrainingError;
@@ -34,33 +35,40 @@ pub struct TrainingDataset {
 }
 
 impl TrainingDataset {
-    /// Load a JSONL dataset from disk.
+    /// Load a JSONL dataset from disk. Native-only convenience wrapper
+    /// around [`Self::load_jsonl_from_bytes`].
     ///
-    /// Supports two formats:
+    /// Supports the same formats:
     /// 1. `{"prompt": "...", "completion": "..."}`
-    /// 2. `{"messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}`
+    /// 2. `{"messages": [{"role": "user", "content": "..."}, ...]}`
+    /// 3. `{"instruction": "...", "output": "..."}` (Alpaca)
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load_jsonl(path: &Path) -> Result<Self, TrainingError> {
-        let file = std::fs::File::open(path).map_err(|e| {
+        let bytes = std::fs::read(path).map_err(|e| {
             TrainingError::Config(format!("Failed to open dataset: {}: {}", path.display(), e))
         })?;
-        let reader = std::io::BufReader::new(file);
-        let mut examples = Vec::new();
+        let ds = Self::load_jsonl_from_bytes(&bytes)?;
+        info!("Loaded {} training examples from {:?}", ds.examples.len(), path);
+        Ok(ds)
+    }
 
-        for (line_num, line) in reader.lines().enumerate() {
-            let line = line.map_err(|e| {
-                TrainingError::Config(format!("Failed to read line {}: {}", line_num + 1, e))
-            })?;
+    /// Parse a JSONL byte buffer into a `TrainingDataset`. Cross-platform:
+    /// the browser worker passes the file contents in as bytes, the
+    /// native loader reads them off disk via [`Self::load_jsonl`].
+    pub fn load_jsonl_from_bytes(bytes: &[u8]) -> Result<Self, TrainingError> {
+        let text = std::str::from_utf8(bytes).map_err(|e| {
+            TrainingError::Config(format!("Dataset is not valid UTF-8: {e}"))
+        })?;
+        let mut examples = Vec::new();
+        for (line_num, raw) in text.lines().enumerate() {
             // Strip a leading UTF-8 BOM (only legal on the first line, but harmless
             // to attempt every line) before trim/JSON parsing.
-            let line = line
-                .trim_start_matches('\u{feff}')
-                .trim()
-                .to_string();
+            let line = raw.trim_start_matches('\u{feff}').trim();
             if line.is_empty() {
                 continue;
             }
 
-            let value: serde_json::Value = serde_json::from_str(&line).map_err(|e| {
+            let value: serde_json::Value = serde_json::from_str(line).map_err(|e| {
                 TrainingError::Config(format!("Invalid JSON on line {}: {}", line_num + 1, e))
             })?;
 
@@ -85,12 +93,6 @@ impl TrainingDataset {
                 "Dataset is empty (no valid examples found)".to_string(),
             ));
         }
-
-        info!(
-            "Loaded {} training examples from {:?}",
-            examples.len(),
-            path
-        );
         Ok(Self { examples })
     }
 
@@ -246,15 +248,22 @@ impl Tokenizer for SimpleTokenizer {
     }
 }
 
-/// BPE tokenizer wrapping HuggingFace `tokenizers` crate.
+/// BPE tokenizer wrapping HuggingFace `tokenizers` crate. Native-only
+/// because the `tokenizers` crate's transitive `getrandom@0.3` doesn't
+/// build for `wasm32-unknown-unknown` without backend cfg. Browser
+/// callers should pass pre-tokenised input IDs through the
+/// wasm-bindgen surface — the rullama `Model.encodeTokens` already
+/// covers the gemma4 BPE path on both targets.
 ///
 /// Provides correct vocab-size alignment with real models (e.g., LLaMA, Mistral).
 /// Load from a `tokenizer.json` file or a pretrained HuggingFace model ID.
+#[cfg(not(target_arch = "wasm32"))]
 pub struct ModelTokenizer {
     tokenizer: tokenizers::Tokenizer,
     max_seq_len: usize,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl ModelTokenizer {
     /// Load a tokenizer from a `tokenizer.json` file on disk.
     pub fn from_file(path: &Path) -> Result<Self, TrainingError> {
@@ -289,6 +298,7 @@ impl ModelTokenizer {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Tokenizer for ModelTokenizer {
     fn encode(&self, text: &str) -> Vec<u32> {
         match self.tokenizer.encode(text, false) {

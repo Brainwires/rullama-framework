@@ -68,6 +68,11 @@ pub struct Model {
     /// `RullamaError::Cancelled`. Cleared at the start of each encode so
     /// a stale flag from a previous cancel doesn't poison the next call.
     encode_cancel: Arc<AtomicBool>,
+    /// Active LoRA adapter, if any. Set via `load_adapter_native` /
+    /// `loadAdapter`; cleared via `clear_adapter_native` /
+    /// `clearAdapter`. When `Some`, `step_native` routes through
+    /// `Forward::step_with_lora` so chat output reflects the adapter.
+    adapter: Option<crate::lora::InferenceAdapter>,
 }
 
 impl Model {
@@ -127,6 +132,7 @@ impl Model {
             audio,
             sampler: Sampler::new(SamplingOptions::default()),
             encode_cancel: Arc::new(AtomicBool::new(false)),
+            adapter: None,
         })
     }
 
@@ -374,11 +380,51 @@ impl Model {
 
     /// Feed one token at the current position. Returns the *sampled* next token id
     /// (using current SamplingOptions). With `temperature=0`, this is the argmax.
+    ///
+    /// Routes through `Forward::step_with_lora` automatically when an
+    /// inference adapter is active (see [`Self::load_adapter_native`]).
     pub async fn step_native(&mut self, token_id: u32) -> Result<u32> {
         self.sampler.observe(token_id);
-        let logits = self.forward.step(token_id).await?;
+        let logits = match &self.adapter {
+            Some(adapter) => {
+                let slots = adapter.layer_slots(self.forward.cfg().n_layers);
+                self.forward.step_with_lora(token_id, &slots).await?
+            }
+            None => self.forward.step(token_id).await?,
+        };
         let next = self.sampler.sample(&logits);
         Ok(next)
+    }
+
+    /// True iff a LoRA adapter is currently active. Browser chat code
+    /// uses this to surface the "with adapter" badge.
+    pub fn has_adapter_native(&self) -> bool { self.adapter.is_some() }
+
+    /// Number of LoRA slots in the active adapter (zero if none).
+    pub fn adapter_slot_count_native(&self) -> usize {
+        self.adapter.as_ref().map(|a| a.len()).unwrap_or(0)
+    }
+
+    /// Load a safetensors-formatted LoRA adapter from a byte buffer and
+    /// make it active. Replaces any previously-loaded adapter.
+    ///
+    /// The adapter must have been produced by
+    /// `TrainingSession::save_adapter_to_bytes` (or compatible) — the
+    /// loader reads the metadata sidecar's `rank` / `alpha` /
+    /// `target_modules` and allocates GPU buffers sized against this
+    /// model's config. Mismatched dims surface a `RullamaError::Inference`.
+    pub fn load_adapter_native(&mut self, bytes: &[u8]) -> Result<usize> {
+        let ctx = Arc::new(self.forward.ctx().clone());
+        let cfg = self.forward.cfg().clone();
+        let adapter = crate::lora::InferenceAdapter::from_safetensors_bytes(ctx, &cfg, bytes)?;
+        let n = adapter.len();
+        self.adapter = Some(adapter);
+        Ok(n)
+    }
+
+    /// Drop the active adapter (subsequent generation uses base weights only).
+    pub fn clear_adapter_native(&mut self) {
+        self.adapter = None;
     }
 
     /// Feed one position with a pre-computed `[d_model]` embedding instead of a
@@ -544,6 +590,22 @@ impl Model {
         self.sampler.set_options(opts);
         Ok(())
     }
+
+    /// True iff a LoRA adapter is currently active.
+    #[wasm_bindgen(js_name = hasAdapter, getter)]
+    pub fn has_adapter_js(&self) -> bool { self.has_adapter_native() }
+
+    /// Load a safetensors LoRA adapter from raw bytes (e.g. the
+    /// `Uint8Array` returned by `TrainingSession.saveAdapter`).
+    /// Returns the number of LoRA slots loaded.
+    #[wasm_bindgen(js_name = loadAdapter)]
+    pub fn load_adapter_js(&mut self, bytes: Vec<u8>) -> std::result::Result<usize, JsError> {
+        self.load_adapter_native(&bytes).map_err(|e| JsError::new(&format!("{e}")))
+    }
+
+    /// Drop the active adapter.
+    #[wasm_bindgen(js_name = clearAdapter)]
+    pub fn clear_adapter_js(&mut self) { self.clear_adapter_native() }
 
     /// True iff this checkpoint carries a vision tower (gemma4:e2b/e4b).
     #[wasm_bindgen(js_name = hasVision, getter)]

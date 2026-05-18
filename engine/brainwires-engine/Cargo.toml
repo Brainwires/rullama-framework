@@ -31,6 +31,9 @@ serde_json = { workspace = true }
 futures-channel = { workspace = true }
 futures-util = { workspace = true }
 async-trait = { workspace = true }
+# Inference-time LoRA adapter parsing. The training-side adapter writer
+# lives in `rullama-finetune`; format is the same on both sides.
+safetensors = "0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 pollster = { workspace = true }
