@@ -48,7 +48,11 @@ impl TrainingDataset {
             TrainingError::Config(format!("Failed to open dataset: {}: {}", path.display(), e))
         })?;
         let ds = Self::load_jsonl_from_bytes(&bytes)?;
-        info!("Loaded {} training examples from {:?}", ds.examples.len(), path);
+        info!(
+            "Loaded {} training examples from {:?}",
+            ds.examples.len(),
+            path
+        );
         Ok(ds)
     }
 
@@ -56,9 +60,8 @@ impl TrainingDataset {
     /// the browser worker passes the file contents in as bytes, the
     /// native loader reads them off disk via [`Self::load_jsonl`].
     pub fn load_jsonl_from_bytes(bytes: &[u8]) -> Result<Self, TrainingError> {
-        let text = std::str::from_utf8(bytes).map_err(|e| {
-            TrainingError::Config(format!("Dataset is not valid UTF-8: {e}"))
-        })?;
+        let text = std::str::from_utf8(bytes)
+            .map_err(|e| TrainingError::Config(format!("Dataset is not valid UTF-8: {e}")))?;
         let mut examples = Vec::new();
         for (line_num, raw) in text.lines().enumerate() {
             // Strip a leading UTF-8 BOM (only legal on the first line, but harmless
@@ -347,9 +350,7 @@ fn next_token_targets(input_ids: &[u32], prompt_len: usize) -> (Vec<u32>, Vec<u3
     // happens at logits position `prompt_len - 1` (1-indexed: the last prompt
     // token's logits). For prompts shorter than 1 token, start at 0.
     let start = prompt_len.saturating_sub(1);
-    for i in start..n - 1 {
-        targets[i] = input_ids[i + 1];
-    }
+    targets[start..n - 1].copy_from_slice(&input_ids[start + 1..n]);
     (input_ids.to_vec(), targets)
 }
 
@@ -582,5 +583,4 @@ mod tests {
         assert!(dataset.examples[0].completion.contains("Hello!"));
         assert!(dataset.examples[0].completion.contains("Sure"));
     }
-
 }

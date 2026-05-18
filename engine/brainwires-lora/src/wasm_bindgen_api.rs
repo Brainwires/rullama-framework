@@ -55,8 +55,8 @@ impl TrainingSession {
             .map_err(|e| JsError::new(&format!("invalid loraConfig JSON: {e}")))?;
         let hp: TrainingHyperparams = serde_json::from_str(hp_json)
             .map_err(|e| JsError::new(&format!("invalid hyperparams JSON: {e}")))?;
-        let inner = NativeSession::new(model, lora_cfg, hp)
-            .map_err(|e| JsError::new(&format!("{e}")))?;
+        let inner =
+            NativeSession::new(model, lora_cfg, hp).map_err(|e| JsError::new(&format!("{e}")))?;
         Ok(Self { inner })
     }
 
@@ -68,7 +68,10 @@ impl TrainingSession {
         input_ids: Vec<u32>,
         target_id: u32,
     ) -> std::result::Result<JsValue, JsError> {
-        let loss = self.inner.step(&input_ids, target_id).await
+        let loss = self
+            .inner
+            .step(&input_ids, target_id)
+            .await
             .map_err(|e| JsError::new(&format!("{e}")))?;
         Self::step_report(loss, &self.inner)
     }
@@ -83,7 +86,10 @@ impl TrainingSession {
         input_ids: Vec<u32>,
         targets: Vec<u32>,
     ) -> std::result::Result<JsValue, JsError> {
-        let loss = self.inner.step_per_position(&input_ids, &targets).await
+        let loss = self
+            .inner
+            .step_per_position(&input_ids, &targets)
+            .await
             .map_err(|e| JsError::new(&format!("{e}")))?;
         Self::step_report(loss, &self.inner)
     }
@@ -91,7 +97,9 @@ impl TrainingSession {
     /// Zero every LoRA's gradient buffers. Call at the start of a
     /// gradient-accumulation cycle.
     #[wasm_bindgen(js_name = zeroGrads)]
-    pub fn zero_grads_js(&mut self) { self.inner.zero_grads() }
+    pub fn zero_grads_js(&mut self) {
+        self.inner.zero_grads()
+    }
 
     /// One forward+backward pass — does NOT zero gradients or step
     /// Adam. Use inside a manual accumulation loop:
@@ -103,7 +111,9 @@ impl TrainingSession {
         input_ids: Vec<u32>,
         target_id: u32,
     ) -> std::result::Result<f32, JsError> {
-        self.inner.forward_backward(&input_ids, target_id).await
+        self.inner
+            .forward_backward(&input_ids, target_id)
+            .await
             .map_err(|e| JsError::new(&format!("{e}")))
     }
 
@@ -115,13 +125,17 @@ impl TrainingSession {
         input_ids: Vec<u32>,
         targets: Vec<u32>,
     ) -> std::result::Result<f32, JsError> {
-        self.inner.forward_backward_per_position(&input_ids, &targets).await
+        self.inner
+            .forward_backward_per_position(&input_ids, &targets)
+            .await
             .map_err(|e| JsError::new(&format!("{e}")))
     }
 
     /// Apply the accumulated gradients with Adam. Bumps `step`.
     #[wasm_bindgen(js_name = optimizerStep)]
-    pub fn optimizer_step_js(&mut self) { self.inner.optimizer_step() }
+    pub fn optimizer_step_js(&mut self) {
+        self.inner.optimizer_step()
+    }
 
     /// Serialize the current adapter to safetensors bytes. JS decides
     /// where the bytes go (OPFS write via `FileSystemSyncAccessHandle`,
@@ -130,26 +144,34 @@ impl TrainingSession {
     /// the shape table.
     #[wasm_bindgen(js_name = saveAdapter)]
     pub async fn save_adapter_js(&self) -> std::result::Result<Vec<u8>, JsError> {
-        self.inner.save_adapter_to_bytes().await
+        self.inner
+            .save_adapter_to_bytes()
+            .await
             .map_err(|e| JsError::new(&format!("{e}")))
     }
 
     /// 1-based step counter — bumped after each `step()` /
     /// `optimizerStep()`.
     #[wasm_bindgen(js_name = stepNum, getter)]
-    pub fn step_num_js(&self) -> u32 { self.inner.step_num() }
+    pub fn step_num_js(&self) -> u32 {
+        self.inner.step_num()
+    }
 
     /// Consume the session and return the wrapped `Model` to JS so
     /// chat can resume against the same loaded weights without a
     /// multi-gigabyte reload. After this call the `TrainingSession`
     /// handle is invalid.
     #[wasm_bindgen(js_name = finish)]
-    pub fn finish_js(self) -> Model { self.inner.into_model() }
+    pub fn finish_js(self) -> Model {
+        self.inner.into_model()
+    }
 
     /// Current learning rate (post-warmup, post-schedule). Useful for
     /// the loss-chart label.
     #[wasm_bindgen(js_name = lr, getter)]
-    pub fn current_lr_js(&self) -> f64 { self.inner.current_lr() }
+    pub fn current_lr_js(&self) -> f64 {
+        self.inner.current_lr()
+    }
 
     /// Number of trainable LoRA parameters across all wrapped
     /// projections (rank × in_dim + out_dim × rank, summed).
@@ -163,11 +185,15 @@ impl TrainingSession {
 
     /// True iff this session was built with `gradient_checkpointing=true`.
     #[wasm_bindgen(js_name = gradientCheckpointing, getter)]
-    pub fn gradient_checkpointing_js(&self) -> bool { self.inner.gradient_checkpointing() }
+    pub fn gradient_checkpointing_js(&self) -> bool {
+        self.inner.gradient_checkpointing()
+    }
 
     /// True iff this session was built with `mixed_precision=true`.
     #[wasm_bindgen(js_name = mixedPrecision, getter)]
-    pub fn mixed_precision_js(&self) -> bool { self.inner.mixed_precision() }
+    pub fn mixed_precision_js(&self) -> bool {
+        self.inner.mixed_precision()
+    }
 
     /// Configure an LR schedule for the next `totalSteps` optimizer
     /// steps. Respects the session's `warmup_steps` + `lr_scheduler`
@@ -179,7 +205,11 @@ impl TrainingSession {
     }
 
     fn step_report(loss: f32, inner: &NativeSession) -> std::result::Result<JsValue, JsError> {
-        let report = StepReport { loss, lr: inner.current_lr(), step: inner.step_num() };
+        let report = StepReport {
+            loss,
+            lr: inner.current_lr(),
+            step: inner.step_num(),
+        };
         serde_wasm_bindgen::to_value(&report)
             .map_err(|e| JsError::new(&format!("serialize step report: {e}")))
     }

@@ -40,11 +40,8 @@ fn main() -> ExitCode {
     // 1 second of A4 (440 Hz) sine at 16 kHz.
     let sr = 16_000usize;
     let n = sr;
-    let mut pcm = vec![0f32; n];
     let omega = 2.0 * std::f32::consts::PI * 440.0 / sr as f32;
-    for i in 0..n {
-        pcm[i] = 0.3 * (omega * i as f32).sin();
-    }
+    let pcm: Vec<f32> = (0..n).map(|i| 0.3 * (omega * i as f32).sin()).collect();
 
     println!("encoding {} samples (~1 s @ 16 kHz) ...", pcm.len());
     let t0 = Instant::now();
@@ -53,8 +50,13 @@ fn main() -> ExitCode {
 
     let d_text = 1536usize;
     let n_soft = soft.len() / d_text;
-    println!("encoded in {:?} — {} audio soft tokens × {} dim = {} f32s",
-        dt, n_soft, d_text, soft.len());
+    println!(
+        "encoded in {:?} — {} audio soft tokens × {} dim = {} f32s",
+        dt,
+        n_soft,
+        d_text,
+        soft.len()
+    );
 
     let mut sum = 0f64;
     let mut sum_sq = 0f64;
@@ -68,14 +70,24 @@ fn main() -> ExitCode {
         }
         sum += v as f64;
         sum_sq += (v as f64) * (v as f64);
-        if v < min { min = v; }
-        if v > max { max = v; }
+        if v < min {
+            min = v;
+        }
+        if v > max {
+            max = v;
+        }
     }
     let n_finite = (soft.len() - nan_count).max(1) as f64;
     let mean = sum / n_finite;
     let var = sum_sq / n_finite - mean * mean;
-    println!("stats: mean={:.4} stddev={:.4} min={:.4} max={:.4} nans={}",
-        mean, var.sqrt(), min, max, nan_count);
+    println!(
+        "stats: mean={:.4} stddev={:.4} min={:.4} max={:.4} nans={}",
+        mean,
+        var.sqrt(),
+        min,
+        max,
+        nan_count
+    );
 
     if nan_count > 0 {
         eprintln!("FAIL: NaNs in output");

@@ -1,8 +1,8 @@
 //! Quick: tokenize a string with our (Ollama-matching) BPE and print the IDs.
-use std::env;
-use std::fs;
 use rullama::gguf::GgufReader;
 use rullama::tokenizer::BpeTokenizer;
+use std::env;
+use std::fs;
 
 fn main() {
     let mut args = env::args().skip(1);

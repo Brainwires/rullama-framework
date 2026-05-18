@@ -1,3 +1,11 @@
+// Forward functions take per-layer shape (d_model, head_dim, ffn, etc.) as
+// explicit args — they're literal copies of Ollama's Go signatures, and
+// bundling them into a `LayerShape` struct buys nothing here. Loop indices
+// also feed multiple parallel arrays per iteration (Q, K, V, weights), so
+// `for i in 0..n` reads cleaner than iterator zips.
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::needless_range_loop)]
+
 //! CPU f32 forward pass for Gemma 4. Mirrors the Go implementation at
 //! `/Users/nightness/Source/ollama/model/models/gemma4/model_text.go`.
 //!
@@ -19,18 +27,18 @@
 //!   - MoE expert routing
 //!   - K=V optimization (we always read the V projection)
 
-use crate::error::{Result, RullamaError};
-use crate::model::config::{Gemma4Config, LayerKind};
 use super::ops::{add_into, geglu_split, matvec, rmsnorm, rope_neox, scale, softcap, softmax};
 use super::weights::Weights;
+use crate::error::{Result, RullamaError};
+use crate::model::config::{Gemma4Config, LayerKind};
 
 /// Per-layer KV history. Each `k`/`v` is a flattened `[n_kv_heads, head_dim, pos+1]`
 /// tensor stored as a `Vec<f32>` with positions concatenated. Layout chosen to make
 /// position-major slicing cheap (`k_at(pos, kv_head)` is contiguous).
 #[derive(Default, Clone)]
 pub struct LayerKv {
-    pub k: Vec<f32>,            // length = (pos+1) * n_kv_heads * head_dim
-    pub v: Vec<f32>,            // same shape
+    pub k: Vec<f32>, // length = (pos+1) * n_kv_heads * head_dim
+    pub v: Vec<f32>, // same shape
     pub n_kv_heads: u32,
     pub head_dim: u32,
 }
@@ -44,11 +52,13 @@ pub struct KvState {
 impl KvState {
     pub fn new(cfg: &Gemma4Config) -> Self {
         Self {
-            layers: (0..cfg.n_layers).map(|i| LayerKv {
-                n_kv_heads: cfg.n_kv_heads(i),
-                head_dim: cfg.head_dim(i),
-                ..Default::default()
-            }).collect(),
+            layers: (0..cfg.n_layers)
+                .map(|i| LayerKv {
+                    n_kv_heads: cfg.n_kv_heads(i),
+                    head_dim: cfg.head_dim(i),
+                    ..Default::default()
+                })
+                .collect(),
         }
     }
 }
@@ -65,7 +75,9 @@ pub fn build_donor_map_pub(cfg: &Gemma4Config) -> Vec<Option<u32>> {
 /// non-shared layer of the same kind (SWA or global).
 fn build_donor_map(cfg: &Gemma4Config) -> Vec<Option<u32>> {
     let mut donor = vec![None; cfg.n_layers as usize];
-    if cfg.shared_kv_layers == 0 { return donor; }
+    if cfg.shared_kv_layers == 0 {
+        return donor;
+    }
     let first_shared = cfg.n_layers - cfg.shared_kv_layers;
     for i in first_shared..cfg.n_layers {
         let kind = cfg.kind(i);
@@ -94,7 +106,8 @@ pub fn forward_token(
 ) -> Result<Vec<f32>> {
     if (token_id as u64) >= cfg.vocab_size as u64 {
         return Err(RullamaError::Inference(format!(
-            "token_id {token_id} >= vocab_size {}", cfg.vocab_size
+            "token_id {token_id} >= vocab_size {}",
+            cfg.vocab_size
         )));
     }
     let d_model = cfg.d_model as usize;
@@ -106,7 +119,9 @@ pub fn forward_token(
     let mut hidden = weights.load_row("token_embd.weight", token_id as usize)?;
     if hidden.len() != d_model {
         return Err(RullamaError::Inference(format!(
-            "token_embd row length {} != d_model {}", hidden.len(), d_model
+            "token_embd row length {} != d_model {}",
+            hidden.len(),
+            d_model
         )));
     }
     scale(&mut hidden, (d_model as f32).sqrt());
@@ -120,7 +135,9 @@ pub fn forward_token(
 
     // ---- transformer layers ----
     for i in 0..cfg.n_layers {
-        let pli = per_layer_inputs.as_ref().map(|all| all[i as usize].as_slice());
+        let pli = per_layer_inputs
+            .as_ref()
+            .map(|all| all[i as usize].as_slice());
         layer_forward(cfg, weights, kv_state, &donor_map, i, pos, &mut hidden, pli)?;
     }
 
@@ -163,11 +180,13 @@ fn prepare_per_layer_inputs(
 
     // (1) inputsPerLayer: row `token_id` of per_layer_token_embd, shape [n_layers*ple_dim].
     //     Then scale by sqrt(ple_dim), reshape to [ple_dim, n_layers].
-    let mut inputs_per_layer = weights.load_row("per_layer_token_embd.weight", token_id as usize)?;
+    let mut inputs_per_layer =
+        weights.load_row("per_layer_token_embd.weight", token_id as usize)?;
     if inputs_per_layer.len() != n_layers * ple_dim {
         return Err(RullamaError::Inference(format!(
             "per_layer_token_embd row length {} != n_layers*ple_dim {}",
-            inputs_per_layer.len(), n_layers * ple_dim
+            inputs_per_layer.len(),
+            n_layers * ple_dim
         )));
     }
     scale(&mut inputs_per_layer, (ple_dim as f32).sqrt());
@@ -176,7 +195,13 @@ fn prepare_per_layer_inputs(
     //     (Q4_K weight [d_model, n_layers*ple_dim]).
     let proj_w = weights.load("per_layer_model_proj.weight")?;
     let mut projection = vec![0f32; n_layers * ple_dim];
-    matvec(&proj_w, d_model, n_layers * ple_dim, hidden, &mut projection);
+    matvec(
+        &proj_w,
+        d_model,
+        n_layers * ple_dim,
+        hidden,
+        &mut projection,
+    );
     drop(proj_w);
     scale(&mut projection, 1.0 / (d_model as f32).sqrt());
 
@@ -282,7 +307,13 @@ fn layer_forward(
     if let Some(pli) = per_layer_input {
         let inp_gate_w = weights.load(&format!("{prefix}inp_gate.weight"))?;
         let mut ple_state = vec![0f32; cfg.ple_dim as usize];
-        matvec(&inp_gate_w, d_model, cfg.ple_dim as usize, hidden, &mut ple_state);
+        matvec(
+            &inp_gate_w,
+            d_model,
+            cfg.ple_dim as usize,
+            hidden,
+            &mut ple_state,
+        );
         drop(inp_gate_w);
 
         // ple_state = gelu(ple_state) * pli   (GeGLU split, gate=ple_state, up=pli)
@@ -291,7 +322,13 @@ fn layer_forward(
 
         let proj_w = weights.load(&format!("{prefix}proj.weight"))?;
         let mut projected = vec![0f32; d_model];
-        matvec(&proj_w, cfg.ple_dim as usize, d_model, &activated, &mut projected);
+        matvec(
+            &proj_w,
+            cfg.ple_dim as usize,
+            d_model,
+            &activated,
+            &mut projected,
+        );
         drop(proj_w);
 
         let post_norm_w = weights.load(&format!("{prefix}post_norm.weight"))?;
@@ -303,8 +340,10 @@ fn layer_forward(
     }
 
     // ===== LAYER OUTPUT SCALAR (every layer in this checkpoint) =====
-    if let Some(scalar) = weights.load_opt(&format!("{prefix}layer_output_scale.weight"))? {
-        if let Some(&s) = scalar.first() { scale(hidden, s); }
+    if let Some(scalar) = weights.load_opt(&format!("{prefix}layer_output_scale.weight"))?
+        && let Some(&s) = scalar.first()
+    {
+        scale(hidden, s);
     }
     Ok(())
 }
@@ -339,7 +378,12 @@ fn self_attention(
     let mut q_normed = vec![0f32; n_heads * head_dim];
     for h in 0..n_heads {
         let off = h * head_dim;
-        rmsnorm(&q[off..off + head_dim], Some(&q_norm_w), eps, &mut q_normed[off..off + head_dim]);
+        rmsnorm(
+            &q[off..off + head_dim],
+            Some(&q_norm_w),
+            eps,
+            &mut q_normed[off..off + head_dim],
+        );
     }
     drop(q_norm_w);
     let mut q = q_normed;
@@ -362,7 +406,12 @@ fn self_attention(
         let mut k_normed = vec![0f32; n_kv_heads * head_dim];
         for h in 0..n_kv_heads {
             let off = h * head_dim;
-            rmsnorm(&k[off..off + head_dim], Some(&k_norm_w), eps, &mut k_normed[off..off + head_dim]);
+            rmsnorm(
+                &k[off..off + head_dim],
+                Some(&k_norm_w),
+                eps,
+                &mut k_normed[off..off + head_dim],
+            );
         }
         drop(k_norm_w);
 
@@ -370,7 +419,12 @@ fn self_attention(
         let mut v_normed = vec![0f32; n_kv_heads * head_dim];
         for h in 0..n_kv_heads {
             let off = h * head_dim;
-            rmsnorm(&v[off..off + head_dim], None, eps, &mut v_normed[off..off + head_dim]);
+            rmsnorm(
+                &v[off..off + head_dim],
+                None,
+                eps,
+                &mut v_normed[off..off + head_dim],
+            );
         }
 
         // RoPE on Q and K. K is rotated; V is not.
@@ -400,7 +454,18 @@ fn self_attention(
 
     // ---- attention ----
     let history_len = lkv.k.len() / (n_kv_heads * head_dim);
-    let attn_out = run_attention(cfg, i, pos, head_dim, n_heads, n_kv_heads, history_len, &q, &lkv.k, &lkv.v);
+    let attn_out = run_attention(
+        cfg,
+        i,
+        pos,
+        head_dim,
+        n_heads,
+        n_kv_heads,
+        history_len,
+        &q,
+        &lkv.k,
+        &lkv.v,
+    );
 
     // ---- output projection ----
     let o_w = weights.load(&format!("{prefix}attn_output.weight"))?;
@@ -423,7 +488,7 @@ fn apply_rope(
 ) -> Result<()> {
     let (base, rope_dims) = match cfg.kind(layer) {
         LayerKind::SlidingWindow => (cfg.rope_freq_base_swa, cfg.rope_dim_swa as usize),
-        LayerKind::Global        => (cfg.rope_freq_base,     cfg.rope_dim_global as usize),
+        LayerKind::Global => (cfg.rope_freq_base, cfg.rope_dim_global as usize),
     };
     // freq_factors only on global layers, and only if the tensor is present.
     let freqs = if matches!(cfg.kind(layer), LayerKind::Global) {
@@ -431,7 +496,15 @@ fn apply_rope(
     } else {
         None
     };
-    rope_neox(x, head_dim, n_heads, pos as usize, rope_dims, base, freqs.as_deref());
+    rope_neox(
+        x,
+        head_dim,
+        n_heads,
+        pos as usize,
+        rope_dims,
+        base,
+        freqs.as_deref(),
+    );
     Ok(())
 }
 
@@ -485,10 +558,14 @@ fn run_attention(
 
         // Weighted sum of v(t).
         let out_off = qh * head_dim;
-        for d in 0..head_dim { out[out_off + d] = 0.0; }
+        for d in 0..head_dim {
+            out[out_off + d] = 0.0;
+        }
         for t in 0..history_len {
             let w = scores[t];
-            if w == 0.0 { continue; }
+            if w == 0.0 {
+                continue;
+            }
             let v_off = (t * n_kv_heads + kvh) * head_dim;
             for d in 0..head_dim {
                 out[out_off + d] += w * v_history[v_off + d];

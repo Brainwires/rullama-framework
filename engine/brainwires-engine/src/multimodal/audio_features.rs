@@ -1,3 +1,9 @@
+// Audio feature math: hand-rolled FFT, mel filterbank, framing — every loop
+// here indexes into multiple parallel arrays (windowed PCM, FFT scratch,
+// twiddles), where `for i in 0..n` is unambiguously clearer than zipped
+// iterators.
+#![allow(clippy::needless_range_loop)]
+
 //! Mel-spectrogram pipeline for the Gemma 4 audio tower.
 //!
 //! Mirrors `process_audio.go` in Ollama:
@@ -13,19 +19,19 @@
 
 use crate::error::{Result, RullamaError};
 
-pub const SAMPLE_RATE:       usize = 16_000;
-pub const MEL_BINS:          usize = 128;
-pub const FRAME_LENGTH:      usize = 320;     // 20 ms @ 16 kHz
-pub const HOP_LENGTH:        usize = 160;     // 10 ms @ 16 kHz
-pub const MIN_FREQUENCY:     f32   = 0.0;
-pub const MAX_FREQUENCY:     f32   = 8_000.0;
-pub const MEL_FLOOR:         f32   = 1e-3;
-pub const MAX_AUDIO_TOKENS:  usize = 750;
+pub const SAMPLE_RATE: usize = 16_000;
+pub const MEL_BINS: usize = 128;
+pub const FRAME_LENGTH: usize = 320; // 20 ms @ 16 kHz
+pub const HOP_LENGTH: usize = 160; // 10 ms @ 16 kHz
+pub const MIN_FREQUENCY: f32 = 0.0;
+pub const MAX_FREQUENCY: f32 = 8_000.0;
+pub const MEL_FLOOR: f32 = 1e-3;
+pub const MAX_AUDIO_TOKENS: usize = 750;
 
 /// FFT length used by the mel pipeline. `fft_overdrive=True` per Ollama:
 /// next pow2 ≥ FRAME_LENGTH, then doubled. With FRAME_LENGTH=320 → 1024.
 pub const FFT_LEN: usize = 1024;
-pub const NUM_FREQ_BINS: usize = FFT_LEN / 2 + 1;     // 513
+pub const NUM_FREQ_BINS: usize = FFT_LEN / 2 + 1; // 513
 
 /// Cached pieces (Hann window + mel filterbank + bit-reversal permutation)
 /// used to compute every spectrogram. Built once per process.
@@ -51,7 +57,11 @@ impl MelEngine {
         }
 
         let filters = build_mel_filterbank(
-            NUM_FREQ_BINS, MEL_BINS, MIN_FREQUENCY, MAX_FREQUENCY, SAMPLE_RATE,
+            NUM_FREQ_BINS,
+            MEL_BINS,
+            MIN_FREQUENCY,
+            MAX_FREQUENCY,
+            SAMPLE_RATE,
         );
 
         // Bit-reversal index for in-place radix-2 FFT.
@@ -59,7 +69,10 @@ impl MelEngine {
         let mut j = 0usize;
         for i in 1..FFT_LEN {
             let mut bit = FFT_LEN >> 1;
-            while j & bit != 0 { j ^= bit; bit >>= 1; }
+            while j & bit != 0 {
+                j ^= bit;
+                bit >>= 1;
+            }
             j ^= bit;
             bit_reverse[i] = j;
         }
@@ -73,7 +86,13 @@ impl MelEngine {
             twiddles_im.push(theta.sin());
         }
 
-        Self { window, filters, bit_reverse, twiddles_re, twiddles_im }
+        Self {
+            window,
+            filters,
+            bit_reverse,
+            twiddles_re,
+            twiddles_im,
+        }
     }
 
     /// Compute log-mel spectrogram: returns `(flat [n_frames * MEL_BINS] f32, n_frames)`.
@@ -85,7 +104,9 @@ impl MelEngine {
             return (Vec::new(), 0);
         }
         let mut n_frames = (samples.len() - frame_size_for_unfold) / HOP_LENGTH;
-        if n_frames > MAX_AUDIO_TOKENS { n_frames = MAX_AUDIO_TOKENS; }
+        if n_frames > MAX_AUDIO_TOKENS {
+            n_frames = MAX_AUDIO_TOKENS;
+        }
 
         let mut out = vec![0f32; n_frames * MEL_BINS];
         let mut re = vec![0f32; FFT_LEN];
@@ -98,7 +119,10 @@ impl MelEngine {
                 re[i] = samples[start + i] * self.window[i];
                 im[i] = 0.0;
             }
-            for i in FRAME_LENGTH..FFT_LEN { re[i] = 0.0; im[i] = 0.0; }
+            for i in FRAME_LENGTH..FFT_LEN {
+                re[i] = 0.0;
+                im[i] = 0.0;
+            }
 
             self.fft_in_place(&mut re, &mut im);
 
@@ -109,7 +133,9 @@ impl MelEngine {
                     let mag = (re[k] * re[k] + im[k] * im[k]).sqrt();
                     mel_val += mag * self.filters[k * MEL_BINS + m];
                 }
-                if mel_val < MEL_FLOOR { mel_val = MEL_FLOOR; }
+                if mel_val < MEL_FLOOR {
+                    mel_val = MEL_FLOOR;
+                }
                 out[f * MEL_BINS + m] = mel_val.ln();
             }
         }
@@ -143,8 +169,8 @@ impl MelEngine {
                     let t_im = w_re * im[i2] + w_im * re[i2];
                     re[i2] = re[i1] - t_re;
                     im[i2] = im[i1] - t_im;
-                    re[i1] = re[i1] + t_re;
-                    im[i1] = im[i1] + t_im;
+                    re[i1] += t_re;
+                    im[i1] += t_im;
                 }
                 start += size;
             }
@@ -154,11 +180,17 @@ impl MelEngine {
 }
 
 impl Default for MelEngine {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 fn build_mel_filterbank(
-    num_freq_bins: usize, num_mels: usize, f_min: f32, f_max: f32, sr: usize,
+    num_freq_bins: usize,
+    num_mels: usize,
+    f_min: f32,
+    f_max: f32,
+    sr: usize,
 ) -> Vec<f32> {
     let hz_to_mel = |f: f32| 2595.0 * (1.0 + f / 700.0).log10();
     let mel_to_hz = |m: f32| 700.0 * (10f32.powf(m / 2595.0) - 1.0);
@@ -177,9 +209,9 @@ fn build_mel_filterbank(
 
     let mut filters = vec![0f32; num_freq_bins * num_mels];
     for m in 0..num_mels {
-        let f_left   = filter_freqs[m];
+        let f_left = filter_freqs[m];
         let f_center = filter_freqs[m + 1];
-        let f_right  = filter_freqs[m + 2];
+        let f_right = filter_freqs[m + 2];
         for k in 0..num_freq_bins {
             let f = fft_freqs[k];
             let mut v = 0f32;
@@ -201,10 +233,7 @@ fn build_mel_filterbank(
 /// Decode a WAV file (RIFF/WAVE container, PCM 8/16/24/32 or IEEE float32) into
 /// 16 kHz mono `f32` samples in `[-1, 1]`. Mirrors `process_audio.go::decodeWAV`.
 pub fn decode_wav(data: &[u8]) -> Result<Vec<f32>> {
-    if data.len() < 12
-        || &data[0..4] != b"RIFF"
-        || &data[8..12] != b"WAVE"
-    {
+    if data.len() < 12 || &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
         return Err(RullamaError::Inference("not a WAV file".into()));
     }
 
@@ -218,7 +247,8 @@ pub fn decode_wav(data: &[u8]) -> Result<Vec<f32>> {
     let mut offset = 12;
     while offset + 8 <= data.len() {
         let chunk_id = &data[offset..offset + 4];
-        let chunk_size = u32::from_le_bytes(data[offset + 4..offset + 8].try_into().unwrap()) as usize;
+        let chunk_size =
+            u32::from_le_bytes(data[offset + 4..offset + 8].try_into().unwrap()) as usize;
         let chunk_end = (offset + 8 + chunk_size).min(data.len());
         let chunk_data = &data[offset + 8..chunk_end];
 
@@ -230,7 +260,8 @@ pub fn decode_wav(data: &[u8]) -> Result<Vec<f32>> {
                 audio_format = u16::from_le_bytes(chunk_data[0..2].try_into().unwrap());
                 num_channels = u16::from_le_bytes(chunk_data[2..4].try_into().unwrap()) as usize;
                 sample_rate = u32::from_le_bytes(chunk_data[4..8].try_into().unwrap()) as usize;
-                bits_per_sample = u16::from_le_bytes(chunk_data[14..16].try_into().unwrap()) as usize;
+                bits_per_sample =
+                    u16::from_le_bytes(chunk_data[14..16].try_into().unwrap()) as usize;
                 if audio_format == 0xFFFE && chunk_data.len() >= 26 {
                     audio_format = u16::from_le_bytes(chunk_data[24..26].try_into().unwrap());
                 }
@@ -241,7 +272,9 @@ pub fn decode_wav(data: &[u8]) -> Result<Vec<f32>> {
         }
 
         offset += 8 + chunk_size;
-        if chunk_size % 2 != 0 { offset += 1; }
+        if !chunk_size.is_multiple_of(2) {
+            offset += 1;
+        }
     }
 
     if !found_fmt {
@@ -249,7 +282,8 @@ pub fn decode_wav(data: &[u8]) -> Result<Vec<f32>> {
     }
     if audio_format != 1 && audio_format != 3 {
         return Err(RullamaError::Inference(format!(
-            "unsupported WAV format {} (need PCM=1 or float=3)", audio_format
+            "unsupported WAV format {} (need PCM=1 or float=3)",
+            audio_format
         )));
     }
     if audio_data.is_empty() {
@@ -264,7 +298,9 @@ pub fn decode_wav(data: &[u8]) -> Result<Vec<f32>> {
 }
 
 fn decode_wav_samples(data: &[u8], format: u16, bits: usize, channels: usize) -> Vec<f32> {
-    if channels == 0 || bits == 0 { return Vec::new(); }
+    if channels == 0 || bits == 0 {
+        return Vec::new();
+    }
     let bytes_per_sample = bits / 8;
     let total_samples = data.len() / (bytes_per_sample * channels);
     let mut mono = vec![0f32; total_samples];
@@ -273,7 +309,9 @@ fn decode_wav_samples(data: &[u8], format: u16, bits: usize, channels: usize) ->
         let mut sum = 0f64;
         for ch in 0..channels {
             let off = (i * channels + ch) * bytes_per_sample;
-            if off + bytes_per_sample > data.len() { break; }
+            if off + bytes_per_sample > data.len() {
+                break;
+            }
             sum += match (format, bits) {
                 (1, 16) => {
                     let v = i16::from_le_bytes(data[off..off + 2].try_into().unwrap());
@@ -287,7 +325,9 @@ fn decode_wav_samples(data: &[u8], format: u16, bits: usize, channels: usize) ->
                     let mut v = i32::from(data[off])
                         | (i32::from(data[off + 1]) << 8)
                         | (i32::from(data[off + 2]) << 16);
-                    if v & 0x800000 != 0 { v |= !0xFFFFFF; }
+                    if v & 0x800000 != 0 {
+                        v |= !0xFFFFFF;
+                    }
                     v as f64 / 8_388_608.0
                 }
                 (3, 32) => {
@@ -304,10 +344,14 @@ fn decode_wav_samples(data: &[u8], format: u16, bits: usize, channels: usize) ->
 }
 
 fn resample_linear(samples: &[f32], from_rate: usize, to_rate: usize) -> Vec<f32> {
-    if samples.is_empty() { return Vec::new(); }
+    if samples.is_empty() {
+        return Vec::new();
+    }
     let n = samples.len() * to_rate / from_rate;
     let mut out = vec![0f32; n];
-    if n <= 1 { return out; }
+    if n <= 1 {
+        return out;
+    }
     for i in 0..n {
         let pos = i as f64 * (samples.len() - 1) as f64 / (n - 1) as f64;
         let idx = pos as usize;
@@ -347,7 +391,12 @@ mod tests {
         assert!(n > 0);
         let expected = MEL_FLOOR.ln();
         for v in &mel {
-            assert!((v - expected).abs() < 1e-3, "got {} expected {}", v, expected);
+            assert!(
+                (v - expected).abs() < 1e-3,
+                "got {} expected {}",
+                v,
+                expected
+            );
         }
     }
 }

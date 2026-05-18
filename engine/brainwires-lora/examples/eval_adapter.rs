@@ -32,8 +32,8 @@ use rullama::api::Model;
 use rullama::reference::forward_chained::{LayerLoraSlots, LoraSlot};
 use rullama_finetune::load_adapter_into_state;
 use rullama_finetune::lora::{LoraKey, LoraLayer, LoraState};
-use safetensors::tensor::Metadata;
 use safetensors::SafeTensors;
+use safetensors::tensor::Metadata;
 
 type BoxError = Box<dyn Error + Send + Sync>;
 
@@ -43,12 +43,14 @@ fn main() -> Result<(), BoxError> {
 
 async fn run() -> Result<(), BoxError> {
     let mut args = env::args().skip(1);
-    let gguf_path: PathBuf = args.next()
+    let gguf_path: PathBuf = args
+        .next()
         .ok_or_else(|| -> BoxError {
             "usage: eval_adapter <gguf> <adapter.safetensors> <prompt> [<prompt>...]".into()
         })?
         .into();
-    let adapter_path: PathBuf = args.next()
+    let adapter_path: PathBuf = args
+        .next()
         .ok_or_else(|| -> BoxError { "missing <adapter.safetensors>".into() })?
         .into();
     let prompts: Vec<String> = args.collect();
@@ -63,10 +65,14 @@ async fn run() -> Result<(), BoxError> {
 
     eprintln!("[load] reading {} …", gguf_path.display());
     let bytes = fs::read(&gguf_path)?;
-    let mut model = Model::load_native(bytes).await
+    let mut model = Model::load_native(bytes)
+        .await
         .map_err(|e| -> BoxError { format!("{e:?}").into() })?;
 
-    eprintln!("[adapter] parsing metadata from {} …", adapter_path.display());
+    eprintln!(
+        "[adapter] parsing metadata from {} …",
+        adapter_path.display()
+    );
     let (rank, alpha, target_modules) = read_adapter_meta(&adapter_path)?;
     eprintln!(
         "[adapter] rank={rank} alpha={alpha:.2} targets={}",
@@ -133,15 +139,17 @@ async fn greedy_generate(
 
     // Build LayerLoraSlots if we have an adapter.
     let slots_owned: Option<Vec<LayerLoraSlots<'_>>> = adapter.map(|st| {
-        (0..n_layers).map(|li| LayerLoraSlots {
-            q:        st.get(&LoraKey::new(li as u32, "attn_q")).map(slot_view),
-            k:        st.get(&LoraKey::new(li as u32, "attn_k")).map(slot_view),
-            v:        st.get(&LoraKey::new(li as u32, "attn_v")).map(slot_view),
-            o:        st.get(&LoraKey::new(li as u32, "attn_o")).map(slot_view),
-            ffn_gate: st.get(&LoraKey::new(li as u32, "ffn_gate")).map(slot_view),
-            ffn_up:   st.get(&LoraKey::new(li as u32, "ffn_up")).map(slot_view),
-            ffn_down: st.get(&LoraKey::new(li as u32, "ffn_down")).map(slot_view),
-        }).collect()
+        (0..n_layers)
+            .map(|li| LayerLoraSlots {
+                q: st.get(&LoraKey::new(li as u32, "attn_q")).map(slot_view),
+                k: st.get(&LoraKey::new(li as u32, "attn_k")).map(slot_view),
+                v: st.get(&LoraKey::new(li as u32, "attn_v")).map(slot_view),
+                o: st.get(&LoraKey::new(li as u32, "attn_o")).map(slot_view),
+                ffn_gate: st.get(&LoraKey::new(li as u32, "ffn_gate")).map(slot_view),
+                ffn_up: st.get(&LoraKey::new(li as u32, "ffn_up")).map(slot_view),
+                ffn_down: st.get(&LoraKey::new(li as u32, "ffn_down")).map(slot_view),
+            })
+            .collect()
     });
 
     let mut logits: Vec<f32> = Vec::new();
@@ -179,9 +187,13 @@ async fn step_one(
 ) -> Result<Vec<f32>, BoxError> {
     let fwd = model.forward_mut();
     match slots {
-        Some(s) => fwd.step_with_lora(token_id, s).await
+        Some(s) => fwd
+            .step_with_lora(token_id, s)
+            .await
             .map_err(|e| -> BoxError { format!("{e:?}").into() }),
-        None => fwd.step(token_id).await
+        None => fwd
+            .step(token_id)
+            .await
             .map_err(|e| -> BoxError { format!("{e:?}").into() }),
     }
 }
@@ -191,7 +203,7 @@ fn slot_view(l: &LoraLayer) -> LoraSlot<'_> {
         a: &l.a,
         b: &l.b,
         z: &l.z,
-        rank:  l.rank,
+        rank: l.rank,
         scale: l.scale,
     }
 }
@@ -200,7 +212,10 @@ fn argmax(v: &[f32]) -> u32 {
     let mut best = 0u32;
     let mut best_v = f32::NEG_INFINITY;
     for (i, &x) in v.iter().enumerate() {
-        if x > best_v { best_v = x; best = i as u32; }
+        if x > best_v {
+            best_v = x;
+            best = i as u32;
+        }
     }
     best
 }
@@ -224,20 +239,25 @@ fn allocate_lora_slots(
         let ffn_n = cfg.ffn(layer);
         for proj in target_modules {
             let (in_dim, out_dim) = match proj.as_str() {
-                "attn_q"   => (d_model, n_heads_dim),
-                "attn_k"   => (d_model, n_kv_dim),
-                "attn_v"   => (d_model, n_kv_dim),
-                "attn_o"   => (n_heads_dim, d_model),
+                "attn_q" => (d_model, n_heads_dim),
+                "attn_k" => (d_model, n_kv_dim),
+                "attn_v" => (d_model, n_kv_dim),
+                "attn_o" => (n_heads_dim, d_model),
                 "ffn_gate" => (d_model, ffn_n),
-                "ffn_up"   => (d_model, ffn_n),
+                "ffn_up" => (d_model, ffn_n),
                 "ffn_down" => (ffn_n, d_model),
                 other => return Err(format!("unsupported LoRA target {other}").into()),
             };
-            state.insert(
-                LoraKey::new(layer, proj.clone()),
-                in_dim, rank, out_dim, alpha,
-                0, // seed irrelevant — load_adapter_into_state will overwrite A/B.
-            ).map_err(|e| -> BoxError { format!("{e:?}").into() })?;
+            state
+                .insert(
+                    LoraKey::new(layer, proj.clone()),
+                    in_dim,
+                    rank,
+                    out_dim,
+                    alpha,
+                    0, // seed irrelevant — load_adapter_into_state will overwrite A/B.
+                )
+                .map_err(|e| -> BoxError { format!("{e:?}").into() })?;
         }
     }
     Ok(())
@@ -248,16 +268,25 @@ fn read_adapter_meta(path: &std::path::Path) -> Result<(u32, f32, Vec<String>), 
     let (_n, metadata): (usize, Metadata) = SafeTensors::read_metadata(&bytes)
         .map_err(|e| -> BoxError { format!("safetensors header parse: {e}").into() })?;
     let meta_opt: &Option<HashMap<String, String>> = metadata.metadata();
-    let m = meta_opt.as_ref()
+    let m = meta_opt
+        .as_ref()
         .ok_or_else(|| -> BoxError { "adapter has no metadata sidecar".into() })?;
-    let rank: u32 = m.get("rank")
+    let rank: u32 = m
+        .get("rank")
         .ok_or_else(|| -> BoxError { "metadata missing 'rank'".into() })?
-        .parse().map_err(|e| -> BoxError { format!("bad 'rank': {e}").into() })?;
-    let alpha: f32 = m.get("alpha")
+        .parse()
+        .map_err(|e| -> BoxError { format!("bad 'rank': {e}").into() })?;
+    let alpha: f32 = m
+        .get("alpha")
         .ok_or_else(|| -> BoxError { "metadata missing 'alpha'".into() })?
-        .parse().map_err(|e| -> BoxError { format!("bad 'alpha': {e}").into() })?;
-    let targets_csv = m.get("target_modules")
+        .parse()
+        .map_err(|e| -> BoxError { format!("bad 'alpha': {e}").into() })?;
+    let targets_csv = m
+        .get("target_modules")
         .ok_or_else(|| -> BoxError { "metadata missing 'target_modules'".into() })?;
-    let target_modules: Vec<String> = targets_csv.split(',').map(|s| s.trim().to_string()).collect();
+    let target_modules: Vec<String> = targets_csv
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .collect();
     Ok((rank, alpha, target_modules))
 }

@@ -1,3 +1,7 @@
+// Training loop functions take many dims (rank, n_layers, d_model, batch,
+// etc.) per call — bundling them just moves boilerplate around.
+#![allow(clippy::too_many_arguments)]
+
 //! `TrainingSession` — drives one training step end-to-end:
 //! forward (with LoRA correction + activation capture) → loss →
 //! backward → Adam update.
@@ -15,11 +19,11 @@ use std::sync::Arc;
 
 use rullama::api::Model;
 use rullama::backend::dispatch::{
-    adam_step_chained, scale_chained, sum_of_squares_chained, AdamConfig,
+    AdamConfig, adam_step_chained, scale_chained, sum_of_squares_chained,
 };
 use rullama::reference::forward_chained::{
-    BackwardScratchView, LayerCaptureBuffers, LayerLoraGrads, LayerLoraSlots,
-    LoraGradPair, LoraSlot,
+    BackwardScratchView, LayerCaptureBuffers, LayerLoraGrads, LayerLoraSlots, LoraGradPair,
+    LoraSlot,
 };
 
 use crate::lora::{LoraKey, LoraState};
@@ -102,12 +106,12 @@ impl TrainingSession {
             let ffn_n = cfg.ffn(layer);
             for proj in &lora_cfg.target_modules {
                 let (in_dim, out_dim) = match proj.as_str() {
-                    "attn_q"   => (d_model, n_heads_dim),
-                    "attn_k"   => (d_model, n_kv_dim),
-                    "attn_v"   => (d_model, n_kv_dim),
-                    "attn_o"   => (n_heads_dim, d_model),
+                    "attn_q" => (d_model, n_heads_dim),
+                    "attn_k" => (d_model, n_kv_dim),
+                    "attn_v" => (d_model, n_kv_dim),
+                    "attn_o" => (n_heads_dim, d_model),
                     "ffn_gate" => (d_model, ffn_n),
-                    "ffn_up"   => (d_model, ffn_n),
+                    "ffn_up" => (d_model, ffn_n),
                     "ffn_down" => (ffn_n, d_model),
                     other => {
                         return Err(TrainingError::Config(format!(
@@ -117,12 +121,14 @@ impl TrainingSession {
                 };
                 // Deterministic seed per (layer, proj) so reruns are
                 // reproducible without an extra RNG.
-                let proj_idx = ["attn_q", "attn_k", "attn_v", "attn_o",
-                                "ffn_gate", "ffn_up", "ffn_down"]
-                    .iter()
-                    .position(|p| *p == proj.as_str())
-                    .unwrap_or(0) as u64;
-                let seed = hp.seed
+                let proj_idx = [
+                    "attn_q", "attn_k", "attn_v", "attn_o", "ffn_gate", "ffn_up", "ffn_down",
+                ]
+                .iter()
+                .position(|p| *p == proj.as_str())
+                .unwrap_or(0) as u64;
+                let seed = hp
+                    .seed
                     .wrapping_add(layer as u64 * 7919)
                     .wrapping_add(proj_idx * 17);
                 loras.insert(
@@ -164,15 +170,21 @@ impl TrainingSession {
 
     /// True iff this session was constructed with
     /// `TrainingHyperparams::gradient_checkpointing = true`.
-    pub fn gradient_checkpointing(&self) -> bool { self.gradient_checkpointing }
+    pub fn gradient_checkpointing(&self) -> bool {
+        self.gradient_checkpointing
+    }
 
     /// True iff this session was constructed with
     /// `TrainingHyperparams::mixed_precision = true`. Adapter
     /// serialization writes f16 in that mode.
-    pub fn mixed_precision(&self) -> bool { self.mixed_precision }
+    pub fn mixed_precision(&self) -> bool {
+        self.mixed_precision
+    }
 
     /// The loss objective this session was constructed with.
-    pub fn loss_mode(&self) -> LossMode { self.loss_mode }
+    pub fn loss_mode(&self) -> LossMode {
+        self.loss_mode
+    }
 
     /// Opt into LR scheduling for the next `total_steps` optimizer
     /// steps. The schedule respects `TrainingHyperparams::warmup_steps`
@@ -238,14 +250,30 @@ impl TrainingSession {
         let pipes = self.model.forward().pipes().clone();
 
         // Pass 1: per-LoRA sum-of-squares into each layer's sos_a / sos_b.
-        let mut enc = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("train.sos"),
-        });
+        let mut enc = ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("train.sos"),
+            });
         for (_key, layer) in self.loras.iter() {
-            sum_of_squares_chained(&ctx, &pipes, &mut enc,
-                &layer.da, &layer.sos_a, layer.a_len(), 1.0);
-            sum_of_squares_chained(&ctx, &pipes, &mut enc,
-                &layer.db, &layer.sos_b, layer.b_len(), 1.0);
+            sum_of_squares_chained(
+                &ctx,
+                &pipes,
+                &mut enc,
+                &layer.da,
+                &layer.sos_a,
+                layer.a_len(),
+                1.0,
+            );
+            sum_of_squares_chained(
+                &ctx,
+                &pipes,
+                &mut enc,
+                &layer.db,
+                &layer.sos_b,
+                layer.b_len(),
+                1.0,
+            );
         }
         // Gather all sos scalars into one readback buffer (4 bytes per
         // grad buffer, two per LoRA).
@@ -267,9 +295,14 @@ impl TrainingSession {
 
         let slice = read_buf.slice(..);
         let (tx, rx) = futures_channel::oneshot::channel();
-        slice.map_async(wgpu::MapMode::Read, move |r| { let _ = tx.send(r); });
+        slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx.send(r);
+        });
         ctx.device
-            .poll(wgpu::PollType::Wait { submission_index: None, timeout: None })
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            })
             .map_err(|e| TrainingError::Backend(format!("poll: {e:?}")))?;
         rx.await
             .map_err(|e| TrainingError::Backend(format!("rx: {e:?}")))?
@@ -293,9 +326,11 @@ impl TrainingSession {
         let s = max_norm / l2;
 
         // Pass 2: scale every grad buffer by `s` in-place.
-        let mut enc2 = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("train.gradclip.scale"),
-        });
+        let mut enc2 = ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("train.gradclip.scale"),
+            });
         for (_key, layer) in self.loras.iter() {
             scale_chained(&ctx, &pipes, &mut enc2, &layer.da, layer.a_len(), s);
             scale_chained(&ctx, &pipes, &mut enc2, &layer.db, layer.b_len(), s);
@@ -313,17 +348,41 @@ impl TrainingSession {
             Some(s) => s.get_lr(self.step_num as u64) as f32,
             None => self.adam_cfg.lr,
         };
-        let adam = AdamConfig { step: self.step_num, lr, ..self.adam_cfg };
+        let adam = AdamConfig {
+            step: self.step_num,
+            lr,
+            ..self.adam_cfg
+        };
         let ctx = self.model.forward().ctx().clone();
         let pipes = self.model.forward().pipes().clone();
-        let mut enc = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("train.adam"),
-        });
+        let mut enc = ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("train.adam"),
+            });
         for (_key, layer) in self.loras.iter() {
-            adam_step_chained(&ctx, &pipes, &mut enc,
-                &layer.da, &layer.a, &layer.m_a, &layer.v_a, layer.a_len(), adam);
-            adam_step_chained(&ctx, &pipes, &mut enc,
-                &layer.db, &layer.b, &layer.m_b, &layer.v_b, layer.b_len(), adam);
+            adam_step_chained(
+                &ctx,
+                &pipes,
+                &mut enc,
+                &layer.da,
+                &layer.a,
+                &layer.m_a,
+                &layer.v_a,
+                layer.a_len(),
+                adam,
+            );
+            adam_step_chained(
+                &ctx,
+                &pipes,
+                &mut enc,
+                &layer.db,
+                &layer.b,
+                &layer.m_b,
+                &layer.v_b,
+                layer.b_len(),
+                adam,
+            );
         }
         ctx.queue.submit(Some(enc.finish()));
         self.step_num = self.step_num.saturating_add(1);
@@ -356,13 +415,34 @@ impl TrainingSession {
         // `self.loras` so we can also mutably borrow `self.model`.
         let lora_slots: Vec<LayerLoraSlots> = (0..n_layers)
             .map(|li| LayerLoraSlots {
-                q:        self.loras.get(&LoraKey::new(li as u32, "attn_q")).map(slot_view),
-                k:        self.loras.get(&LoraKey::new(li as u32, "attn_k")).map(slot_view),
-                v:        self.loras.get(&LoraKey::new(li as u32, "attn_v")).map(slot_view),
-                o:        self.loras.get(&LoraKey::new(li as u32, "attn_o")).map(slot_view),
-                ffn_gate: self.loras.get(&LoraKey::new(li as u32, "ffn_gate")).map(slot_view),
-                ffn_up:   self.loras.get(&LoraKey::new(li as u32, "ffn_up")).map(slot_view),
-                ffn_down: self.loras.get(&LoraKey::new(li as u32, "ffn_down")).map(slot_view),
+                q: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "attn_q"))
+                    .map(slot_view),
+                k: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "attn_k"))
+                    .map(slot_view),
+                v: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "attn_v"))
+                    .map(slot_view),
+                o: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "attn_o"))
+                    .map(slot_view),
+                ffn_gate: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "ffn_gate"))
+                    .map(slot_view),
+                ffn_up: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "ffn_up"))
+                    .map(slot_view),
+                ffn_down: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "ffn_down"))
+                    .map(slot_view),
             })
             .collect();
 
@@ -372,23 +452,23 @@ impl TrainingSession {
             .layers
             .iter()
             .map(|l| LayerCaptureBuffers {
-                hidden_in:   &l.hidden_in,
+                hidden_in: &l.hidden_in,
                 norm_x_attn: &l.norm_x_attn,
-                q_pre_norm:  &l.q_pre_norm,
+                q_pre_norm: &l.q_pre_norm,
                 q_post_rope: &l.q_post_rope,
-                k_pre_norm:  &l.k_pre_norm,
-                v_pre_norm:  &l.v_pre_norm,
-                attn_out:    &l.attn_out,
-                attn_proj:   &l.attn_proj,
+                k_pre_norm: &l.k_pre_norm,
+                v_pre_norm: &l.v_pre_norm,
+                attn_out: &l.attn_out,
+                attn_proj: &l.attn_proj,
                 pre_ffn_rms: &l.pre_ffn_rms,
-                norm_x_ffn:  &l.norm_x_ffn,
-                ffn_gate:    &l.ffn_gate,
-                ffn_up:      &l.ffn_up,
-                ffn_act:     &l.ffn_act,
-                ffn_out:     &l.ffn_out,
-                ple_state:   &l.ple_state,
-                ple_act:     &l.ple_act,
-                ple_proj:    &l.ple_proj,
+                norm_x_ffn: &l.norm_x_ffn,
+                ffn_gate: &l.ffn_gate,
+                ffn_up: &l.ffn_up,
+                ffn_act: &l.ffn_act,
+                ffn_out: &l.ffn_out,
+                ple_state: &l.ple_state,
+                ple_act: &l.ple_act,
+                ple_proj: &l.ple_proj,
             })
             .collect();
 
@@ -417,13 +497,34 @@ impl TrainingSession {
         // Backward.
         let grads: Vec<LayerLoraGrads> = (0..n_layers)
             .map(|li| LayerLoraGrads {
-                q:        self.loras.get(&LoraKey::new(li as u32, "attn_q")).map(grad_view),
-                k:        self.loras.get(&LoraKey::new(li as u32, "attn_k")).map(grad_view),
-                v:        self.loras.get(&LoraKey::new(li as u32, "attn_v")).map(grad_view),
-                o:        self.loras.get(&LoraKey::new(li as u32, "attn_o")).map(grad_view),
-                ffn_gate: self.loras.get(&LoraKey::new(li as u32, "ffn_gate")).map(grad_view),
-                ffn_up:   self.loras.get(&LoraKey::new(li as u32, "ffn_up")).map(grad_view),
-                ffn_down: self.loras.get(&LoraKey::new(li as u32, "ffn_down")).map(grad_view),
+                q: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "attn_q"))
+                    .map(grad_view),
+                k: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "attn_k"))
+                    .map(grad_view),
+                v: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "attn_v"))
+                    .map(grad_view),
+                o: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "attn_o"))
+                    .map(grad_view),
+                ffn_gate: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "ffn_gate"))
+                    .map(grad_view),
+                ffn_up: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "ffn_up"))
+                    .map(grad_view),
+                ffn_down: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "ffn_down"))
+                    .map(grad_view),
             })
             .collect();
         let s = &self.scratch;
@@ -432,47 +533,47 @@ impl TrainingSession {
         // `d_q` in place), so the buffer is idle and the right size
         // (`[n_heads · head_dim_max]`) — perfect overflow scratch.
         let scratch_view = BackwardScratchView {
-            d_logits:       &s.d_logits,
-            loss:           &s.loss,
+            d_logits: &s.d_logits,
+            loss: &s.loss,
             d_hidden_final: &s.d_hidden_final,
-            d_hidden:       &s.d_hidden,
-            d_hidden_tmp:   &s.d_hidden_tmp,
-            d_hidden_tmp2:  &s.d_hidden_tmp2,
-            attn_probs:     &s.attn_probs,
-            attn_d_scores:  &s.attn_d_scores,
-            d_attn_out:     &s.d_q_pre_rope,
-            d_q:            &s.d_q,
-            d_k_hist:       &s.d_k_hist,
-            d_v_hist:       &s.d_v_hist,
-            d_q_pre_rope:   &s.d_q_pre_rope,
-            d_k_pre_rope:   &s.d_k_pre_rope,
-            d_q_pre_norm:   &s.d_q_pre_norm,
-            d_k_pre_norm:   &s.d_k_pre_norm,
-            d_v_pre_norm:   &s.d_v_pre_norm,
-            d_ffn_a:        &s.d_ffn_a,
-            d_ffn_b:        &s.d_ffn_b,
-            d_ffn_c:        &s.d_ffn_c,
-            d_ple_state:        &s.d_ple_state,
-            d_ple_act:          &s.d_ple_act,
-            d_ple_up_discard:   &s.d_ple_up_discard,
-            ple_per_layer_tmp:  &s.ple_per_layer_tmp,
+            d_hidden: &s.d_hidden,
+            d_hidden_tmp: &s.d_hidden_tmp,
+            d_hidden_tmp2: &s.d_hidden_tmp2,
+            attn_probs: &s.attn_probs,
+            attn_d_scores: &s.attn_d_scores,
+            d_attn_out: &s.d_q_pre_rope,
+            d_q: &s.d_q,
+            d_k_hist: &s.d_k_hist,
+            d_v_hist: &s.d_v_hist,
+            d_q_pre_rope: &s.d_q_pre_rope,
+            d_k_pre_rope: &s.d_k_pre_rope,
+            d_q_pre_norm: &s.d_q_pre_norm,
+            d_k_pre_norm: &s.d_k_pre_norm,
+            d_v_pre_norm: &s.d_v_pre_norm,
+            d_ffn_a: &s.d_ffn_a,
+            d_ffn_b: &s.d_ffn_b,
+            d_ffn_c: &s.d_ffn_c,
+            d_ple_state: &s.d_ple_state,
+            d_ple_act: &s.d_ple_act,
+            d_ple_up_discard: &s.d_ple_up_discard,
+            ple_per_layer_tmp: &s.ple_per_layer_tmp,
             norm_x_attn_window: &s.norm_x_attn_window,
-            k_pre_norm_window:  &s.k_pre_norm_window,
-            v_pre_norm_window:  &s.v_pre_norm_window,
-            hidden_in_window:   &s.hidden_in_window,
-            q_pre_norm_window:  &s.q_pre_norm_window,
+            k_pre_norm_window: &s.k_pre_norm_window,
+            v_pre_norm_window: &s.v_pre_norm_window,
+            hidden_in_window: &s.hidden_in_window,
+            q_pre_norm_window: &s.q_pre_norm_window,
             q_post_rope_window: &s.q_post_rope_window,
-            attn_out_window:    &s.attn_out_window,
-            attn_proj_window:   &s.attn_proj_window,
+            attn_out_window: &s.attn_out_window,
+            attn_proj_window: &s.attn_proj_window,
             pre_ffn_rms_window: &s.pre_ffn_rms_window,
-            norm_x_ffn_window:  &s.norm_x_ffn_window,
-            ffn_gate_window:    &s.ffn_gate_window,
-            ffn_up_window:      &s.ffn_up_window,
-            ffn_act_window:     &s.ffn_act_window,
-            ffn_out_window:     &s.ffn_out_window,
-            ple_state_window:   &s.ple_state_window,
-            ple_act_window:     &s.ple_act_window,
-            ple_proj_window:    &s.ple_proj_window,
+            norm_x_ffn_window: &s.norm_x_ffn_window,
+            ffn_gate_window: &s.ffn_gate_window,
+            ffn_up_window: &s.ffn_up_window,
+            ffn_act_window: &s.ffn_act_window,
+            ffn_out_window: &s.ffn_out_window,
+            ple_state_window: &s.ple_state_window,
+            ple_act_window: &s.ple_act_window,
+            ple_proj_window: &s.ple_proj_window,
         };
         let history_len = input_ids.len() as u32;
         let pos = (input_ids.len() - 1) as u32;
@@ -480,8 +581,14 @@ impl TrainingSession {
             .model
             .forward_mut()
             .backward_step(
-                target_id, &capture, &lora_slots, &grads, &scratch_view,
-                history_len, pos, self.gradient_checkpointing,
+                target_id,
+                &capture,
+                &lora_slots,
+                &grads,
+                &scratch_view,
+                history_len,
+                pos,
+                self.gradient_checkpointing,
             )
             .await
             .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
@@ -509,11 +616,7 @@ impl TrainingSession {
     /// For gradient accumulation across multiple micro-batches, call
     /// `zero_grads()` once, `forward_backward()` for each
     /// micro-batch, then `optimizer_step()` once.
-    pub async fn step(
-        &mut self,
-        input_ids: &[u32],
-        target_id: u32,
-    ) -> Result<f32, TrainingError> {
+    pub async fn step(&mut self, input_ids: &[u32], target_id: u32) -> Result<f32, TrainingError> {
         self.zero_grads();
         let loss = self.forward_backward(input_ids, target_id).await?;
         if self.max_grad_norm > 0.0 {
@@ -533,13 +636,8 @@ impl TrainingSession {
     ///    `scratch.seq_pre_final_norm` at offset `pos·d_model`.
     /// 3. For each position `p` with `targets[p] != u32::MAX`:
     ///    a. Point `self.hidden` at the saved `seq_pre_final_norm[p]`.
-    ///    b. Run final rmsnorm + tiled output projection to fill
-    ///       `self.logits` with position-`p`'s vocab distribution.
-    ///    c. Call `backward_step` at `pos=p`, `history_len=p+1`,
-    ///       `target_id=targets[p]`. Pre-copies window slices from
-    ///       offset `p·size` for all 14 captures and walks the
-    ///       layer chain (including the per-history K/V LoRA loop
-    ///       over positions `0..p`).
+    ///    b. Run final rmsnorm + tiled output projection to fill `self.logits` with position-`p`'s vocab distribution.
+    ///    c. Call `backward_step` at `pos=p`, `history_len=p+1`, `target_id=targets[p]`. Pre-copies window slices from offset `p·size` for all 14 captures and walks the layer chain (including the per-history K/V LoRA loop over positions `0..p`).
     /// 4. Return the mean cross-entropy across active positions.
     ///
     /// Forward cost: `O(N)` layer-ops (one sweep). Backward cost:
@@ -573,13 +671,34 @@ impl TrainingSession {
 
         let lora_slots: Vec<LayerLoraSlots> = (0..n_layers)
             .map(|li| LayerLoraSlots {
-                q:        self.loras.get(&LoraKey::new(li as u32, "attn_q")).map(slot_view),
-                k:        self.loras.get(&LoraKey::new(li as u32, "attn_k")).map(slot_view),
-                v:        self.loras.get(&LoraKey::new(li as u32, "attn_v")).map(slot_view),
-                o:        self.loras.get(&LoraKey::new(li as u32, "attn_o")).map(slot_view),
-                ffn_gate: self.loras.get(&LoraKey::new(li as u32, "ffn_gate")).map(slot_view),
-                ffn_up:   self.loras.get(&LoraKey::new(li as u32, "ffn_up")).map(slot_view),
-                ffn_down: self.loras.get(&LoraKey::new(li as u32, "ffn_down")).map(slot_view),
+                q: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "attn_q"))
+                    .map(slot_view),
+                k: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "attn_k"))
+                    .map(slot_view),
+                v: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "attn_v"))
+                    .map(slot_view),
+                o: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "attn_o"))
+                    .map(slot_view),
+                ffn_gate: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "ffn_gate"))
+                    .map(slot_view),
+                ffn_up: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "ffn_up"))
+                    .map(slot_view),
+                ffn_down: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "ffn_down"))
+                    .map(slot_view),
             })
             .collect();
         let capture: Vec<LayerCaptureBuffers> = self
@@ -587,23 +706,23 @@ impl TrainingSession {
             .layers
             .iter()
             .map(|l| LayerCaptureBuffers {
-                hidden_in:   &l.hidden_in,
+                hidden_in: &l.hidden_in,
                 norm_x_attn: &l.norm_x_attn,
-                q_pre_norm:  &l.q_pre_norm,
+                q_pre_norm: &l.q_pre_norm,
                 q_post_rope: &l.q_post_rope,
-                k_pre_norm:  &l.k_pre_norm,
-                v_pre_norm:  &l.v_pre_norm,
-                attn_out:    &l.attn_out,
-                attn_proj:   &l.attn_proj,
+                k_pre_norm: &l.k_pre_norm,
+                v_pre_norm: &l.v_pre_norm,
+                attn_out: &l.attn_out,
+                attn_proj: &l.attn_proj,
                 pre_ffn_rms: &l.pre_ffn_rms,
-                norm_x_ffn:  &l.norm_x_ffn,
-                ffn_gate:    &l.ffn_gate,
-                ffn_up:      &l.ffn_up,
-                ffn_act:     &l.ffn_act,
-                ffn_out:     &l.ffn_out,
-                ple_state:   &l.ple_state,
-                ple_act:     &l.ple_act,
-                ple_proj:    &l.ple_proj,
+                norm_x_ffn: &l.norm_x_ffn,
+                ffn_gate: &l.ffn_gate,
+                ffn_up: &l.ffn_up,
+                ffn_act: &l.ffn_act,
+                ffn_out: &l.ffn_out,
+                ple_state: &l.ple_state,
+                ple_act: &l.ple_act,
+                ple_proj: &l.ple_proj,
             })
             .collect();
 
@@ -625,8 +744,10 @@ impl TrainingSession {
                     label: Some("train.save_pre_final_norm"),
                 });
             enc.copy_buffer_to_buffer(
-                self.model.forward().hidden_buffer(), 0,
-                &self.scratch.seq_pre_final_norm, pos_just_finished * d_model_bytes,
+                self.model.forward().hidden_buffer(),
+                0,
+                &self.scratch.seq_pre_final_norm,
+                pos_just_finished * d_model_bytes,
                 d_model_bytes,
             );
             ctx.queue.submit(Some(enc.finish()));
@@ -635,58 +756,79 @@ impl TrainingSession {
         // 2. Build grad views + scratch view (mirrors `forward_backward`).
         let grads: Vec<LayerLoraGrads> = (0..n_layers)
             .map(|li| LayerLoraGrads {
-                q:        self.loras.get(&LoraKey::new(li as u32, "attn_q")).map(grad_view),
-                k:        self.loras.get(&LoraKey::new(li as u32, "attn_k")).map(grad_view),
-                v:        self.loras.get(&LoraKey::new(li as u32, "attn_v")).map(grad_view),
-                o:        self.loras.get(&LoraKey::new(li as u32, "attn_o")).map(grad_view),
-                ffn_gate: self.loras.get(&LoraKey::new(li as u32, "ffn_gate")).map(grad_view),
-                ffn_up:   self.loras.get(&LoraKey::new(li as u32, "ffn_up")).map(grad_view),
-                ffn_down: self.loras.get(&LoraKey::new(li as u32, "ffn_down")).map(grad_view),
+                q: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "attn_q"))
+                    .map(grad_view),
+                k: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "attn_k"))
+                    .map(grad_view),
+                v: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "attn_v"))
+                    .map(grad_view),
+                o: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "attn_o"))
+                    .map(grad_view),
+                ffn_gate: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "ffn_gate"))
+                    .map(grad_view),
+                ffn_up: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "ffn_up"))
+                    .map(grad_view),
+                ffn_down: self
+                    .loras
+                    .get(&LoraKey::new(li as u32, "ffn_down"))
+                    .map(grad_view),
             })
             .collect();
         let s = &self.scratch;
         let scratch_view = BackwardScratchView {
-            d_logits:       &s.d_logits,
-            loss:           &s.loss,
+            d_logits: &s.d_logits,
+            loss: &s.loss,
             d_hidden_final: &s.d_hidden_final,
-            d_hidden:       &s.d_hidden,
-            d_hidden_tmp:   &s.d_hidden_tmp,
-            d_hidden_tmp2:  &s.d_hidden_tmp2,
-            attn_probs:     &s.attn_probs,
-            attn_d_scores:  &s.attn_d_scores,
-            d_attn_out:     &s.d_q_pre_rope,
-            d_q:            &s.d_q,
-            d_k_hist:       &s.d_k_hist,
-            d_v_hist:       &s.d_v_hist,
-            d_q_pre_rope:   &s.d_q_pre_rope,
-            d_k_pre_rope:   &s.d_k_pre_rope,
-            d_q_pre_norm:   &s.d_q_pre_norm,
-            d_k_pre_norm:   &s.d_k_pre_norm,
-            d_v_pre_norm:   &s.d_v_pre_norm,
-            d_ffn_a:        &s.d_ffn_a,
-            d_ffn_b:        &s.d_ffn_b,
-            d_ffn_c:        &s.d_ffn_c,
-            d_ple_state:        &s.d_ple_state,
-            d_ple_act:          &s.d_ple_act,
-            d_ple_up_discard:   &s.d_ple_up_discard,
-            ple_per_layer_tmp:  &s.ple_per_layer_tmp,
+            d_hidden: &s.d_hidden,
+            d_hidden_tmp: &s.d_hidden_tmp,
+            d_hidden_tmp2: &s.d_hidden_tmp2,
+            attn_probs: &s.attn_probs,
+            attn_d_scores: &s.attn_d_scores,
+            d_attn_out: &s.d_q_pre_rope,
+            d_q: &s.d_q,
+            d_k_hist: &s.d_k_hist,
+            d_v_hist: &s.d_v_hist,
+            d_q_pre_rope: &s.d_q_pre_rope,
+            d_k_pre_rope: &s.d_k_pre_rope,
+            d_q_pre_norm: &s.d_q_pre_norm,
+            d_k_pre_norm: &s.d_k_pre_norm,
+            d_v_pre_norm: &s.d_v_pre_norm,
+            d_ffn_a: &s.d_ffn_a,
+            d_ffn_b: &s.d_ffn_b,
+            d_ffn_c: &s.d_ffn_c,
+            d_ple_state: &s.d_ple_state,
+            d_ple_act: &s.d_ple_act,
+            d_ple_up_discard: &s.d_ple_up_discard,
+            ple_per_layer_tmp: &s.ple_per_layer_tmp,
             norm_x_attn_window: &s.norm_x_attn_window,
-            k_pre_norm_window:  &s.k_pre_norm_window,
-            v_pre_norm_window:  &s.v_pre_norm_window,
-            hidden_in_window:   &s.hidden_in_window,
-            q_pre_norm_window:  &s.q_pre_norm_window,
+            k_pre_norm_window: &s.k_pre_norm_window,
+            v_pre_norm_window: &s.v_pre_norm_window,
+            hidden_in_window: &s.hidden_in_window,
+            q_pre_norm_window: &s.q_pre_norm_window,
             q_post_rope_window: &s.q_post_rope_window,
-            attn_out_window:    &s.attn_out_window,
-            attn_proj_window:   &s.attn_proj_window,
+            attn_out_window: &s.attn_out_window,
+            attn_proj_window: &s.attn_proj_window,
             pre_ffn_rms_window: &s.pre_ffn_rms_window,
-            norm_x_ffn_window:  &s.norm_x_ffn_window,
-            ffn_gate_window:    &s.ffn_gate_window,
-            ffn_up_window:      &s.ffn_up_window,
-            ffn_act_window:     &s.ffn_act_window,
-            ffn_out_window:     &s.ffn_out_window,
-            ple_state_window:   &s.ple_state_window,
-            ple_act_window:     &s.ple_act_window,
-            ple_proj_window:    &s.ple_proj_window,
+            norm_x_ffn_window: &s.norm_x_ffn_window,
+            ffn_gate_window: &s.ffn_gate_window,
+            ffn_up_window: &s.ffn_up_window,
+            ffn_act_window: &s.ffn_act_window,
+            ffn_out_window: &s.ffn_out_window,
+            ple_state_window: &s.ple_state_window,
+            ple_act_window: &s.ple_act_window,
+            ple_proj_window: &s.ple_proj_window,
         };
 
         // 3. Per active position: point hidden at that position's
@@ -694,7 +836,9 @@ impl TrainingSession {
         //    then backward_step.
         let mut total_loss = 0.0f32;
         for (p, &target_id) in targets.iter().enumerate() {
-            if target_id == u32::MAX { continue; }
+            if target_id == u32::MAX {
+                continue;
+            }
             self.model
                 .forward()
                 .set_hidden_from(&self.scratch.seq_pre_final_norm, (p as u64) * d_model_bytes);
@@ -707,8 +851,14 @@ impl TrainingSession {
                 .model
                 .forward_mut()
                 .backward_step(
-                    target_id, &capture, &lora_slots, &grads, &scratch_view,
-                    (p + 1) as u32, p as u32, false,
+                    target_id,
+                    &capture,
+                    &lora_slots,
+                    &grads,
+                    &scratch_view,
+                    (p + 1) as u32,
+                    p as u32,
+                    false,
                 )
                 .await
                 .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
@@ -727,7 +877,9 @@ impl TrainingSession {
         targets: &[u32],
     ) -> Result<f32, TrainingError> {
         self.zero_grads();
-        let loss = self.forward_backward_per_position(input_ids, targets).await?;
+        let loss = self
+            .forward_backward_per_position(input_ids, targets)
+            .await?;
         if self.max_grad_norm > 0.0 {
             self.clip_grad_norm(self.max_grad_norm).await?;
         }
@@ -742,17 +894,23 @@ impl TrainingSession {
 
     /// Immutable handle on the wrapped model — for token encoding /
     /// inference between training steps.
-    pub fn model(&self) -> &Model { &self.model }
+    pub fn model(&self) -> &Model {
+        &self.model
+    }
 
     /// 1-based step counter. Increments at the end of every successful
     /// `step()` / `step_per_position()` call.
-    pub fn step_num(&self) -> u32 { self.step_num }
+    pub fn step_num(&self) -> u32 {
+        self.step_num
+    }
 
     /// Consume the session and hand the wrapped `Model` back to the
     /// caller. Used by the browser path so chat can resume against the
     /// same `Model` handle after training ends, without re-loading the
     /// (multi-GB) weights from OPFS.
-    pub fn into_model(self) -> Model { self.model }
+    pub fn into_model(self) -> Model {
+        self.model
+    }
 
     /// Serialize the current LoRA A/B matrices into a safetensors byte
     /// buffer. Caller decides where the bytes go — disk (native) or
@@ -804,7 +962,8 @@ impl TrainingSession {
         }
 
         // 2. Build TensorViews (each borrows from the owned byte vec).
-        let mut views: std::collections::HashMap<&str, TensorView<'_>> = std::collections::HashMap::new();
+        let mut views: std::collections::HashMap<&str, TensorView<'_>> =
+            std::collections::HashMap::new();
         for (name, shape, bytes) in &tensors {
             let shape_usize: Vec<usize> = shape.iter().map(|&d| d as usize).collect();
             let view = TensorView::new(dtype, shape_usize, bytes)
@@ -818,7 +977,8 @@ impl TrainingSession {
             Some((_, layer)) => (layer.rank, layer.scale * layer.rank as f32),
             None => (0u32, 0.0f32),
         };
-        let mut target_modules: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut target_modules: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
         for (key, _) in self.loras.iter() {
             target_modules.insert(key.projection.clone());
         }
@@ -828,8 +988,13 @@ impl TrainingSession {
             ("rank".to_string(), rank.to_string()),
             ("alpha".to_string(), alpha.to_string()),
             ("target_modules".to_string(), target_modules_list.join(",")),
-            ("dtype".to_string(), if f16_mode { "f16" } else { "f32" }.to_string()),
-        ].into_iter().collect();
+            (
+                "dtype".to_string(),
+                if f16_mode { "f16" } else { "f32" }.to_string(),
+            ),
+        ]
+        .into_iter()
+        .collect();
 
         // 4. Serialize to bytes.
         safetensors::serialize(&views, &Some(metadata))
@@ -936,7 +1101,8 @@ pub fn load_adapter_into_state_from_bytes(
                 if data.len() != buf.size() as usize {
                     return Err(TrainingError::Backend(format!(
                         "tensor {name} f32 size mismatch: file={} expected={}",
-                        data.len(), buf.size()
+                        data.len(),
+                        buf.size()
                     )));
                 }
                 data.to_vec()
@@ -946,7 +1112,8 @@ pub fn load_adapter_into_state_from_bytes(
                 if data.len() != n_elems * 2 {
                     return Err(TrainingError::Backend(format!(
                         "tensor {name} f16 size mismatch: file={} expected={}",
-                        data.len(), n_elems * 2
+                        data.len(),
+                        n_elems * 2
                     )));
                 }
                 let h: &[half::f16] = bytemuck::cast_slice(data);
@@ -970,8 +1137,11 @@ fn stats(v: &[f32]) -> (f32, usize) {
     let mut max_abs = 0.0f32;
     let mut nans = 0usize;
     for &x in v {
-        if x.is_nan() { nans += 1; }
-        else if x.abs() > max_abs { max_abs = x.abs(); }
+        if x.is_nan() {
+            nans += 1;
+        } else if x.abs() > max_abs {
+            max_abs = x.abs();
+        }
     }
     (max_abs, nans)
 }
@@ -984,15 +1154,24 @@ async fn read_buf_f32(ctx: &rullama::backend::WgpuCtx, buf: &wgpu::Buffer, n: us
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    let mut enc = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("grad.read.enc"),
-    });
+    let mut enc = ctx
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("grad.read.enc"),
+        });
     enc.copy_buffer_to_buffer(buf, 0, &read_buf, 0, bytes);
     ctx.queue.submit(Some(enc.finish()));
     let slice = read_buf.slice(..);
     let (tx, rx) = futures_channel::oneshot::channel();
-    slice.map_async(wgpu::MapMode::Read, move |r| { let _ = tx.send(r); });
-    ctx.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).expect("poll");
+    slice.map_async(wgpu::MapMode::Read, move |r| {
+        let _ = tx.send(r);
+    });
+    ctx.device
+        .poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        })
+        .expect("poll");
     rx.await.unwrap().unwrap();
     let data = slice.get_mapped_range();
     let v: Vec<f32> = bytemuck::cast_slice(&data).to_vec();
@@ -1040,32 +1219,60 @@ mod tests {
 
         // Build LoraState A — populate with a known pattern.
         let mut state_a = LoraState::new(Arc::clone(&ctx));
-        state_a.insert(LoraKey::new(0, "attn_q"), 8, 2, 4, 4.0, 1).unwrap();
-        state_a.insert(LoraKey::new(0, "attn_k"), 8, 2, 4, 4.0, 2).unwrap();
+        state_a
+            .insert(LoraKey::new(0, "attn_q"), 8, 2, 4, 4.0, 1)
+            .unwrap();
+        state_a
+            .insert(LoraKey::new(0, "attn_k"), 8, 2, 4, 4.0, 2)
+            .unwrap();
         // Overwrite A buffer of layer 0 attn_q with known bytes.
         let known_a: Vec<f32> = (0..16).map(|i| (i as f32) * 0.125).collect();
         let known_b: Vec<f32> = (0..8).map(|i| (i as f32) * -0.25 + 0.5).collect();
         {
             let layer = state_a.get(&LoraKey::new(0, "attn_q")).unwrap();
-            ctx.queue.write_buffer(&layer.a, 0, bytemuck::cast_slice(&known_a));
-            ctx.queue.write_buffer(&layer.b, 0, bytemuck::cast_slice(&known_b));
+            ctx.queue
+                .write_buffer(&layer.a, 0, bytemuck::cast_slice(&known_a));
+            ctx.queue
+                .write_buffer(&layer.b, 0, bytemuck::cast_slice(&known_b));
         }
-        ctx.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
+        ctx.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            })
+            .unwrap();
 
         // Serialize via the same path TrainingSession::save_adapter uses.
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let path = tmp.path().to_path_buf();
         {
             use safetensors::tensor::{Dtype, TensorView};
-            let a_vals = pollster::block_on(read_buf_f32(&ctx, &state_a.get(&LoraKey::new(0, "attn_q")).unwrap().a, 16));
-            let b_vals = pollster::block_on(read_buf_f32(&ctx, &state_a.get(&LoraKey::new(0, "attn_q")).unwrap().b, 8));
-            let k_a_vals = pollster::block_on(read_buf_f32(&ctx, &state_a.get(&LoraKey::new(0, "attn_k")).unwrap().a, 16));
-            let k_b_vals = pollster::block_on(read_buf_f32(&ctx, &state_a.get(&LoraKey::new(0, "attn_k")).unwrap().b, 8));
+            let a_vals = pollster::block_on(read_buf_f32(
+                &ctx,
+                &state_a.get(&LoraKey::new(0, "attn_q")).unwrap().a,
+                16,
+            ));
+            let b_vals = pollster::block_on(read_buf_f32(
+                &ctx,
+                &state_a.get(&LoraKey::new(0, "attn_q")).unwrap().b,
+                8,
+            ));
+            let k_a_vals = pollster::block_on(read_buf_f32(
+                &ctx,
+                &state_a.get(&LoraKey::new(0, "attn_k")).unwrap().a,
+                16,
+            ));
+            let k_b_vals = pollster::block_on(read_buf_f32(
+                &ctx,
+                &state_a.get(&LoraKey::new(0, "attn_k")).unwrap().b,
+                8,
+            ));
             let a_bytes = bytemuck::cast_slice::<f32, u8>(&a_vals).to_vec();
             let b_bytes = bytemuck::cast_slice::<f32, u8>(&b_vals).to_vec();
             let k_a_bytes = bytemuck::cast_slice::<f32, u8>(&k_a_vals).to_vec();
             let k_b_bytes = bytemuck::cast_slice::<f32, u8>(&k_b_vals).to_vec();
-            let mut views: std::collections::HashMap<&str, TensorView<'_>> = std::collections::HashMap::new();
+            let mut views: std::collections::HashMap<&str, TensorView<'_>> =
+                std::collections::HashMap::new();
             let view_a = TensorView::new(Dtype::F32, vec![2usize, 8usize], &a_bytes).unwrap();
             let view_b = TensorView::new(Dtype::F32, vec![4usize, 2usize], &b_bytes).unwrap();
             let view_ka = TensorView::new(Dtype::F32, vec![2usize, 8usize], &k_a_bytes).unwrap();
@@ -1079,8 +1286,12 @@ mod tests {
 
         // Build LoraState B with same shape (but different initial values).
         let mut state_b = LoraState::new(Arc::clone(&ctx));
-        state_b.insert(LoraKey::new(0, "attn_q"), 8, 2, 4, 4.0, 99).unwrap();
-        state_b.insert(LoraKey::new(0, "attn_k"), 8, 2, 4, 4.0, 100).unwrap();
+        state_b
+            .insert(LoraKey::new(0, "attn_q"), 8, 2, 4, 4.0, 99)
+            .unwrap();
+        state_b
+            .insert(LoraKey::new(0, "attn_k"), 8, 2, 4, 4.0, 100)
+            .unwrap();
 
         // Load adapter into state_b.
         let loaded = load_adapter_into_state(&mut state_b, &path).unwrap();
@@ -1107,15 +1318,24 @@ mod tests {
         let ctx = Arc::new(pollster::block_on(WgpuCtx::new()).expect("wgpu"));
 
         let mut state_a = LoraState::new(Arc::clone(&ctx));
-        state_a.insert(LoraKey::new(0, "attn_q"), 8, 2, 4, 4.0, 1).unwrap();
+        state_a
+            .insert(LoraKey::new(0, "attn_q"), 8, 2, 4, 4.0, 1)
+            .unwrap();
         let known_a: Vec<f32> = (0..16).map(|i| (i as f32) * 0.125 - 0.5).collect();
         let known_b: Vec<f32> = (0..8).map(|i| (i as f32) * -0.25 + 0.5).collect();
         {
             let layer = state_a.get(&LoraKey::new(0, "attn_q")).unwrap();
-            ctx.queue.write_buffer(&layer.a, 0, bytemuck::cast_slice(&known_a));
-            ctx.queue.write_buffer(&layer.b, 0, bytemuck::cast_slice(&known_b));
+            ctx.queue
+                .write_buffer(&layer.a, 0, bytemuck::cast_slice(&known_a));
+            ctx.queue
+                .write_buffer(&layer.b, 0, bytemuck::cast_slice(&known_b));
         }
-        ctx.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
+        ctx.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            })
+            .unwrap();
 
         // Serialize as f16, manually mirroring `save_adapter`'s f16 path.
         let tmp = tempfile::NamedTempFile::new().unwrap();
@@ -1129,7 +1349,8 @@ mod tests {
             let b_h: Vec<half::f16> = b_vals.iter().map(|&x| half::f16::from_f32(x)).collect();
             let a_bytes = bytemuck::cast_slice::<half::f16, u8>(&a_h).to_vec();
             let b_bytes = bytemuck::cast_slice::<half::f16, u8>(&b_h).to_vec();
-            let mut views: std::collections::HashMap<&str, TensorView<'_>> = std::collections::HashMap::new();
+            let mut views: std::collections::HashMap<&str, TensorView<'_>> =
+                std::collections::HashMap::new();
             let view_a = TensorView::new(Dtype::F16, vec![2usize, 8usize], &a_bytes).unwrap();
             let view_b = TensorView::new(Dtype::F16, vec![4usize, 2usize], &b_bytes).unwrap();
             views.insert("lora.blk.0.attn_q.A", view_a);
@@ -1138,7 +1359,9 @@ mod tests {
         }
 
         let mut state_b = LoraState::new(Arc::clone(&ctx));
-        state_b.insert(LoraKey::new(0, "attn_q"), 8, 2, 4, 4.0, 99).unwrap();
+        state_b
+            .insert(LoraKey::new(0, "attn_q"), 8, 2, 4, 4.0, 99)
+            .unwrap();
         let loaded = load_adapter_into_state(&mut state_b, &path).unwrap();
         assert_eq!(loaded, 2, "f16 round-trip: expected 2 tensors");
 
@@ -1147,11 +1370,17 @@ mod tests {
         let b_round = pollster::block_on(read_buf_f32(&ctx, &layer_q.b, 8));
         for (orig, round) in known_a.iter().zip(a_round.iter()) {
             let d = (orig - round).abs();
-            assert!(d < 1e-3, "A f16 round trip: orig={orig} round={round} diff={d}");
+            assert!(
+                d < 1e-3,
+                "A f16 round trip: orig={orig} round={round} diff={d}"
+            );
         }
         for (orig, round) in known_b.iter().zip(b_round.iter()) {
             let d = (orig - round).abs();
-            assert!(d < 1e-3, "B f16 round trip: orig={orig} round={round} diff={d}");
+            assert!(
+                d < 1e-3,
+                "B f16 round trip: orig={orig} round={round} diff={d}"
+            );
         }
     }
 }

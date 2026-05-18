@@ -229,20 +229,20 @@ impl TrainingScratch {
         };
 
         let d_model_e = cfg.d_model as u64;
-        let seq_e     = max_seq_len as u64;
-        let vocab_e   = cfg.vocab_size as u64;
+        let seq_e = max_seq_len as u64;
+        let vocab_e = cfg.vocab_size as u64;
         let n_heads_e = cfg.n_heads as u64;
         let head_dim_max_e = cfg.head_dim_global.max(cfg.head_dim_swa) as u64;
         let n_kv_max_e = cfg.n_kv_heads_global.max(cfg.n_kv_heads_swa) as u64;
         let ffn_inter_max_e = (0..cfg.n_layers).map(|i| cfg.ffn(i)).max().unwrap_or(0) as u64;
         let ple_dim_e = if cfg.has_ple() { cfg.ple_dim as u64 } else { 0 };
 
-        let d_logits       = make("scratch.d_logits", vocab_e);
-        let loss           = make("scratch.loss", 1);
+        let d_logits = make("scratch.d_logits", vocab_e);
+        let loss = make("scratch.loss", 1);
         let d_hidden_final = make("scratch.d_hidden_final", d_model_e);
-        let d_hidden       = make("scratch.d_hidden", d_model_e);
-        let d_hidden_tmp   = make("scratch.d_hidden_tmp", d_model_e);
-        let d_hidden_tmp2  = make("scratch.d_hidden_tmp2", d_model_e);
+        let d_hidden = make("scratch.d_hidden", d_model_e);
+        let d_hidden_tmp = make("scratch.d_hidden_tmp", d_model_e);
+        let d_hidden_tmp2 = make("scratch.d_hidden_tmp2", d_model_e);
 
         let layers = (0..cfg.n_layers)
             .map(|li| {
@@ -260,67 +260,70 @@ impl TrainingScratch {
                 // re-copy *other* positions into the same windows.
                 let ple_d = if ple_dim_e > 0 { d_model_e } else { 0 };
                 LayerActivations {
-                    hidden_in:    make("layer.hidden_in_seq",    d_model_e * seq_e),
-                    norm_x_attn:  make("layer.norm_x_attn_seq",  d_model_e * seq_e),
-                    q_pre_norm:   make("layer.q_pre_norm_seq",   n_heads * head_dim * seq_e),
-                    q_post_rope:  make("layer.q_post_rope_seq",  n_heads * head_dim * seq_e),
-                    k_pre_norm:   make("layer.k_pre_norm_seq",   n_kv * head_dim * seq_e),
-                    v_pre_norm:   make("layer.v_pre_norm_seq",   n_kv * head_dim * seq_e),
-                    attn_out:     make("layer.attn_out_seq",     n_heads * head_dim * seq_e),
-                    attn_proj:    make("layer.attn_proj_seq",    d_model_e * seq_e),
-                    pre_ffn_rms:  make("layer.pre_ffn_rms_seq",  d_model_e * seq_e),
-                    norm_x_ffn:   make("layer.norm_x_ffn_seq",   d_model_e * seq_e),
-                    ffn_gate:     make("layer.ffn_gate_seq",     ffn_inter * seq_e),
-                    ffn_up:       make("layer.ffn_up_seq",       ffn_inter * seq_e),
-                    ffn_act:      make("layer.ffn_act_seq",      ffn_inter * seq_e),
-                    ffn_out:      make("layer.ffn_out_seq",      d_model_e * seq_e),
-                    ple_state:    make("layer.ple_state_seq",    ple_dim_e * seq_e),
-                    ple_act:      make("layer.ple_act_seq",      ple_dim_e * seq_e),
-                    ple_proj:     make("layer.ple_proj_seq",     ple_d * seq_e),
+                    hidden_in: make("layer.hidden_in_seq", d_model_e * seq_e),
+                    norm_x_attn: make("layer.norm_x_attn_seq", d_model_e * seq_e),
+                    q_pre_norm: make("layer.q_pre_norm_seq", n_heads * head_dim * seq_e),
+                    q_post_rope: make("layer.q_post_rope_seq", n_heads * head_dim * seq_e),
+                    k_pre_norm: make("layer.k_pre_norm_seq", n_kv * head_dim * seq_e),
+                    v_pre_norm: make("layer.v_pre_norm_seq", n_kv * head_dim * seq_e),
+                    attn_out: make("layer.attn_out_seq", n_heads * head_dim * seq_e),
+                    attn_proj: make("layer.attn_proj_seq", d_model_e * seq_e),
+                    pre_ffn_rms: make("layer.pre_ffn_rms_seq", d_model_e * seq_e),
+                    norm_x_ffn: make("layer.norm_x_ffn_seq", d_model_e * seq_e),
+                    ffn_gate: make("layer.ffn_gate_seq", ffn_inter * seq_e),
+                    ffn_up: make("layer.ffn_up_seq", ffn_inter * seq_e),
+                    ffn_act: make("layer.ffn_act_seq", ffn_inter * seq_e),
+                    ffn_out: make("layer.ffn_out_seq", d_model_e * seq_e),
+                    ple_state: make("layer.ple_state_seq", ple_dim_e * seq_e),
+                    ple_act: make("layer.ple_act_seq", ple_dim_e * seq_e),
+                    ple_proj: make("layer.ple_proj_seq", ple_d * seq_e),
                 }
             })
             .collect();
 
         // Max-shape probs/d_scores: at most `n_heads * max_history_len`.
         // history_len at the final position equals `seq_len`.
-        let attn_probs    = make("scratch.attn_probs",    n_heads_e * seq_e);
+        let attn_probs = make("scratch.attn_probs", n_heads_e * seq_e);
         let attn_d_scores = make("scratch.attn_d_scores", n_heads_e * seq_e);
 
-        let d_q          = make("scratch.d_q",          n_heads_e * head_dim_max_e);
-        let d_k_hist     = make("scratch.d_k_hist",     seq_e * n_kv_max_e * head_dim_max_e);
-        let d_v_hist     = make("scratch.d_v_hist",     seq_e * n_kv_max_e * head_dim_max_e);
+        let d_q = make("scratch.d_q", n_heads_e * head_dim_max_e);
+        let d_k_hist = make("scratch.d_k_hist", seq_e * n_kv_max_e * head_dim_max_e);
+        let d_v_hist = make("scratch.d_v_hist", seq_e * n_kv_max_e * head_dim_max_e);
         let d_q_pre_rope = make("scratch.d_q_pre_rope", n_heads_e * head_dim_max_e);
         let d_k_pre_rope = make("scratch.d_k_pre_rope", n_kv_max_e * head_dim_max_e);
         let d_q_pre_norm = make("scratch.d_q_pre_norm", n_heads_e * head_dim_max_e);
         let d_k_pre_norm = make("scratch.d_k_pre_norm", n_kv_max_e * head_dim_max_e);
         let d_v_pre_norm = make("scratch.d_v_pre_norm", n_kv_max_e * head_dim_max_e);
-        let d_ffn_a      = make("scratch.d_ffn_a",      ffn_inter_max_e);
-        let d_ffn_b      = make("scratch.d_ffn_b",      ffn_inter_max_e);
-        let d_ffn_c      = make("scratch.d_ffn_c",      ffn_inter_max_e);
+        let d_ffn_a = make("scratch.d_ffn_a", ffn_inter_max_e);
+        let d_ffn_b = make("scratch.d_ffn_b", ffn_inter_max_e);
+        let d_ffn_c = make("scratch.d_ffn_c", ffn_inter_max_e);
         // PLE backward scratch — `ple_dim` sized; 4-byte stub if !has_ple
         // (so storage bindings stay valid even though the backward block
         // doesn't fire).
-        let d_ple_state      = make("scratch.d_ple_state",      ple_dim_e);
-        let d_ple_act        = make("scratch.d_ple_act",        ple_dim_e);
+        let d_ple_state = make("scratch.d_ple_state", ple_dim_e);
+        let d_ple_act = make("scratch.d_ple_act", ple_dim_e);
         let d_ple_up_discard = make("scratch.d_ple_up_discard", ple_dim_e);
         let ple_per_layer_tmp = make("scratch.ple_per_layer_tmp", ple_dim_e);
         let norm_x_attn_window = make("scratch.norm_x_attn_window", d_model_e);
-        let k_pre_norm_window  = make("scratch.k_pre_norm_window",  n_kv_max_e * head_dim_max_e);
-        let v_pre_norm_window  = make("scratch.v_pre_norm_window",  n_kv_max_e * head_dim_max_e);
-        let hidden_in_window   = make("scratch.hidden_in_window",   d_model_e);
-        let q_pre_norm_window  = make("scratch.q_pre_norm_window",  n_heads_e * head_dim_max_e);
+        let k_pre_norm_window = make("scratch.k_pre_norm_window", n_kv_max_e * head_dim_max_e);
+        let v_pre_norm_window = make("scratch.v_pre_norm_window", n_kv_max_e * head_dim_max_e);
+        let hidden_in_window = make("scratch.hidden_in_window", d_model_e);
+        let q_pre_norm_window = make("scratch.q_pre_norm_window", n_heads_e * head_dim_max_e);
         let q_post_rope_window = make("scratch.q_post_rope_window", n_heads_e * head_dim_max_e);
-        let attn_out_window    = make("scratch.attn_out_window",    n_heads_e * head_dim_max_e);
-        let attn_proj_window   = make("scratch.attn_proj_window",   d_model_e);
+        let attn_out_window = make("scratch.attn_out_window", n_heads_e * head_dim_max_e);
+        let attn_proj_window = make("scratch.attn_proj_window", d_model_e);
         let pre_ffn_rms_window = make("scratch.pre_ffn_rms_window", d_model_e);
-        let norm_x_ffn_window  = make("scratch.norm_x_ffn_window",  d_model_e);
-        let ffn_gate_window    = make("scratch.ffn_gate_window",    ffn_inter_max_e);
-        let ffn_up_window      = make("scratch.ffn_up_window",      ffn_inter_max_e);
-        let ffn_act_window     = make("scratch.ffn_act_window",     ffn_inter_max_e);
-        let ffn_out_window     = make("scratch.ffn_out_window",     d_model_e);
-        let ple_state_window   = make("scratch.ple_state_window",   ple_dim_e);
-        let ple_act_window     = make("scratch.ple_act_window",     ple_dim_e);
-        let ple_proj_window    = make("scratch.ple_proj_window",    if ple_dim_e > 0 { d_model_e } else { 0 });
+        let norm_x_ffn_window = make("scratch.norm_x_ffn_window", d_model_e);
+        let ffn_gate_window = make("scratch.ffn_gate_window", ffn_inter_max_e);
+        let ffn_up_window = make("scratch.ffn_up_window", ffn_inter_max_e);
+        let ffn_act_window = make("scratch.ffn_act_window", ffn_inter_max_e);
+        let ffn_out_window = make("scratch.ffn_out_window", d_model_e);
+        let ple_state_window = make("scratch.ple_state_window", ple_dim_e);
+        let ple_act_window = make("scratch.ple_act_window", ple_dim_e);
+        let ple_proj_window = make(
+            "scratch.ple_proj_window",
+            if ple_dim_e > 0 { d_model_e } else { 0 },
+        );
         let seq_pre_final_norm = make("scratch.seq_pre_final_norm", d_model_e * seq_e);
 
         Self {

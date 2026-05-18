@@ -19,23 +19,23 @@
 //! - [`session`] — `TrainingSession` driving one training step
 //!   end-to-end (forward → loss → backward → Adam).
 
-/// Shared configuration, error, and progress types.
-pub mod shared;
 /// JSONL dataset loader + tokenizer trait.
 pub mod dataset_loader;
-/// Learning rate schedules.
-pub mod lr_schedule;
 /// Per-LoRA GPU state: A and B matrices for each wrapped projection.
 pub mod lora;
+/// Learning rate schedules.
+pub mod lr_schedule;
 /// Per-step GPU scratch buffers for the backward pass.
 pub mod scratch;
 /// `TrainingSession` — drives one training step end-to-end.
 pub mod session;
+/// Shared configuration, error, and progress types.
+pub mod shared;
 
 /// JS-facing wasm-bindgen surface — only compiled for wasm32.
 #[cfg(target_arch = "wasm32")]
 pub mod wasm_bindgen_api;
 
-pub use session::{load_adapter_into_state_from_bytes, TrainingSession};
 #[cfg(not(target_arch = "wasm32"))]
 pub use session::load_adapter_into_state;
+pub use session::{TrainingSession, load_adapter_into_state_from_bytes};

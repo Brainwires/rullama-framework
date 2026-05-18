@@ -10,6 +10,6 @@ pub mod audio_gpu;
 pub mod vision;
 
 pub use audio::{AudioConfig, AudioPrefix};
+pub use audio_features::{MEL_BINS, MelEngine, SAMPLE_RATE, decode_wav};
 pub use audio_gpu::GpuAudioForward;
-pub use audio_features::{MelEngine, decode_wav, MEL_BINS, SAMPLE_RATE};
 pub use vision::{VisionConfig, VisionForward};

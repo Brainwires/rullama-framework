@@ -14,16 +14,23 @@ fn main() -> ExitCode {
     let mut args = env::args().skip(1);
     let gguf = match args.next() {
         Some(p) => p,
-        None => { eprintln!("usage: vision_perf <gguf> <image>"); return ExitCode::from(2); }
+        None => {
+            eprintln!("usage: vision_perf <gguf> <image>");
+            return ExitCode::from(2);
+        }
     };
     let img_path = match args.next() {
         Some(p) => p,
-        None => { eprintln!("usage: vision_perf <gguf> <image>"); return ExitCode::from(2); }
+        None => {
+            eprintln!("usage: vision_perf <gguf> <image>");
+            return ExitCode::from(2);
+        }
     };
 
     // Preprocess via Python (same as vision_parity).
     let bin_path = "/tmp/vision_perf_input.bin";
-    let py = format!(r#"
+    let py = format!(
+        r#"
 import struct
 from PIL import Image
 img = Image.open("{img_path}").convert("RGB")
@@ -55,13 +62,19 @@ with open("{bin_path}", "wb") as f:
     f.write(struct.pack("<II", tw, th))
     f.write(bytes(buf))
 print(f"{{ow}}x{{oh}} -> {{tw}}x{{th}}")
-"#);
-    Command::new("python3").args(["-c", &py]).status().expect("python3");
+"#
+    );
+    Command::new("python3")
+        .args(["-c", &py])
+        .status()
+        .expect("python3");
     let bytes = fs::read(bin_path).expect("read");
     let tw = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
     let th = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as usize;
-    let pixels: Vec<f32> = bytes[8..].chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+    let pixels: Vec<f32> = bytes[8..]
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect();
     println!("image preprocessed: {tw}x{th}");
 
     println!("loading model ...");
@@ -76,42 +89,59 @@ print(f"{{ow}}x{{oh}} -> {{tw}}x{{th}}")
     }
 
     let baseline = model.cached_weight_bytes_native();
-    println!("cached_weight_bytes before encode: {} MiB", baseline / (1024 * 1024));
+    println!(
+        "cached_weight_bytes before encode: {} MiB",
+        baseline / (1024 * 1024)
+    );
 
     println!("\nFIRST encode (cold cache):");
     let t = Instant::now();
-    let soft1 = pollster::block_on(model.encode_image_native(&pixels, th, tw, None)).expect("encode");
+    let soft1 =
+        pollster::block_on(model.encode_image_native(&pixels, th, tw, None)).expect("encode");
     let dt1 = t.elapsed();
     println!("  encoded {} f32 in {:?}", soft1.len(), dt1);
     let after_cold = model.cached_weight_bytes_native();
-    println!("  cached_weight_bytes after cold: {} MiB (+{} MiB)",
-        after_cold / (1024 * 1024), (after_cold - baseline) / (1024 * 1024));
+    println!(
+        "  cached_weight_bytes after cold: {} MiB (+{} MiB)",
+        after_cold / (1024 * 1024),
+        (after_cold - baseline) / (1024 * 1024)
+    );
 
     println!("\nSECOND encode (warm cache):");
     let t = Instant::now();
-    let soft2 = pollster::block_on(model.encode_image_native(&pixels, th, tw, None)).expect("encode");
+    let soft2 =
+        pollster::block_on(model.encode_image_native(&pixels, th, tw, None)).expect("encode");
     let dt2 = t.elapsed();
     println!("  encoded {} f32 in {:?}", soft2.len(), dt2);
 
     println!("\nTHIRD encode (also warm):");
     let t = Instant::now();
-    let _soft3 = pollster::block_on(model.encode_image_native(&pixels, th, tw, None)).expect("encode");
+    let _soft3 =
+        pollster::block_on(model.encode_image_native(&pixels, th, tw, None)).expect("encode");
     let dt3 = t.elapsed();
     println!("  encoded in {:?}", dt3);
 
     let freed = model.release_vision_weights_native();
     let after_release = model.cached_weight_bytes_native();
-    println!("\nrelease_vision_weights freed {} entries; cache now {} MiB",
-        freed, after_release / (1024 * 1024));
+    println!(
+        "\nrelease_vision_weights freed {} entries; cache now {} MiB",
+        freed,
+        after_release / (1024 * 1024)
+    );
 
     // Sanity: outputs should be identical (deterministic).
     let mut max_abs = 0f32;
     for i in 0..soft1.len() {
         let d = (soft1[i] - soft2[i]).abs();
-        if d > max_abs { max_abs = d; }
+        if d > max_abs {
+            max_abs = d;
+        }
     }
     println!("\nfirst vs second max_abs diff: {max_abs:e} (should be 0)");
 
-    println!("\nspeedup cold→warm: {:.1}×", dt1.as_secs_f64() / dt2.as_secs_f64());
+    println!(
+        "\nspeedup cold→warm: {:.1}×",
+        dt1.as_secs_f64() / dt2.as_secs_f64()
+    );
     ExitCode::SUCCESS
 }

@@ -17,7 +17,10 @@ fn main() -> ExitCode {
     let mut args = env::args().skip(1);
     let gguf = match args.next() {
         Some(p) => p,
-        None => { eprintln!("usage: audio_perf <gguf>"); return ExitCode::from(2); }
+        None => {
+            eprintln!("usage: audio_perf <gguf>");
+            return ExitCode::from(2);
+        }
     };
 
     println!("loading model ...");
@@ -33,12 +36,14 @@ fn main() -> ExitCode {
 
     // 1 second of A4 (440 Hz) sine at 16 kHz, same shape as audio_smoke.
     let sr = 16_000usize;
-    let mut pcm = vec![0f32; sr];
     let omega = 2.0 * std::f32::consts::PI * 440.0 / sr as f32;
-    for i in 0..sr { pcm[i] = 0.3 * (omega * i as f32).sin(); }
+    let pcm: Vec<f32> = (0..sr).map(|i| 0.3 * (omega * i as f32).sin()).collect();
 
     let baseline_bytes = model.cached_weight_bytes_native();
-    println!("cached_weight_bytes before encode: {} MiB", baseline_bytes / (1024 * 1024));
+    println!(
+        "cached_weight_bytes before encode: {} MiB",
+        baseline_bytes / (1024 * 1024)
+    );
 
     println!("\nFIRST encode (cold cache):");
     let t = Instant::now();
@@ -46,8 +51,11 @@ fn main() -> ExitCode {
     let dt1 = t.elapsed();
     println!("  encoded {} f32 in {:?}", soft1.len(), dt1);
     let after_cold = model.cached_weight_bytes_native();
-    println!("  cached_weight_bytes after cold: {} MiB (+{} MiB)",
-        after_cold / (1024 * 1024), (after_cold - baseline_bytes) / (1024 * 1024));
+    println!(
+        "  cached_weight_bytes after cold: {} MiB (+{} MiB)",
+        after_cold / (1024 * 1024),
+        (after_cold - baseline_bytes) / (1024 * 1024)
+    );
 
     println!("\nSECOND encode (warm cache):");
     let t = Instant::now();
@@ -64,15 +72,23 @@ fn main() -> ExitCode {
     let mut max_abs = 0f32;
     for i in 0..soft1.len() {
         let d = (soft1[i] - soft2[i]).abs();
-        if d > max_abs { max_abs = d; }
+        if d > max_abs {
+            max_abs = d;
+        }
     }
     println!("\nfirst vs second max_abs diff: {max_abs:e} (should be 0)");
 
     let freed = model.release_audio_weights_native();
     let after_release = model.cached_weight_bytes_native();
-    println!("\nrelease_audio_weights freed {} entries; cache now {} MiB",
-        freed, after_release / (1024 * 1024));
+    println!(
+        "\nrelease_audio_weights freed {} entries; cache now {} MiB",
+        freed,
+        after_release / (1024 * 1024)
+    );
 
-    println!("\nspeedup cold→warm: {:.1}×", dt1.as_secs_f64() / dt2.as_secs_f64());
+    println!(
+        "\nspeedup cold→warm: {:.1}×",
+        dt1.as_secs_f64() / dt2.as_secs_f64()
+    );
     ExitCode::SUCCESS
 }

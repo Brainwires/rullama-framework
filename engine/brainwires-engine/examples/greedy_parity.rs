@@ -20,7 +20,10 @@ fn main() -> ExitCode {
     let mut args = env::args().skip(1);
     let path = match args.next() {
         Some(p) => p,
-        None => { eprintln!("usage: greedy_parity <gguf> [prompt] [n_predict]"); return ExitCode::from(2); }
+        None => {
+            eprintln!("usage: greedy_parity <gguf> [prompt] [n_predict]");
+            return ExitCode::from(2);
+        }
     };
     let prompt = args.next().unwrap_or_else(|| "Hello, world!".to_string());
     let n_predict: usize = args.next().and_then(|s| s.parse().ok()).unwrap_or(3);
@@ -61,7 +64,10 @@ fn main() -> ExitCode {
     all_ids.push(next_id);
     let dt = t0.elapsed();
 
-    println!("rullama greedy ids (prompt + {n_predict} predicted, then 1 more): {:?}", all_ids);
+    println!(
+        "rullama greedy ids (prompt + {n_predict} predicted, then 1 more): {:?}",
+        all_ids
+    );
     let predicted_only = &all_ids[prompt_ids.len()..];
     println!("rullama predicted: {:?}", predicted_only);
     print!("rullama predicted strings:");
@@ -83,18 +89,28 @@ fn main() -> ExitCode {
     println!();
     match (rullama_first, ollama_first) {
         (Some(r), Some(o)) if r == o => {
-            println!("PASS: first generated token matches: {r} ({:?})", tok.id_to_str(r).unwrap_or("?"));
+            println!(
+                "PASS: first generated token matches: {r} ({:?})",
+                tok.id_to_str(r).unwrap_or("?")
+            );
             ExitCode::SUCCESS
         }
         (Some(r), Some(o)) => {
-            println!("FAIL: first generated token mismatch: rullama={r} ({:?}), ollama_retok={o} ({:?})",
-                tok.id_to_str(r).unwrap_or("?"), tok.id_to_str(o).unwrap_or("?"));
+            println!(
+                "FAIL: first generated token mismatch: rullama={r} ({:?}), ollama_retok={o} ({:?})",
+                tok.id_to_str(r).unwrap_or("?"),
+                tok.id_to_str(o).unwrap_or("?")
+            );
             // Show neighborhood around expected from rullama's logit table:
             let mut indexed: Vec<(usize, f32)> = last_logits.iter().copied().enumerate().collect();
-            indexed.sort_by(|a,b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
             println!("rullama top-5 logits at next-token slot:");
             for (i, v) in indexed.iter().take(5) {
-                println!("  {i:>6}  {:+.4}  {:?}", v, tok.id_to_str(*i as u32).unwrap_or("?"));
+                println!(
+                    "  {i:>6}  {:+.4}  {:?}",
+                    v,
+                    tok.id_to_str(*i as u32).unwrap_or("?")
+                );
             }
             ExitCode::from(1)
         }
@@ -109,7 +125,10 @@ fn argmax(v: &[f32]) -> usize {
     let mut best_i = 0usize;
     let mut best_v = f32::NEG_INFINITY;
     for (i, &x) in v.iter().enumerate() {
-        if x > best_v { best_v = x; best_i = i; }
+        if x > best_v {
+            best_v = x;
+            best_i = i;
+        }
     }
     best_i
 }
@@ -117,13 +136,22 @@ fn argmax(v: &[f32]) -> usize {
 fn ollama_generate_raw(prompt: &str, n_predict: usize) -> String {
     let body = format!(
         r#"{{"model":"gemma4:e2b","prompt":{},"raw":true,"stream":false,"options":{{"temperature":0,"num_predict":{},"seed":0}}}}"#,
-        json_escape(prompt), n_predict
+        json_escape(prompt),
+        n_predict
     );
     let out = Command::new("curl")
-        .args(["-s", "-X", "POST", "http://localhost:11434/api/generate",
-               "--max-time", "120",
-               "-H", "Content-Type: application/json",
-               "-d", &body])
+        .args([
+            "-s",
+            "-X",
+            "POST",
+            "http://localhost:11434/api/generate",
+            "--max-time",
+            "120",
+            "-H",
+            "Content-Type: application/json",
+            "-d",
+            &body,
+        ])
         .output()
         .expect("curl ollama");
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -131,7 +159,10 @@ fn ollama_generate_raw(prompt: &str, n_predict: usize) -> String {
     let key = r#""response":"#;
     let i = match stdout.find(key) {
         Some(i) => i + key.len(),
-        None => { eprintln!("ollama response missing 'response' key: {stdout}"); return String::new(); }
+        None => {
+            eprintln!("ollama response missing 'response' key: {stdout}");
+            return String::new();
+        }
     };
     let rest = &stdout[i..];
     if !rest.starts_with('"') {
@@ -149,7 +180,10 @@ fn ollama_generate_raw(prompt: &str, n_predict: usize) -> String {
                 Some('t') => out.push('\t'),
                 Some('"') => out.push('"'),
                 Some('\\') => out.push('\\'),
-                Some(other) => { out.push('\\'); out.push(other); }
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
                 None => break,
             }
         } else if c == '"' {

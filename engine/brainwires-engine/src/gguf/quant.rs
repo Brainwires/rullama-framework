@@ -7,8 +7,8 @@
 use bytemuck::{Pod, Zeroable};
 use half::f16;
 
-use crate::error::{Result, RullamaError};
 use super::dtype::GgmlDtype;
+use crate::error::{Result, RullamaError};
 
 /// Number of elements in a single Q4_K / Q6_K super-block.
 pub const QK_K: usize = 256;
@@ -43,22 +43,25 @@ fn get_scale_min_k4(j: usize, q: &[u8; 12]) -> (u8, u8) {
         (d, m)
     } else {
         let d = (q[j + 4] & 0xF) | ((q[j - 4] >> 6) << 4);
-        let m = (q[j + 4] >> 4)  | ((q[j - 0] >> 6) << 4);
+        let m = (q[j + 4] >> 4) | ((q[j] >> 6) << 4);
         (d, m)
     }
 }
 
 /// Dequantize a Q4_K-encoded byte stream into `out` (length = number of blocks × 256).
 pub fn dequant_q4_k(src: &[u8], out: &mut [f32]) -> Result<()> {
-    if src.len() % Q4_K_BLOCK_BYTES != 0 {
+    if !src.len().is_multiple_of(Q4_K_BLOCK_BYTES) {
         return Err(RullamaError::Gguf(format!(
-            "Q4_K source not multiple of {Q4_K_BLOCK_BYTES} bytes (got {})", src.len()
+            "Q4_K source not multiple of {Q4_K_BLOCK_BYTES} bytes (got {})",
+            src.len()
         )));
     }
     let nb = src.len() / Q4_K_BLOCK_BYTES;
     if out.len() != nb * QK_K {
         return Err(RullamaError::Gguf(format!(
-            "Q4_K dest expected {} elements, got {}", nb * QK_K, out.len()
+            "Q4_K dest expected {} elements, got {}",
+            nb * QK_K,
+            out.len()
         )));
     }
 
@@ -81,13 +84,13 @@ pub fn dequant_q4_k(src: &[u8], out: &mut [f32]) -> Result<()> {
         while j < QK_K {
             // 64 elements per iteration: 32 from low nibbles, 32 from high nibbles
             let q = &blk.qs[j / 2..j / 2 + 32];
-            let s_lo = scales[is]    as f32;
-            let m_lo = mins[is]      as f32;
+            let s_lo = scales[is] as f32;
+            let m_lo = mins[is] as f32;
             let s_hi = scales[is + 1] as f32;
-            let m_hi = mins[is + 1]  as f32;
+            let m_hi = mins[is + 1] as f32;
             for l in 0..32 {
-                dst[j + l]      = d * s_lo * (q[l] & 0xF) as f32 - dmin * m_lo;
-                dst[j + l + 32] = d * s_hi * (q[l] >> 4)  as f32 - dmin * m_hi;
+                dst[j + l] = d * s_lo * (q[l] & 0xF) as f32 - dmin * m_lo;
+                dst[j + l + 32] = d * s_hi * (q[l] >> 4) as f32 - dmin * m_hi;
             }
             is += 2;
             j += 64;
@@ -117,15 +120,18 @@ struct BlockQ6K {
 
 /// Dequantize a Q6_K-encoded byte stream into `out` (length = number of blocks × 256).
 pub fn dequant_q6_k(src: &[u8], out: &mut [f32]) -> Result<()> {
-    if src.len() % Q6_K_BLOCK_BYTES != 0 {
+    if !src.len().is_multiple_of(Q6_K_BLOCK_BYTES) {
         return Err(RullamaError::Gguf(format!(
-            "Q6_K source not multiple of {Q6_K_BLOCK_BYTES} bytes (got {})", src.len()
+            "Q6_K source not multiple of {Q6_K_BLOCK_BYTES} bytes (got {})",
+            src.len()
         )));
     }
     let nb = src.len() / Q6_K_BLOCK_BYTES;
     if out.len() != nb * QK_K {
         return Err(RullamaError::Gguf(format!(
-            "Q6_K dest expected {} elements, got {}", nb * QK_K, out.len()
+            "Q6_K dest expected {} elements, got {}",
+            nb * QK_K,
+            out.len()
         )));
     }
 
@@ -144,12 +150,12 @@ pub fn dequant_q6_k(src: &[u8], out: &mut [f32]) -> Result<()> {
 
             for l in 0..32 {
                 let is = l / 16;
-                let q1 = ((ql[l]      & 0xF) as i32 | (((qh[l] >> 0) & 3) as i32) << 4) - 32;
+                let q1 = ((ql[l] & 0xF) as i32 | ((qh[l] & 3) as i32) << 4) - 32;
                 let q2 = ((ql[l + 32] & 0xF) as i32 | (((qh[l] >> 2) & 3) as i32) << 4) - 32;
-                let q3 = ((ql[l]      >>  4) as i32 | (((qh[l] >> 4) & 3) as i32) << 4) - 32;
-                let q4 = ((ql[l + 32] >>  4) as i32 | (((qh[l] >> 6) & 3) as i32) << 4) - 32;
+                let q3 = ((ql[l] >> 4) as i32 | (((qh[l] >> 4) & 3) as i32) << 4) - 32;
+                let q4 = ((ql[l + 32] >> 4) as i32 | (((qh[l] >> 6) & 3) as i32) << 4) - 32;
 
-                dst[base + l + 0]  = d * sc[is + 0] as f32 * q1 as f32;
+                dst[base + l] = d * sc[is] as f32 * q1 as f32;
                 dst[base + l + 32] = d * sc[is + 2] as f32 * q2 as f32;
                 dst[base + l + 64] = d * sc[is + 4] as f32 * q3 as f32;
                 dst[base + l + 96] = d * sc[is + 6] as f32 * q4 as f32;
@@ -163,12 +169,17 @@ pub fn dequant_q6_k(src: &[u8], out: &mut [f32]) -> Result<()> {
 
 /// Convert a BF16 byte stream (little-endian, high 16 bits of an IEEE-754 f32) to f32.
 pub fn bf16_to_f32(src: &[u8], out: &mut [f32]) -> Result<()> {
-    if src.len() % 2 != 0 {
-        return Err(RullamaError::Gguf(format!("BF16 source byte length {} is odd", src.len())));
+    if !src.len().is_multiple_of(2) {
+        return Err(RullamaError::Gguf(format!(
+            "BF16 source byte length {} is odd",
+            src.len()
+        )));
     }
     if out.len() * 2 != src.len() {
         return Err(RullamaError::Gguf(format!(
-            "BF16 dest expected {} elements, got {}", src.len() / 2, out.len()
+            "BF16 dest expected {} elements, got {}",
+            src.len() / 2,
+            out.len()
         )));
     }
     for (i, chunk) in src.chunks_exact(2).enumerate() {
@@ -180,12 +191,17 @@ pub fn bf16_to_f32(src: &[u8], out: &mut [f32]) -> Result<()> {
 
 /// Convert an F16 byte stream (little-endian half-precision) to f32.
 pub fn f16_to_f32(src: &[u8], out: &mut [f32]) -> Result<()> {
-    if src.len() % 2 != 0 {
-        return Err(RullamaError::Gguf(format!("F16 source byte length {} is odd", src.len())));
+    if !src.len().is_multiple_of(2) {
+        return Err(RullamaError::Gguf(format!(
+            "F16 source byte length {} is odd",
+            src.len()
+        )));
     }
     if out.len() * 2 != src.len() {
         return Err(RullamaError::Gguf(format!(
-            "F16 dest expected {} elements, got {}", src.len() / 2, out.len()
+            "F16 dest expected {} elements, got {}",
+            src.len() / 2,
+            out.len()
         )));
     }
     for (i, chunk) in src.chunks_exact(2).enumerate() {
@@ -197,12 +213,17 @@ pub fn f16_to_f32(src: &[u8], out: &mut [f32]) -> Result<()> {
 
 /// Copy F32 little-endian bytes into a f32 vector.
 pub fn f32_to_f32(src: &[u8], out: &mut [f32]) -> Result<()> {
-    if src.len() % 4 != 0 {
-        return Err(RullamaError::Gguf(format!("F32 source byte length {} not /4", src.len())));
+    if !src.len().is_multiple_of(4) {
+        return Err(RullamaError::Gguf(format!(
+            "F32 source byte length {} not /4",
+            src.len()
+        )));
     }
     if out.len() * 4 != src.len() {
         return Err(RullamaError::Gguf(format!(
-            "F32 dest expected {} elements, got {}", src.len() / 4, out.len()
+            "F32 dest expected {} elements, got {}",
+            src.len() / 4,
+            out.len()
         )));
     }
     for (i, chunk) in src.chunks_exact(4).enumerate() {
@@ -214,8 +235,8 @@ pub fn f32_to_f32(src: &[u8], out: &mut [f32]) -> Result<()> {
 /// Dispatch dequant by dtype. Returns an error for unsupported types in v1.
 pub fn dequant_into_f32(dtype: GgmlDtype, src: &[u8], out: &mut [f32]) -> Result<()> {
     match dtype {
-        GgmlDtype::F32  => f32_to_f32(src, out),
-        GgmlDtype::F16  => f16_to_f32(src, out),
+        GgmlDtype::F32 => f32_to_f32(src, out),
+        GgmlDtype::F16 => f16_to_f32(src, out),
         GgmlDtype::BF16 => bf16_to_f32(src, out),
         GgmlDtype::Q4_K => dequant_q4_k(src, out),
         GgmlDtype::Q6_K => dequant_q6_k(src, out),
@@ -241,9 +262,13 @@ mod tests {
         // get_scale_min_k4(j>=4): d=(q[j+4]&0xF)|((q[j-4]>>6)<<4), m=(q[j+4]>>4)|((q[j]>>6)<<4)
         //
         // For scales[0..3]=1, mins[0..3]=0: q[0..4]=1, q[4..8]=0
-        for j in 0..4 { buf[4 + j] = 1; }
+        for j in 0..4 {
+            buf[4 + j] = 1;
+        }
         // For scales[4..7]=1, mins[4..7]=0: need (q[j+4]&0xF)=1, (q[j+4]>>4)=0 → q[8..12]=0x01
-        for j in 4..8 { buf[4 + j + 4] = 0x01; }
+        for j in 4..8 {
+            buf[4 + j + 4] = 0x01;
+        }
         // qs[*] already 0
         buf
     }
@@ -264,7 +289,9 @@ mod tests {
     fn q4_k_alternating_nibbles() {
         let mut buf = synth_q4_k_zero();
         // qs[i] = 0xA5 → low nibble 5, high nibble 10
-        for b in &mut buf[16..16 + 128] { *b = 0xA5; }
+        for b in &mut buf[16..16 + 128] {
+            *b = 0xA5;
+        }
         let mut out = vec![0f32; QK_K];
         dequant_q4_k(&buf, &mut out).unwrap();
         // For each 64-elem chunk: first 32 from low nibbles (=5), next 32 from high (=10)
@@ -293,7 +320,9 @@ mod tests {
         // d=1.0, scales[*]=1, ql=0, qh=0 → quant=(0|0)-32=-32 → output = 1*1*(-32)=-32 everywhere.
         let mut buf = vec![0u8; Q6_K_BLOCK_BYTES];
         // scales at offset 128+64 = 192, 16 i8s of value 1
-        for i in 0..16 { buf[192 + i] = 1; }
+        for i in 0..16 {
+            buf[192 + i] = 1;
+        }
         // d=1.0 (f16) at offset 208
         buf[208..210].copy_from_slice(&0x3C00u16.to_le_bytes());
         let mut out = vec![0f32; QK_K];
@@ -305,7 +334,7 @@ mod tests {
 
     #[test]
     fn f16_round_trip() {
-        let values: [f32; 4] = [0.0, 1.0, -2.5, 3.14];
+        let values: [f32; 4] = [0.0, 1.0, -2.5, 3.5];
         let mut bytes = Vec::with_capacity(values.len() * 2);
         for v in values {
             bytes.extend_from_slice(&f16::from_f32(v).to_bits().to_le_bytes());
@@ -313,7 +342,12 @@ mod tests {
         let mut out = vec![0f32; values.len()];
         f16_to_f32(&bytes, &mut out).unwrap();
         for i in 0..values.len() {
-            assert!((out[i] - values[i]).abs() < 0.01, "got {} want {}", out[i], values[i]);
+            assert!(
+                (out[i] - values[i]).abs() < 0.01,
+                "got {} want {}",
+                out[i],
+                values[i]
+            );
         }
     }
 }

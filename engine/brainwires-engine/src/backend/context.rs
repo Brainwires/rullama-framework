@@ -27,9 +27,8 @@ impl WgpuCtx {
     /// On wasm32 this binds to `navigator.gpu`; on native it picks Metal/Vulkan/DX12 via
     /// wgpu's default backend selection. Test helper, used during M0–M2 bring-up.
     pub async fn new() -> Result<Self> {
-        let instance = wgpu::Instance::new(
-            wgpu::InstanceDescriptor::new_without_display_handle_from_env(),
-        );
+        let instance =
+            wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -113,9 +112,7 @@ impl WgpuCtx {
                     // beats the 256 MiB floor too. Raising the request
                     // costs nothing when the adapter caps it; the floor
                     // remains the spec minimum if the adapter says less.
-                    l.max_buffer_size = adapter_limits
-                        .max_buffer_size
-                        .max(l.max_buffer_size);
+                    l.max_buffer_size = adapter_limits.max_buffer_size.max(l.max_buffer_size);
                     l.max_storage_buffer_binding_size = adapter_limits
                         .max_storage_buffer_binding_size
                         .max(l.max_storage_buffer_binding_size);

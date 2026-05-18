@@ -27,7 +27,10 @@ fn main() -> ExitCode {
     let mut args = env::args().skip(1);
     let path = match args.next() {
         Some(p) => p,
-        None => { eprintln!("usage: chained_smoke <gguf> [user_msg] [--max=N]"); return ExitCode::from(2); }
+        None => {
+            eprintln!("usage: chained_smoke <gguf> [user_msg] [--max=N]");
+            return ExitCode::from(2);
+        }
     };
     let mut user_msg = String::from("Hi");
     let mut max_tokens: usize = 8;
@@ -50,14 +53,21 @@ fn main() -> ExitCode {
 
     let ctx = pollster::block_on(WgpuCtx::new()).expect("WgpuCtx");
     let pipes = Arc::new(Pipelines::new(&ctx.device));
-    let wcache = Arc::new(WeightCache::new(r_arc, ctx.device.clone(), ctx.queue.clone()));
+    let wcache = Arc::new(WeightCache::new(
+        r_arc,
+        ctx.device.clone(),
+        ctx.queue.clone(),
+    ));
 
-    let mut fwd = pollster::block_on(Forward::new(cfg, ctx, pipes, weights, wcache))
-        .expect("Forward::new");
+    let mut fwd =
+        pollster::block_on(Forward::new(cfg, ctx, pipes, weights, wcache)).expect("Forward::new");
     println!("  loaded in {:?}", t0.elapsed());
 
     let mut sampler = Sampler::new(SamplingOptions::greedy());
-    let messages = vec![ChatMessage { role: ChatRole::User, content: user_msg.clone() }];
+    let messages = vec![ChatMessage {
+        role: ChatRole::User,
+        content: user_msg.clone(),
+    }];
     let prompt = gemma4_small::render_for_completion(&messages, false);
     let prompt_ids = tok.encode(&prompt);
     println!("user: {user_msg:?}");
@@ -74,14 +84,19 @@ fn main() -> ExitCode {
         println!("  prompt[{n}] {id:6} -> {next:6} ({:?})", t1.elapsed());
     }
     let dt = t0.elapsed();
-    println!("prompt-eval total {dt:?} ({:?}/tok)", dt / prompt_ids.len() as u32);
+    println!(
+        "prompt-eval total {dt:?} ({:?}/tok)",
+        dt / prompt_ids.len() as u32
+    );
 
     // Generate
     print!("\nmodel: ");
     let t0 = Instant::now();
     let mut emitted = 0usize;
     for _ in 0..max_tokens {
-        if fwd.cfg().eos_ids.iter().any(|&e| e == next) { break; }
+        if fwd.cfg().eos_ids.contains(&next) {
+            break;
+        }
         let s = tok.id_to_str(next).unwrap_or("");
         print!("{}", s.replace('\u{2581}', " "));
         std::io::Write::flush(&mut std::io::stdout()).ok();
@@ -92,9 +107,11 @@ fn main() -> ExitCode {
     let dt = t0.elapsed();
     println!("\n");
     if emitted > 0 {
-        println!("generated {emitted} tokens in {dt:?} ({:?}/tok = {:.2} tok/s)",
+        println!(
+            "generated {emitted} tokens in {dt:?} ({:?}/tok = {:.2} tok/s)",
             dt / emitted as u32,
-            emitted as f64 / dt.as_secs_f64());
+            emitted as f64 / dt.as_secs_f64()
+        );
     } else {
         println!("generated 0 tokens (EOS immediately)");
     }

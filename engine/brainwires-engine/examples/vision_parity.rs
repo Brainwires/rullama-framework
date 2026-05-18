@@ -26,16 +26,23 @@ fn main() -> ExitCode {
     let mut args = env::args().skip(1);
     let path = match args.next() {
         Some(p) => p,
-        None => { eprintln!("usage: vision_parity <gguf> <image>"); return ExitCode::from(2); }
+        None => {
+            eprintln!("usage: vision_parity <gguf> <image>");
+            return ExitCode::from(2);
+        }
     };
     let img_path = match args.next() {
         Some(p) => p,
-        None => { eprintln!("usage: vision_parity <gguf> <image>"); return ExitCode::from(2); }
+        None => {
+            eprintln!("usage: vision_parity <gguf> <image>");
+            return ExitCode::from(2);
+        }
     };
 
     // ---- Preprocess via Python (PIL) — mirrors PWA's smartResize + normalise. ----
     let bin_path = "/tmp/vision_input.bin";
-    let py_script = format!(r#"
+    let py_script = format!(
+        r#"
 import sys, struct
 from PIL import Image
 src = "{img_path}"
@@ -76,8 +83,12 @@ with open(out, "wb") as f:
     f.write(struct.pack("<II", tw, th))
     f.write(bytes(buf))
 print(f"preprocess: {{ow}}x{{oh}} -> {{tw}}x{{th}}", file=sys.stderr)
-"#);
-    let st = Command::new("python3").args(["-c", &py_script]).status().expect("python3");
+"#
+    );
+    let st = Command::new("python3")
+        .args(["-c", &py_script])
+        .status()
+        .expect("python3");
     if !st.success() {
         eprintln!("FAIL: preprocessing failed");
         return ExitCode::from(2);
@@ -95,7 +106,11 @@ print(f"preprocess: {{ow}}x{{oh}} -> {{tw}}x{{th}}", file=sys.stderr)
     println!("\n== rullama side ==");
     let bytes = fs::read(&path).expect("read");
     let mut model = pollster::block_on(Model::load_native(bytes)).expect("load");
-    model.set_sampling_native(SamplingOptions { temperature: 0.0, top_k: 1, ..Default::default() });
+    model.set_sampling_native(SamplingOptions {
+        temperature: 0.0,
+        top_k: 1,
+        ..Default::default()
+    });
     if !model.has_vision_native() {
         eprintln!("FAIL: this checkpoint has no vision tower");
         return ExitCode::from(2);
@@ -109,14 +124,19 @@ print(f"preprocess: {{ow}}x{{oh}} -> {{tw}}x{{th}}", file=sys.stderr)
     let prompt = gemma4_small::render_for_completion(&messages, false);
     let ids = model.encode_tokens(&prompt);
 
-    let (img_begin, _img_end) = model.image_sentinel_ids_native()
+    let (img_begin, _img_end) = model
+        .image_sentinel_ids_native()
         .expect("image sentinels missing");
 
     let t = Instant::now();
-    let soft = pollster::block_on(model.encode_image_native(&pixels, th, tw, None)).expect("encode_image");
+    let soft =
+        pollster::block_on(model.encode_image_native(&pixels, th, tw, None)).expect("encode_image");
     let n_soft = model.image_soft_token_count_native(th, tw).expect("count");
     let d_text = soft.len() / n_soft;
-    println!("encoded {n_soft} image soft tokens × {d_text} dim in {:?}", t.elapsed());
+    println!(
+        "encoded {n_soft} image soft tokens × {d_text} dim in {:?}",
+        t.elapsed()
+    );
 
     let t = Instant::now();
     let mut next: u32 = 0;
@@ -124,18 +144,24 @@ print(f"preprocess: {{ow}}x{{oh}} -> {{tw}}x{{th}}", file=sys.stderr)
         next = pollster::block_on(model.step_native(id)).expect("step");
         if id == img_begin {
             for r in 0..n_soft {
-                let row = &soft[r * d_text .. (r + 1) * d_text];
+                let row = &soft[r * d_text..(r + 1) * d_text];
                 next = pollster::block_on(model.step_with_embedding_native(row))
                     .expect("step_with_embedding");
             }
         }
     }
-    println!("prompt-eval done in {:?}; first sampled = {} ({:?})",
-        t.elapsed(), next, model.token_str_native(next));
+    println!(
+        "prompt-eval done in {:?}; first sampled = {} ({:?})",
+        t.elapsed(),
+        next,
+        model.token_str_native(next)
+    );
 
     let mut out = String::new();
     for _ in 0..N_PREDICT {
-        if model.is_eos_native(next) { break; }
+        if model.is_eos_native(next) {
+            break;
+        }
         if let Some(s) = model.token_str_native(next) {
             out.push_str(&s.replace('▁', " "));
         }
@@ -156,14 +182,28 @@ print(f"preprocess: {{ow}}x{{oh}} -> {{tw}}x{{th}}", file=sys.stderr)
     // have GPU offload enabled (Intel Mac with no Metal).
     use std::io::Write;
     let mut child = std::process::Command::new("curl")
-        .args(["-s", "-X", "POST", "http://localhost:11434/api/chat",
-               "--max-time", "600",
-               "-H", "Content-Type: application/json",
-               "-d", "@-"])
+        .args([
+            "-s",
+            "-X",
+            "POST",
+            "http://localhost:11434/api/chat",
+            "--max-time",
+            "600",
+            "-H",
+            "Content-Type: application/json",
+            "-d",
+            "@-",
+        ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .spawn().expect("curl ollama");
-    child.stdin.as_mut().expect("stdin").write_all(body.as_bytes()).expect("write");
+        .spawn()
+        .expect("curl ollama");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(body.as_bytes())
+        .expect("write");
     let out = child.wait_with_output().expect("wait curl");
     let stdout = String::from_utf8_lossy(&out.stdout);
     println!("ollama raw: {stdout}");
@@ -173,14 +213,14 @@ print(f"preprocess: {{ow}}x{{oh}} -> {{tw}}x{{th}}", file=sys.stderr)
 /// Minimal base64 encoder (avoids a crate dep just for this).
 fn base64_encode(data: &[u8]) -> String {
     const ALPH: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     let mut i = 0;
     while i + 3 <= data.len() {
         let b = ((data[i] as u32) << 16) | ((data[i + 1] as u32) << 8) | (data[i + 2] as u32);
         out.push(ALPH[((b >> 18) & 63) as usize] as char);
         out.push(ALPH[((b >> 12) & 63) as usize] as char);
-        out.push(ALPH[((b >>  6) & 63) as usize] as char);
-        out.push(ALPH[( b        & 63) as usize] as char);
+        out.push(ALPH[((b >> 6) & 63) as usize] as char);
+        out.push(ALPH[(b & 63) as usize] as char);
         i += 3;
     }
     let rem = data.len() - i;
@@ -193,7 +233,7 @@ fn base64_encode(data: &[u8]) -> String {
         let b = ((data[i] as u32) << 16) | ((data[i + 1] as u32) << 8);
         out.push(ALPH[((b >> 18) & 63) as usize] as char);
         out.push(ALPH[((b >> 12) & 63) as usize] as char);
-        out.push(ALPH[((b >>  6) & 63) as usize] as char);
+        out.push(ALPH[((b >> 6) & 63) as usize] as char);
         out.push('=');
     }
     out

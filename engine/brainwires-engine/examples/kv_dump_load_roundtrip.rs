@@ -49,13 +49,20 @@ fn main() -> ExitCode {
 
     let ctx = pollster::block_on(WgpuCtx::new()).expect("WgpuCtx");
     let pipes = Arc::new(Pipelines::new(&ctx.device));
-    let wcache = Arc::new(WeightCache::new(r_arc, ctx.device.clone(), ctx.queue.clone()));
-    let mut fwd = pollster::block_on(Forward::new(cfg, ctx, pipes, weights, wcache))
-        .expect("Forward::new");
+    let wcache = Arc::new(WeightCache::new(
+        r_arc,
+        ctx.device.clone(),
+        ctx.queue.clone(),
+    ));
+    let mut fwd =
+        pollster::block_on(Forward::new(cfg, ctx, pipes, weights, wcache)).expect("Forward::new");
     println!("  loaded in {:?}", t0.elapsed());
 
     let mut sampler = Sampler::new(SamplingOptions::greedy());
-    let messages = vec![ChatMessage { role: ChatRole::User, content: user_msg.clone() }];
+    let messages = vec![ChatMessage {
+        role: ChatRole::User,
+        content: user_msg.clone(),
+    }];
     let prompt = gemma4_small::render_for_completion(&messages, false);
     let prompt_ids = tok.encode(&prompt);
     println!("user: {user_msg:?}");
@@ -75,7 +82,8 @@ fn main() -> ExitCode {
     let sampler_snap = sampler.dump_state();
     println!(
         "snapshot sizes: kv={} bytes, sampler={} bytes",
-        snap.len(), sampler_snap.len(),
+        snap.len(),
+        sampler_snap.len(),
     );
 
     // Control: generate 3 tokens forward.
@@ -98,11 +106,12 @@ fn main() -> ExitCode {
     fwd.load_kv(&snap).expect("load_kv");
     sampler.load_state(&sampler_snap).expect("load_state");
     assert_eq!(
-        fwd.pos(), pos_before_snapshot,
+        fwd.pos(),
+        pos_before_snapshot,
         "load_kv must restore position to the snapshot point",
     );
 
-    let restored_a = last_sampled;  // same as control — last_sampled is what we'd feed next
+    let restored_a = last_sampled; // same as control — last_sampled is what we'd feed next
     let logits = pollster::block_on(fwd.step(restored_a)).expect("restored step a");
     let restored_b = sampler.sample(&logits);
     sampler.observe(restored_a);
@@ -112,7 +121,9 @@ fn main() -> ExitCode {
 
     println!("restored trajectory: {restored_a} -> {restored_b} -> {restored_c}");
 
-    let ok = control_a == restored_a && control_b == restored_b && control_c == restored_c
+    let ok = control_a == restored_a
+        && control_b == restored_b
+        && control_c == restored_c
         && pos_after_control == fwd.pos();
 
     if ok {
@@ -120,8 +131,13 @@ fn main() -> ExitCode {
         ExitCode::SUCCESS
     } else {
         eprintln!("\n❌ KV roundtrip DIVERGED:");
-        eprintln!("   control:  {control_a} -> {control_b} -> {control_c} (pos {pos_after_control})");
-        eprintln!("   restored: {restored_a} -> {restored_b} -> {restored_c} (pos {})", fwd.pos());
+        eprintln!(
+            "   control:  {control_a} -> {control_b} -> {control_c} (pos {pos_after_control})"
+        );
+        eprintln!(
+            "   restored: {restored_a} -> {restored_b} -> {restored_c} (pos {})",
+            fwd.pos()
+        );
         ExitCode::from(1)
     }
 }

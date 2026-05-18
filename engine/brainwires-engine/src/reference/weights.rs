@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use crate::error::Result;
 use crate::gguf::{
-    GgufReader, dequant_row_to_f32, dequant_row_to_f32_async,
-    dequant_tensor_to_f32, dequant_tensor_to_f32_async,
+    GgufReader, dequant_row_to_f32, dequant_row_to_f32_async, dequant_tensor_to_f32,
+    dequant_tensor_to_f32_async,
 };
 
 /// Wrapper that owns/shares an `Arc<GgufReader>` and serves f32 dequant on demand.
@@ -23,8 +23,12 @@ impl Weights {
         Self { reader }
     }
 
-    pub fn reader(&self) -> &GgufReader { &self.reader }
-    pub fn reader_arc(&self) -> Arc<GgufReader> { self.reader.clone() }
+    pub fn reader(&self) -> &GgufReader {
+        &self.reader
+    }
+    pub fn reader_arc(&self) -> Arc<GgufReader> {
+        self.reader.clone()
+    }
 
     /// Load and dequantize a whole tensor into f32. Allocates.
     pub fn load(&self, name: &str) -> Result<Vec<f32>> {

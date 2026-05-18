@@ -30,7 +30,7 @@ async fn run(ctx: &WgpuCtx, input: &[f32]) -> Result<Vec<f32>> {
     let device = &ctx.device;
     let queue = &ctx.queue;
 
-    let bytes: u64 = (input.len() * core::mem::size_of::<f32>()) as u64;
+    let bytes: u64 = std::mem::size_of_val(input) as u64;
 
     let inp_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("spike.in"),
@@ -72,8 +72,14 @@ async fn run(ctx: &WgpuCtx, input: &[f32]) -> Result<Vec<f32>> {
         label: Some("spike.bg"),
         layout: &pipeline.get_bind_group_layout(0),
         entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: inp_buf.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 1, resource: out_buf.as_entire_binding() },
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: inp_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: out_buf.as_entire_binding(),
+            },
         ],
     });
 
@@ -99,7 +105,10 @@ async fn run(ctx: &WgpuCtx, input: &[f32]) -> Result<Vec<f32>> {
         let _ = sender.send(r);
     });
     device
-        .poll(wgpu::PollType::Wait { submission_index: None, timeout: None })
+        .poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        })
         .map_err(|e| RullamaError::Inference(format!("{e:?}")))?;
     receiver
         .await

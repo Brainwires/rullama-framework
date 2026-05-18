@@ -1,3 +1,9 @@
+// Conv2D + LayerNorm CPU forward fns take many dims (C_in, C_out, kH, kW,
+// stride_h, stride_w, pad_h, pad_w, …) to match the Go reference. Loop
+// indices walk parallel input/output planes per iteration.
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::needless_range_loop)]
+
 //! Gemma 4 audio SSCP prefix (CPU): waveform → `[seq, hidden]` f32.
 //!
 //! What's here:
@@ -23,50 +29,67 @@ use crate::backend::WeightCache;
 use crate::error::{Result, RullamaError};
 use crate::gguf::{GgufReader, dequant_tensor_to_f32_async};
 
-use super::audio_features::{MelEngine, MEL_BINS};
+use super::audio_features::{MEL_BINS, MelEngine};
 
 #[derive(Debug, Clone)]
 pub struct AudioConfig {
-    pub n_layers:      u32,    // gemma4.audio.block_count                (12)
-    pub hidden:        u32,    // gemma4.audio.embedding_length           (1024)
-    pub ffn_inter:     u32,    // gemma4.audio.feed_forward_length        (4096)
-    pub n_heads:       u32,    // gemma4.audio.attention.head_count       (8)
-    pub conv_kernel:   u32,    // gemma4.audio.conv_kernel_size           (5)
-    pub mel_bins:      u32,    // 128 (also our MEL_BINS)
-    pub eps:           f32,    // 1e-6 default
-    pub chunk_size:    u32,    // 12  (Ollama-hardcoded)
-    pub max_past:      u32,    // 12
-    pub max_future:    u32,    // 0
-    pub context_size:  u32,    // chunk_size + max_past + max_future = 24
-    pub logit_cap:     f32,    // 50.0
-    pub residual_w:    f32,    // 0.5
-    pub grad_clip:     f32,    // 1e10
-    pub d_text:        u32,    // text d_model — projector output
+    pub n_layers: u32,     // gemma4.audio.block_count                (12)
+    pub hidden: u32,       // gemma4.audio.embedding_length           (1024)
+    pub ffn_inter: u32,    // gemma4.audio.feed_forward_length        (4096)
+    pub n_heads: u32,      // gemma4.audio.attention.head_count       (8)
+    pub conv_kernel: u32,  // gemma4.audio.conv_kernel_size           (5)
+    pub mel_bins: u32,     // 128 (also our MEL_BINS)
+    pub eps: f32,          // 1e-6 default
+    pub chunk_size: u32,   // 12  (Ollama-hardcoded)
+    pub max_past: u32,     // 12
+    pub max_future: u32,   // 0
+    pub context_size: u32, // chunk_size + max_past + max_future = 24
+    pub logit_cap: f32,    // 50.0
+    pub residual_w: f32,   // 0.5
+    pub grad_clip: f32,    // 1e10
+    pub d_text: u32,       // text d_model — projector output
 }
 
 impl AudioConfig {
     pub fn from_gguf(r: &GgufReader, d_text: u32) -> Result<Self> {
-        let n_layers = r.get_opt("gemma4.audio.block_count")
+        let n_layers = r
+            .get_opt("gemma4.audio.block_count")
             .and_then(|v| v.as_u32().ok())
-            .ok_or_else(|| RullamaError::Inference(
-                "gemma4.audio.block_count missing — not a multimodal-audio GGUF?".into()
-            ))?;
-        let hidden    = r.get("gemma4.audio.embedding_length")?.as_u32()?;
+            .ok_or_else(|| {
+                RullamaError::Inference(
+                    "gemma4.audio.block_count missing — not a multimodal-audio GGUF?".into(),
+                )
+            })?;
+        let hidden = r.get("gemma4.audio.embedding_length")?.as_u32()?;
         let ffn_inter = r.get("gemma4.audio.feed_forward_length")?.as_u32()?;
-        let n_heads   = r.get("gemma4.audio.attention.head_count")?.as_u32()?;
-        let conv_kernel = r.get_opt("gemma4.audio.conv_kernel_size")
-            .and_then(|v| v.as_u32().ok()).unwrap_or(5);
-        let mel_bins  = r.get_opt("gemma4.audio.num_mel_bins")
-            .and_then(|v| v.as_u32().ok()).unwrap_or(MEL_BINS as u32);
-        let eps = r.get_opt("gemma4.audio.attention.layer_norm_epsilon")
-            .and_then(|v| v.as_f32().ok()).unwrap_or(1e-6);
+        let n_heads = r.get("gemma4.audio.attention.head_count")?.as_u32()?;
+        let conv_kernel = r
+            .get_opt("gemma4.audio.conv_kernel_size")
+            .and_then(|v| v.as_u32().ok())
+            .unwrap_or(5);
+        let mel_bins = r
+            .get_opt("gemma4.audio.num_mel_bins")
+            .and_then(|v| v.as_u32().ok())
+            .unwrap_or(MEL_BINS as u32);
+        let eps = r
+            .get_opt("gemma4.audio.attention.layer_norm_epsilon")
+            .and_then(|v| v.as_f32().ok())
+            .unwrap_or(1e-6);
         // The chunk/past/future/cap/residual constants live in Ollama's Go (not the GGUF).
         let chunk_size = 12;
         let max_past = 12;
         let max_future = 0;
         Ok(Self {
-            n_layers, hidden, ffn_inter, n_heads, conv_kernel, mel_bins, eps,
-            chunk_size, max_past, max_future,
+            n_layers,
+            hidden,
+            ffn_inter,
+            n_heads,
+            conv_kernel,
+            mel_bins,
+            eps,
+            chunk_size,
+            max_past,
+            max_future,
             context_size: chunk_size + max_past + max_future,
             logit_cap: 50.0,
             residual_w: 0.5,
@@ -75,12 +98,14 @@ impl AudioConfig {
         })
     }
 
-    pub fn head_dim(&self) -> u32 { self.hidden / self.n_heads }
+    pub fn head_dim(&self) -> u32 {
+        self.hidden / self.n_heads
+    }
 }
 
-/// CPU-side audio SSCP prefix: mel-spec → 2× (Conv2D 3×3 stride-2 + LayerNorm
-/// + ReLU) → linear projection to `hidden`. Produces the `[seq, hidden]`
-/// f32 input that `GpuAudioForward` feeds into the GPU Conformer block loop.
+/// CPU-side audio SSCP prefix: mel-spec → 2× (Conv2D 3×3 stride-2 + LayerNorm + ReLU)
+/// → linear projection to `hidden`. Produces the `[seq, hidden]` f32 input that
+/// `GpuAudioForward` feeds into the GPU Conformer block loop.
 ///
 /// Pre-M16 this struct was `AudioForward` and held the full 12-block CPU
 /// Conformer mirror (~360 MB f32 dequant) as a parity oracle. The GPU
@@ -92,13 +117,13 @@ pub struct AudioPrefix {
     mel: MelEngine,
 
     // SSCP weights (2 × Conv2D + LayerNorm + linear projection).
-    sscp0_w: Vec<f32>,        // [out_C0, in_C=1, kH=3, kW=3]
+    sscp0_w: Vec<f32>, // [out_C0, in_C=1, kH=3, kW=3]
     sscp0_norm_w: Vec<f32>,
     sscp0_norm_b: Option<Vec<f32>>,
-    sscp1_w: Vec<f32>,        // [out_C1, in_C=out_C0, kH=3, kW=3]
+    sscp1_w: Vec<f32>, // [out_C1, in_C=out_C0, kH=3, kW=3]
     sscp1_norm_w: Vec<f32>,
     sscp1_norm_b: Option<Vec<f32>>,
-    pre_encode_out_w: Vec<f32>,  // linear: out_C1 * F'' → hidden
+    pre_encode_out_w: Vec<f32>, // linear: out_C1 * F'' → hidden
     pre_encode_out_b: Option<Vec<f32>>,
     sscp0_out_c: usize,
     sscp1_out_c: usize,
@@ -138,15 +163,25 @@ impl AudioPrefix {
         let sscp_proj_in = *pre_desc.dims.first().unwrap_or(&1) as usize;
 
         Ok(Self {
-            cfg, mel: MelEngine::new(),
-            sscp0_w, sscp0_norm_w, sscp0_norm_b,
-            sscp1_w, sscp1_norm_w, sscp1_norm_b,
-            pre_encode_out_w, pre_encode_out_b,
-            sscp0_out_c, sscp1_out_c, sscp_proj_in,
+            cfg,
+            mel: MelEngine::new(),
+            sscp0_w,
+            sscp0_norm_w,
+            sscp0_norm_b,
+            sscp1_w,
+            sscp1_norm_w,
+            sscp1_norm_b,
+            pre_encode_out_w,
+            pre_encode_out_b,
+            sscp0_out_c,
+            sscp1_out_c,
+            sscp_proj_in,
         })
     }
 
-    pub fn cfg(&self) -> &AudioConfig { &self.cfg }
+    pub fn cfg(&self) -> &AudioConfig {
+        &self.cfg
+    }
 
     /// Compute a log-mel spectrogram from `samples` (16 kHz mono f32, [-1, 1]).
     /// Returns the flat `[n_frames * mel_bins]` tensor and the frame count.
@@ -169,19 +204,29 @@ impl AudioPrefix {
         }
 
         let mut x = self.sscp_conv_block(
-            &mel, 1, n_frames, mel_bins,
+            &mel,
+            1,
+            n_frames,
+            mel_bins,
             self.sscp0_out_c,
-            &self.sscp0_w, &self.sscp0_norm_w, self.sscp0_norm_b.as_deref(),
+            &self.sscp0_w,
+            &self.sscp0_norm_w,
+            self.sscp0_norm_b.as_deref(),
         );
-        let t1 = (n_frames + 1) / 2;
-        let f1 = (mel_bins + 1) / 2;
+        let t1 = n_frames.div_ceil(2);
+        let f1 = mel_bins.div_ceil(2);
         x = self.sscp_conv_block(
-            &x, self.sscp0_out_c, t1, f1,
+            &x,
+            self.sscp0_out_c,
+            t1,
+            f1,
             self.sscp1_out_c,
-            &self.sscp1_w, &self.sscp1_norm_w, self.sscp1_norm_b.as_deref(),
+            &self.sscp1_w,
+            &self.sscp1_norm_w,
+            self.sscp1_norm_b.as_deref(),
         );
-        let t_out = (t1 + 1) / 2;
-        let f_out = (f1 + 1) / 2;
+        let t_out = t1.div_ceil(2);
+        let f_out = f1.div_ceil(2);
         let flat_per_frame = f_out * self.sscp1_out_c;
         if flat_per_frame != self.sscp_proj_in {
             return Err(RullamaError::Inference(format!(
@@ -190,8 +235,12 @@ impl AudioPrefix {
             )));
         }
         let h = Self::linear_rows(
-            &x, &self.pre_encode_out_w, self.pre_encode_out_b.as_deref(),
-            t_out, self.sscp_proj_in, hidden,
+            &x,
+            &self.pre_encode_out_w,
+            self.pre_encode_out_b.as_deref(),
+            t_out,
+            self.sscp_proj_in,
+            hidden,
         );
         Ok((h, t_out))
     }
@@ -206,9 +255,14 @@ impl AudioPrefix {
     /// Output layout: `[T_out, F_out, C_out]` channel-LAST flat.
     fn sscp_conv_block(
         &self,
-        x: &[f32], in_c: usize, in_t: usize, in_f: usize,
+        x: &[f32],
+        in_c: usize,
+        in_t: usize,
+        in_f: usize,
         out_c: usize,
-        weight: &[f32], norm_w: &[f32], norm_b: Option<&[f32]>,
+        weight: &[f32],
+        norm_w: &[f32],
+        norm_b: Option<&[f32]>,
     ) -> Vec<f32> {
         // Conv2D kernel layout from GGUF: dims = [kW, kH, in_C, out_C]
         // (kW fastest); element at (oC, iC, kH, kW) = weight[((oC*in_c + iC)*3 + kH)*3 + kW].
@@ -230,10 +284,14 @@ impl AudioPrefix {
                     for ic in 0..in_c {
                         for kh in 0..k_h {
                             let it = in_t_base + kh as i64;
-                            if it < 0 || it >= in_t as i64 { continue; }
+                            if it < 0 || it >= in_t as i64 {
+                                continue;
+                            }
                             for kw in 0..k_w {
                                 let if_ = in_f_base + kw as i64;
-                                if if_ < 0 || if_ >= in_f as i64 { continue; }
+                                if if_ < 0 || if_ >= in_f as i64 {
+                                    continue;
+                                }
                                 let xi = ((it as usize) * in_f + if_ as usize) * in_c + ic;
                                 let wi = ((oc * in_c + ic) * k_h + kh) * k_w + kw;
                                 acc += x[xi] * weight[wi];
@@ -251,11 +309,12 @@ impl AudioPrefix {
                 let off = (ot * out_f + of) * out_c;
                 let row = &mut y[off..off + out_c];
                 let mean: f32 = row.iter().sum::<f32>() / out_c as f32;
-                let var: f32 = row.iter().map(|v| (v - mean) * (v - mean)).sum::<f32>() / out_c as f32;
+                let var: f32 =
+                    row.iter().map(|v| (v - mean) * (v - mean)).sum::<f32>() / out_c as f32;
                 let inv = 1.0 / (var + 1e-5).sqrt();
                 for c in 0..out_c {
-                    let normed = (row[c] - mean) * inv * norm_w[c]
-                        + norm_b.map(|b| b[c]).unwrap_or(0.0);
+                    let normed =
+                        (row[c] - mean) * inv * norm_w[c] + norm_b.map(|b| b[c]).unwrap_or(0.0);
                     row[c] = normed.max(0.0); // ReLU
                 }
             }
@@ -271,12 +330,18 @@ impl AudioPrefix {
         for r in 0..seq {
             let row = &mut x[r * dim..(r + 1) * dim];
             let mut sum_sq = 0f32;
-            for &v in row.iter() { sum_sq += v * v; }
+            for &v in row.iter() {
+                sum_sq += v * v;
+            }
             let inv_rms = 1.0 / (sum_sq / dim as f32 + eps).sqrt();
             if let Some(w) = weight {
-                for i in 0..dim { row[i] = row[i] * inv_rms * w[i]; }
+                for i in 0..dim {
+                    row[i] = row[i] * inv_rms * w[i];
+                }
             } else {
-                for v in row.iter_mut() { *v = *v * inv_rms; }
+                for v in row.iter_mut() {
+                    *v *= inv_rms;
+                }
             }
         }
     }
@@ -284,8 +349,12 @@ impl AudioPrefix {
     /// `y[s, n] = Σ_k x[s, k] * w[n, k]` (+ optional `b[n]`).
     /// `w` shape `[k_dim, n_dim]` (GGUF dim[0] = k = fast axis).
     pub fn linear_rows(
-        x: &[f32], w: &[f32], b: Option<&[f32]>,
-        seq: usize, k_dim: usize, n_dim: usize,
+        x: &[f32],
+        w: &[f32],
+        b: Option<&[f32]>,
+        seq: usize,
+        k_dim: usize,
+        n_dim: usize,
     ) -> Vec<f32> {
         let mut y = vec![0f32; seq * n_dim];
         for s in 0..seq {
@@ -294,7 +363,9 @@ impl AudioPrefix {
                 for k in 0..k_dim {
                     acc += x[s * k_dim + k] * w[n * k_dim + k];
                 }
-                if let Some(bias) = b { acc += bias[n]; }
+                if let Some(bias) = b {
+                    acc += bias[n];
+                }
                 y[s * n_dim + n] = acc;
             }
         }
@@ -308,4 +379,3 @@ async fn load_opt_f32(r: &GgufReader, name: &str) -> Result<Option<Vec<f32>>> {
         Err(_) => Ok(None),
     }
 }
-

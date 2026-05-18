@@ -78,7 +78,9 @@ impl Gemma4Config {
     pub fn from_gguf(r: &GgufReader) -> Result<Self> {
         let arch = r.get("general.architecture")?.as_str()?;
         if arch != "gemma4" {
-            return Err(RullamaError::Config(format!("expected architecture 'gemma4', got '{arch}'")));
+            return Err(RullamaError::Config(format!(
+                "expected architecture 'gemma4', got '{arch}'"
+            )));
         }
 
         let n_layers = r.get("gemma4.block_count")?.as_u32()?;
@@ -103,16 +105,26 @@ impl Gemma4Config {
             .transpose()?
             .unwrap_or(0);
 
-        let pattern = r.get("gemma4.attention.sliding_window_pattern")?.as_bool_array()?;
+        let pattern = r
+            .get("gemma4.attention.sliding_window_pattern")?
+            .as_bool_array()?;
         if pattern.len() as u32 != n_layers {
             return Err(RullamaError::Config(format!(
                 "sliding_window_pattern length {} != n_layers {}",
-                pattern.len(), n_layers
+                pattern.len(),
+                n_layers
             )));
         }
-        let layer_kinds: Vec<LayerKind> = pattern.iter().map(|&b| {
-            if b { LayerKind::SlidingWindow } else { LayerKind::Global }
-        }).collect();
+        let layer_kinds: Vec<LayerKind> = pattern
+            .iter()
+            .map(|&b| {
+                if b {
+                    LayerKind::SlidingWindow
+                } else {
+                    LayerKind::Global
+                }
+            })
+            .collect();
 
         // FFN intermediate sizes: GGUF stores as either a scalar or a per-layer array.
         let ffn_inter: Vec<u32> = match r.get("gemma4.feed_forward_length")? {
@@ -127,7 +139,9 @@ impl Gemma4Config {
         };
         if ffn_inter.len() as u32 != n_layers {
             return Err(RullamaError::Config(format!(
-                "feed_forward_length array length {} != n_layers {}", ffn_inter.len(), n_layers
+                "feed_forward_length array length {} != n_layers {}",
+                ffn_inter.len(),
+                n_layers
             )));
         }
 
@@ -156,9 +170,18 @@ impl Gemma4Config {
         // vocab
         let tokens = r.get("tokenizer.ggml.tokens")?.as_string_array()?;
         let vocab_size = tokens.len() as u32;
-        let bos_id = r.get_opt("tokenizer.ggml.bos_token_id").map(|v| v.as_u32()).transpose()?;
-        let pad_id = r.get_opt("tokenizer.ggml.padding_token_id").map(|v| v.as_u32()).transpose()?;
-        let unk_id = r.get_opt("tokenizer.ggml.unknown_token_id").map(|v| v.as_u32()).transpose()?;
+        let bos_id = r
+            .get_opt("tokenizer.ggml.bos_token_id")
+            .map(|v| v.as_u32())
+            .transpose()?;
+        let pad_id = r
+            .get_opt("tokenizer.ggml.padding_token_id")
+            .map(|v| v.as_u32())
+            .transpose()?;
+        let unk_id = r
+            .get_opt("tokenizer.ggml.unknown_token_id")
+            .map(|v| v.as_u32())
+            .transpose()?;
         let eos_ids: Vec<u32> = match r.get_opt("tokenizer.ggml.eos_token_ids") {
             Some(v) => v.as_u32_array()?,
             None => match r.get_opt("tokenizer.ggml.eos_token_id") {
@@ -168,30 +191,47 @@ impl Gemma4Config {
         };
 
         Ok(Self {
-            n_layers, d_model, max_pos,
-            n_heads, n_kv_heads_swa, n_kv_heads_global,
-            head_dim_global, head_dim_swa,
-            rms_norm_eps, sliding_window,
+            n_layers,
+            d_model,
+            max_pos,
+            n_heads,
+            n_kv_heads_swa,
+            n_kv_heads_global,
+            head_dim_global,
+            head_dim_swa,
+            rms_norm_eps,
+            sliding_window,
             layer_kinds,
             shared_kv_layers,
             ffn_inter,
-            rope_freq_base, rope_freq_base_swa,
-            rope_dim_global, rope_dim_swa,
+            rope_freq_base,
+            rope_freq_base_swa,
+            rope_dim_global,
+            rope_dim_swa,
             final_logit_softcap,
             ple_dim,
             vocab_size,
-            bos_id, eos_ids, pad_id, unk_id,
+            bos_id,
+            eos_ids,
+            pad_id,
+            unk_id,
         })
     }
 
     /// True iff this checkpoint uses per-layer-input embeddings (E2B/E4B variants).
-    pub fn has_ple(&self) -> bool { self.ple_dim > 0 }
+    pub fn has_ple(&self) -> bool {
+        self.ple_dim > 0
+    }
 
     /// Layer kind for layer `i`.
-    pub fn kind(&self, i: u32) -> LayerKind { self.layer_kinds[i as usize] }
+    pub fn kind(&self, i: u32) -> LayerKind {
+        self.layer_kinds[i as usize]
+    }
 
     /// FFN intermediate size for layer `i`.
-    pub fn ffn(&self, i: u32) -> u32 { self.ffn_inter[i as usize] }
+    pub fn ffn(&self, i: u32) -> u32 {
+        self.ffn_inter[i as usize]
+    }
 
     /// Number of KV heads on layer `i`, depending on its kind.
     pub fn n_kv_heads(&self, i: u32) -> u32 {

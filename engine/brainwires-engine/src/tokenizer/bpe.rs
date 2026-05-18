@@ -54,7 +54,9 @@ impl BpeTokenizer {
         let types = r.get("tokenizer.ggml.token_type")?.as_u32_array()?;
         if types.len() != tokens.len() {
             return Err(RullamaError::Tokenizer(format!(
-                "token_type len {} != tokens len {}", types.len(), tokens.len()
+                "token_type len {} != tokens len {}",
+                types.len(),
+                tokens.len()
             )));
         }
 
@@ -64,8 +66,12 @@ impl BpeTokenizer {
         }
 
         // Collect specials (CONTROL + USER_DEFINED), sort by length desc for longest-match.
-        let mut specials: Vec<(String, u32)> = tokens.iter().enumerate()
-            .filter(|(i, _)| types[*i] == TOKEN_TYPE_CONTROL || types[*i] == TOKEN_TYPE_USER_DEFINED)
+        let mut specials: Vec<(String, u32)> = tokens
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| {
+                types[*i] == TOKEN_TYPE_CONTROL || types[*i] == TOKEN_TYPE_USER_DEFINED
+            })
             .map(|(i, s)| (s.clone(), i as u32))
             .filter(|(s, _)| !s.is_empty())
             .collect();
@@ -103,7 +109,9 @@ impl BpeTokenizer {
         })
     }
 
-    pub fn vocab_size(&self) -> u32 { self.rev_vocab.len() as u32 }
+    pub fn vocab_size(&self) -> u32 {
+        self.rev_vocab.len() as u32
+    }
 
     pub fn id_to_str(&self, id: u32) -> Option<&str> {
         self.rev_vocab.get(id as usize).map(|s| s.as_str())
@@ -162,14 +170,18 @@ impl BpeTokenizer {
     }
 
     fn encode_text(&self, raw: &str, out: &mut Vec<u32>) {
-        if raw.is_empty() { return; }
+        if raw.is_empty() {
+            return;
+        }
 
         // SP normalize: ' ' → '▁'. SentencePiece's `add_dummy_prefix=true`
         // is applied once at the very start of the input by `encode()` —
         // not here per fragment, since llama.cpp's SPM tokenizer doesn't
         // re-apply the dummy prefix to fragments that follow special tokens.
-        let normalized: String = raw.chars()
-            .map(|c| if c == ' ' { SPM_SPACE } else { c }).collect();
+        let normalized: String = raw
+            .chars()
+            .map(|c| if c == ' ' { SPM_SPACE } else { c })
+            .collect();
 
         // short-circuit on full match
         if let Some(&id) = self.vocab.get(&normalized) {
@@ -185,14 +197,16 @@ impl BpeTokenizer {
             let mut best_rank = u32::MAX;
             let mut best_idx: i32 = -1;
             for i in 0..toks.len().saturating_sub(1) {
-                if let Some(&rank) = self.merges.get(&(toks[i].clone(), toks[i + 1].clone())) {
-                    if rank < best_rank {
-                        best_rank = rank;
-                        best_idx = i as i32;
-                    }
+                if let Some(&rank) = self.merges.get(&(toks[i].clone(), toks[i + 1].clone()))
+                    && rank < best_rank
+                {
+                    best_rank = rank;
+                    best_idx = i as i32;
                 }
             }
-            if best_idx < 0 { break; }
+            if best_idx < 0 {
+                break;
+            }
             let i = best_idx as usize;
             let merged = format!("{}{}", toks[i], toks[i + 1]);
             // Sanity: the merged result should be in vocab; if not, the merge entry
@@ -239,7 +253,9 @@ enum Frag {
 /// Find every occurrence of `special` in `text`, splitting `text` into Text/Special
 /// pieces and pushing them onto `out`.
 fn split_around(text: &str, special: &str, sid: u32, out: &mut Vec<Frag>) {
-    if text.is_empty() { return; }
+    if text.is_empty() {
+        return;
+    }
     if special.is_empty() {
         out.push(Frag::Text(text.to_string()));
         return;

@@ -1,3 +1,10 @@
+// f32 numerics: matmul, softmax, RMSNorm, RoPE, GeGLU, attention, and their
+// backward passes. Loop indices walk parallel arrays (W/x/y, Q/K/V/scores)
+// where iterator chains hurt readability vs `for i in 0..n`. Forward/backward
+// signatures take per-layer dims directly to mirror the Go reference.
+#![allow(clippy::needless_range_loop)]
+#![allow(clippy::too_many_arguments)]
+
 //! f32 tensor primitives. Plain `Vec<f32>` + explicit shape; no broadcasting magic.
 //!
 //! Every weight matrix here is laid out as it appears in GGUF: `[k, n]` in metadata
@@ -57,7 +64,7 @@ pub fn rope_neox(
     freq_factors: Option<&[f32]>,
 ) {
     debug_assert!(rope_dims <= head_dim);
-    debug_assert!(rope_dims % 2 == 0);
+    debug_assert!(rope_dims.is_multiple_of(2));
     debug_assert_eq!(x.len(), head_dim * n_heads);
 
     // NeoX layout: pair (x[i], x[i + rope_dims/2]) for i in 0..rope_dims/2.
@@ -75,7 +82,7 @@ pub fn rope_neox(
             let sin_t = theta.sin();
             let a = x[base_off + i];
             let b = x[base_off + i + half];
-            x[base_off + i]        = a * cos_t - b * sin_t;
+            x[base_off + i] = a * cos_t - b * sin_t;
             x[base_off + i + half] = a * sin_t + b * cos_t;
         }
         // Dimensions [rope_dims..head_dim] are untouched.
@@ -86,7 +93,9 @@ pub fn rope_neox(
 pub fn softmax(x: &mut [f32]) {
     let mut max = f32::NEG_INFINITY;
     for &v in x.iter() {
-        if v > max { max = v; }
+        if v > max {
+            max = v;
+        }
     }
     let mut sum = 0f32;
     for v in x.iter_mut() {
@@ -107,7 +116,7 @@ pub fn softmax(x: &mut [f32]) {
 pub fn geglu_split(gate: &[f32], up: &[f32], out: &mut [f32]) {
     debug_assert_eq!(gate.len(), up.len());
     debug_assert_eq!(out.len(), gate.len());
-    const SQRT_2_OVER_PI: f32 = 0.797_884_56;
+    const SQRT_2_OVER_PI: f32 = 0.797_884_6;
     const GELU_COEF_A: f32 = 0.044_715;
     for i in 0..gate.len() {
         let g = gate[i];
@@ -119,7 +128,9 @@ pub fn geglu_split(gate: &[f32], up: &[f32], out: &mut [f32]) {
 
 /// `y = cap * tanh(x / cap)` element-wise. Used for Gemma 4's final logit softcap.
 pub fn softcap(x: &mut [f32], cap: f32) {
-    if cap <= 0.0 { return; }
+    if cap <= 0.0 {
+        return;
+    }
     let inv = 1.0 / cap;
     for v in x.iter_mut() {
         *v = cap * (*v * inv).tanh();
@@ -153,13 +164,7 @@ pub const TARGET_MASK: u32 = u32::MAX;
 ///           `s = Σ_i dy[i]·w[i]·x[i]`
 ///
 /// Weight is frozen (LoRA convention); no `dw` is produced.
-pub fn rmsnorm_backward(
-    x: &[f32],
-    w: Option<&[f32]>,
-    dy: &[f32],
-    eps: f32,
-    dx: &mut [f32],
-) {
+pub fn rmsnorm_backward(x: &[f32], w: Option<&[f32]>, dy: &[f32], eps: f32, dx: &mut [f32]) {
     let n = x.len();
     assert_eq!(dy.len(), n);
     assert_eq!(dx.len(), n);
@@ -194,19 +199,13 @@ pub fn rmsnorm_backward(
 ///   `φ(g)   = √(2/π) · g · (1 + α·g²)`, `α = 0.044715`.
 /// So `gelu'(g) = 0.5·(1 + tanh φ) + 0.5·g·sech²(φ)·φ'(g)`,
 /// with `φ'(g) = √(2/π) · (1 + 3·α·g²)`.
-pub fn geglu_backward(
-    gate: &[f32],
-    up: &[f32],
-    dy: &[f32],
-    d_gate: &mut [f32],
-    d_up: &mut [f32],
-) {
+pub fn geglu_backward(gate: &[f32], up: &[f32], dy: &[f32], d_gate: &mut [f32], d_up: &mut [f32]) {
     let n = gate.len();
     assert_eq!(up.len(), n);
     assert_eq!(dy.len(), n);
     assert_eq!(d_gate.len(), n);
     assert_eq!(d_up.len(), n);
-    const SQRT_2_OVER_PI: f32 = 0.797_884_56;
+    const SQRT_2_OVER_PI: f32 = 0.797_884_6;
     const GELU_COEF_A: f32 = 0.044_715;
     for i in 0..n {
         let g = gate[i];
@@ -235,7 +234,7 @@ pub fn rope_neox_backward(
     freq_factors: Option<&[f32]>,
 ) {
     debug_assert!(rope_dims <= head_dim);
-    debug_assert!(rope_dims % 2 == 0);
+    debug_assert!(rope_dims.is_multiple_of(2));
     debug_assert_eq!(dx.len(), head_dim * n_heads);
     let half = rope_dims / 2;
     for h in 0..n_heads {
@@ -252,7 +251,7 @@ pub fn rope_neox_backward(
             let a = dx[base_off + i];
             let b = dx[base_off + i + half];
             // Inverse rotation: cos symmetric, sin sign-flipped.
-            dx[base_off + i]        =  a * c + b * s;
+            dx[base_off + i] = a * c + b * s;
             dx[base_off + i + half] = -a * s + b * c;
         }
     }
@@ -346,13 +345,7 @@ pub fn lora_matmul_col(
 /// LoRA primitive: rank-1 outer-product accumulator.
 /// `out[i, j] += scale · a[i] · b[j]` (or `=` when `!accumulate`).
 /// `out` shape `[outer_a, outer_b]`.
-pub fn lora_outer_add(
-    a: &[f32],
-    b: &[f32],
-    out: &mut [f32],
-    scale: f32,
-    accumulate: bool,
-) {
+pub fn lora_outer_add(a: &[f32], b: &[f32], out: &mut [f32], scale: f32, accumulate: bool) {
     let outer_a = a.len();
     let outer_b = b.len();
     assert_eq!(out.len(), outer_a * outer_b);
@@ -388,7 +381,7 @@ pub fn attention_forward(
     assert_eq!(v_hist.len(), history_len * n_kv_heads * head_dim);
     assert_eq!(out.len(), n_heads * head_dim);
     assert_eq!(probs.len(), n_heads * history_len);
-    assert!(n_kv_heads > 0 && n_heads % n_kv_heads == 0);
+    assert!(n_kv_heads > 0 && n_heads.is_multiple_of(n_kv_heads));
     let heads_per_kv = n_heads / n_kv_heads;
 
     for h in 0..n_heads {
@@ -476,9 +469,15 @@ pub fn attention_backward(
     assert_eq!(d_v_hist.len(), history_len * n_kv_heads * head_dim);
     let heads_per_kv = n_heads / n_kv_heads;
 
-    for x in d_q.iter_mut() { *x = 0.0; }
-    for x in d_k_hist.iter_mut() { *x = 0.0; }
-    for x in d_v_hist.iter_mut() { *x = 0.0; }
+    for x in d_q.iter_mut() {
+        *x = 0.0;
+    }
+    for x in d_k_hist.iter_mut() {
+        *x = 0.0;
+    }
+    for x in d_v_hist.iter_mut() {
+        *x = 0.0;
+    }
 
     for h in 0..n_heads {
         let kv = h / heads_per_kv;
@@ -542,13 +541,7 @@ pub fn attention_backward(
 ///
 /// The weight matrix is frozen (LoRA convention) — no weight gradient
 /// is computed.
-pub fn matmul_q4_k_backward_input(
-    w_bytes: &[u8],
-    dy: &[f32],
-    k: usize,
-    n: usize,
-    dx: &mut [f32],
-) {
+pub fn matmul_q4_k_backward_input(w_bytes: &[u8], dy: &[f32], k: usize, n: usize, dx: &mut [f32]) {
     assert_eq!(dy.len(), n, "dy length mismatch");
     assert_eq!(dx.len(), k, "dx length mismatch");
     assert_eq!(k % 256, 0, "k must be divisible by 256 for Q4_K");
@@ -574,13 +567,7 @@ pub fn matmul_q4_k_backward_input(
 /// as the Q4_K variant — `W` is `[n, k]` row-major, `dy` has length `n`,
 /// `dx` has length `k`. Used by the training output-projection backward
 /// for Gemma 4's tied Q6_K embedding.
-pub fn matmul_q6_k_backward_input(
-    w_bytes: &[u8],
-    dy: &[f32],
-    k: usize,
-    n: usize,
-    dx: &mut [f32],
-) {
+pub fn matmul_q6_k_backward_input(w_bytes: &[u8], dy: &[f32], k: usize, n: usize, dx: &mut [f32]) {
     assert_eq!(dy.len(), n, "dy length mismatch");
     assert_eq!(dx.len(), k, "dx length mismatch");
     assert_eq!(k % 256, 0, "k must be divisible by 256 for Q6_K");
@@ -634,11 +621,7 @@ pub fn rmsnorm_per_row_backward(
 /// scalar loss `-log softmax(target)`. When `target == TARGET_MASK` or
 /// `target >= logits.len()`, the gradient is zeroed and the loss is `0.0` —
 /// matches the masking semantics of the WGSL kernel.
-pub fn cross_entropy_backward(
-    logits: &[f32],
-    target: u32,
-    d_logits: &mut [f32],
-) -> f32 {
+pub fn cross_entropy_backward(logits: &[f32], target: u32, d_logits: &mut [f32]) -> f32 {
     debug_assert_eq!(logits.len(), d_logits.len());
     let n = logits.len();
     let masked = target == TARGET_MASK || (target as usize) >= n;
@@ -693,14 +676,18 @@ mod tests {
         rmsnorm(&x, None, 0.0, &mut y);
         // rms = sqrt((1+4+9)/3) = sqrt(14/3); each y_i = x_i / rms
         let rms = ((1.0_f32 + 4.0 + 9.0) / 3.0).sqrt();
-        for i in 0..3 { assert!((y[i] - x[i] / rms).abs() < 1e-6); }
+        for i in 0..3 {
+            assert!((y[i] - x[i] / rms).abs() < 1e-6);
+        }
     }
 
     #[test]
     fn softmax_uniform() {
         let mut x = vec![0.0, 0.0, 0.0, 0.0];
         softmax(&mut x);
-        for &v in &x { assert!((v - 0.25).abs() < 1e-6); }
+        for &v in &x {
+            assert!((v - 0.25).abs() < 1e-6);
+        }
     }
 
     #[test]
@@ -722,7 +709,9 @@ mod tests {
         let mut out = vec![999.0; 4];
         geglu_split(&gate, &up, &mut out);
         // gelu(0) = 0, so out = 0 * up = 0
-        for &v in &out { assert!(v.abs() < 1e-6); }
+        for &v in &out {
+            assert!(v.abs() < 1e-6);
+        }
     }
 
     #[test]
@@ -730,7 +719,9 @@ mod tests {
         let mut x = vec![1.0, 2.0, 3.0, 4.0]; // head_dim=4, n_heads=1
         let copy = x.clone();
         rope_neox(&mut x, 4, 1, 0, 4, 10000.0, None);
-        for i in 0..4 { assert!((x[i] - copy[i]).abs() < 1e-6); }
+        for i in 0..4 {
+            assert!((x[i] - copy[i]).abs() < 1e-6);
+        }
     }
 
     #[test]
@@ -741,7 +732,10 @@ mod tests {
         let mut grad = vec![0.0f32; n];
         let loss = cross_entropy_backward(&logits, 3, &mut grad);
         let expected_loss = (n as f32).ln();
-        assert!((loss - expected_loss).abs() < 1e-5, "loss {loss} != {expected_loss}");
+        assert!(
+            (loss - expected_loss).abs() < 1e-5,
+            "loss {loss} != {expected_loss}"
+        );
         // dL/d_logits = softmax - one_hot; sums to 0.
         let s: f32 = grad.iter().sum();
         assert!(s.abs() < 1e-5, "sum of d_logits = {s}");
@@ -759,7 +753,9 @@ mod tests {
         let mut grad = vec![0.0; 4];
         let loss = cross_entropy_backward(&logits, TARGET_MASK, &mut grad);
         assert_eq!(loss, 0.0);
-        for g in &grad { assert_eq!(*g, 0.0); }
+        for g in &grad {
+            assert_eq!(*g, 0.0);
+        }
     }
 
     #[test]
@@ -768,7 +764,9 @@ mod tests {
         let mut grad = vec![0.0; 3];
         let loss = cross_entropy_backward(&logits, 99, &mut grad);
         assert_eq!(loss, 0.0);
-        for g in &grad { assert_eq!(*g, 0.0); }
+        for g in &grad {
+            assert_eq!(*g, 0.0);
+        }
     }
 
     /// Compare analytical `rmsnorm_backward` against a finite-difference
@@ -780,9 +778,7 @@ mod tests {
         let w: Vec<f32> = (1..=n)
             .map(|i| (i as f32 * 0.7).sin() * 0.4 + 1.0)
             .collect();
-        let dy: Vec<f32> = (1..=n)
-            .map(|i| (i as f32 * 1.3).cos() * 0.5)
-            .collect();
+        let dy: Vec<f32> = (1..=n).map(|i| (i as f32 * 1.3).cos() * 0.5).collect();
         let eps = 1e-6f32;
 
         let mut dx = vec![0.0; n];
@@ -862,7 +858,10 @@ mod tests {
         }
 
         for (a, b) in dx.iter().zip(dx_ref.iter()) {
-            assert!((a - b).abs() < 1e-6, "per-row vs single-row mismatch: {a} vs {b}");
+            assert!(
+                (a - b).abs() < 1e-6,
+                "per-row vs single-row mismatch: {a} vs {b}"
+            );
         }
 
         // Also unweighted.
@@ -952,8 +951,16 @@ mod tests {
         // So |update| ≈ lr regardless of |g|.
         let expected_0 = 1.0 - lr * 0.1 / (0.1 + eps);
         let expected_1 = -0.5 - lr * (-0.2) / (0.2 + eps);
-        assert!((p[0] - expected_0).abs() < 1e-6, "p[0]={p0} expected={expected_0}", p0 = p[0]);
-        assert!((p[1] - expected_1).abs() < 1e-6, "p[1]={p1} expected={expected_1}", p1 = p[1]);
+        assert!(
+            (p[0] - expected_0).abs() < 1e-6,
+            "p[0]={p0} expected={expected_0}",
+            p0 = p[0]
+        );
+        assert!(
+            (p[1] - expected_1).abs() < 1e-6,
+            "p[1]={p1} expected={expected_1}",
+            p1 = p[1]
+        );
     }
 
     /// Adam converges on a tiny convex problem: minimize ½ (param - target)²,
@@ -968,9 +975,15 @@ mod tests {
         let lr = 0.05;
         for step in 1..=400u32 {
             let g = vec![param[0] - target];
-            adam_step(&g, &mut param, &mut m, &mut v, lr, 0.9, 0.999, 1e-8, 0.0, step);
+            adam_step(
+                &g, &mut param, &mut m, &mut v, lr, 0.9, 0.999, 1e-8, 0.0, step,
+            );
         }
-        assert!((param[0] - target).abs() < 1e-3, "converged to {p}", p = param[0]);
+        assert!(
+            (param[0] - target).abs() < 1e-3,
+            "converged to {p}",
+            p = param[0]
+        );
     }
 
     /// LoRA composed forward + backward — finite-difference check.
@@ -992,8 +1005,12 @@ mod tests {
         let scale = 0.5f32;
         let a: Vec<f32> = (0..r * k).map(|i| (i as f32 * 0.17).sin() * 0.4).collect();
         let b: Vec<f32> = (0..n * r).map(|i| (i as f32 * 0.29).cos() * 0.3).collect();
-        let x: Vec<f32> = (0..k).map(|i| (i as f32 * 0.31).sin() * 0.5 + 0.1).collect();
-        let dy: Vec<f32> = (0..n).map(|i| (i as f32 * 0.47).cos() * 0.3 + 0.2).collect();
+        let x: Vec<f32> = (0..k)
+            .map(|i| (i as f32 * 0.31).sin() * 0.5 + 0.1)
+            .collect();
+        let dy: Vec<f32> = (0..n)
+            .map(|i| (i as f32 * 0.47).cos() * 0.3 + 0.2)
+            .collect();
 
         // Forward: z = A @ x, y = scale · B @ z
         let forward = |a_in: &[f32], b_in: &[f32], x_in: &[f32]| -> Vec<f32> {
@@ -1019,9 +1036,7 @@ mod tests {
         // Finite-difference reference: perturb each (param, index) and
         // measure Δ(L) / (2h).
         let h = 1e-3f32;
-        let loss = |y: &[f32]| -> f32 {
-            y.iter().zip(dy.iter()).map(|(a, b)| a * b).sum()
-        };
+        let loss = |y: &[f32]| -> f32 { y.iter().zip(dy.iter()).map(|(a, b)| a * b).sum() };
 
         // dA
         for p in 0..r {
@@ -1090,14 +1105,23 @@ mod tests {
         let q: Vec<f32> = (0..q_len).map(|i| (i as f32 * 0.31).sin() * 0.4).collect();
         let k_hist: Vec<f32> = (0..kv_len).map(|i| (i as f32 * 0.17).cos() * 0.3).collect();
         let v_hist: Vec<f32> = (0..kv_len).map(|i| (i as f32 * 0.23).sin() * 0.5).collect();
-        let d_out: Vec<f32> = (0..q_len).map(|i| (i as f32 * 0.47).cos() * 0.3 + 0.1).collect();
+        let d_out: Vec<f32> = (0..q_len)
+            .map(|i| (i as f32 * 0.47).cos() * 0.3 + 0.1)
+            .collect();
 
         // Forward + save probs
         let mut out = vec![0f32; q_len];
         let mut probs = vec![0f32; n_heads * history_len];
         attention_forward(
-            &q, &k_hist, &v_hist, &mut out, &mut probs,
-            head_dim, n_heads, n_kv_heads, history_len,
+            &q,
+            &k_hist,
+            &v_hist,
+            &mut out,
+            &mut probs,
+            head_dim,
+            n_heads,
+            n_kv_heads,
+            history_len,
         );
 
         // Analytical
@@ -1105,23 +1129,42 @@ mod tests {
         let mut d_k = vec![0f32; kv_len];
         let mut d_v = vec![0f32; kv_len];
         attention_backward(
-            &q, &k_hist, &v_hist, &probs, &d_out,
-            &mut d_q, &mut d_k, &mut d_v,
-            head_dim, n_heads, n_kv_heads, history_len,
+            &q,
+            &k_hist,
+            &v_hist,
+            &probs,
+            &d_out,
+            &mut d_q,
+            &mut d_k,
+            &mut d_v,
+            head_dim,
+            n_heads,
+            n_kv_heads,
+            history_len,
         );
 
         let loss = |q_in: &[f32], k_in: &[f32], v_in: &[f32]| -> f32 {
             let mut o = vec![0f32; q_len];
             let mut p = vec![0f32; n_heads * history_len];
             attention_forward(
-                q_in, k_in, v_in, &mut o, &mut p,
-                head_dim, n_heads, n_kv_heads, history_len,
+                q_in,
+                k_in,
+                v_in,
+                &mut o,
+                &mut p,
+                head_dim,
+                n_heads,
+                n_kv_heads,
+                history_len,
             );
             o.iter().zip(d_out.iter()).map(|(a, b)| a * b).sum::<f32>()
         };
 
         let h = 1e-3f32;
-        let check = |label: &str, ana: &[f32], v: &[f32], idx_fn: &dyn Fn(usize) -> (Vec<f32>, Vec<f32>, Vec<f32>)| {
+        let check = |label: &str,
+                     ana: &[f32],
+                     v: &[f32],
+                     idx_fn: &dyn Fn(usize) -> (Vec<f32>, Vec<f32>, Vec<f32>)| {
             for i in 0..v.len() {
                 let (qp, kp, vp) = idx_fn(i);
                 let lp = loss(&qp, &kp, &vp);
@@ -1149,7 +1192,11 @@ mod tests {
         // k_hist gradient
         check("d_k", &d_k, &k_hist, &|i| {
             let mut perturbed = k_hist.clone();
-            let real_i = if i < k_hist.len() { i } else { i - k_hist.len() };
+            let real_i = if i < k_hist.len() {
+                i
+            } else {
+                i - k_hist.len()
+            };
             let sign = if i < k_hist.len() { 1.0 } else { -1.0 };
             perturbed[real_i] += sign * h;
             (q.clone(), perturbed, v_hist.clone())
@@ -1158,7 +1205,11 @@ mod tests {
         // v_hist gradient
         check("d_v", &d_v, &v_hist, &|i| {
             let mut perturbed = v_hist.clone();
-            let real_i = if i < v_hist.len() { i } else { i - v_hist.len() };
+            let real_i = if i < v_hist.len() {
+                i
+            } else {
+                i - v_hist.len()
+            };
             let sign = if i < v_hist.len() { 1.0 } else { -1.0 };
             perturbed[real_i] += sign * h;
             (q.clone(), k_hist.clone(), perturbed)
@@ -1174,7 +1225,9 @@ mod tests {
         let rope_dims = 8;
         let pos = 7;
         let base = 10_000.0f32;
-        let mut x: Vec<f32> = (0..head_dim * n_heads).map(|i| (i as f32) * 0.13 - 1.0).collect();
+        let mut x: Vec<f32> = (0..head_dim * n_heads)
+            .map(|i| (i as f32) * 0.13 - 1.0)
+            .collect();
         let orig = x.clone();
         rope_neox(&mut x, head_dim, n_heads, pos, rope_dims, base, None);
         rope_neox_backward(&mut x, head_dim, n_heads, pos, rope_dims, base, None);

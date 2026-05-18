@@ -4,10 +4,10 @@
 //! path (M2+) we'll instead stream raw bytes into GPU storage buffers and dequantize
 //! inside a fused matmul kernel — but we still want this code path for the parity oracle.
 
-use crate::error::{Result, RullamaError};
 use super::dtype::GgmlDtype;
 use super::quant::dequant_into_f32;
 use super::reader::GgufReader;
+use crate::error::{Result, RullamaError};
 
 /// Dequantize the named tensor into a freshly-allocated `Vec<f32>`.
 ///
@@ -35,19 +35,21 @@ pub fn dequant_row_to_f32(r: &GgufReader, name: &str, row_idx: usize) -> Result<
     if desc.dims.len() != 2 {
         return Err(RullamaError::Gguf(format!(
             "dequant_row_to_f32: tensor {} has {} dims, expected 2",
-            desc.name, desc.dims.len()
+            desc.name,
+            desc.dims.len()
         )));
     }
     let row_len = desc.dims[0] as usize;
     let n_rows = desc.dims[1] as usize;
     if row_idx >= n_rows {
         return Err(RullamaError::Gguf(format!(
-            "row {row_idx} out of bounds for tensor {} ({} rows)", desc.name, n_rows
+            "row {row_idx} out of bounds for tensor {} ({} rows)",
+            desc.name, n_rows
         )));
     }
 
     let block_elems = desc.dtype.block_elems();
-    if row_len % block_elems != 0 {
+    if !row_len.is_multiple_of(block_elems) {
         return Err(RullamaError::Gguf(format!(
             "row_len {} not multiple of block_elems {} for {}",
             row_len, block_elems, desc.name
@@ -62,7 +64,8 @@ pub fn dequant_row_to_f32(r: &GgufReader, name: &str, row_idx: usize) -> Result<
     if end > all_bytes.len() {
         return Err(RullamaError::Gguf(format!(
             "row bytes {start}..{end} extend past tensor data {} for {}",
-            all_bytes.len(), desc.name
+            all_bytes.len(),
+            desc.name
         )));
     }
 
@@ -95,24 +98,30 @@ pub async fn dequant_tensor_to_f32_async(r: &GgufReader, name: &str) -> Result<V
 
 /// Async equivalent of [`dequant_row_to_f32`]. Fetches only the row's bytes when the
 /// underlying fetcher supports byte-range reads (e.g. HTTP Range).
-pub async fn dequant_row_to_f32_async(r: &GgufReader, name: &str, row_idx: usize) -> Result<Vec<f32>> {
+pub async fn dequant_row_to_f32_async(
+    r: &GgufReader,
+    name: &str,
+    row_idx: usize,
+) -> Result<Vec<f32>> {
     let desc = r.tensor(name)?.clone();
     if desc.dims.len() != 2 {
         return Err(RullamaError::Gguf(format!(
             "dequant_row_to_f32_async: tensor {} has {} dims, expected 2",
-            desc.name, desc.dims.len()
+            desc.name,
+            desc.dims.len()
         )));
     }
     let row_len = desc.dims[0] as usize;
     let n_rows = desc.dims[1] as usize;
     if row_idx >= n_rows {
         return Err(RullamaError::Gguf(format!(
-            "row {row_idx} out of bounds for tensor {} ({} rows)", desc.name, n_rows
+            "row {row_idx} out of bounds for tensor {} ({} rows)",
+            desc.name, n_rows
         )));
     }
 
     let block_elems = desc.dtype.block_elems();
-    if row_len % block_elems != 0 {
+    if !row_len.is_multiple_of(block_elems) {
         return Err(RullamaError::Gguf(format!(
             "row_len {} not multiple of block_elems {} for {}",
             row_len, block_elems, desc.name
@@ -123,9 +132,8 @@ pub async fn dequant_row_to_f32_async(r: &GgufReader, name: &str, row_idx: usize
 
     // Fetch only the row's bytes via the fetcher (Range request when streaming).
     let row_bytes = {
-        let abs_offset = (r.tensor(name)?.offset
-            + (row_idx * bytes_per_row) as u64)
-            + r.data_section_offset();
+        let abs_offset =
+            (r.tensor(name)?.offset + (row_idx * bytes_per_row) as u64) + r.data_section_offset();
         r.fetcher().fetch(abs_offset, bytes_per_row as u64).await?
     };
 

@@ -24,10 +24,10 @@
 
 pub mod api;
 pub mod error;
-pub mod sampling;
 /// Inference-time LoRA adapter — parsed from safetensors bytes,
 /// attaches to a `Model` via `loadAdapter` / `clearAdapter`.
 pub mod lora;
+pub mod sampling;
 
 #[doc(hidden)]
 pub mod backend;

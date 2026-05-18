@@ -33,13 +33,18 @@ pub struct TiledTensor {
     pub n_rows: usize,
 }
 
+/// Key for tile / tile-metadata maps: tensor name + tile size in elements.
+type TileKey = (String, usize);
+/// Tile metadata: `(byte_offset, row_count)` per tile slice.
+type TileMeta = Vec<(usize, usize)>;
+
 pub struct WeightCache {
     reader: Arc<GgufReader>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     buffers: RefCell<HashMap<String, wgpu::Buffer>>,
-    tiles: RefCell<HashMap<(String, usize), Vec<wgpu::Buffer>>>,
-    tile_meta: RefCell<HashMap<(String, usize), Vec<(usize, usize)>>>,
+    tiles: RefCell<HashMap<TileKey, Vec<wgpu::Buffer>>>,
+    tile_meta: RefCell<HashMap<TileKey, TileMeta>>,
 }
 
 impl WeightCache {
@@ -56,7 +61,9 @@ impl WeightCache {
 
     /// Borrow of the underlying GGUF reader (for callers that occasionally need an
     /// f32 dequant outside the GPU buffer path — e.g. the small RoPE freq-factors tensor).
-    pub fn reader(&self) -> &GgufReader { &self.reader }
+    pub fn reader(&self) -> &GgufReader {
+        &self.reader
+    }
 
     /// Internal: create+upload a single GPU buffer from a slice.
     fn upload(&self, name: &str, bytes: &[u8]) -> wgpu::Buffer {
@@ -125,7 +132,10 @@ impl WeightCache {
 
     pub fn cached_bytes(&self) -> u64 {
         let single: u64 = self.buffers.borrow().values().map(|b| b.size()).sum();
-        let tiled: u64 = self.tiles.borrow().values()
+        let tiled: u64 = self
+            .tiles
+            .borrow()
+            .values()
             .flat_map(|v| v.iter().map(|b| b.size()))
             .sum();
         single + tiled
@@ -140,12 +150,24 @@ impl WeightCache {
     pub fn drop_prefix(&self, prefix: &str) -> usize {
         let mut removed = 0usize;
         self.buffers.borrow_mut().retain(|k, _| {
-            if k.starts_with(prefix) { removed += 1; false } else { true }
+            if k.starts_with(prefix) {
+                removed += 1;
+                false
+            } else {
+                true
+            }
         });
         self.tiles.borrow_mut().retain(|(k, _), _| {
-            if k.starts_with(prefix) { removed += 1; false } else { true }
+            if k.starts_with(prefix) {
+                removed += 1;
+                false
+            } else {
+                true
+            }
         });
-        self.tile_meta.borrow_mut().retain(|(k, _), _| !k.starts_with(prefix));
+        self.tile_meta
+            .borrow_mut()
+            .retain(|(k, _), _| !k.starts_with(prefix));
         removed
     }
 
@@ -154,13 +176,14 @@ impl WeightCache {
         let desc = self.reader.tensor(name)?;
         if desc.dims.len() != 2 {
             return Err(RullamaError::Inference(format!(
-                "buffer_tiles: tensor {name} has {} dims, expected 2", desc.dims.len()
+                "buffer_tiles: tensor {name} has {} dims, expected 2",
+                desc.dims.len()
             )));
         }
         let row_len = desc.dims[0] as usize;
         let n_rows = desc.dims[1] as usize;
         let block_elems = desc.dtype.block_elems();
-        if row_len % block_elems != 0 {
+        if !row_len.is_multiple_of(block_elems) {
             return Err(RullamaError::Inference(format!(
                 "buffer_tiles: row_len {row_len} not multiple of block_elems {block_elems}"
             )));
@@ -173,7 +196,11 @@ impl WeightCache {
             )));
         }
         let rows_per_tile = (max_bytes_per_tile / row_bytes).max(1);
-        Ok(TileLayout { n_rows, row_bytes, rows_per_tile })
+        Ok(TileLayout {
+            n_rows,
+            row_bytes,
+            rows_per_tile,
+        })
     }
 
     /// Split a 2-D quantized tensor along its slow (second) axis into multiple GPU
@@ -192,7 +219,7 @@ impl WeightCache {
         while row_start < layout.n_rows {
             let row_end = (row_start + layout.rows_per_tile).min(layout.n_rows);
             let byte_start = row_start * layout.row_bytes;
-            let byte_end   = row_end   * layout.row_bytes;
+            let byte_end = row_end * layout.row_bytes;
             let chunk = &all_bytes[byte_start..byte_end];
             let buf = self.upload(&format!("{name}#tile{row_start}"), chunk);
             metas.push((row_start, row_end - row_start));
@@ -206,9 +233,11 @@ impl WeightCache {
     /// Async variant of [`buffer_tiles`]. Fetches each tile's bytes through the
     /// fetcher (one Range request per tile when streaming), uploads, drops the
     /// temporary buffer. Works for any reader.
-    pub async fn buffer_tiles_async(&self, name: &str, max_bytes_per_tile: usize)
-        -> Result<Vec<TiledTensor>>
-    {
+    pub async fn buffer_tiles_async(
+        &self,
+        name: &str,
+        max_bytes_per_tile: usize,
+    ) -> Result<Vec<TiledTensor>> {
         let key = (name.to_string(), max_bytes_per_tile);
         if let Some(out) = self.tiles_cached(&key) {
             return Ok(out);
@@ -228,8 +257,9 @@ impl WeightCache {
         while row_start < layout.n_rows {
             let row_end = (row_start + layout.rows_per_tile).min(layout.n_rows);
             let byte_start = (row_start * layout.row_bytes) as u64;
-            let byte_end   = (row_end   * layout.row_bytes) as u64;
-            let chunk = self.reader
+            let byte_end = (row_end * layout.row_bytes) as u64;
+            let chunk = self
+                .reader
                 .fetch_tensor_range(name, byte_start, byte_end - byte_start)
                 .await?;
             let buf = self.upload(&format!("{name}#tile{row_start}"), &chunk);
@@ -247,11 +277,14 @@ impl WeightCache {
         let meta = self.tile_meta.borrow();
         match (tiles.get(key), meta.get(key)) {
             (Some(bufs), Some(metas)) => Some(
-                bufs.iter().zip(metas.iter())
+                bufs.iter()
+                    .zip(metas.iter())
                     .map(|(buf, &(row_start, n_rows))| TiledTensor {
-                        buffer: buf.clone(), row_start, n_rows,
+                        buffer: buf.clone(),
+                        row_start,
+                        n_rows,
                     })
-                    .collect()
+                    .collect(),
             ),
             _ => None,
         }
@@ -263,8 +296,14 @@ impl WeightCache {
         bufs: Vec<wgpu::Buffer>,
         metas: Vec<(usize, usize)>,
     ) -> Vec<TiledTensor> {
-        let result: Vec<TiledTensor> = bufs.iter().zip(metas.iter())
-            .map(|(buf, &(rs, nr))| TiledTensor { buffer: buf.clone(), row_start: rs, n_rows: nr })
+        let result: Vec<TiledTensor> = bufs
+            .iter()
+            .zip(metas.iter())
+            .map(|(buf, &(rs, nr))| TiledTensor {
+                buffer: buf.clone(),
+                row_start: rs,
+                n_rows: nr,
+            })
             .collect();
         self.tiles.borrow_mut().insert(key.clone(), bufs);
         self.tile_meta.borrow_mut().insert(key, metas);

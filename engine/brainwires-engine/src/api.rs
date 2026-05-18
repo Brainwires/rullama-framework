@@ -79,8 +79,13 @@ impl Model {
     /// Build a Model from an already-constructed GGUF reader. Shared by both
     /// the in-memory and streaming entry points so they can't drift.
     async fn from_reader(reader: GgufReader) -> Result<Self> {
-        Self::from_reader_with_modes(reader, true, true,
-            crate::reference::forward_chained::MAX_CONTEXT).await
+        Self::from_reader_with_modes(
+            reader,
+            true,
+            true,
+            crate::reference::forward_chained::MAX_CONTEXT,
+        )
+        .await
     }
 
     /// Like [`from_reader`] but lets the caller skip the vision and/or audio
@@ -101,8 +106,16 @@ impl Model {
         let r_arc = Arc::new(reader);
         let weights = Weights::new(r_arc.clone());
         let ctx = WgpuCtx::new().await?;
-        let pipes = Arc::new(Pipelines::new_with_features(&ctx.device, ctx.has_subgroups, ctx.has_f16));
-        let wcache = Arc::new(WeightCache::new(r_arc.clone(), ctx.device.clone(), ctx.queue.clone()));
+        let pipes = Arc::new(Pipelines::new_with_features(
+            &ctx.device,
+            ctx.has_subgroups,
+            ctx.has_f16,
+        ));
+        let wcache = Arc::new(WeightCache::new(
+            r_arc.clone(),
+            ctx.device.clone(),
+            ctx.queue.clone(),
+        ));
 
         // Detect vision tower (presence of v.patch_embd.weight). Build VisionForward
         // before consuming `ctx`/`pipes`/`wcache` into the text Forward.
@@ -124,7 +137,8 @@ impl Model {
             None
         };
 
-        let forward = Forward::new_with_max_context(cfg, ctx, pipes, weights, wcache, max_context).await?;
+        let forward =
+            Forward::new_with_max_context(cfg, ctx, pipes, weights, wcache, max_context).await?;
         Ok(Self {
             tokenizer,
             forward,
@@ -137,7 +151,9 @@ impl Model {
     }
 
     /// True iff this checkpoint carries a vision tower (gemma4:e2b/e4b).
-    pub fn has_vision_native(&self) -> bool { self.vision.is_some() }
+    pub fn has_vision_native(&self) -> bool {
+        self.vision.is_some()
+    }
 
     /// Encode an RGB image into a flat sequence of soft-token embeddings.
     ///
@@ -145,18 +161,22 @@ impl Model {
     /// to `[-1, 1]`. `h` and `w` must be multiples of `patch_size * n_merge` (= 48).
     /// Returns `[n_pooled_patches * d_text]` f32 — one row of d_text per soft token.
     pub async fn encode_image_native(
-        &self, pixels: &[f32], h: usize, w: usize,
+        &self,
+        pixels: &[f32],
+        h: usize,
+        w: usize,
         progress: Option<&dyn Fn(u32, u32)>,
     ) -> Result<Vec<f32>> {
         let v = self.vision.as_ref().ok_or_else(|| {
             crate::error::RullamaError::Inference(
-                "encode_image: this checkpoint has no vision tower".into()
+                "encode_image: this checkpoint has no vision tower".into(),
             )
         })?;
         // Clear any flag left over from a previous cancel so it doesn't
         // poison this encode.
         self.encode_cancel.store(false, Ordering::Relaxed);
-        v.encode(pixels, h, w, progress, Some(self.encode_cancel.clone())).await
+        v.encode(pixels, h, w, progress, Some(self.encode_cancel.clone()))
+            .await
     }
 
     /// Number of soft tokens an image of `h × w` pixels produces (after AvgPool 3×3
@@ -165,21 +185,25 @@ impl Model {
         let v = self.vision.as_ref()?;
         let cfg = v.cfg();
         let align = (cfg.patch_size * cfg.n_merge) as usize;
-        if h % align != 0 || w % align != 0 { return None; }
+        if !h.is_multiple_of(align) || !w.is_multiple_of(align) {
+            return None;
+        }
         let pooled_h = h / align;
         let pooled_w = w / align;
         Some(pooled_h * pooled_w)
     }
 
     /// True iff this checkpoint carries an audio tower.
-    pub fn has_audio_native(&self) -> bool { self.audio.is_some() }
+    pub fn has_audio_native(&self) -> bool {
+        self.audio.is_some()
+    }
 
     /// Encode raw 16 kHz mono PCM (`Vec<f32>` in `[-1, 1]`) into a flat sequence
     /// of soft-token embeddings. Returns `[n_audio_tokens * d_text]` f32.
     pub async fn encode_audio_native(&self, pcm: &[f32]) -> Result<Vec<f32>> {
         let a = self.audio.as_ref().ok_or_else(|| {
             crate::error::RullamaError::Inference(
-                "encode_audio: this checkpoint has no audio tower".into()
+                "encode_audio: this checkpoint has no audio tower".into(),
             )
         })?;
         self.encode_cancel.store(false, Ordering::Relaxed);
@@ -206,14 +230,14 @@ impl Model {
     /// `audioSentinelIds` shim.
     pub fn audio_sentinel_ids_native(&self) -> Option<(u32, u32)> {
         let begin = self.tokenizer.str_to_id("<|audio>")?;
-        let end   = self.tokenizer.str_to_id("<audio|>")?;
+        let end = self.tokenizer.str_to_id("<audio|>")?;
         Some((begin, end))
     }
 
     /// `(begin_id, end_id)` for the `<|image>` / `<image|>` sentinels.
     pub fn image_sentinel_ids_native(&self) -> Option<(u32, u32)> {
         let begin = self.tokenizer.str_to_id("<|image>")?;
-        let end   = self.tokenizer.str_to_id("<image|>")?;
+        let end = self.tokenizer.str_to_id("<image|>")?;
         Some((begin, end))
     }
 
@@ -284,14 +308,18 @@ impl Model {
     }
 
     /// Number of tokens in the vocab.
-    pub fn vocab_size_native(&self) -> u32 { self.forward.cfg().vocab_size }
+    pub fn vocab_size_native(&self) -> u32 {
+        self.forward.cfg().vocab_size
+    }
 
     /// Current sequence position (number of tokens fed so far).
-    pub fn position_native(&self) -> u32 { self.forward.pos() }
+    pub fn position_native(&self) -> u32 {
+        self.forward.pos()
+    }
 
     /// True iff `id` is one of the GGUF's EOS / EOT / end-of-turn tokens.
     pub fn is_eos_native(&self, id: u32) -> bool {
-        self.forward.cfg().eos_ids.iter().any(|&e| e == id)
+        self.forward.cfg().eos_ids.contains(&id)
     }
 
     /// Reset KV state so the next call starts from an empty conversation.
@@ -299,9 +327,13 @@ impl Model {
     /// training crate (`rullama-finetune::TrainingSession`) so it can
     /// drive `step_capture` and `backward_step` on the same model the
     /// inference path uses.
-    pub fn forward_mut(&mut self) -> &mut Forward { &mut self.forward }
+    pub fn forward_mut(&mut self) -> &mut Forward {
+        &mut self.forward
+    }
     /// Immutable handle on the text `Forward`.
-    pub fn forward(&self) -> &Forward { &self.forward }
+    pub fn forward(&self) -> &Forward {
+        &self.forward
+    }
 
     pub fn reset_native(&mut self) {
         self.forward.reset();
@@ -355,20 +387,22 @@ impl Model {
             )));
         }
         let sampler_len = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
-        let kv_len      = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+        let kv_len = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
         let sampler_off = 16usize;
-        let kv_off      = sampler_off + sampler_len;
+        let kv_off = sampler_off + sampler_len;
         if bytes.len() < kv_off + kv_len {
             return Err(crate::error::RullamaError::Inference(format!(
                 "model state snapshot: truncated (have {}, need {})",
-                bytes.len(), kv_off + kv_len,
+                bytes.len(),
+                kv_off + kv_len,
             )));
         }
         // Validate KV first (it's the larger / more failure-prone piece);
         // we can do this without mutating state because load_kv only
         // mutates after it has validated.
         self.forward.load_kv(&bytes[kv_off..kv_off + kv_len])?;
-        self.sampler.load_state(&bytes[sampler_off..sampler_off + sampler_len])
+        self.sampler
+            .load_state(&bytes[sampler_off..sampler_off + sampler_len])
             .map_err(|e| crate::error::RullamaError::Inference(format!("sampler restore: {e}")))?;
         Ok(())
     }
@@ -398,7 +432,9 @@ impl Model {
 
     /// True iff a LoRA adapter is currently active. Browser chat code
     /// uses this to surface the "with adapter" badge.
-    pub fn has_adapter_native(&self) -> bool { self.adapter.is_some() }
+    pub fn has_adapter_native(&self) -> bool {
+        self.adapter.is_some()
+    }
 
     /// Number of LoRA slots in the active adapter (zero if none).
     pub fn adapter_slot_count_native(&self) -> usize {
@@ -451,7 +487,9 @@ impl Model {
     /// partial assistant response — the model continues *that* response
     /// rather than starting a new one.
     pub fn render_chat_for_continuation_native(
-        &self, messages: &[ChatMessage], with_bos: bool,
+        &self,
+        messages: &[ChatMessage],
+        with_bos: bool,
     ) -> String {
         gemma4_small::render_for_continuation(messages, with_bos)
     }
@@ -465,7 +503,9 @@ impl Model {
     /// memory; only suitable for files that fit under the 4 GB wasm32 cap.
     #[wasm_bindgen(js_name = load)]
     pub async fn load_js(bytes: Vec<u8>) -> std::result::Result<Model, JsError> {
-        Self::load_native(bytes).await.map_err(|e| JsError::new(&format!("{e}")))
+        Self::load_native(bytes)
+            .await
+            .map_err(|e| JsError::new(&format!("{e}")))
     }
 
     /// JS entry point: stream the GGUF over HTTP via byte-range requests. The full
@@ -481,7 +521,9 @@ impl Model {
             .await
             .map_err(|e| JsError::new(&format!("{e}")))?;
         let arc: std::sync::Arc<dyn crate::gguf::TensorFetcher> = std::sync::Arc::new(fetcher);
-        Self::load_streaming(arc).await.map_err(|e| JsError::new(&format!("{e}")))
+        Self::load_streaming(arc)
+            .await
+            .map_err(|e| JsError::new(&format!("{e}")))
     }
 
     /// JS entry point: stream the GGUF from a file the host has already saved to
@@ -498,12 +540,16 @@ impl Model {
         total_bytes: f64,
     ) -> std::result::Result<Model, JsError> {
         if !total_bytes.is_finite() || total_bytes < 0.0 {
-            return Err(JsError::new("loadFromOpfs: total_bytes must be a non-negative finite number"));
+            return Err(JsError::new(
+                "loadFromOpfs: total_bytes must be a non-negative finite number",
+            ));
         }
         let total = total_bytes as u64;
         let fetcher = crate::gguf::OpfsFetcher::new(read_fn, total);
         let arc: std::sync::Arc<dyn crate::gguf::TensorFetcher> = std::sync::Arc::new(fetcher);
-        Self::load_streaming(arc).await.map_err(|e| JsError::new(&format!("{e}")))
+        Self::load_streaming(arc)
+            .await
+            .map_err(|e| JsError::new(&format!("{e}")))
     }
 
     /// JS entry point: text-only variant of [`loadFromOpfs`]. Skips vision and
@@ -520,38 +566,56 @@ impl Model {
         max_context: u32,
     ) -> std::result::Result<Model, JsError> {
         if !total_bytes.is_finite() || total_bytes < 0.0 {
-            return Err(JsError::new("loadFromOpfsTextOnly: total_bytes must be a non-negative finite number"));
+            return Err(JsError::new(
+                "loadFromOpfsTextOnly: total_bytes must be a non-negative finite number",
+            ));
         }
         let total = total_bytes as u64;
         let max_ctx = if max_context == 0 { 512 } else { max_context };
         let fetcher = crate::gguf::OpfsFetcher::new(read_fn, total);
         let arc: std::sync::Arc<dyn crate::gguf::TensorFetcher> = std::sync::Arc::new(fetcher);
-        Self::load_streaming_text_only(arc, max_ctx).await.map_err(|e| JsError::new(&format!("{e}")))
+        Self::load_streaming_text_only(arc, max_ctx)
+            .await
+            .map_err(|e| JsError::new(&format!("{e}")))
     }
 
     #[wasm_bindgen(js_name = encode)]
-    pub fn encode_js(&self, text: &str) -> Vec<u32> { self.encode_tokens(text) }
+    pub fn encode_js(&self, text: &str) -> Vec<u32> {
+        self.encode_tokens(text)
+    }
 
     #[wasm_bindgen(js_name = tokenStr)]
-    pub fn token_str_js(&self, id: u32) -> Option<String> { self.token_str_native(id) }
+    pub fn token_str_js(&self, id: u32) -> Option<String> {
+        self.token_str_native(id)
+    }
 
     #[wasm_bindgen(js_name = vocabSize, getter)]
-    pub fn vocab_size_js(&self) -> u32 { self.vocab_size_native() }
+    pub fn vocab_size_js(&self) -> u32 {
+        self.vocab_size_native()
+    }
 
     #[wasm_bindgen(js_name = position, getter)]
-    pub fn position_js(&self) -> u32 { self.position_native() }
+    pub fn position_js(&self) -> u32 {
+        self.position_native()
+    }
 
     #[wasm_bindgen(js_name = isEos)]
-    pub fn is_eos_js(&self, id: u32) -> bool { self.is_eos_native(id) }
+    pub fn is_eos_js(&self, id: u32) -> bool {
+        self.is_eos_native(id)
+    }
 
     #[wasm_bindgen(js_name = reset)]
-    pub fn reset_js(&mut self) { self.reset_native() }
+    pub fn reset_js(&mut self) {
+        self.reset_native()
+    }
 
     /// Snapshot KV cache + sampler state into a single Uint8Array. Caller
     /// writes the result to OPFS / IndexedDB for suspend/resume.
     #[wasm_bindgen(js_name = saveKvState)]
     pub async fn save_kv_state_js(&self) -> std::result::Result<Vec<u8>, JsError> {
-        self.save_kv_state_native().await.map_err(|e| JsError::new(&format!("{e}")))
+        self.save_kv_state_native()
+            .await
+            .map_err(|e| JsError::new(&format!("{e}")))
     }
 
     /// Inverse of [`saveKvState`]. Validates the snapshot against the
@@ -560,13 +624,16 @@ impl Model {
     /// token-replay rebuild in that case.
     #[wasm_bindgen(js_name = restoreKvState)]
     pub fn restore_kv_state_js(&mut self, bytes: Vec<u8>) -> std::result::Result<(), JsError> {
-        self.restore_kv_state_native(&bytes).map_err(|e| JsError::new(&format!("{e}")))
+        self.restore_kv_state_native(&bytes)
+            .map_err(|e| JsError::new(&format!("{e}")))
     }
 
     /// Feed one token, advance pos, return sampled next token id.
     #[wasm_bindgen(js_name = step)]
     pub async fn step_js(&mut self, token_id: u32) -> std::result::Result<u32, JsError> {
-        self.step_native(token_id).await.map_err(|e| JsError::new(&format!("{e}")))
+        self.step_native(token_id)
+            .await
+            .map_err(|e| JsError::new(&format!("{e}")))
     }
 
     /// Feed one pre-computed embedding (e.g. one soft-token row from
@@ -574,7 +641,8 @@ impl Model {
     /// `Float32Array` of length `d_model` (1536 for gemma4:e2b).
     #[wasm_bindgen(js_name = stepWithEmbedding)]
     pub async fn step_with_embedding_js(
-        &mut self, embedding: Vec<f32>,
+        &mut self,
+        embedding: Vec<f32>,
     ) -> std::result::Result<u32, JsError> {
         self.step_with_embedding_native(&embedding)
             .await
@@ -593,23 +661,30 @@ impl Model {
 
     /// True iff a LoRA adapter is currently active.
     #[wasm_bindgen(js_name = hasAdapter, getter)]
-    pub fn has_adapter_js(&self) -> bool { self.has_adapter_native() }
+    pub fn has_adapter_js(&self) -> bool {
+        self.has_adapter_native()
+    }
 
     /// Load a safetensors LoRA adapter from raw bytes (e.g. the
     /// `Uint8Array` returned by `TrainingSession.saveAdapter`).
     /// Returns the number of LoRA slots loaded.
     #[wasm_bindgen(js_name = loadAdapter)]
     pub fn load_adapter_js(&mut self, bytes: Vec<u8>) -> std::result::Result<usize, JsError> {
-        self.load_adapter_native(&bytes).map_err(|e| JsError::new(&format!("{e}")))
+        self.load_adapter_native(&bytes)
+            .map_err(|e| JsError::new(&format!("{e}")))
     }
 
     /// Drop the active adapter.
     #[wasm_bindgen(js_name = clearAdapter)]
-    pub fn clear_adapter_js(&mut self) { self.clear_adapter_native() }
+    pub fn clear_adapter_js(&mut self) {
+        self.clear_adapter_native()
+    }
 
     /// True iff this checkpoint carries a vision tower (gemma4:e2b/e4b).
     #[wasm_bindgen(js_name = hasVision, getter)]
-    pub fn has_vision_js(&self) -> bool { self.has_vision_native() }
+    pub fn has_vision_js(&self) -> bool {
+        self.has_vision_native()
+    }
 
     /// Encode an RGB image into a `Float32Array` of soft-token embeddings, flat
     /// `[n_pooled_patches × d_text]`. JS pass-in: `pixels` is the image in
@@ -617,7 +692,10 @@ impl Model {
     /// `w` are integer pixel dims aligned to `patch_size * n_merge` (= 48).
     #[wasm_bindgen(js_name = encodeImage)]
     pub async fn encode_image_js(
-        &self, pixels: Vec<f32>, h: u32, w: u32,
+        &self,
+        pixels: Vec<f32>,
+        h: u32,
+        w: u32,
         progress_cb: Option<js_sys::Function>,
     ) -> std::result::Result<Vec<f32>, JsError> {
         // Wrap the optional JS callback as a Rust closure that gets
@@ -625,11 +703,7 @@ impl Model {
         // "Analyzing image (N/M)…" instead of a frozen spinner.
         let cb: Option<Box<dyn Fn(u32, u32)>> = progress_cb.map(|f| {
             Box::new(move |layer: u32, total: u32| {
-                let _ = f.call2(
-                    &JsValue::NULL,
-                    &JsValue::from(layer),
-                    &JsValue::from(total),
-                );
+                let _ = f.call2(&JsValue::NULL, &JsValue::from(layer), &JsValue::from(total));
             }) as Box<dyn Fn(u32, u32)>
         });
         self.encode_image_native(&pixels, h as usize, w as usize, cb.as_deref())
@@ -641,7 +715,8 @@ impl Model {
     /// dimension is misaligned.
     #[wasm_bindgen(js_name = imageSoftTokenCount)]
     pub fn image_soft_token_count_js(&self, h: u32, w: u32) -> Option<u32> {
-        self.image_soft_token_count_native(h as usize, w as usize).map(|n| n as u32)
+        self.image_soft_token_count_native(h as usize, w as usize)
+            .map(|n| n as u32)
     }
 
     /// `[<|image> token id, <image|> token id]` if both sentinels exist in the
@@ -650,22 +725,24 @@ impl Model {
     #[wasm_bindgen(js_name = imageSentinelIds)]
     pub fn image_sentinel_ids_js(&self) -> Option<Vec<u32>> {
         let begin = self.tokenizer.str_to_id("<|image>")?;
-        let end   = self.tokenizer.str_to_id("<image|>")?;
+        let end = self.tokenizer.str_to_id("<image|>")?;
         Some(vec![begin, end])
     }
 
     /// True iff this checkpoint carries an audio tower.
     #[wasm_bindgen(js_name = hasAudio, getter)]
-    pub fn has_audio_js(&self) -> bool { self.has_audio_native() }
+    pub fn has_audio_js(&self) -> bool {
+        self.has_audio_native()
+    }
 
     /// Encode raw 16 kHz mono PCM (Float32Array in `[-1, 1]`) into a
     /// Float32Array of soft-token embeddings. Caller is responsible for
     /// resampling to 16 kHz if the source is at a different rate.
     #[wasm_bindgen(js_name = encodeAudio)]
-    pub async fn encode_audio_js(
-        &self, pcm: Vec<f32>,
-    ) -> std::result::Result<Vec<f32>, JsError> {
-        self.encode_audio_native(&pcm).await.map_err(|e| JsError::new(&format!("{e}")))
+    pub async fn encode_audio_js(&self, pcm: Vec<f32>) -> std::result::Result<Vec<f32>, JsError> {
+        self.encode_audio_native(&pcm)
+            .await
+            .map_err(|e| JsError::new(&format!("{e}")))
     }
 
     /// Decode WAV file bytes into 16 kHz mono Float32Array. Convenience for JS
@@ -689,7 +766,7 @@ impl Model {
     #[wasm_bindgen(js_name = audioSentinelIds)]
     pub fn audio_sentinel_ids_js(&self) -> Option<Vec<u32>> {
         let begin = self.tokenizer.str_to_id("<|audio>")?;
-        let end   = self.tokenizer.str_to_id("<audio|>")?;
+        let end = self.tokenizer.str_to_id("<audio|>")?;
         Some(vec![begin, end])
     }
 
@@ -716,7 +793,11 @@ impl Model {
     /// Render a single user message (and optional system message) into the Gemma 4
     /// chat-template prompt. JS callers pass `[{role, content}, ...]` as JSON.
     #[wasm_bindgen(js_name = renderChat)]
-    pub fn render_chat_js(&self, messages_json: JsValue, with_bos: bool) -> std::result::Result<String, JsError> {
+    pub fn render_chat_js(
+        &self,
+        messages_json: JsValue,
+        with_bos: bool,
+    ) -> std::result::Result<String, JsError> {
         let msgs: Vec<ChatMessage> = serde_wasm_bindgen::from_value(messages_json)
             .map_err(|e| JsError::new(&format!("invalid messages: {e}")))?;
         Ok(self.render_chat_native(&msgs, with_bos))
@@ -728,7 +809,9 @@ impl Model {
     /// assistant response.
     #[wasm_bindgen(js_name = renderChatForContinuation)]
     pub fn render_chat_for_continuation_js(
-        &self, messages_json: JsValue, with_bos: bool,
+        &self,
+        messages_json: JsValue,
+        with_bos: bool,
     ) -> std::result::Result<String, JsError> {
         let msgs: Vec<ChatMessage> = serde_wasm_bindgen::from_value(messages_json)
             .map_err(|e| JsError::new(&format!("invalid messages: {e}")))?;
@@ -769,8 +852,18 @@ pub struct GenerateOptions {
     pub stop: Vec<String>,
 }
 
-fn default_max_tokens() -> u32 { 256 }
-fn default_temperature() -> f32 { 0.7 }
-fn default_top_p() -> f32 { 0.95 }
-fn default_top_k() -> u32 { 40 }
-fn default_repetition_penalty() -> f32 { 1.0 }
+fn default_max_tokens() -> u32 {
+    256
+}
+fn default_temperature() -> f32 {
+    0.7
+}
+fn default_top_p() -> f32 {
+    0.95
+}
+fn default_top_k() -> u32 {
+    40
+}
+fn default_repetition_penalty() -> f32 {
+    1.0
+}

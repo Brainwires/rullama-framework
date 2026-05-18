@@ -28,9 +28,9 @@
 //!   - `RULLAMA_TRAIN_LOG_EVERY` — print every N optimizer steps    (default 5)
 //!   - `RULLAMA_TRAIN_LOSS_MODE` — `next_token` | `per_position`    (default next_token)
 //!   - `RULLAMA_TRAIN_TARGETS`   — comma-separated LoRA targets    (default attn_q,attn_k,attn_v,attn_o)
-//!                                  Valid: attn_q attn_k attn_v attn_o ffn_gate ffn_up ffn_down
+//!     Valid: attn_q attn_k attn_v attn_o ffn_gate ffn_up ffn_down
 //!   - `RULLAMA_TRAIN_LR_SCHED`  — `none` | `constant` | `linear` | `cosine` | `cosine_warm_restarts`
-//!                                  (default `none` — constant base lr)
+//!     (default `none` — constant base lr)
 //!   - `RULLAMA_TRAIN_WARMUP`    — warmup steps (default 0)
 //!   - `RULLAMA_TRAIN_GRAD_CLIP` — max grad L2 norm (default 0 = off)
 //!   - `RULLAMA_TRAIN_CHECKPOINT`— `1` enables gradient_checkpointing (default off)
@@ -46,20 +46,29 @@ use std::fs;
 use std::path::PathBuf;
 
 use rullama::api::Model;
+use rullama_finetune::TrainingSession;
 use rullama_finetune::dataset_loader::TrainingDataset;
 use rullama_finetune::shared::config::{LoraConfig, LossMode, LrScheduler, TrainingHyperparams};
-use rullama_finetune::TrainingSession;
 
 type BoxError = Box<dyn Error + Send + Sync>;
 
 fn env_u32(name: &str, default: u32) -> u32 {
-    env::var(name).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
+    env::var(name)
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
 }
 fn env_f32(name: &str, default: f32) -> f32 {
-    env::var(name).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
+    env::var(name)
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
 }
 fn env_u64(name: &str, default: u64) -> u64 {
-    env::var(name).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
+    env::var(name)
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
 }
 
 fn main() -> Result<(), BoxError> {
@@ -165,9 +174,8 @@ async fn run() -> Result<(), BoxError> {
                 // Active positions span [prompt_len - 1 .. n - 1]
                 // inclusive; each `targets[i]` is `input_ids[i+1]`.
                 let start = prompt.len().saturating_sub(1);
-                for i in start..n.saturating_sub(1) {
-                    targets[i] = input_ids[i + 1];
-                }
+                let end = n.saturating_sub(1);
+                targets[start..end].copy_from_slice(&input_ids[start + 1..end + 1]);
                 tokenized_per.push((input_ids, targets));
             }
         }
@@ -207,32 +215,30 @@ async fn run() -> Result<(), BoxError> {
         dropout: 0.0,
         target_modules: targets,
     };
-    let mut hp = TrainingHyperparams::default();
-    hp.learning_rate = lr;
-    hp.weight_decay = 0.0;
     // PerPosition forwards run over prompt+completion; NextToken only
     // ever sees prompt tokens. Size scratch for the longest possible.
-    hp.max_seq_len = match loss_mode {
+    let max_seq_len_for_hp = match loss_mode {
         LossMode::NextToken => max_prompt_len.max(32),
         LossMode::PerPosition => max_seq_len.max(32),
     };
-    hp.seed = seed;
-    hp.loss_mode = loss_mode;
-    hp.warmup_steps = warmup;
-    hp.max_grad_norm = grad_clip as f64;
-    hp.gradient_checkpointing = checkpointing;
-    hp.mixed_precision = mixed_precision;
+    let mut hp = TrainingHyperparams {
+        learning_rate: lr,
+        weight_decay: 0.0,
+        max_seq_len: max_seq_len_for_hp,
+        seed,
+        loss_mode,
+        warmup_steps: warmup,
+        max_grad_norm: grad_clip as f64,
+        gradient_checkpointing: checkpointing,
+        mixed_precision,
+        ..Default::default()
+    };
     if let Some(sched) = lr_sched {
         hp.lr_scheduler = sched;
     }
     eprintln!(
         "[hp] lr={lr:.3e} rank={rank} alpha={alpha} accum={accum} steps={n_steps} loss_mode={:?} lr_sched={:?} warmup={} grad_clip={} checkpoint={} mixed_precision={}",
-        loss_mode,
-        lr_sched,
-        warmup,
-        grad_clip,
-        checkpointing,
-        mixed_precision,
+        loss_mode, lr_sched, warmup, grad_clip, checkpointing, mixed_precision,
     );
     let mut session = TrainingSession::new(model, lora_cfg, hp)
         .map_err(|e| -> BoxError { format!("{e:?}").into() })?;

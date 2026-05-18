@@ -17,7 +17,10 @@ use rullama::reference::{KvState, Weights, forward_token, forward_token_gpu};
 fn main() -> ExitCode {
     let path = match env::args().nth(1) {
         Some(p) => p,
-        None => { eprintln!("usage: forward_parity <gguf>"); return ExitCode::from(2); }
+        None => {
+            eprintln!("usage: forward_parity <gguf>");
+            return ExitCode::from(2);
+        }
     };
     let bytes = fs::read(&path).expect("read");
     let reader = GgufReader::new(bytes).expect("parse");
@@ -46,22 +49,49 @@ fn main() -> ExitCode {
     println!("GPU forward #1 (cold cache) at pos=0 ...");
     let mut kv_gpu = KvState::new(&cfg);
     let t0 = Instant::now();
-    let logits_gpu = pollster::block_on(forward_token_gpu(&cfg, &weights, &wcache, &ctx, &pipes, &mut kv_gpu, bos, 0))
-        .expect("gpu");
+    let logits_gpu = pollster::block_on(forward_token_gpu(
+        &cfg,
+        &weights,
+        &wcache,
+        &ctx,
+        &pipes,
+        &mut kv_gpu,
+        bos,
+        0,
+    ))
+    .expect("gpu");
     let dt_gpu_cold = t0.elapsed();
 
     println!("GPU forward #2 (hot cache, fresh KV) at pos=0 ...");
     let mut kv_gpu2 = KvState::new(&cfg);
     let t0 = Instant::now();
-    let _logits_gpu2 = pollster::block_on(forward_token_gpu(&cfg, &weights, &wcache, &ctx, &pipes, &mut kv_gpu2, bos, 0))
-        .expect("gpu hot");
+    let _logits_gpu2 = pollster::block_on(forward_token_gpu(
+        &cfg,
+        &weights,
+        &wcache,
+        &ctx,
+        &pipes,
+        &mut kv_gpu2,
+        bos,
+        0,
+    ))
+    .expect("gpu hot");
     let dt_gpu_hot = t0.elapsed();
 
     println!("CPU forward: {dt_cpu:?}");
-    println!("GPU forward (cold): {dt_gpu_cold:?}  → speedup vs CPU: {:.1}x", dt_cpu.as_secs_f64() / dt_gpu_cold.as_secs_f64());
-    println!("GPU forward (hot):  {dt_gpu_hot:?}  → speedup vs CPU: {:.1}x", dt_cpu.as_secs_f64() / dt_gpu_hot.as_secs_f64());
-    println!("WeightCache: {} tensors, {:.1} MB on GPU",
-        wcache.cached_count(), wcache.cached_bytes() as f64 / 1e6);
+    println!(
+        "GPU forward (cold): {dt_gpu_cold:?}  → speedup vs CPU: {:.1}x",
+        dt_cpu.as_secs_f64() / dt_gpu_cold.as_secs_f64()
+    );
+    println!(
+        "GPU forward (hot):  {dt_gpu_hot:?}  → speedup vs CPU: {:.1}x",
+        dt_cpu.as_secs_f64() / dt_gpu_hot.as_secs_f64()
+    );
+    println!(
+        "WeightCache: {} tensors, {:.1} MB on GPU",
+        wcache.cached_count(),
+        wcache.cached_bytes() as f64 / 1e6
+    );
 
     // Distribution diff
     let n = logits_cpu.len();
@@ -70,12 +100,20 @@ fn main() -> ExitCode {
     let mut max_rel = 0f32;
     let mut nans = 0usize;
     for i in 0..n {
-        let c = logits_cpu[i]; let g = logits_gpu[i];
-        if g.is_nan() { nans += 1; continue; }
+        let c = logits_cpu[i];
+        let g = logits_gpu[i];
+        if g.is_nan() {
+            nans += 1;
+            continue;
+        }
         let abs = (g - c).abs();
         let rel = if c.abs() > 1e-3 { abs / c.abs() } else { 0.0 };
-        if abs > max_abs { max_abs = abs; }
-        if rel > max_rel { max_rel = rel; }
+        if abs > max_abs {
+            max_abs = abs;
+        }
+        if rel > max_rel {
+            max_rel = rel;
+        }
     }
     println!("logit diff: max_abs={max_abs:.5}, max_rel={max_rel:.5}, gpu_nans={nans}");
 
@@ -84,8 +122,14 @@ fn main() -> ExitCode {
     let mut gpu_top: Vec<(usize, f32)> = logits_gpu.iter().copied().enumerate().collect();
     gpu_top.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    println!("CPU top-5: {:?}", cpu_top.iter().take(5).collect::<Vec<_>>());
-    println!("GPU top-5: {:?}", gpu_top.iter().take(5).collect::<Vec<_>>());
+    println!(
+        "CPU top-5: {:?}",
+        cpu_top.iter().take(5).collect::<Vec<_>>()
+    );
+    println!(
+        "GPU top-5: {:?}",
+        gpu_top.iter().take(5).collect::<Vec<_>>()
+    );
 
     let cpu_argmax = cpu_top[0].0;
     let gpu_argmax = gpu_top[0].0;

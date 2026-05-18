@@ -7,11 +7,11 @@
 //! Built only when the `cpu-reference` cargo feature is enabled, to keep WASM bundle
 //! size small.
 
-pub mod ops;
-pub mod weights;
 pub mod forward;
 pub mod forward_chained;
 pub mod forward_gpu;
+pub mod ops;
+pub mod weights;
 
 pub use forward::{KvState, LayerKv, forward_token};
 pub use forward_gpu::forward_token_gpu;

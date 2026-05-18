@@ -13,7 +13,8 @@ pub const F16_MATMUL_BATCHED_TILED: &str = include_str!("wgsl/f16_matmul_batched
 pub const F16_MATMUL_BATCHED_TILED_V2: &str = include_str!("wgsl/f16_matmul_batched_tiled_v2.wgsl");
 pub const F16_MATMUL_BATCHED_TILED_V3: &str = include_str!("wgsl/f16_matmul_batched_tiled_v3.wgsl");
 pub const F16_MATMUL_BATCHED_TILED_V4: &str = include_str!("wgsl/f16_matmul_batched_tiled_v4.wgsl");
-pub const F16_MATMUL_BATCHED_TILED_V3_F16LDS: &str = include_str!("wgsl/f16_matmul_batched_tiled_v3_f16lds.wgsl");
+pub const F16_MATMUL_BATCHED_TILED_V3_F16LDS: &str =
+    include_str!("wgsl/f16_matmul_batched_tiled_v3_f16lds.wgsl");
 pub const QUICK_GEGLU: &str = include_str!("wgsl/quick_geglu.wgsl");
 pub const POS_EMBED_ADD: &str = include_str!("wgsl/pos_embed_add.wgsl");
 pub const ROPE_2D: &str = include_str!("wgsl/rope_2d.wgsl");
@@ -22,12 +23,18 @@ pub const VISION_ATTENTION_FLASH: &str = include_str!("wgsl/vision_attention_fla
 pub const VISION_ATTENTION_FLASH_Q4: &str = include_str!("wgsl/vision_attention_flash_q4.wgsl");
 pub const VISION_ATTENTION_FLASH_Q8: &str = include_str!("wgsl/vision_attention_flash_q8.wgsl");
 pub const VISION_ATTENTION_FLASH_Q16: &str = include_str!("wgsl/vision_attention_flash_q16.wgsl");
-pub const VISION_ATTENTION_FLASH_SUBGROUP: &str = include_str!("wgsl/vision_attention_flash_subgroup.wgsl");
-pub const VISION_ATTENTION_FLASH_SUB_T64: &str = include_str!("wgsl/vision_attention_flash_sub_t64.wgsl");
-pub const VISION_ATTENTION_FLASH_SUB_HPD: &str = include_str!("wgsl/vision_attention_flash_sub_hpd.wgsl");
-pub const VISION_ATTENTION_FLASH_SUB_HPD_F16: &str = include_str!("wgsl/vision_attention_flash_sub_hpd_f16.wgsl");
-pub const VISION_ATTENTION_FLASH_SUB_HPD_F16_Q16: &str = include_str!("wgsl/vision_attention_flash_sub_hpd_f16_q16.wgsl");
-pub const VISION_ATTENTION_FLASH_HPD_F16: &str = include_str!("wgsl/vision_attention_flash_hpd_f16.wgsl");
+pub const VISION_ATTENTION_FLASH_SUBGROUP: &str =
+    include_str!("wgsl/vision_attention_flash_subgroup.wgsl");
+pub const VISION_ATTENTION_FLASH_SUB_T64: &str =
+    include_str!("wgsl/vision_attention_flash_sub_t64.wgsl");
+pub const VISION_ATTENTION_FLASH_SUB_HPD: &str =
+    include_str!("wgsl/vision_attention_flash_sub_hpd.wgsl");
+pub const VISION_ATTENTION_FLASH_SUB_HPD_F16: &str =
+    include_str!("wgsl/vision_attention_flash_sub_hpd_f16.wgsl");
+pub const VISION_ATTENTION_FLASH_SUB_HPD_F16_Q16: &str =
+    include_str!("wgsl/vision_attention_flash_sub_hpd_f16_q16.wgsl");
+pub const VISION_ATTENTION_FLASH_HPD_F16: &str =
+    include_str!("wgsl/vision_attention_flash_hpd_f16.wgsl");
 pub const TRANSPOSE_PHD_TO_HPD: &str = include_str!("wgsl/transpose_phd_to_hpd.wgsl");
 pub const TRANSPOSE_HPD_TO_PHD: &str = include_str!("wgsl/transpose_hpd_to_phd.wgsl");
 pub const HALF_RESIDUAL_ADD: &str = include_str!("wgsl/half_residual_add.wgsl");
@@ -38,9 +45,12 @@ pub const BLOCK_LOCAL_ATTENTION: &str = include_str!("wgsl/block_local_attention
 pub const BF16_MATMUL: &str = include_str!("wgsl/bf16_matmul.wgsl");
 pub const BF16_MATMUL_BATCHED: &str = include_str!("wgsl/bf16_matmul_batched.wgsl");
 pub const BF16_MATMUL_BATCHED_TILED: &str = include_str!("wgsl/bf16_matmul_batched_tiled.wgsl");
-pub const BF16_MATMUL_BATCHED_TILED_V3: &str = include_str!("wgsl/bf16_matmul_batched_tiled_v3.wgsl");
-pub const BF16_MATMUL_BATCHED_TILED_V3_F16LDS: &str = include_str!("wgsl/bf16_matmul_batched_tiled_v3_f16lds.wgsl");
-pub const BF16_MATMUL_BATCHED_TILED_V2: &str = include_str!("wgsl/bf16_matmul_batched_tiled_v2.wgsl");
+pub const BF16_MATMUL_BATCHED_TILED_V3: &str =
+    include_str!("wgsl/bf16_matmul_batched_tiled_v3.wgsl");
+pub const BF16_MATMUL_BATCHED_TILED_V3_F16LDS: &str =
+    include_str!("wgsl/bf16_matmul_batched_tiled_v3_f16lds.wgsl");
+pub const BF16_MATMUL_BATCHED_TILED_V2: &str =
+    include_str!("wgsl/bf16_matmul_batched_tiled_v2.wgsl");
 pub const SCALE_PER_INNER_DIM: &str = include_str!("wgsl/scale_per_inner_dim.wgsl");
 pub const ADD_BIAS_BATCHED: &str = include_str!("wgsl/add_bias_batched.wgsl");
 pub const GEGLU: &str = include_str!("wgsl/geglu.wgsl");
@@ -60,10 +70,8 @@ pub const SOFTCAP: &str = include_str!("wgsl/softcap.wgsl");
 
 // --- Training kernels (M0 backward pass) ---
 pub const CROSS_ENTROPY_BACKWARD: &str = include_str!("wgsl/cross_entropy_backward.wgsl");
-pub const MATMUL_Q4_K_BACKWARD_INPUT: &str =
-    include_str!("wgsl/matmul_q4_k_backward_input.wgsl");
-pub const MATMUL_Q6_K_BACKWARD_INPUT: &str =
-    include_str!("wgsl/matmul_q6_k_backward_input.wgsl");
+pub const MATMUL_Q4_K_BACKWARD_INPUT: &str = include_str!("wgsl/matmul_q4_k_backward_input.wgsl");
+pub const MATMUL_Q6_K_BACKWARD_INPUT: &str = include_str!("wgsl/matmul_q6_k_backward_input.wgsl");
 pub const RMSNORM_BACKWARD: &str = include_str!("wgsl/rmsnorm_backward.wgsl");
 pub const RMSNORM_PER_ROW_BACKWARD: &str = include_str!("wgsl/rmsnorm_per_row_backward.wgsl");
 pub const GEGLU_BACKWARD: &str = include_str!("wgsl/geglu_backward.wgsl");

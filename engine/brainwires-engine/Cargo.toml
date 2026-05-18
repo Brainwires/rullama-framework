@@ -1,6 +1,6 @@
 [package]
 name             = "rullama"
-version          = "0.2.0"
+version          = "0.3.0"
 edition.workspace      = true
 rust-version.workspace = true
 license.workspace      = true
@@ -72,3 +72,6 @@ default = []
 # kept (no-op) so existing `cargo test --features cpu-reference` invocations
 # keep working without a script bump.
 cpu-reference = []
+
+[lints]
+workspace = true
