@@ -202,8 +202,12 @@ pub fn estimate_training_bytes(
         let n_heads_dim = (cfg.n_heads as u64) * head_dim_max;
         let n_kv_max = cfg.n_kv_heads_global.max(cfg.n_kv_heads_swa) as u64;
         let n_kv_dim = n_kv_max * head_dim_max;
-        let ffn_max = (0..cfg.n_layers).map(|i| cfg.ffn(i) as u64).max().unwrap_or(0);
-        let shared = (3 * ffn_max + 2 * n_heads_dim + 2 * n_kv_dim + 6 * d_model + 3 * ple_dim) * seq * 4;
+        let ffn_max = (0..cfg.n_layers)
+            .map(|i| cfg.ffn(i) as u64)
+            .max()
+            .unwrap_or(0);
+        let shared =
+            (3 * ffn_max + 2 * n_heads_dim + 2 * n_kv_dim + 6 * d_model + 3 * ple_dim) * seq * 4;
         let per_layer_hidden_in = d_model * seq * 4 * (cfg.n_layers as u64);
         bytes += shared + per_layer_hidden_in;
     } else {
@@ -212,7 +216,8 @@ pub fn estimate_training_bytes(
             let head_dim = cfg.head_dim(layer) as u64;
             let n_heads_dim = (cfg.n_heads as u64) * head_dim;
             let n_kv_dim = (cfg.n_kv_heads(layer) as u64) * head_dim;
-            let per_layer = (3 * ffn + 2 * n_heads_dim + 2 * n_kv_dim + 6 * d_model + 3 * ple_dim) * seq * 4;
+            let per_layer =
+                (3 * ffn + 2 * n_heads_dim + 2 * n_kv_dim + 6 * d_model + 3 * ple_dim) * seq * 4;
             bytes += per_layer;
         }
     }
@@ -241,7 +246,10 @@ impl TrainingSession {
         // `recompute_captures=true` in that mode so it replays each
         // layer's forward into the shared buffers before reading.
         let scratch = TrainingScratch::new_with_checkpointing(
-            &ctx, &cfg, max_seq_len, hp.gradient_checkpointing,
+            &ctx,
+            &cfg,
+            max_seq_len,
+            hp.gradient_checkpointing,
         );
         let loras = build_lora_state(Arc::clone(&ctx), &cfg, &lora_cfg, hp.seed)?;
 
@@ -271,12 +279,11 @@ impl TrainingSession {
         })
     }
 
-    /// Try the allocations a real session would do — `TrainingScratch`
-    /// + `LoraState` — against a *borrowed* Model, then drop them.
-    /// Returns the estimated GPU bytes on success; `Err` if any
-    /// allocation fails or wgpu surfaces an OOM error during the
-    /// trial. Used by the UI to refuse a `TrainingSession::new` call
-    /// that would consume the Model and then fail.
+    /// Try the allocations a real session would do — `TrainingScratch` +
+    /// `LoraState` — against a *borrowed* Model, then drop them. Returns the
+    /// estimated GPU bytes on success; `Err` if any allocation fails or wgpu
+    /// surfaces an OOM error during the trial. Used by the UI to refuse a
+    /// `TrainingSession::new` call that would consume the Model and then fail.
     pub async fn probe(
         model: &Model,
         lora_cfg: &LoraConfig,
@@ -289,7 +296,10 @@ impl TrainingSession {
         let scope = ctx.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
         let alloc_result: Result<(), TrainingError> = (|| {
             let _scratch = TrainingScratch::new_with_checkpointing(
-                &ctx, &cfg, hp.max_seq_len as u32, hp.gradient_checkpointing,
+                &ctx,
+                &cfg,
+                hp.max_seq_len as u32,
+                hp.gradient_checkpointing,
             );
             let _loras = build_lora_state(Arc::clone(&ctx), &cfg, lora_cfg, hp.seed)?;
             drop(_scratch);
@@ -538,7 +548,8 @@ impl TrainingSession {
         input_ids: &[u32],
         target_id: u32,
     ) -> Result<f32, TrainingError> {
-        self.forward_backward_with_progress(input_ids, target_id, None).await
+        self.forward_backward_with_progress(input_ids, target_id, None)
+            .await
     }
 
     /// Variant of [`forward_backward`] that fires `progress_cb` at
@@ -797,7 +808,9 @@ impl TrainingSession {
         progress_cb: Option<&'cb TrainingProgressCb<'cb>>,
     ) -> Result<f32, TrainingError> {
         self.zero_grads();
-        let loss = self.forward_backward_with_progress(input_ids, target_id, progress_cb).await?;
+        let loss = self
+            .forward_backward_with_progress(input_ids, target_id, progress_cb)
+            .await?;
         if self.max_grad_norm > 0.0 {
             self.clip_grad_norm(self.max_grad_norm).await?;
             if let Some(cb) = progress_cb {
@@ -837,7 +850,8 @@ impl TrainingSession {
         input_ids: &[u32],
         targets: &[u32],
     ) -> Result<f32, TrainingError> {
-        self.forward_backward_per_position_with_progress(input_ids, targets, None).await
+        self.forward_backward_per_position_with_progress(input_ids, targets, None)
+            .await
     }
 
     /// Variant of [`forward_backward_per_position`] that fires
@@ -1080,7 +1094,8 @@ impl TrainingSession {
         input_ids: &[u32],
         targets: &[u32],
     ) -> Result<f32, TrainingError> {
-        self.step_per_position_with_progress(input_ids, targets, None).await
+        self.step_per_position_with_progress(input_ids, targets, None)
+            .await
     }
 
     /// Variant of [`step_per_position`] with the same progress-callback

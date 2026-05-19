@@ -65,10 +65,9 @@ impl WeightCache {
         &self.reader
     }
 
-    /// Shared `Arc` to the underlying GGUF reader. Used by callers that
-    /// need to re-build a sibling like `VisionForward` after the cache
-    /// + struct was released to free GPU memory (the rebuild has to
-    /// re-read `VisionConfig::from_gguf`).
+    /// Shared `Arc` to the underlying GGUF reader. Used by callers that need to
+    /// re-build a sibling like `VisionForward` after the cache + struct was
+    /// released to free GPU memory (the rebuild has to re-read `VisionConfig::from_gguf`).
     pub fn reader_arc(&self) -> Arc<GgufReader> {
         self.reader.clone()
     }

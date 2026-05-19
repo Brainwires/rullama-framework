@@ -867,7 +867,10 @@ impl Model {
     /// Float32Array of soft-token embeddings. Caller is responsible for
     /// resampling to 16 kHz if the source is at a different rate.
     #[wasm_bindgen(js_name = encodeAudio)]
-    pub async fn encode_audio_js(&mut self, pcm: Vec<f32>) -> std::result::Result<Vec<f32>, JsError> {
+    pub async fn encode_audio_js(
+        &mut self,
+        pcm: Vec<f32>,
+    ) -> std::result::Result<Vec<f32>, JsError> {
         self.encode_audio_native(&pcm)
             .await
             .map_err(|e| JsError::new(&format!("{e}")))

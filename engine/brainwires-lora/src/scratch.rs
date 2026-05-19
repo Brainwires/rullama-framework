@@ -290,9 +290,18 @@ impl TrainingScratch {
                 hidden_in: make("layer.hidden_in_seq.SHARED_SENTINEL", 4), // placeholder; overwritten below
                 norm_x_attn: make("ckpt.shared.norm_x_attn", d_model_e * seq_e),
                 q_pre_norm: make("ckpt.shared.q_pre_norm", n_heads_e * head_dim_max_e * seq_e),
-                q_post_rope: make("ckpt.shared.q_post_rope", n_heads_e * head_dim_max_e * seq_e),
-                k_pre_norm: make("ckpt.shared.k_pre_norm", n_kv_max_e * head_dim_max_e * seq_e),
-                v_pre_norm: make("ckpt.shared.v_pre_norm", n_kv_max_e * head_dim_max_e * seq_e),
+                q_post_rope: make(
+                    "ckpt.shared.q_post_rope",
+                    n_heads_e * head_dim_max_e * seq_e,
+                ),
+                k_pre_norm: make(
+                    "ckpt.shared.k_pre_norm",
+                    n_kv_max_e * head_dim_max_e * seq_e,
+                ),
+                v_pre_norm: make(
+                    "ckpt.shared.v_pre_norm",
+                    n_kv_max_e * head_dim_max_e * seq_e,
+                ),
                 attn_out: make("ckpt.shared.attn_out", n_heads_e * head_dim_max_e * seq_e),
                 attn_proj: make("ckpt.shared.attn_proj", d_model_e * seq_e),
                 pre_ffn_rms: make("ckpt.shared.pre_ffn_rms", d_model_e * seq_e),

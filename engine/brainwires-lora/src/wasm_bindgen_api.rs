@@ -56,7 +56,11 @@ pub async fn probe_training_fit_js(
         .map_err(|e| JsError::new(&format!("invalid hyperparams JSON: {e}")))?;
 
     let report = match NativeSession::probe(model, &lora_cfg, &hp).await {
-        Ok(bytes) => ProbeReport { ok: true, estimated_bytes: bytes, reason: None },
+        Ok(bytes) => ProbeReport {
+            ok: true,
+            estimated_bytes: bytes,
+            reason: None,
+        },
         Err(e) => ProbeReport {
             ok: false,
             estimated_bytes: crate::session::estimate_training_bytes(
@@ -96,9 +100,7 @@ struct StepReport {
 ///
 /// Mirrors `Model::encode_image_js`'s wrapping pattern in
 /// `crates/rullama/src/api.rs`.
-fn wrap_progress_cb(
-    cb: Option<js_sys::Function>,
-) -> Option<Box<dyn Fn(&str, u32, u32)>> {
+fn wrap_progress_cb(cb: Option<js_sys::Function>) -> Option<Box<dyn Fn(&str, u32, u32)>> {
     cb.map(|f| {
         Box::new(move |phase: &str, current: u32, total: u32| {
             // Best-effort: failure to call the JS function (e.g. it

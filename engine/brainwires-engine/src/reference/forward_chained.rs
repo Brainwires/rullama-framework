@@ -889,7 +889,8 @@ impl Forward {
         loras: &'a [LayerLoraSlots<'a>],
         capture: &'a [LayerCaptureBuffers<'a>],
     ) -> Result<Vec<f32>> {
-        self.step_with_lora_seqcap_with_progress(token_id, loras, capture, None).await
+        self.step_with_lora_seqcap_with_progress(token_id, loras, capture, None)
+            .await
     }
 
     /// Variant of [`step_with_lora_seqcap`] that fires
@@ -918,7 +919,8 @@ impl Forward {
                 self.cfg.n_layers
             )));
         }
-        self.step_inner_with_progress(token_id, Some(capture), Some(loras), progress_cb).await
+        self.step_inner_with_progress(token_id, Some(capture), Some(loras), progress_cb)
+            .await
     }
 
     async fn step_inner<'a>(
@@ -927,7 +929,8 @@ impl Forward {
         capture: Option<&'a [LayerCaptureBuffers<'a>]>,
         loras: Option<&'a [LayerLoraSlots<'a>]>,
     ) -> Result<Vec<f32>> {
-        self.step_inner_with_progress(token_id, capture, loras, None).await
+        self.step_inner_with_progress(token_id, capture, loras, None)
+            .await
     }
 
     async fn step_inner_with_progress<'a>(
@@ -981,7 +984,8 @@ impl Forward {
             drop(ple_in);
         }
 
-        self.run_forward_from_hidden_with_progress(capture, loras, progress_cb).await
+        self.run_forward_from_hidden_with_progress(capture, loras, progress_cb)
+            .await
     }
 
     /// Run one forward step from a pre-computed `[d_model]` embedding (vision soft
@@ -1061,7 +1065,8 @@ impl Forward {
         capture: Option<&'a [LayerCaptureBuffers<'a>]>,
         loras: Option<&'a [LayerLoraSlots<'a>]>,
     ) -> Result<Vec<f32>> {
-        self.run_forward_from_hidden_with_progress(capture, loras, None).await
+        self.run_forward_from_hidden_with_progress(capture, loras, None)
+            .await
     }
 
     /// Variant of [`run_forward_from_hidden`] that fires
@@ -2523,9 +2528,17 @@ impl Forward {
         recompute_captures: bool,
     ) -> Result<f32> {
         self.backward_step_with_progress(
-            target_id, capture, loras, grads, scratch,
-            history_len, pos, recompute_captures, None,
-        ).await
+            target_id,
+            capture,
+            loras,
+            grads,
+            scratch,
+            history_len,
+            pos,
+            recompute_captures,
+            None,
+        )
+        .await
     }
 
     /// Variant of [`backward_step`] that fires

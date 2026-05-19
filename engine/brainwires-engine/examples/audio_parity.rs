@@ -96,7 +96,10 @@ fn main() -> ExitCode {
             let pcm: Vec<f32> = (0..n).map(|i| 0.3 * (omega * i as f32).sin()).collect();
             let wav_path = "/tmp/test_440hz.wav".to_string();
             write_pcm16_wav(&wav_path, &pcm, sr);
-            println!("wrote {wav_path} ({} samples @ {sr} Hz) — sine smoke", pcm.len());
+            println!(
+                "wrote {wav_path} ({} samples @ {sr} Hz) — sine smoke",
+                pcm.len()
+            );
             (pcm, wav_path)
         }
     };
@@ -233,35 +236,36 @@ fn transcode_to_wav(input: &str, output: &str) -> Result<(), String> {
     // little-endian PCM @ 16 kHz), `-c 1` (mono channel mix). Native
     // on macOS — uses CoreAudio's mp3/aac/m4a/wav decoders.
     let afc = Command::new("afconvert")
-        .args([
-            "-f", "WAVE",
-            "-d", "LEI16@16000",
-            "-c", "1",
-            input, output,
-        ])
+        .args(["-f", "WAVE", "-d", "LEI16@16000", "-c", "1", input, output])
         .status();
-    if let Ok(s) = &afc {
-        if s.success() {
-            println!("afconvert: {input} → {output} (macOS CoreAudio)");
-            return Ok(());
-        }
+    if let Ok(s) = &afc
+        && s.success()
+    {
+        println!("afconvert: {input} → {output} (macOS CoreAudio)");
+        return Ok(());
     }
 
     let ff = Command::new("ffmpeg")
         .args([
-            "-y", "-loglevel", "error",
-            "-i", input,
-            "-ac", "1",
-            "-ar", "16000",
-            "-f", "wav",
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            input,
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-f",
+            "wav",
             output,
         ])
         .status();
-    if let Ok(s) = &ff {
-        if s.success() {
-            println!("ffmpeg: {input} → {output}");
-            return Ok(());
-        }
+    if let Ok(s) = &ff
+        && s.success()
+    {
+        println!("ffmpeg: {input} → {output}");
+        return Ok(());
     }
 
     let afc_msg = match afc {

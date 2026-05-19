@@ -26,7 +26,7 @@ fn main() -> ExitCode {
     println!("loading model ...");
     let t0 = Instant::now();
     let bytes = fs::read(&gguf).expect("read");
-    let model = pollster::block_on(Model::load_native(bytes)).expect("load");
+    let mut model = pollster::block_on(Model::load_native(bytes)).expect("load");
     println!("  loaded in {:?}", t0.elapsed());
 
     if !model.has_audio_native() {
