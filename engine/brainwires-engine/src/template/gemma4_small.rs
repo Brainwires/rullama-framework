@@ -36,7 +36,9 @@ pub fn render_for_completion(messages: &[ChatMessage], with_bos: bool) -> String
 /// Render the `<turn|>` close marker that ends an assistant reply. Used when the
 /// caller needs to stitch a sampled reply back into the message history (e.g. for
 /// a multi-turn conversation).
-pub fn end_of_turn() -> &'static str { "<turn|>\n" }
+pub fn end_of_turn() -> &'static str {
+    "<turn|>\n"
+}
 
 /// Render messages for *continuation* of an interrupted assistant turn.
 ///
@@ -58,7 +60,10 @@ pub fn render_for_continuation(messages: &[ChatMessage], with_bos: bool) -> Stri
         out.push_str("<bos>");
     }
     let last_idx = messages.len().saturating_sub(1);
-    let last_is_model = messages.last().map(|m| m.role == ChatRole::Model).unwrap_or(false);
+    let last_is_model = messages
+        .last()
+        .map(|m| m.role == ChatRole::Model)
+        .unwrap_or(false);
 
     for (idx, msg) in messages.iter().enumerate() {
         let role = role_name(msg.role);
@@ -92,7 +97,10 @@ mod tests {
 
     #[test]
     fn renders_single_user_turn() {
-        let msgs = vec![ChatMessage { role: ChatRole::User, content: "Hi".to_string() }];
+        let msgs = vec![ChatMessage {
+            role: ChatRole::User,
+            content: "Hi".to_string(),
+        }];
         let s = render_for_completion(&msgs, false);
         assert_eq!(s, "<|turn>user\nHi<turn|>\n<|turn>model\n");
     }
@@ -100,8 +108,14 @@ mod tests {
     #[test]
     fn renders_with_bos_and_system() {
         let msgs = vec![
-            ChatMessage { role: ChatRole::System, content: "You are friendly.".to_string() },
-            ChatMessage { role: ChatRole::User,   content: "Hi".to_string() },
+            ChatMessage {
+                role: ChatRole::System,
+                content: "You are friendly.".to_string(),
+            },
+            ChatMessage {
+                role: ChatRole::User,
+                content: "Hi".to_string(),
+            },
         ];
         let s = render_for_completion(&msgs, true);
         assert_eq!(
@@ -113,8 +127,14 @@ mod tests {
     #[test]
     fn render_for_continuation_keeps_last_model_turn_open() {
         let msgs = vec![
-            ChatMessage { role: ChatRole::User,  content: "Hi".to_string() },
-            ChatMessage { role: ChatRole::Model, content: "Hello! How can I he".to_string() },
+            ChatMessage {
+                role: ChatRole::User,
+                content: "Hi".to_string(),
+            },
+            ChatMessage {
+                role: ChatRole::Model,
+                content: "Hello! How can I he".to_string(),
+            },
         ];
         let s = render_for_continuation(&msgs, false);
         assert_eq!(
@@ -125,9 +145,10 @@ mod tests {
 
     #[test]
     fn render_for_continuation_without_trailing_model_acts_like_completion() {
-        let msgs = vec![
-            ChatMessage { role: ChatRole::User, content: "Hi".to_string() },
-        ];
+        let msgs = vec![ChatMessage {
+            role: ChatRole::User,
+            content: "Hi".to_string(),
+        }];
         let s_cont = render_for_continuation(&msgs, false);
         let s_full = render_for_completion(&msgs, false);
         assert_eq!(s_cont, s_full);
@@ -136,9 +157,18 @@ mod tests {
     #[test]
     fn render_for_continuation_with_bos_and_system_preserves_history_closes() {
         let msgs = vec![
-            ChatMessage { role: ChatRole::System, content: "You are friendly.".to_string() },
-            ChatMessage { role: ChatRole::User,   content: "Hi".to_string() },
-            ChatMessage { role: ChatRole::Model,  content: "Hi! How can".to_string() },
+            ChatMessage {
+                role: ChatRole::System,
+                content: "You are friendly.".to_string(),
+            },
+            ChatMessage {
+                role: ChatRole::User,
+                content: "Hi".to_string(),
+            },
+            ChatMessage {
+                role: ChatRole::Model,
+                content: "Hi! How can".to_string(),
+            },
         ];
         let s = render_for_continuation(&msgs, true);
         assert_eq!(
@@ -157,7 +187,10 @@ mod tests {
         let bytes = std::fs::read(path).unwrap();
         let r = crate::gguf::GgufReader::new(bytes).unwrap();
         let tok = crate::tokenizer::BpeTokenizer::from_gguf(&r).unwrap();
-        let msgs = vec![ChatMessage { role: ChatRole::User, content: "Hi".to_string() }];
+        let msgs = vec![ChatMessage {
+            role: ChatRole::User,
+            content: "Hi".to_string(),
+        }];
         let s = render_for_completion(&msgs, false);
         let ids = tok.encode(&s);
         // Should match the canonical layout we used in M3 manually:

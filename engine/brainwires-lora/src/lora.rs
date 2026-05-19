@@ -93,14 +93,7 @@ pub struct LoraLayer {
 impl LoraLayer {
     /// Allocate fresh A and B buffers, initialize A with a deterministic
     /// small-variance pattern (seeded), B with zeros.
-    pub fn new(
-        ctx: &WgpuCtx,
-        in_dim: u32,
-        rank: u32,
-        out_dim: u32,
-        alpha: f32,
-        seed: u64,
-    ) -> Self {
+    pub fn new(ctx: &WgpuCtx, in_dim: u32, rank: u32, out_dim: u32, alpha: f32, seed: u64) -> Self {
         let scale = alpha / rank as f32;
         let device = &ctx.device;
 
@@ -130,21 +123,21 @@ impl LoraLayer {
         let mut state: u64 = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let scale_init = 1.0f32 / (in_dim as f32).sqrt();
         for slot in a_init.iter_mut() {
-            state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
             let bits = (state >> 33) as u32;
             // [-1, 1] uniform → scaled.
             let u = ((bits as f32) / (u32::MAX as f32 / 2.0)) - 1.0;
             *slot = u * scale_init;
         }
-        ctx.queue
-            .write_buffer(&a, 0, bytemuck::cast_slice(&a_init));
+        ctx.queue.write_buffer(&a, 0, bytemuck::cast_slice(&a_init));
 
         // B starts at zero; the buffer was created with COPY_DST so just
         // queue a zero-fill (wgpu zeroes uninitialized buffers but we
         // make it explicit for clarity).
         let b_init = vec![0f32; out_dim as usize * rank as usize];
-        ctx.queue
-            .write_buffer(&b, 0, bytemuck::cast_slice(&b_init));
+        ctx.queue.write_buffer(&b, 0, bytemuck::cast_slice(&b_init));
 
         // Gradient + Adam buffers, all f32, all zero-initialized. Same
         // usage flags as A/B so they can participate in copy operations
@@ -262,7 +255,9 @@ impl LoraState {
     /// Borrow the GPU context — used by `load_adapter_into_state` to
     /// upload tensor bytes into the existing A/B buffers without
     /// requiring the caller to pass `ctx` separately.
-    pub fn ctx(&self) -> &WgpuCtx { &self.ctx }
+    pub fn ctx(&self) -> &WgpuCtx {
+        &self.ctx
+    }
 
     /// Iterate over all `(key, layer)` pairs in deterministic
     /// (`BTreeMap`) order.
@@ -291,9 +286,7 @@ impl LoraState {
     pub fn parameter_count(&self) -> u64 {
         self.layers
             .values()
-            .map(|l| {
-                (l.in_dim as u64 * l.rank as u64) + (l.out_dim as u64 * l.rank as u64)
-            })
+            .map(|l| (l.in_dim as u64 * l.rank as u64) + (l.out_dim as u64 * l.rank as u64))
             .sum()
     }
 }
@@ -325,18 +318,25 @@ mod tests {
             usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        let mut enc = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("read.enc"),
-        });
+        let mut enc = ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("read.enc"),
+            });
         enc.copy_buffer_to_buffer(&layer.b, 0, &read, 0, (12 * 4 * 4) as u64);
         ctx.queue.submit(Some(enc.finish()));
 
         // Quick blocking readback.
         let slice = read.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |r| { tx.send(r).ok(); });
+        slice.map_async(wgpu::MapMode::Read, move |r| {
+            tx.send(r).ok();
+        });
         ctx.device
-            .poll(wgpu::PollType::Wait { submission_index: None, timeout: None })
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            })
             .expect("poll");
         rx.recv().unwrap().unwrap();
         let view = slice.get_mapped_range();
@@ -350,7 +350,9 @@ mod tests {
     fn lora_layer_carries_grad_and_adam_buffers() {
         let ctx = Arc::new(pollster::block_on(WgpuCtx::new()).expect("wgpu"));
         let mut state = LoraState::new(Arc::clone(&ctx));
-        state.insert(LoraKey::new(0, "attn_q"), 8, 2, 4, 4.0, 1).unwrap();
+        state
+            .insert(LoraKey::new(0, "attn_q"), 8, 2, 4, 4.0, 1)
+            .unwrap();
         let layer = state.get(&LoraKey::new(0, "attn_q")).unwrap();
         assert_eq!(layer.a_len(), 16);
         assert_eq!(layer.b_len(), 8);
@@ -376,8 +378,12 @@ mod tests {
         // A is `[rank, in_dim] = [4, 16] = 64` elements; readback those bytes.
         let mut state_a = LoraState::new(Arc::clone(&ctx));
         let mut state_b = LoraState::new(Arc::clone(&ctx));
-        state_a.insert(key.clone(), 16, 4, 12, 8.0, 0xC0FFEE).unwrap();
-        state_b.insert(key.clone(), 16, 4, 12, 8.0, 0xC0FFEE).unwrap();
+        state_a
+            .insert(key.clone(), 16, 4, 12, 8.0, 0xC0FFEE)
+            .unwrap();
+        state_b
+            .insert(key.clone(), 16, 4, 12, 8.0, 0xC0FFEE)
+            .unwrap();
         let layer_a = state_a.get(&key).unwrap();
         let layer_b = state_b.get(&key).unwrap();
         let a_vals = read_a(&ctx, &layer_a.a, layer_a.a_len());
@@ -387,10 +393,15 @@ mod tests {
         // And a different seed must produce a different init (otherwise
         // the LCG would be ignoring `seed`).
         let mut state_c = LoraState::new(Arc::clone(&ctx));
-        state_c.insert(key.clone(), 16, 4, 12, 8.0, 0xC0FFEE ^ 1).unwrap();
+        state_c
+            .insert(key.clone(), 16, 4, 12, 8.0, 0xC0FFEE ^ 1)
+            .unwrap();
         let layer_c = state_c.get(&key).unwrap();
         let c_vals = read_a(&ctx, &layer_c.a, layer_c.a_len());
-        assert_ne!(a_vals, c_vals, "different seed must produce different A init");
+        assert_ne!(
+            a_vals, c_vals,
+            "different seed must produce different A init"
+        );
     }
 
     fn read_a(ctx: &WgpuCtx, buf: &wgpu::Buffer, n: usize) -> Vec<f32> {
@@ -401,15 +412,24 @@ mod tests {
             usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        let mut enc = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("read.enc"),
-        });
+        let mut enc = ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("read.enc"),
+            });
         enc.copy_buffer_to_buffer(buf, 0, &read, 0, bytes);
         ctx.queue.submit(Some(enc.finish()));
         let slice = read.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |r| { tx.send(r).ok(); });
-        ctx.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
+        slice.map_async(wgpu::MapMode::Read, move |r| {
+            tx.send(r).ok();
+        });
+        ctx.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            })
+            .unwrap();
         rx.recv().unwrap().unwrap();
         let view = slice.get_mapped_range();
         let v: Vec<f32> = bytemuck::cast_slice(&view).to_vec();
@@ -422,8 +442,12 @@ mod tests {
     fn lora_state_parameter_count() {
         let ctx = Arc::new(pollster::block_on(WgpuCtx::new()).expect("wgpu"));
         let mut state = LoraState::new(Arc::clone(&ctx));
-        state.insert(LoraKey::new(0, "attn_q"), 16, 4, 12, 8.0, 1).unwrap();
-        state.insert(LoraKey::new(0, "attn_k"), 16, 4, 8, 8.0, 2).unwrap();
+        state
+            .insert(LoraKey::new(0, "attn_q"), 16, 4, 12, 8.0, 1)
+            .unwrap();
+        state
+            .insert(LoraKey::new(0, "attn_k"), 16, 4, 8, 8.0, 2)
+            .unwrap();
         // 16*4 + 12*4 = 64 + 48 = 112 for first
         // 16*4 + 8*4  = 64 + 32 =  96 for second
         // total 208

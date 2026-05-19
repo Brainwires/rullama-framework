@@ -42,7 +42,11 @@ fn main() -> ExitCode {
     };
 
     println!("file:        {path}");
-    println!("size:        {} bytes ({:.2} GB)", n_bytes, n_bytes as f64 / 1e9);
+    println!(
+        "size:        {} bytes ({:.2} GB)",
+        n_bytes,
+        n_bytes as f64 / 1e9
+    );
     println!("gguf v{}", r.version());
     println!("alignment:   {}", r.alignment());
     println!("metadata kv: {}", r.metadata().len());
@@ -63,12 +67,22 @@ fn main() -> ExitCode {
 
     println!("== first 10 tensors ==");
     for t in r.tensors().iter().take(10) {
-        println!("  {:>7} {:?} {:?}", format!("{:?}", t.dtype), t.dims, t.name);
+        println!(
+            "  {:>7} {:?} {:?}",
+            format!("{:?}", t.dtype),
+            t.dims,
+            t.name
+        );
     }
     println!("== last 5 tensors ==");
     let n = r.tensors().len();
     for t in r.tensors().iter().skip(n.saturating_sub(5)) {
-        println!("  {:>7} {:?} {:?}", format!("{:?}", t.dtype), t.dims, t.name);
+        println!(
+            "  {:>7} {:?} {:?}",
+            format!("{:?}", t.dtype),
+            t.dims,
+            t.name
+        );
     }
     println!();
 
@@ -91,12 +105,22 @@ fn main() -> ExitCode {
             println!("  rope_dim_global       = {}", c.rope_dim_global);
             println!("  rope_dim_swa          = {}", c.rope_dim_swa);
             println!("  final_logit_softcap   = {}", c.final_logit_softcap);
-            println!("  ple_dim               = {} (PLE {})", c.ple_dim, if c.has_ple() { "ENABLED" } else { "disabled" });
+            println!(
+                "  ple_dim               = {} (PLE {})",
+                c.ple_dim,
+                if c.has_ple() { "ENABLED" } else { "disabled" }
+            );
             println!("  vocab_size            = {}", c.vocab_size);
-            println!("  bos_id={:?} eos_ids={:?} pad_id={:?} unk_id={:?}",
-                c.bos_id, c.eos_ids, c.pad_id, c.unk_id);
+            println!(
+                "  bos_id={:?} eos_ids={:?} pad_id={:?} unk_id={:?}",
+                c.bos_id, c.eos_ids, c.pad_id, c.unk_id
+            );
             // layer-kind histogram
-            let swa = c.layer_kinds.iter().filter(|k| matches!(k, rullama::model::config::LayerKind::SlidingWindow)).count();
+            let swa = c
+                .layer_kinds
+                .iter()
+                .filter(|k| matches!(k, rullama::model::config::LayerKind::SlidingWindow))
+                .count();
             let glb = c.layer_kinds.len() - swa;
             println!("  layers: {} SWA + {} global", swa, glb);
             // print first 12 layer kinds + ffn sizes
@@ -108,7 +132,9 @@ fn main() -> ExitCode {
                 };
                 print!("{}{} ", k, c.ffn(i));
             }
-            if c.n_layers > 12 { print!("… "); }
+            if c.n_layers > 12 {
+                print!("… ");
+            }
             println!();
         }
         Err(e) => println!("  ERROR: {e}"),
@@ -118,7 +144,11 @@ fn main() -> ExitCode {
 }
 
 fn print_keys(r: &GgufReader, prefix: &str) {
-    let mut keys: Vec<_> = r.metadata().keys().filter(|k| k.starts_with(prefix)).collect();
+    let mut keys: Vec<_> = r
+        .metadata()
+        .keys()
+        .filter(|k| k.starts_with(prefix))
+        .collect();
     keys.sort();
     for k in keys {
         let v = &r.metadata()[k];
@@ -151,7 +181,14 @@ fn summarize(v: &GgufValue) -> String {
         GgufValue::ArrayF32(v) => array_preview(v, |x| format!("{x}")),
         GgufValue::ArrayF64(v) => array_preview(v, |x| format!("{x}")),
         GgufValue::ArrayBool(v) => format!("[bool; {}] {:?}", v.len(), &v[..v.len().min(8)]),
-        GgufValue::ArrayString(v) => format!("[str; {}] e.g. {:?}", v.len(), v.iter().take(4).map(|s| truncate(s, 16)).collect::<Vec<_>>()),
+        GgufValue::ArrayString(v) => format!(
+            "[str; {}] e.g. {:?}",
+            v.len(),
+            v.iter()
+                .take(4)
+                .map(|s| truncate(s, 16))
+                .collect::<Vec<_>>()
+        ),
     }
 }
 

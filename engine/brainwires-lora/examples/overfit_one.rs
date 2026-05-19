@@ -23,8 +23,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use rullama::api::Model;
-use rullama_finetune::shared::config::{LoraConfig, TrainingHyperparams};
 use rullama_finetune::TrainingSession;
+use rullama_finetune::shared::config::{LoraConfig, TrainingHyperparams};
 
 type BoxError = Box<dyn Error + Send + Sync>;
 
@@ -63,7 +63,8 @@ async fn run() -> Result<(), BoxError> {
     // Tokenize the example.
     let input_tokens = model.encode_tokens(PROMPT);
     let target_tokens = model.encode_tokens(TARGET);
-    let target_id = *target_tokens.first()
+    let target_id = *target_tokens
+        .first()
         .ok_or_else(|| -> BoxError { "target tokenized to zero tokens".into() })?;
     eprintln!(
         "[encode] prompt → {} toks, target first-id = {}",
@@ -83,11 +84,13 @@ async fn run() -> Result<(), BoxError> {
             "attn_o".into(),
         ],
     };
-    let mut hp = TrainingHyperparams::default();
-    hp.learning_rate = lr;
-    hp.weight_decay = 0.0;
-    hp.max_seq_len = input_tokens.len().max(32) as usize;
-    hp.seed = 0xC0FFEE;
+    let hp = TrainingHyperparams {
+        learning_rate: lr,
+        weight_decay: 0.0,
+        max_seq_len: input_tokens.len().max(32),
+        seed: 0xC0FFEE,
+        ..Default::default()
+    };
     eprintln!("[hp] lr = {lr:.3e}, steps = {n_steps}");
     let mut session = TrainingSession::new(model, lora_cfg, hp)
         .map_err(|e| -> BoxError { format!("{e:?}").into() })?;
@@ -114,9 +117,7 @@ async fn run() -> Result<(), BoxError> {
 
     let l0 = first_loss.unwrap();
     let drop_pct = (l0 - last_loss) / l0.max(1e-6) * 100.0;
-    eprintln!(
-        "[done] start={l0:.4}, end={last_loss:.4}, drop={drop_pct:.1}%"
-    );
+    eprintln!("[done] start={l0:.4}, end={last_loss:.4}, drop={drop_pct:.1}%");
 
     // Optional adapter save/load round-trip.
     if let Ok(path_s) = env::var("RULLAMA_ADAPTER_PATH") {
@@ -126,7 +127,11 @@ async fn run() -> Result<(), BoxError> {
             .await
             .map_err(|e| -> BoxError { format!("save_adapter: {e:?}").into() })?;
         let bytes = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-        eprintln!("[save] adapter written to {} ({} bytes)", path.display(), bytes);
+        eprintln!(
+            "[save] adapter written to {} ({} bytes)",
+            path.display(),
+            bytes
+        );
     }
 
     if !assert_drop {
@@ -139,8 +144,9 @@ async fn run() -> Result<(), BoxError> {
         eprintln!("[PASS] loss drop ≥ 90%");
         Ok(())
     } else {
-        Err(format!(
-            "loss drop only {drop_pct:.1}% (target ≥ 90%) — backward may be incorrect"
-        ).into())
+        Err(
+            format!("loss drop only {drop_pct:.1}% (target ≥ 90%) — backward may be incorrect")
+                .into(),
+        )
     }
 }

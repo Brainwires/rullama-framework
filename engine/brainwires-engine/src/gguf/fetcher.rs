@@ -44,7 +44,9 @@ pub struct InMemoryFetcher {
 
 impl InMemoryFetcher {
     pub fn new(bytes: Vec<u8>) -> Self {
-        Self { bytes: bytes.into() }
+        Self {
+            bytes: bytes.into(),
+        }
     }
 
     pub fn from_arc(bytes: Arc<[u8]>) -> Self {
@@ -106,7 +108,8 @@ impl HttpRangeFetcher {
         req_init.set_method("GET");
         let headers = web_sys::Headers::new()
             .map_err(|e| RullamaError::Gguf(format!("Headers::new: {e:?}")))?;
-        headers.set("Range", "bytes=0-0")
+        headers
+            .set("Range", "bytes=0-0")
             .map_err(|e| RullamaError::Gguf(format!("set Range: {e:?}")))?;
         req_init.set_headers(&headers);
 
@@ -116,19 +119,20 @@ impl HttpRangeFetcher {
         let resp_value = JsFuture::from(global_fetch(&request)?)
             .await
             .map_err(|e| RullamaError::Gguf(format!("fetch failed: {e:?}")))?;
-        let resp: web_sys::Response = resp_value.dyn_into()
+        let resp: web_sys::Response = resp_value
+            .dyn_into()
             .map_err(|e| RullamaError::Gguf(format!("response cast: {e:?}")))?;
         if !resp.ok() && resp.status() != 206 {
             return Err(RullamaError::Gguf(format!(
-                "HTTP {} from {url}", resp.status()
+                "HTTP {} from {url}",
+                resp.status()
             )));
         }
 
         // Prefer Content-Range "bytes 0-0/<total>"; fall back to X-Total-Size.
-        let total = if let Some(cr) = resp.headers().get("Content-Range")
-            .ok().flatten()
-        {
-            cr.rsplit('/').next()
+        let total = if let Some(cr) = resp.headers().get("Content-Range").ok().flatten() {
+            cr.rsplit('/')
+                .next()
                 .and_then(|s| s.parse::<u64>().ok())
                 .ok_or_else(|| RullamaError::Gguf(format!("bad Content-Range: {cr}")))?
         } else if let Some(xs) = resp.headers().get("X-Total-Size").ok().flatten() {
@@ -136,7 +140,8 @@ impl HttpRangeFetcher {
                 .map_err(|e| RullamaError::Gguf(format!("bad X-Total-Size: {e}")))?
         } else {
             return Err(RullamaError::Gguf(
-                "server returned no Content-Range or X-Total-Size; cannot determine GGUF length".into()
+                "server returned no Content-Range or X-Total-Size; cannot determine GGUF length"
+                    .into(),
             ));
         };
 
@@ -155,7 +160,9 @@ fn global_fetch(request: &web_sys::Request) -> Result<js_sys::Promise> {
     if let Some(scope) = global.dyn_ref::<web_sys::WorkerGlobalScope>() {
         return Ok(scope.fetch_with_request(request));
     }
-    Err(RullamaError::Gguf("no Window or WorkerGlobalScope for fetch()".into()))
+    Err(RullamaError::Gguf(
+        "no Window or WorkerGlobalScope for fetch()".into(),
+    ))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -186,7 +193,8 @@ impl TensorFetcher for HttpRangeFetcher {
         req_init.set_method("GET");
         let headers = web_sys::Headers::new()
             .map_err(|e| RullamaError::Gguf(format!("Headers::new: {e:?}")))?;
-        headers.set("Range", &format!("bytes={offset}-{end}"))
+        headers
+            .set("Range", &format!("bytes={offset}-{end}"))
             .map_err(|e| RullamaError::Gguf(format!("set Range: {e:?}")))?;
         req_init.set_headers(&headers);
 
@@ -196,15 +204,18 @@ impl TensorFetcher for HttpRangeFetcher {
         let resp_value = JsFuture::from(global_fetch(&request)?)
             .await
             .map_err(|e| RullamaError::Gguf(format!("fetch failed: {e:?}")))?;
-        let resp: web_sys::Response = resp_value.dyn_into()
+        let resp: web_sys::Response = resp_value
+            .dyn_into()
             .map_err(|e| RullamaError::Gguf(format!("response cast: {e:?}")))?;
         if !resp.ok() && resp.status() != 206 {
             return Err(RullamaError::Gguf(format!(
-                "HTTP {} fetching range {offset}-{end}", resp.status()
+                "HTTP {} fetching range {offset}-{end}",
+                resp.status()
             )));
         }
 
-        let buf_promise = resp.array_buffer()
+        let buf_promise = resp
+            .array_buffer()
             .map_err(|e| RullamaError::Gguf(format!("array_buffer: {e:?}")))?;
         let array_buffer = JsFuture::from(buf_promise)
             .await
@@ -275,18 +286,21 @@ impl TensorFetcher for OpfsFetcher {
             )));
         }
 
-        let result = self.read_fn.call2(
-            &JsValue::NULL,
-            &JsValue::from_f64(offset as f64),
-            &JsValue::from_f64(len as f64),
-        ).map_err(|e| RullamaError::Gguf(format!("OPFS read_fn call failed: {e:?}")))?;
+        let result = self
+            .read_fn
+            .call2(
+                &JsValue::NULL,
+                &JsValue::from_f64(offset as f64),
+                &JsValue::from_f64(len as f64),
+            )
+            .map_err(|e| RullamaError::Gguf(format!("OPFS read_fn call failed: {e:?}")))?;
 
         // The JS side may return a Uint8Array directly (sync) or a Promise.
         // Probe for thenable and await it if present.
         let value = if let Ok(promise) = result.clone().dyn_into::<js_sys::Promise>() {
-            JsFuture::from(promise).await.map_err(|e| {
-                RullamaError::Gguf(format!("OPFS read_fn promise rejected: {e:?}"))
-            })?
+            JsFuture::from(promise)
+                .await
+                .map_err(|e| RullamaError::Gguf(format!("OPFS read_fn promise rejected: {e:?}")))?
         } else {
             result
         };

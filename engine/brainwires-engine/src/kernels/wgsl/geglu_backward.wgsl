@@ -25,14 +25,20 @@ struct Params {
 const SQRT_2_OVER_PI: f32 = 0.79788456;
 const GELU_COEF_A:    f32 = 0.044715;
 
+// Clamp |inner| before tanh — mirrors the forward kernel (geglu.wgsl).
+// Metal computes tanh via exp(2x) which overflows for large |inner|, returning
+// NaN; gate values can reach ±40 in trained checkpoints, producing inner ≈ 2300.
+// tanh(±10) already rounds to ±1 in f32 so the clamp is numerically lossless.
 fn gelu(g: f32) -> f32 {
     let inner = SQRT_2_OVER_PI * g * (1.0 + GELU_COEF_A * g * g);
-    return 0.5 * g * (1.0 + tanh(inner));
+    let safe  = clamp(inner, -10.0, 10.0);
+    return 0.5 * g * (1.0 + tanh(safe));
 }
 
 fn gelu_prime(g: f32) -> f32 {
     let inner = SQRT_2_OVER_PI * g * (1.0 + GELU_COEF_A * g * g);
-    let t     = tanh(inner);
+    let safe  = clamp(inner, -10.0, 10.0);
+    let t     = tanh(safe);
     let dphi  = SQRT_2_OVER_PI * (1.0 + 3.0 * GELU_COEF_A * g * g);
     return 0.5 * (1.0 + t) + 0.5 * g * (1.0 - t * t) * dphi;
 }

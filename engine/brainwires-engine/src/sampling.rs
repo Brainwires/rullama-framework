@@ -61,7 +61,11 @@ pub struct Sampler {
 
 impl Sampler {
     pub fn new(opts: SamplingOptions) -> Self {
-        let seed = if opts.seed == 0 { 0xC0FFEE_5E7Du64 } else { opts.seed };
+        let seed = if opts.seed == 0 {
+            0x00C0_FFEE_5E7D_u64
+        } else {
+            opts.seed
+        };
         Self {
             opts,
             rng: seed,
@@ -70,7 +74,9 @@ impl Sampler {
         }
     }
 
-    pub fn options(&self) -> SamplingOptions { self.opts }
+    pub fn options(&self) -> SamplingOptions {
+        self.opts
+    }
 
     pub fn set_options(&mut self, opts: SamplingOptions) {
         let seed = if opts.seed == 0 { self.rng } else { opts.seed };
@@ -114,7 +120,9 @@ impl Sampler {
 
         // Temperature.
         let temp = self.opts.temperature.max(1e-6);
-        for v in work.iter_mut() { *v /= temp; }
+        for v in work.iter_mut() {
+            *v /= temp;
+        }
 
         // Build (idx, logit) pairs; we'll trim by top_k via partial select.
         let mut pairs: Vec<(usize, f32)> = work.iter().copied().enumerate().collect();
@@ -137,12 +145,15 @@ impl Sampler {
 
         // Softmax in numerically stable form.
         let max_l = pairs[0].1;
-        let mut probs: Vec<(usize, f32)> = pairs.into_iter()
+        let mut probs: Vec<(usize, f32)> = pairs
+            .into_iter()
             .map(|(i, l)| (i, (l - max_l).exp()))
             .collect();
         let sum: f32 = probs.iter().map(|(_, p)| *p).sum();
         if sum > 0.0 {
-            for p in probs.iter_mut() { p.1 /= sum; }
+            for p in probs.iter_mut() {
+                p.1 /= sum;
+            }
         }
 
         // Top-p (nucleus): keep smallest prefix whose cumulative prob >= top_p.
@@ -159,7 +170,9 @@ impl Sampler {
             probs.truncate(keep);
             let s: f32 = probs.iter().map(|(_, p)| *p).sum();
             if s > 0.0 {
-                for p in probs.iter_mut() { p.1 /= s; }
+                for p in probs.iter_mut() {
+                    p.1 /= s;
+                }
             }
         }
 
@@ -168,7 +181,9 @@ impl Sampler {
         let mut cum = 0f32;
         for (id, p) in &probs {
             cum += *p;
-            if r <= cum { return *id as u32; }
+            if r <= cum {
+                return *id as u32;
+            }
         }
         probs.last().map(|(id, _)| *id as u32).unwrap_or(0)
     }
@@ -222,7 +237,9 @@ impl Sampler {
         if bytes.len() < expected_total {
             return Err(format!(
                 "sampler state truncated: have {} bytes, need {} for history_len={}",
-                bytes.len(), expected_total, history_len,
+                bytes.len(),
+                expected_total,
+                history_len,
             ));
         }
         let mut history = Vec::with_capacity(history_len);
@@ -231,7 +248,13 @@ impl Sampler {
             history.push(u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap()));
         }
         self.rng = rng;
-        self.opts = SamplingOptions { temperature, top_k, top_p, repetition_penalty, seed };
+        self.opts = SamplingOptions {
+            temperature,
+            top_k,
+            top_p,
+            repetition_penalty,
+            seed,
+        };
         self.history_window = history_window.max(1);
         self.history = history;
         Ok(())
@@ -252,7 +275,10 @@ fn argmax(v: &[f32]) -> usize {
     let mut best_i = 0usize;
     let mut best_v = f32::NEG_INFINITY;
     for (i, &x) in v.iter().enumerate() {
-        if x > best_v { best_v = x; best_i = i; }
+        if x > best_v {
+            best_v = x;
+            best_i = i;
+        }
     }
     best_i
 }
@@ -286,8 +312,15 @@ mod tests {
         });
         // Even with sampling, a 10 vs 0 logit gap means peak should win nearly always.
         let mut hits = 0;
-        for _ in 0..50 { if s.sample(&logits) == 7 { hits += 1; } }
-        assert!(hits >= 45, "expected ≥45/50 hits on dominant token, got {hits}");
+        for _ in 0..50 {
+            if s.sample(&logits) == 7 {
+                hits += 1;
+            }
+        }
+        assert!(
+            hits >= 45,
+            "expected ≥45/50 hits on dominant token, got {hits}"
+        );
     }
 
     #[test]
@@ -301,17 +334,24 @@ mod tests {
             seed: 1,
         });
         // top_k=1 keeps only the argmax token, so every sample is 17.
-        for _ in 0..10 { assert_eq!(s.sample(&logits), 17); }
+        for _ in 0..10 {
+            assert_eq!(s.sample(&logits), 17);
+        }
     }
 
     #[test]
     fn dump_load_state_roundtrip() {
         let opts = SamplingOptions {
-            temperature: 0.42, top_k: 17, top_p: 0.87,
-            repetition_penalty: 1.3, seed: 0xABCDEF,
+            temperature: 0.42,
+            top_k: 17,
+            top_p: 0.87,
+            repetition_penalty: 1.3,
+            seed: 0xABCDEF,
         };
         let mut s = Sampler::new(opts);
-        for tok in [3u32, 7, 11, 13, 19] { s.observe(tok); }
+        for tok in [3u32, 7, 11, 13, 19] {
+            s.observe(tok);
+        }
         // Advance the RNG so the saved cursor isn't the default seed.
         let _ = s.rand_unit();
         let _ = s.rand_unit();
@@ -335,8 +375,11 @@ mod tests {
         // Sample-equivalence sanity: same logits → same next token + same rng tail.
         let logits = vec![0.1f32, 5.0, 0.2, 0.3];
         let mut s_a = Sampler::new(opts);
-        for tok in [3u32, 7, 11, 13, 19] { s_a.observe(tok); }
-        let _ = s_a.rand_unit(); let _ = s_a.rand_unit();
+        for tok in [3u32, 7, 11, 13, 19] {
+            s_a.observe(tok);
+        }
+        let _ = s_a.rand_unit();
+        let _ = s_a.rand_unit();
         let t_a = s_a.sample(&logits);
         let mut s_b = s2;
         let t_b = s_b.sample(&logits);
@@ -363,9 +406,16 @@ mod tests {
         });
         s.observe(0);
         let mut hit_zero = 0;
-        for _ in 0..200 { if s.sample(&logits) == 0 { hit_zero += 1; } }
+        for _ in 0..200 {
+            if s.sample(&logits) == 0 {
+                hit_zero += 1;
+            }
+        }
         // Without penalty, token 0 dominates (logit 5 vs 0). With strong penalty, its
         // logit is divided by 5 → 1.0, so it still wins but no longer dominates.
-        assert!(hit_zero < 180, "rep penalty should reduce token-0 dominance, hit {hit_zero}/200");
+        assert!(
+            hit_zero < 180,
+            "rep penalty should reduce token-0 dominance, hit {hit_zero}/200"
+        );
     }
 }

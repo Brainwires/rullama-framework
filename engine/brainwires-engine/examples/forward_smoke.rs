@@ -21,19 +21,31 @@ use rullama::reference::{KvState, Weights, forward_token};
 fn main() -> ExitCode {
     let path = match env::args().nth(1) {
         Some(p) => p,
-        None => { eprintln!("usage: forward_smoke <path-to-gguf>"); return ExitCode::from(2); }
+        None => {
+            eprintln!("usage: forward_smoke <path-to-gguf>");
+            return ExitCode::from(2);
+        }
     };
     let bytes = match fs::read(&path) {
         Ok(b) => b,
-        Err(e) => { eprintln!("read error: {e}"); return ExitCode::from(1); }
+        Err(e) => {
+            eprintln!("read error: {e}");
+            return ExitCode::from(1);
+        }
     };
     let r = match GgufReader::new(bytes) {
         Ok(r) => r,
-        Err(e) => { eprintln!("gguf parse error: {e}"); return ExitCode::from(1); }
+        Err(e) => {
+            eprintln!("gguf parse error: {e}");
+            return ExitCode::from(1);
+        }
     };
     let cfg = match Gemma4Config::from_gguf(&r) {
         Ok(c) => c,
-        Err(e) => { eprintln!("config error: {e}"); return ExitCode::from(1); }
+        Err(e) => {
+            eprintln!("config error: {e}");
+            return ExitCode::from(1);
+        }
     };
     let r_arc = std::sync::Arc::new(r);
     let weights = Weights::new(r_arc.clone());
@@ -45,7 +57,10 @@ fn main() -> ExitCode {
     let t0 = Instant::now();
     let logits = match forward_token(&cfg, &weights, &mut kv, bos, 0) {
         Ok(l) => l,
-        Err(e) => { eprintln!("forward error: {e}"); return ExitCode::from(1); }
+        Err(e) => {
+            eprintln!("forward error: {e}");
+            return ExitCode::from(1);
+        }
     };
     let dt = t0.elapsed();
 
@@ -55,13 +70,25 @@ fn main() -> ExitCode {
     let mut min = f32::INFINITY;
     let mut max = f32::NEG_INFINITY;
     for &v in &logits {
-        if v.is_nan() { nans += 1; }
-        else if v.is_infinite() { infs += 1; }
-        else { if v < min { min = v; } if v > max { max = v; } }
+        if v.is_nan() {
+            nans += 1;
+        } else if v.is_infinite() {
+            infs += 1;
+        } else {
+            if v < min {
+                min = v;
+            }
+            if v > max {
+                max = v;
+            }
+        }
     }
 
     println!("forward took {dt:?}");
-    println!("logit stats: min={min:.4} max={max:.4} nans={nans} infs={infs} (cap={})", cfg.final_logit_softcap);
+    println!(
+        "logit stats: min={min:.4} max={max:.4} nans={nans} infs={infs} (cap={})",
+        cfg.final_logit_softcap
+    );
 
     // top-K
     let mut indexed: Vec<(usize, f32)> = logits.iter().copied().enumerate().collect();

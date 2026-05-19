@@ -29,7 +29,7 @@ fn main() -> ExitCode {
     println!("loading {path} ...");
     let t0 = Instant::now();
     let bytes = fs::read(&path).expect("read");
-    let model = pollster::block_on(Model::load_native(bytes)).expect("load");
+    let mut model = pollster::block_on(Model::load_native(bytes)).expect("load");
     println!("  loaded in {:?}", t0.elapsed());
 
     if !model.has_vision_native() {
@@ -57,13 +57,18 @@ fn main() -> ExitCode {
     println!("encoding {h}×{w} (expected soft tokens: {expected}) ...");
 
     let t0 = Instant::now();
-    let soft = pollster::block_on(model.encode_image_native(&pixels, h, w, None))
-        .expect("encode_image");
+    let soft =
+        pollster::block_on(model.encode_image_native(&pixels, h, w, None)).expect("encode_image");
     let dt = t0.elapsed();
 
     let d_text = soft.len() / expected.max(1);
-    println!("encoded in {:?} — {} soft tokens × {} dim = {} f32s",
-        dt, expected, d_text, soft.len());
+    println!(
+        "encoded in {:?} — {} soft tokens × {} dim = {} f32s",
+        dt,
+        expected,
+        d_text,
+        soft.len()
+    );
 
     let mut sum = 0f64;
     let mut sum_sq = 0f64;
@@ -77,14 +82,24 @@ fn main() -> ExitCode {
         }
         sum += v as f64;
         sum_sq += (v as f64) * (v as f64);
-        if v < min { min = v; }
-        if v > max { max = v; }
+        if v < min {
+            min = v;
+        }
+        if v > max {
+            max = v;
+        }
     }
     let n_finite = (soft.len() - nan_count) as f64;
     let mean = sum / n_finite;
     let var = sum_sq / n_finite - mean * mean;
-    println!("stats: mean={:.4} stddev={:.4} min={:.4} max={:.4} nans={}",
-        mean, var.sqrt(), min, max, nan_count);
+    println!(
+        "stats: mean={:.4} stddev={:.4} min={:.4} max={:.4} nans={}",
+        mean,
+        var.sqrt(),
+        min,
+        max,
+        nan_count
+    );
 
     if nan_count > 0 {
         eprintln!("FAIL: NaNs in output");

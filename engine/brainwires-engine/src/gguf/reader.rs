@@ -20,10 +20,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::error::{Result, RullamaError};
 use super::dtype::GgmlDtype;
 use super::fetcher::{InMemoryFetcher, TensorFetcher};
 use super::value::{GgufValue, GgufValueType};
+use crate::error::{Result, RullamaError};
 
 const GGUF_MAGIC: u32 = 0x4655_4747; // 'GGUF' little-endian
 const SUPPORTED_VERSION: u32 = 3;
@@ -54,9 +54,13 @@ impl TensorDesc {
         let elems = self.elem_count() as usize;
         let block_elems = self.dtype.block_elems();
         let blocks = elems / block_elems;
-        debug_assert!(elems % block_elems == 0,
+        debug_assert!(
+            elems.is_multiple_of(block_elems),
             "tensor {} has {} elems, not a multiple of block_elems {}",
-            self.name, elems, block_elems);
+            self.name,
+            elems,
+            block_elems
+        );
         (blocks * self.dtype.block_bytes()) as u64
     }
 }
@@ -139,13 +143,23 @@ impl GgufReader {
         }
     }
 
-    pub fn version(&self) -> u32 { self.version }
-    pub fn alignment(&self) -> u64 { self.alignment }
-    pub fn metadata(&self) -> &HashMap<String, GgufValue> { &self.metadata }
-    pub fn tensors(&self) -> &[TensorDesc] { &self.tensors }
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+    pub fn alignment(&self) -> u64 {
+        self.alignment
+    }
+    pub fn metadata(&self) -> &HashMap<String, GgufValue> {
+        &self.metadata
+    }
+    pub fn tensors(&self) -> &[TensorDesc] {
+        &self.tensors
+    }
     /// Absolute byte offset (from file start) where the tensor-data section begins.
     /// Tensor `offset` fields are relative to this.
-    pub fn data_section_offset(&self) -> u64 { self.data_offset as u64 }
+    pub fn data_section_offset(&self) -> u64 {
+        self.data_offset as u64
+    }
 
     /// Whether this reader has the full file resident in memory (i.e. `tensor_bytes`
     /// can return a borrow). False for streaming readers.
@@ -200,7 +214,8 @@ impl GgufReader {
         let e = s + len as usize;
         if e > bytes.len() {
             return Err(RullamaError::Gguf(format!(
-                "tensor {name} extends past buffer end ({e} > {})", bytes.len()
+                "tensor {name} extends past buffer end ({e} > {})",
+                bytes.len()
             )));
         }
         Ok(&bytes[s..e])
@@ -286,7 +301,9 @@ fn parse_header(data: &[u8]) -> Result<ParsedHeader> {
         let name = c.read_string()?;
         let n_dims = c.read_u32()? as usize;
         if n_dims > 8 {
-            return Err(RullamaError::Gguf(format!("tensor {name} has {n_dims} dims (>8)")));
+            return Err(RullamaError::Gguf(format!(
+                "tensor {name} has {n_dims} dims (>8)"
+            )));
         }
         let mut dims = Vec::with_capacity(n_dims);
         for _ in 0..n_dims {
@@ -294,7 +311,12 @@ fn parse_header(data: &[u8]) -> Result<ParsedHeader> {
         }
         let dtype = GgmlDtype::from_u32(c.read_u32()?)?;
         let offset = c.read_u64()?;
-        tensors.push(TensorDesc { name, dims, dtype, offset });
+        tensors.push(TensorDesc {
+            name,
+            dims,
+            dtype,
+            offset,
+        });
     }
 
     // tensor data starts after the descriptor section, aligned to general.alignment (default 32)
@@ -318,16 +340,16 @@ fn parse_header(data: &[u8]) -> Result<ParsedHeader> {
 
 fn read_value(c: &mut Cursor<'_>, vt: GgufValueType) -> Result<GgufValue> {
     Ok(match vt {
-        GgufValueType::U8   => GgufValue::U8(c.read_u8()?),
-        GgufValueType::I8   => GgufValue::I8(c.read_u8()? as i8),
-        GgufValueType::U16  => GgufValue::U16(c.read_u16()?),
-        GgufValueType::I16  => GgufValue::I16(c.read_u16()? as i16),
-        GgufValueType::U32  => GgufValue::U32(c.read_u32()?),
-        GgufValueType::I32  => GgufValue::I32(c.read_u32()? as i32),
-        GgufValueType::U64  => GgufValue::U64(c.read_u64()?),
-        GgufValueType::I64  => GgufValue::I64(c.read_u64()? as i64),
-        GgufValueType::F32  => GgufValue::F32(f32::from_bits(c.read_u32()?)),
-        GgufValueType::F64  => GgufValue::F64(f64::from_bits(c.read_u64()?)),
+        GgufValueType::U8 => GgufValue::U8(c.read_u8()?),
+        GgufValueType::I8 => GgufValue::I8(c.read_u8()? as i8),
+        GgufValueType::U16 => GgufValue::U16(c.read_u16()?),
+        GgufValueType::I16 => GgufValue::I16(c.read_u16()? as i16),
+        GgufValueType::U32 => GgufValue::U32(c.read_u32()?),
+        GgufValueType::I32 => GgufValue::I32(c.read_u32()? as i32),
+        GgufValueType::U64 => GgufValue::U64(c.read_u64()?),
+        GgufValueType::I64 => GgufValue::I64(c.read_u64()? as i64),
+        GgufValueType::F32 => GgufValue::F32(f32::from_bits(c.read_u32()?)),
+        GgufValueType::F64 => GgufValue::F64(f64::from_bits(c.read_u64()?)),
         GgufValueType::Bool => GgufValue::Bool(c.read_u8()? != 0),
         GgufValueType::String => GgufValue::String(c.read_string()?),
         GgufValueType::Array => {
@@ -349,13 +371,23 @@ fn read_array(c: &mut Cursor<'_>, elem: GgufValueType, n: usize) -> Result<GgufV
             GgufValue::ArrayI8(raw.iter().map(|&b| b as i8).collect())
         }
         GgufValueType::U16 => GgufValue::ArrayU16(c.read_u16_vec(n)?),
-        GgufValueType::I16 => GgufValue::ArrayI16(c.read_u16_vec(n)?.into_iter().map(|x| x as i16).collect()),
+        GgufValueType::I16 => {
+            GgufValue::ArrayI16(c.read_u16_vec(n)?.into_iter().map(|x| x as i16).collect())
+        }
         GgufValueType::U32 => GgufValue::ArrayU32(c.read_u32_vec(n)?),
-        GgufValueType::I32 => GgufValue::ArrayI32(c.read_u32_vec(n)?.into_iter().map(|x| x as i32).collect()),
+        GgufValueType::I32 => {
+            GgufValue::ArrayI32(c.read_u32_vec(n)?.into_iter().map(|x| x as i32).collect())
+        }
         GgufValueType::U64 => GgufValue::ArrayU64(c.read_u64_vec(n)?),
-        GgufValueType::I64 => GgufValue::ArrayI64(c.read_u64_vec(n)?.into_iter().map(|x| x as i64).collect()),
-        GgufValueType::F32 => GgufValue::ArrayF32(c.read_u32_vec(n)?.into_iter().map(f32::from_bits).collect()),
-        GgufValueType::F64 => GgufValue::ArrayF64(c.read_u64_vec(n)?.into_iter().map(f64::from_bits).collect()),
+        GgufValueType::I64 => {
+            GgufValue::ArrayI64(c.read_u64_vec(n)?.into_iter().map(|x| x as i64).collect())
+        }
+        GgufValueType::F32 => {
+            GgufValue::ArrayF32(c.read_u32_vec(n)?.into_iter().map(f32::from_bits).collect())
+        }
+        GgufValueType::F64 => {
+            GgufValue::ArrayF64(c.read_u64_vec(n)?.into_iter().map(f64::from_bits).collect())
+        }
         GgufValueType::Bool => {
             let raw = c.read_bytes(n)?;
             GgufValue::ArrayBool(raw.iter().map(|&b| b != 0).collect())
@@ -368,7 +400,9 @@ fn read_array(c: &mut Cursor<'_>, elem: GgufValueType, n: usize) -> Result<GgufV
             GgufValue::ArrayString(out)
         }
         GgufValueType::Array => {
-            return Err(RullamaError::Gguf("nested arrays are not supported by GGUF v3".into()));
+            return Err(RullamaError::Gguf(
+                "nested arrays are not supported by GGUF v3".into(),
+            ));
         }
     })
 }
@@ -385,7 +419,8 @@ impl<'a> Cursor<'a> {
         if self.pos + n > self.buf.len() {
             Err(RullamaError::Gguf(format!(
                 "unexpected EOF: needed {n} bytes at {}, buffer len {}",
-                self.pos, self.buf.len()
+                self.pos,
+                self.buf.len()
             )))
         } else {
             Ok(())
@@ -405,19 +440,19 @@ impl<'a> Cursor<'a> {
     }
     fn read_u16(&mut self) -> Result<u16> {
         self.need(2)?;
-        let v = u16::from_le_bytes(self.buf[self.pos..self.pos+2].try_into().unwrap());
+        let v = u16::from_le_bytes(self.buf[self.pos..self.pos + 2].try_into().unwrap());
         self.pos += 2;
         Ok(v)
     }
     fn read_u32(&mut self) -> Result<u32> {
         self.need(4)?;
-        let v = u32::from_le_bytes(self.buf[self.pos..self.pos+4].try_into().unwrap());
+        let v = u32::from_le_bytes(self.buf[self.pos..self.pos + 4].try_into().unwrap());
         self.pos += 4;
         Ok(v)
     }
     fn read_u64(&mut self) -> Result<u64> {
         self.need(8)?;
-        let v = u64::from_le_bytes(self.buf[self.pos..self.pos+8].try_into().unwrap());
+        let v = u64::from_le_bytes(self.buf[self.pos..self.pos + 8].try_into().unwrap());
         self.pos += 8;
         Ok(v)
     }
@@ -430,17 +465,23 @@ impl<'a> Cursor<'a> {
     }
     fn read_u16_vec(&mut self, n: usize) -> Result<Vec<u16>> {
         let mut out = Vec::with_capacity(n);
-        for _ in 0..n { out.push(self.read_u16()?); }
+        for _ in 0..n {
+            out.push(self.read_u16()?);
+        }
         Ok(out)
     }
     fn read_u32_vec(&mut self, n: usize) -> Result<Vec<u32>> {
         let mut out = Vec::with_capacity(n);
-        for _ in 0..n { out.push(self.read_u32()?); }
+        for _ in 0..n {
+            out.push(self.read_u32()?);
+        }
         Ok(out)
     }
     fn read_u64_vec(&mut self, n: usize) -> Result<Vec<u64>> {
         let mut out = Vec::with_capacity(n);
-        for _ in 0..n { out.push(self.read_u64()?); }
+        for _ in 0..n {
+            out.push(self.read_u64()?);
+        }
         Ok(out)
     }
 }
@@ -453,9 +494,9 @@ mod tests {
     fn synth() -> Vec<u8> {
         let mut b = Vec::new();
         b.extend_from_slice(b"GGUF");
-        b.extend_from_slice(&3u32.to_le_bytes());      // version
-        b.extend_from_slice(&0u64.to_le_bytes());      // tensor_count
-        b.extend_from_slice(&1u64.to_le_bytes());      // metadata_kv_count
+        b.extend_from_slice(&3u32.to_le_bytes()); // version
+        b.extend_from_slice(&0u64.to_le_bytes()); // tensor_count
+        b.extend_from_slice(&1u64.to_le_bytes()); // metadata_kv_count
         // kv: key "x" (u64 len + bytes), value_type=U32, value=42
         let key = b"x";
         b.extend_from_slice(&(key.len() as u64).to_le_bytes());
@@ -463,7 +504,9 @@ mod tests {
         b.extend_from_slice(&(GgufValueType::U32 as u32).to_le_bytes());
         b.extend_from_slice(&42u32.to_le_bytes());
         // pad to 32-byte alignment for the (empty) data section
-        while b.len() % 32 != 0 { b.push(0); }
+        while b.len() % 32 != 0 {
+            b.push(0);
+        }
         b
     }
 

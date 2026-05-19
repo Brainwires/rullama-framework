@@ -1,3 +1,6 @@
+// Conformer block dispatchers (attn, MLP, conv) take many dims as args.
+#![allow(clippy::too_many_arguments)]
+
 //! GPU AudioForward — Conformer audio encoder on wgpu.
 //!
 //! The CPU oracle in `multimodal::audio::AudioForward` is the reference; this
@@ -16,14 +19,13 @@ use futures_channel::oneshot;
 
 use crate::backend::dispatch::{
     add_bias_batched_chained, block_local_attention_chained, clamp_chained,
-    depthwise_conv1d_chained, glu_split_chained, half_residual_add_chained,
-    matmul_bf16_batched_chained, matmul_f16_batched_chained,
-    rmsnorm_per_row_chained, scale_chained, scale_per_inner_dim_chained,
-    silu_chained,
+    depthwise_conv1d_chained, fence_submitted_work, glu_split_chained, half_residual_add_chained,
+    matmul_bf16_batched_chained, matmul_f16_batched_chained, rmsnorm_per_row_chained,
+    scale_chained, scale_per_inner_dim_chained, silu_chained,
 };
 use crate::backend::{Pipelines, WeightCache, WgpuCtx};
 use crate::error::{Result, RullamaError};
-use crate::gguf::{dequant_tensor_to_f32_async, GgmlDtype};
+use crate::gguf::{GgmlDtype, dequant_tensor_to_f32_async};
 use crate::multimodal::audio::{AudioConfig, AudioPrefix};
 
 /// Maximum number of frames the GPU scratch buffers are sized for. ~25 frames
@@ -32,7 +34,12 @@ use crate::multimodal::audio::{AudioConfig, AudioPrefix};
 const MAX_SEQ: usize = 768;
 
 #[derive(Clone, Copy, Default)]
-struct Clamp { in_min: f32, in_max: f32, out_min: f32, out_max: f32 }
+struct Clamp {
+    in_min: f32,
+    in_max: f32,
+    out_min: f32,
+    out_max: f32,
+}
 
 /// Long-lived per-block metadata: small CPU/GPU tensors plus the 10 clamp
 /// scalars. ~5 KB on GPU per block, ~60 KB total across 12 blocks — cheap
@@ -40,21 +47,21 @@ struct Clamp { in_min: f32, in_max: f32, out_min: f32, out_max: f32 }
 struct GpuAudioBlockMeta {
     /// Per-dim Q scale, pre-multiplied with `q_scale_base = head_dim^-0.5 / ln 2`.
     /// Shape `[head_dim]` f32. Uploaded once at construction.
-    per_dim_scale:   wgpu::Buffer,
+    per_dim_scale: wgpu::Buffer,
     /// Depthwise conv kernel — F32 [hidden, kernel], small enough to keep
     /// resident (a few KB).
-    conv_dw:         wgpu::Buffer,
+    conv_dw: wgpu::Buffer,
     // ClippableLinear clamps (10 sites). Pure CPU scalars.
-    cl_attn_q:       Clamp,
-    cl_attn_k:       Clamp,
-    cl_attn_v:       Clamp,
-    cl_attn_o:       Clamp,
-    cl_ffw_up:       Clamp,
-    cl_ffw_down:     Clamp,
-    cl_ffw_up_1:     Clamp,
-    cl_ffw_down_1:   Clamp,
-    cl_conv_pw1:     Clamp,
-    cl_conv_pw2:     Clamp,
+    cl_attn_q: Clamp,
+    cl_attn_k: Clamp,
+    cl_attn_v: Clamp,
+    cl_attn_o: Clamp,
+    cl_ffw_up: Clamp,
+    cl_ffw_down: Clamp,
+    cl_ffw_up_1: Clamp,
+    cl_ffw_down_1: Clamp,
+    cl_conv_pw1: Clamp,
+    cl_conv_pw2: Clamp,
 }
 
 /// Per-block weight buffer handles. Storage is the shared `WeightCache`, so
@@ -63,53 +70,53 @@ struct GpuAudioBlockMeta {
 /// (~2 GB BF16 for gemma4:e2b's 12 audio blocks) is handled by explicit
 /// eviction (`Model::release_audio_weights`), not per-encode churn.
 struct GpuAudioBlockWeights {
-    pre_norm:        wgpu::Buffer,    // [hidden] f32  (final block RMSNorm)
+    pre_norm: wgpu::Buffer, // [hidden] f32  (final block RMSNorm)
     // FFW start
-    ffw_norm:        wgpu::Buffer,
-    ffw_up:          wgpu::Buffer,    // BF16 [hidden, ffn]
-    ffw_down:        wgpu::Buffer,    // BF16 [ffn, hidden]
-    ffw_post_norm:   wgpu::Buffer,
+    ffw_norm: wgpu::Buffer,
+    ffw_up: wgpu::Buffer,   // BF16 [hidden, ffn]
+    ffw_down: wgpu::Buffer, // BF16 [ffn, hidden]
+    ffw_post_norm: wgpu::Buffer,
     // FFW end
-    ffw_norm_1:      wgpu::Buffer,
-    ffw_up_1:        wgpu::Buffer,    // BF16
-    ffw_down_1:      wgpu::Buffer,    // BF16
+    ffw_norm_1: wgpu::Buffer,
+    ffw_up_1: wgpu::Buffer,   // BF16
+    ffw_down_1: wgpu::Buffer, // BF16
     ffw_post_norm_1: wgpu::Buffer,
     // Attention
-    attn_pre_norm:   wgpu::Buffer,
-    attn_post_norm:  wgpu::Buffer,
-    attn_q:          wgpu::Buffer,    // BF16
-    attn_k:          wgpu::Buffer,    // BF16
-    attn_v:          wgpu::Buffer,    // BF16
-    attn_o:          wgpu::Buffer,    // BF16
-    linear_pos:      wgpu::Buffer,    // BF16 [hidden, hidden]
+    attn_pre_norm: wgpu::Buffer,
+    attn_post_norm: wgpu::Buffer,
+    attn_q: wgpu::Buffer,     // BF16
+    attn_k: wgpu::Buffer,     // BF16
+    attn_v: wgpu::Buffer,     // BF16
+    attn_o: wgpu::Buffer,     // BF16
+    linear_pos: wgpu::Buffer, // BF16 [hidden, hidden]
     // LightConv
-    conv_norm:       wgpu::Buffer,
-    norm_conv:       wgpu::Buffer,
-    conv_pw1:        wgpu::Buffer,    // BF16
-    conv_pw2:        wgpu::Buffer,    // BF16
+    conv_norm: wgpu::Buffer,
+    norm_conv: wgpu::Buffer,
+    conv_pw1: wgpu::Buffer, // BF16
+    conv_pw2: wgpu::Buffer, // BF16
 }
 
 /// Persistent scratch buffers — one set, reused across all blocks and encodes.
 struct Scratch {
-    h_main:         wgpu::Buffer,    // [MAX_SEQ, hidden]
-    residual:       wgpu::Buffer,    // [MAX_SEQ, hidden]
-    h_norm:         wgpu::Buffer,    // [MAX_SEQ, hidden]
-    ffw_h:          wgpu::Buffer,    // [MAX_SEQ, ffn]
-    ffw_out:        wgpu::Buffer,    // [MAX_SEQ, hidden]
-    pw1_out:        wgpu::Buffer,    // [MAX_SEQ, 2*hidden]   for LightConv
-    glu_out:        wgpu::Buffer,    // [MAX_SEQ, hidden]
-    conv_dw_out:    wgpu::Buffer,    // [MAX_SEQ, hidden]
-    pw2_out:        wgpu::Buffer,    // [MAX_SEQ, hidden]
-    q_buf:          wgpu::Buffer,    // [MAX_PADDED, hidden]
-    k_padded:       wgpu::Buffer,    // [MAX_K_PADDED, hidden]
-    v_padded:       wgpu::Buffer,    // [MAX_K_PADDED, hidden]
-    pos_emb:        wgpu::Buffer,    // [max_span, hidden]    — sinusoidal, constant
-    pos_proj:       wgpu::Buffer,    // [max_span, hidden]    — per-block
-    attn_out:       wgpu::Buffer,    // [MAX_PADDED, hidden]
-    fc_out:         wgpu::Buffer,    // [MAX_SEQ, d_text]
-    fc_normed:      wgpu::Buffer,    // [MAX_SEQ, d_text]
-    soft:           wgpu::Buffer,    // [MAX_SEQ, d_text]
-    soft_read:      wgpu::Buffer,    // [MAX_SEQ, d_text]  COPY_DST + MAP_READ
+    h_main: wgpu::Buffer,      // [MAX_SEQ, hidden]
+    residual: wgpu::Buffer,    // [MAX_SEQ, hidden]
+    h_norm: wgpu::Buffer,      // [MAX_SEQ, hidden]
+    ffw_h: wgpu::Buffer,       // [MAX_SEQ, ffn]
+    ffw_out: wgpu::Buffer,     // [MAX_SEQ, hidden]
+    pw1_out: wgpu::Buffer,     // [MAX_SEQ, 2*hidden]   for LightConv
+    glu_out: wgpu::Buffer,     // [MAX_SEQ, hidden]
+    conv_dw_out: wgpu::Buffer, // [MAX_SEQ, hidden]
+    pw2_out: wgpu::Buffer,     // [MAX_SEQ, hidden]
+    q_buf: wgpu::Buffer,       // [MAX_PADDED, hidden]
+    k_padded: wgpu::Buffer,    // [MAX_K_PADDED, hidden]
+    v_padded: wgpu::Buffer,    // [MAX_K_PADDED, hidden]
+    pos_emb: wgpu::Buffer,     // [max_span, hidden]    — sinusoidal, constant
+    pos_proj: wgpu::Buffer,    // [max_span, hidden]    — per-block
+    attn_out: wgpu::Buffer,    // [MAX_PADDED, hidden]
+    fc_out: wgpu::Buffer,      // [MAX_SEQ, d_text]
+    fc_normed: wgpu::Buffer,   // [MAX_SEQ, d_text]
+    soft: wgpu::Buffer,        // [MAX_SEQ, d_text]
+    soft_read: wgpu::Buffer,   // [MAX_SEQ, d_text]  COPY_DST + MAP_READ
 }
 
 pub struct GpuAudioForward {
@@ -129,11 +136,11 @@ pub struct GpuAudioForward {
     blocks: Vec<GpuAudioBlockMeta>,
 
     // Projector weights.
-    proj_fc:               wgpu::Buffer,    // F16 [hidden, d_text]
-    proj_fc_dtype:         GgmlDtype,
-    proj_fc_bias:          Option<wgpu::Buffer>,  // f32 [d_text]
-    proj_input:            wgpu::Buffer,    // F16 [d_text, d_text]
-    proj_input_dtype:      GgmlDtype,
+    proj_fc: wgpu::Buffer, // F16 [hidden, d_text]
+    proj_fc_dtype: GgmlDtype,
+    proj_fc_bias: Option<wgpu::Buffer>, // f32 [d_text]
+    proj_input: wgpu::Buffer,           // F16 [d_text, d_text]
+    proj_input_dtype: GgmlDtype,
 
     scratch: Scratch,
 }
@@ -147,17 +154,17 @@ impl GpuAudioForward {
     ) -> Result<Self> {
         let cpu_prefix = AudioPrefix::new(cfg.clone(), wcache.clone()).await?;
         let device = &ctx.device;
-        let queue  = &ctx.queue;
+        let queue = &ctx.queue;
 
-        let hidden     = cfg.hidden as usize;
-        let ffn        = cfg.ffn_inter as usize;
-        let head_dim   = cfg.head_dim() as usize;
-        let max_span   = (cfg.max_past + cfg.max_future + 1) as usize;
+        let hidden = cfg.hidden as usize;
+        let ffn = cfg.ffn_inter as usize;
+        let head_dim = cfg.head_dim() as usize;
+        let max_span = (cfg.max_past + cfg.max_future + 1) as usize;
         let max_padded = MAX_SEQ;
-        let pad_left   = cfg.max_past as usize;
-        let pad_right  = (cfg.max_future + cfg.chunk_size - 1) as usize;
+        let pad_left = cfg.max_past as usize;
+        let pad_right = (cfg.max_future + cfg.chunk_size - 1) as usize;
         let max_k_padded = pad_left + max_padded + pad_right;
-        let d_text     = cfg.d_text as usize;
+        let d_text = cfg.d_text as usize;
 
         let alloc_storage = |label: &str, n_f32: usize| -> wgpu::Buffer {
             device.create_buffer(&wgpu::BufferDescriptor {
@@ -170,25 +177,25 @@ impl GpuAudioForward {
             })
         };
 
-        let h_main      = alloc_storage("aud.h_main",   MAX_SEQ * hidden);
-        let residual    = alloc_storage("aud.residual", MAX_SEQ * hidden);
-        let h_norm      = alloc_storage("aud.h_norm",   MAX_SEQ * hidden);
-        let ffw_h       = alloc_storage("aud.ffw_h",    MAX_SEQ * ffn);
-        let ffw_out     = alloc_storage("aud.ffw_out",  MAX_SEQ * hidden);
-        let pw1_out     = alloc_storage("aud.pw1",      MAX_SEQ * 2 * hidden);
-        let glu_out     = alloc_storage("aud.glu",      MAX_SEQ * hidden);
-        let conv_dw_out = alloc_storage("aud.dw_out",   MAX_SEQ * hidden);
-        let pw2_out     = alloc_storage("aud.pw2",      MAX_SEQ * hidden);
-        let q_buf       = alloc_storage("aud.q",        max_padded * hidden);
-        let k_padded    = alloc_storage("aud.k_padded", max_k_padded * hidden);
-        let v_padded    = alloc_storage("aud.v_padded", max_k_padded * hidden);
-        let pos_emb     = alloc_storage("aud.pos_emb",  max_span * hidden);
-        let pos_proj    = alloc_storage("aud.pos_proj", max_span * hidden);
-        let attn_out    = alloc_storage("aud.attn_out", max_padded * hidden);
-        let fc_out      = alloc_storage("aud.fc_out",   MAX_SEQ * d_text);
-        let fc_normed   = alloc_storage("aud.fc_normed", MAX_SEQ * d_text);
-        let soft        = alloc_storage("aud.soft",     MAX_SEQ * d_text);
-        let soft_read   = device.create_buffer(&wgpu::BufferDescriptor {
+        let h_main = alloc_storage("aud.h_main", MAX_SEQ * hidden);
+        let residual = alloc_storage("aud.residual", MAX_SEQ * hidden);
+        let h_norm = alloc_storage("aud.h_norm", MAX_SEQ * hidden);
+        let ffw_h = alloc_storage("aud.ffw_h", MAX_SEQ * ffn);
+        let ffw_out = alloc_storage("aud.ffw_out", MAX_SEQ * hidden);
+        let pw1_out = alloc_storage("aud.pw1", MAX_SEQ * 2 * hidden);
+        let glu_out = alloc_storage("aud.glu", MAX_SEQ * hidden);
+        let conv_dw_out = alloc_storage("aud.dw_out", MAX_SEQ * hidden);
+        let pw2_out = alloc_storage("aud.pw2", MAX_SEQ * hidden);
+        let q_buf = alloc_storage("aud.q", max_padded * hidden);
+        let k_padded = alloc_storage("aud.k_padded", max_k_padded * hidden);
+        let v_padded = alloc_storage("aud.v_padded", max_k_padded * hidden);
+        let pos_emb = alloc_storage("aud.pos_emb", max_span * hidden);
+        let pos_proj = alloc_storage("aud.pos_proj", max_span * hidden);
+        let attn_out = alloc_storage("aud.attn_out", max_padded * hidden);
+        let fc_out = alloc_storage("aud.fc_out", MAX_SEQ * d_text);
+        let fc_normed = alloc_storage("aud.fc_normed", MAX_SEQ * d_text);
+        let soft = alloc_storage("aud.soft", MAX_SEQ * d_text);
+        let soft_read = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("aud.soft_read"),
             size: (MAX_SEQ * d_text * 4) as u64,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
@@ -206,7 +213,7 @@ impl GpuAudioForward {
                 let rel_pos = (cfg.max_past as f32) - (p as f32);
                 for d in 0..half_dim {
                     let angle = rel_pos * (-(d as f32) * log_inc).exp();
-                    pos_emb_cpu[p * hidden + d]            = angle.sin();
+                    pos_emb_cpu[p * hidden + d] = angle.sin();
                     pos_emb_cpu[p * hidden + half_dim + d] = angle.cos();
                 }
             }
@@ -214,10 +221,25 @@ impl GpuAudioForward {
         }
 
         let scratch = Scratch {
-            h_main, residual, h_norm, ffw_h, ffw_out,
-            pw1_out, glu_out, conv_dw_out, pw2_out,
-            q_buf, k_padded, v_padded, pos_emb, pos_proj, attn_out,
-            fc_out, fc_normed, soft, soft_read,
+            h_main,
+            residual,
+            h_norm,
+            ffw_h,
+            ffw_out,
+            pw1_out,
+            glu_out,
+            conv_dw_out,
+            pw2_out,
+            q_buf,
+            k_padded,
+            v_padded,
+            pos_emb,
+            pos_proj,
+            attn_out,
+            fc_out,
+            fc_normed,
+            soft,
+            soft_read,
         };
 
         // Per-block META only — `per_dim_scale` + `conv_dw` + clamps. The 21
@@ -231,32 +253,46 @@ impl GpuAudioForward {
 
         // Projector weights stay cached — small (a few MB each) and hit at
         // the end of every encode_audio call.
-        let proj_fc        = wcache.buffer_async("mm.a.fc.weight").await?;
-        let proj_fc_dtype  = wcache.reader().tensor("mm.a.fc.weight")?.dtype;
-        let proj_fc_bias   = wcache.buffer_opt_async("mm.a.fc.bias").await?;
-        let proj_input     = wcache.buffer_async("mm.a.input_projection.weight").await?;
-        let proj_input_dtype = wcache.reader().tensor("mm.a.input_projection.weight")?.dtype;
+        let proj_fc = wcache.buffer_async("mm.a.fc.weight").await?;
+        let proj_fc_dtype = wcache.reader().tensor("mm.a.fc.weight")?.dtype;
+        let proj_fc_bias = wcache.buffer_opt_async("mm.a.fc.bias").await?;
+        let proj_input = wcache.buffer_async("mm.a.input_projection.weight").await?;
+        let proj_input_dtype = wcache
+            .reader()
+            .tensor("mm.a.input_projection.weight")?
+            .dtype;
 
         Ok(Self {
-            cfg, ctx, pipes, wcache,
+            cfg,
+            ctx,
+            pipes,
+            wcache,
             cpu_prefix,
             blocks,
-            proj_fc, proj_fc_dtype, proj_fc_bias,
-            proj_input, proj_input_dtype,
+            proj_fc,
+            proj_fc_dtype,
+            proj_fc_bias,
+            proj_input,
+            proj_input_dtype,
             scratch,
         })
     }
 
-    pub fn cfg(&self) -> &AudioConfig { &self.cfg }
+    pub fn cfg(&self) -> &AudioConfig {
+        &self.cfg
+    }
 
     /// Encode 16 kHz mono PCM into `[n_audio_tokens × d_text]` soft tokens.
     pub async fn encode(
-        &self, pcm: &[f32],
+        &self,
+        pcm: &[f32],
         cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     ) -> Result<Vec<f32>> {
         // 1. CPU prefix: mel + SSCP + pre_encode → [seq, hidden] f32.
         let (h_cpu, seq) = self.cpu_prefix.prefix_to_hidden(pcm)?;
-        if seq == 0 { return Ok(Vec::new()); }
+        if seq == 0 {
+            return Ok(Vec::new());
+        }
         if seq > MAX_SEQ {
             return Err(RullamaError::Inference(format!(
                 "audio: seq {seq} > MAX_SEQ {MAX_SEQ} (audio longer than 30 s)"
@@ -264,21 +300,21 @@ impl GpuAudioForward {
         }
 
         let cfg = &self.cfg;
-        let hidden       = cfg.hidden as usize;
-        let n_heads      = cfg.n_heads as usize;
-        let head_dim     = cfg.head_dim() as usize;
-        let chunk_size   = cfg.chunk_size as usize;
-        let max_past     = cfg.max_past as usize;
-        let max_future   = cfg.max_future as usize;
+        let hidden = cfg.hidden as usize;
+        let n_heads = cfg.n_heads as usize;
+        let head_dim = cfg.head_dim() as usize;
+        let chunk_size = cfg.chunk_size as usize;
+        let max_past = cfg.max_past as usize;
+        let max_future = cfg.max_future as usize;
         let context_size = max_past + chunk_size + max_future;
-        let max_span     = max_past + max_future + 1;
-        let pad_left     = max_past;
-        let pad_right    = max_future + chunk_size - 1;
-        let num_chunks   = seq.div_ceil(chunk_size);
-        let padded_len   = num_chunks * chunk_size;
+        let max_span = max_past + max_future + 1;
+        let pad_left = max_past;
+        let pad_right = max_future + chunk_size - 1;
+        let num_chunks = seq.div_ceil(chunk_size);
+        let padded_len = num_chunks * chunk_size;
         let k_padded_len = pad_left + padded_len + pad_right;
-        let d_text       = cfg.d_text as usize;
-        let logit_cap    = cfg.logit_cap;
+        let d_text = cfg.d_text as usize;
+        let logit_cap = cfg.logit_cap;
 
         // K scale (constant): softplus(1) / ln 2 = ln(1 + e) / ln 2.
         let k_scale = (1.0f32 + std::f32::consts::E).ln() / std::f32::consts::LN_2;
@@ -288,45 +324,84 @@ impl GpuAudioForward {
         let queue = &self.ctx.queue;
         queue.write_buffer(&self.scratch.h_main, 0, cast_slice(&h_cpu));
 
-        // 3. Single encoder spanning all 12 blocks + projector + readback.
-        //    Weights are cached in the shared WeightCache, so a chained
-        //    encoder doesn't change peak GPU residency vs the old per-block
-        //    submit pattern (cached buffers are simultaneously live either
-        //    way). The caller is responsible for
-        //    `Model::release_audio_weights()` when running on a
-        //    memory-constrained device that needs to evict between modes.
-        let mut enc = self.ctx.device.create_command_encoder(
-            &wgpu::CommandEncoderDescriptor { label: Some("aud.encoder") }
-        );
+        // 3. One CommandEncoder + submit + fence per Conformer block, mirroring
+        //    the post-cee9869 vision pattern. A single encoder spanning all 12
+        //    blocks records hundreds of dispatches + bind-group changes against
+        //    transient resources, which on iOS Safari WebGPU pushes WebKit's
+        //    per-encoder budget hard enough that the *next* operation (the
+        //    first text `step()`) dies silently — even though map_async reads
+        //    the soft tokens back fine. Splitting per-block drains the GPU in
+        //    small chunks; output is bit-identical because the dispatch order
+        //    and kernel inputs/outputs are unchanged.
         for b in 0..self.blocks.len() {
-            // Cooperative cancel check between blocks. Same shape as
-            // vision: drop the not-yet-submitted encoder and bail.
-            if let Some(c) = cancel.as_ref() {
-                if c.load(std::sync::atomic::Ordering::Relaxed) {
-                    return Err(RullamaError::Cancelled);
-                }
+            // Cooperative cancel check between blocks. Drop the not-yet-
+            // submitted encoder and bail.
+            if let Some(c) = cancel.as_ref()
+                && c.load(std::sync::atomic::Ordering::Relaxed)
+            {
+                return Err(RullamaError::Cancelled);
             }
             let w = fetch_gpu_block_weights(&self.wcache, b as u32).await?;
+            let mut benc =
+                self.ctx
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("aud.block"),
+                    });
             self.dispatch_block(
-                &mut enc, &self.blocks[b], &w,
-                seq, padded_len, k_padded_len,
-                hidden, n_heads, head_dim, chunk_size,
-                context_size, max_span, max_past, max_future,
-                pad_left, logit_cap, k_scale,
+                &mut benc,
+                &self.blocks[b],
+                &w,
+                seq,
+                padded_len,
+                k_padded_len,
+                hidden,
+                n_heads,
+                head_dim,
+                chunk_size,
+                context_size,
+                max_span,
+                max_past,
+                max_future,
+                pad_left,
+                logit_cap,
+                k_scale,
             );
+            self.ctx.queue.submit(Some(benc.finish()));
+            fence_submitted_work(&self.ctx.device, &self.ctx.queue).await?;
         }
 
-        // 4. Projector + readback chained into the same encoder.
+        // 4. Projector + readback in their own encoder. Small relative to a
+        //    Conformer block, so one submit covers it cleanly.
+        let mut enc = self
+            .ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("aud.epilogue"),
+            });
         self.dispatch_projector(&mut enc, seq, hidden, d_text);
         let read_bytes = (seq * d_text * 4) as u64;
-        enc.copy_buffer_to_buffer(&self.scratch.soft, 0, &self.scratch.soft_read, 0, read_bytes);
+        enc.copy_buffer_to_buffer(
+            &self.scratch.soft,
+            0,
+            &self.scratch.soft_read,
+            0,
+            read_bytes,
+        );
         self.ctx.queue.submit(Some(enc.finish()));
 
         // Map + read (async — works on wasm32 too).
         let slice = self.scratch.soft_read.slice(..read_bytes);
         let (tx, rx) = oneshot::channel();
-        slice.map_async(wgpu::MapMode::Read, move |r| { let _ = tx.send(r); });
-        self.ctx.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None })
+        slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx.send(r);
+        });
+        self.ctx
+            .device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            })
             .map_err(|e| RullamaError::Inference(format!("device.poll: {e}")))?;
         rx.await
             .map_err(|_| RullamaError::Inference("readback channel".into()))?
@@ -350,25 +425,42 @@ impl GpuAudioForward {
         enc: &mut wgpu::CommandEncoder,
         meta: &GpuAudioBlockMeta,
         w: &GpuAudioBlockWeights,
-        seq: usize, padded_len: usize, k_padded_len: usize,
-        hidden: usize, n_heads: usize, head_dim: usize, chunk_size: usize,
-        context_size: usize, max_span: usize, max_past: usize, max_future: usize,
-        pad_left: usize, logit_cap: f32, k_scale: f32,
+        seq: usize,
+        padded_len: usize,
+        k_padded_len: usize,
+        hidden: usize,
+        n_heads: usize,
+        head_dim: usize,
+        chunk_size: usize,
+        context_size: usize,
+        max_span: usize,
+        max_past: usize,
+        max_future: usize,
+        pad_left: usize,
+        logit_cap: f32,
+        k_scale: f32,
     ) {
         let cfg = &self.cfg;
         let ffn = cfg.ffn_inter as usize;
         let eps = cfg.eps;
-        let gc  = cfg.grad_clip;
-        let s   = &self.scratch;
+        let gc = cfg.grad_clip;
+        let s = &self.scratch;
         let n_h = seq * hidden;
 
         // ---- FFW1 ----
         self.dispatch_ffw(
-            enc, &w.ffw_norm,
-            &w.ffw_up,   &meta.cl_ffw_up,
-            &w.ffw_down, &meta.cl_ffw_down,
+            enc,
+            &w.ffw_norm,
+            &w.ffw_up,
+            &meta.cl_ffw_up,
+            &w.ffw_down,
+            &meta.cl_ffw_down,
             &w.ffw_post_norm,
-            seq, hidden, ffn, eps, gc,
+            seq,
+            hidden,
+            ffn,
+            eps,
+            gc,
         );
 
         // ---- Attention ----
@@ -378,9 +470,16 @@ impl GpuAudioForward {
         clamp_chained(&self.ctx, &self.pipes, enc, &s.h_main, n_h, -gc, gc);
         // RMSNorm h_main with attn_pre_norm → h_norm
         rmsnorm_per_row_chained(
-            &self.ctx, &self.pipes, enc,
-            &s.h_main, Some(&w.attn_pre_norm), &s.h_main,
-            &s.h_norm, seq, hidden, eps,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &s.h_main,
+            Some(&w.attn_pre_norm),
+            &s.h_main,
+            &s.h_norm,
+            seq,
+            hidden,
+            eps,
         );
 
         // Apply input clamp on h_norm if attn_q's input clamp is active.
@@ -401,18 +500,39 @@ impl GpuAudioForward {
         // accept that K/V/O clamps are the most common identical case.
         let cl_q = &meta.cl_attn_q;
         if cl_q.in_max != 0.0 {
-            clamp_chained(&self.ctx, &self.pipes, enc, &s.h_norm, n_h, cl_q.in_min, cl_q.in_max);
+            clamp_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &s.h_norm,
+                n_h,
+                cl_q.in_min,
+                cl_q.in_max,
+            );
         }
 
         // Q matmul: h_norm [seq, hidden] × attn_q [hidden, hidden] → q_buf [seq, hidden]
         matmul_bf16_batched_chained(
-            &self.ctx, &self.pipes, enc,
-            &w.attn_q, &s.h_norm, &s.q_buf,
-            hidden, hidden, seq,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &w.attn_q,
+            &s.h_norm,
+            &s.q_buf,
+            hidden,
+            hidden,
+            seq,
         );
         if cl_q.out_max != 0.0 {
-            clamp_chained(&self.ctx, &self.pipes, enc, &s.q_buf,
-                seq * hidden, cl_q.out_min, cl_q.out_max);
+            clamp_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &s.q_buf,
+                seq * hidden,
+                cl_q.out_min,
+                cl_q.out_max,
+            );
         }
 
         // K matmul (re-uses h_norm — note we already clamped with Q's bounds;
@@ -438,54 +558,101 @@ impl GpuAudioForward {
         // Plan: matmul K into s.attn_out[0..seq*hidden], then copy to k_padded
         // at offset pad_left * hidden * 4. Same for V.
         matmul_bf16_batched_chained(
-            &self.ctx, &self.pipes, enc,
-            &w.attn_k, &s.h_norm, &s.attn_out,
-            hidden, hidden, seq,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &w.attn_k,
+            &s.h_norm,
+            &s.attn_out,
+            hidden,
+            hidden,
+            seq,
         );
         let cl_k = &meta.cl_attn_k;
         if cl_k.out_max != 0.0 {
-            clamp_chained(&self.ctx, &self.pipes, enc, &s.attn_out,
-                seq * hidden, cl_k.out_min, cl_k.out_max);
+            clamp_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &s.attn_out,
+                seq * hidden,
+                cl_k.out_min,
+                cl_k.out_max,
+            );
         }
         // K scale (in-place).
-        scale_chained(&self.ctx, &self.pipes, enc, &s.attn_out, seq * hidden, k_scale);
+        scale_chained(
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &s.attn_out,
+            seq * hidden,
+            k_scale,
+        );
         // Copy K → k_padded[pad_left..]
         enc.copy_buffer_to_buffer(
-            &s.attn_out, 0,
-            &s.k_padded, (pad_left * hidden * 4) as u64,
+            &s.attn_out,
+            0,
+            &s.k_padded,
+            (pad_left * hidden * 4) as u64,
             (seq * hidden * 4) as u64,
         );
 
         // V matmul → attn_out scratch → copy to v_padded.
         matmul_bf16_batched_chained(
-            &self.ctx, &self.pipes, enc,
-            &w.attn_v, &s.h_norm, &s.attn_out,
-            hidden, hidden, seq,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &w.attn_v,
+            &s.h_norm,
+            &s.attn_out,
+            hidden,
+            hidden,
+            seq,
         );
         let cl_v = &meta.cl_attn_v;
         if cl_v.out_max != 0.0 {
-            clamp_chained(&self.ctx, &self.pipes, enc, &s.attn_out,
-                seq * hidden, cl_v.out_min, cl_v.out_max);
+            clamp_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &s.attn_out,
+                seq * hidden,
+                cl_v.out_min,
+                cl_v.out_max,
+            );
         }
         enc.copy_buffer_to_buffer(
-            &s.attn_out, 0,
-            &s.v_padded, (pad_left * hidden * 4) as u64,
+            &s.attn_out,
+            0,
+            &s.v_padded,
+            (pad_left * hidden * 4) as u64,
             (seq * hidden * 4) as u64,
         );
 
         // Per-dim Q scale: q[t, h, d] *= q_scale_base * per_dim_scale[d]
         // (per_dim_scale buffer was pre-multiplied with q_scale_base at construction).
         scale_per_inner_dim_chained(
-            &self.ctx, &self.pipes, enc,
-            &s.q_buf, &meta.per_dim_scale,
-            seq * hidden, head_dim,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &s.q_buf,
+            &meta.per_dim_scale,
+            seq * hidden,
+            head_dim,
         );
 
         // Pos projection: pos_emb [max_span, hidden] × linear_pos [hidden, hidden] → pos_proj
         matmul_bf16_batched_chained(
-            &self.ctx, &self.pipes, enc,
-            &w.linear_pos, &s.pos_emb, &s.pos_proj,
-            hidden, hidden, max_span,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &w.linear_pos,
+            &s.pos_emb,
+            &s.pos_proj,
+            hidden,
+            hidden,
+            max_span,
         );
 
         // Pad q_buf tail to zero (for chunks beyond seq).
@@ -499,65 +666,130 @@ impl GpuAudioForward {
 
         // Block-local attention.
         block_local_attention_chained(
-            &self.ctx, &self.pipes, enc,
-            &s.q_buf, &s.k_padded, &s.v_padded, &s.pos_proj, &s.attn_out,
-            seq, padded_len, hidden, n_heads, head_dim,
-            chunk_size, context_size, max_span,
-            max_past, max_future, pad_left, logit_cap,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &s.q_buf,
+            &s.k_padded,
+            &s.v_padded,
+            &s.pos_proj,
+            &s.attn_out,
+            seq,
+            padded_len,
+            hidden,
+            n_heads,
+            head_dim,
+            chunk_size,
+            context_size,
+            max_span,
+            max_past,
+            max_future,
+            pad_left,
+            logit_cap,
         );
 
         // Output projection: attn_out [seq, hidden] × attn_o → ffw_out (reuse buffer)
         let cl_o = &meta.cl_attn_o;
         if cl_o.in_max != 0.0 {
-            clamp_chained(&self.ctx, &self.pipes, enc, &s.attn_out,
-                seq * hidden, cl_o.in_min, cl_o.in_max);
+            clamp_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &s.attn_out,
+                seq * hidden,
+                cl_o.in_min,
+                cl_o.in_max,
+            );
         }
         matmul_bf16_batched_chained(
-            &self.ctx, &self.pipes, enc,
-            &w.attn_o, &s.attn_out, &s.ffw_out,
-            hidden, hidden, seq,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &w.attn_o,
+            &s.attn_out,
+            &s.ffw_out,
+            hidden,
+            hidden,
+            seq,
         );
         if cl_o.out_max != 0.0 {
-            clamp_chained(&self.ctx, &self.pipes, enc, &s.ffw_out,
-                seq * hidden, cl_o.out_min, cl_o.out_max);
+            clamp_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &s.ffw_out,
+                seq * hidden,
+                cl_o.out_min,
+                cl_o.out_max,
+            );
         }
         // clamp to ±gc
-        clamp_chained(&self.ctx, &self.pipes, enc, &s.ffw_out, seq * hidden, -gc, gc);
+        clamp_chained(
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &s.ffw_out,
+            seq * hidden,
+            -gc,
+            gc,
+        );
         // RMSNorm with attn_post_norm in-place
         rmsnorm_per_row_chained(
-            &self.ctx, &self.pipes, enc,
-            &s.ffw_out, Some(&w.attn_post_norm), &s.h_main,
-            &s.h_norm, seq, hidden, eps,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &s.ffw_out,
+            Some(&w.attn_post_norm),
+            &s.h_main,
+            &s.h_norm,
+            seq,
+            hidden,
+            eps,
         );
         // residual_add is in-place (x = x + y). Copy residual → h_main first,
         // then add h_norm into it.
         enc.copy_buffer_to_buffer(&s.residual, 0, &s.h_main, 0, (n_h * 4) as u64);
         crate::backend::dispatch::residual_add_chained(
-            &self.ctx, &self.pipes, enc,
-            &s.h_main, &s.h_norm, n_h,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &s.h_main,
+            &s.h_norm,
+            n_h,
         );
 
         // ---- LightConv ----
-        self.dispatch_lightconv(
-            enc, meta, w,
-            seq, hidden, eps, gc,
-        );
+        self.dispatch_lightconv(enc, meta, w, seq, hidden, eps, gc);
 
         // ---- FFW2 ----
         self.dispatch_ffw(
-            enc, &w.ffw_norm_1,
-            &w.ffw_up_1,   &meta.cl_ffw_up_1,
-            &w.ffw_down_1, &meta.cl_ffw_down_1,
+            enc,
+            &w.ffw_norm_1,
+            &w.ffw_up_1,
+            &meta.cl_ffw_up_1,
+            &w.ffw_down_1,
+            &meta.cl_ffw_down_1,
             &w.ffw_post_norm_1,
-            seq, hidden, ffn, eps, gc,
+            seq,
+            hidden,
+            ffn,
+            eps,
+            gc,
         );
 
         // ---- Final clamp + RMSNorm with w.pre_norm ----
         clamp_chained(&self.ctx, &self.pipes, enc, &s.h_main, n_h, -gc, gc);
         rmsnorm_per_row_chained(
-            &self.ctx, &self.pipes, enc,
-            &s.h_main, Some(&w.pre_norm), &s.h_main,
-            &s.ffw_out, seq, hidden, eps,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &s.h_main,
+            Some(&w.pre_norm),
+            &s.h_main,
+            &s.ffw_out,
+            seq,
+            hidden,
+            eps,
         );
         // Copy ffw_out → h_main.
         enc.copy_buffer_to_buffer(&s.ffw_out, 0, &s.h_main, 0, (n_h * 4) as u64);
@@ -570,10 +802,16 @@ impl GpuAudioForward {
         &self,
         enc: &mut wgpu::CommandEncoder,
         norm_w: &wgpu::Buffer,
-        up_w: &wgpu::Buffer, up_clamp: &Clamp,
-        down_w: &wgpu::Buffer, down_clamp: &Clamp,
+        up_w: &wgpu::Buffer,
+        up_clamp: &Clamp,
+        down_w: &wgpu::Buffer,
+        down_clamp: &Clamp,
         post_norm_w: &wgpu::Buffer,
-        seq: usize, hidden: usize, ffn: usize, eps: f32, gc: f32,
+        seq: usize,
+        hidden: usize,
+        ffn: usize,
+        eps: f32,
+        gc: f32,
     ) {
         let s = &self.scratch;
         let n_h = seq * hidden;
@@ -585,43 +823,101 @@ impl GpuAudioForward {
         clamp_chained(&self.ctx, &self.pipes, enc, &s.h_main, n_h, -gc, gc);
         // RMSNorm h_main with norm_w → h_norm
         rmsnorm_per_row_chained(
-            &self.ctx, &self.pipes, enc,
-            &s.h_main, Some(norm_w), &s.h_main,
-            &s.h_norm, seq, hidden, eps,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &s.h_main,
+            Some(norm_w),
+            &s.h_main,
+            &s.h_norm,
+            seq,
+            hidden,
+            eps,
         );
         // Up linear (clipped): h_norm → ffw_h
         if up_clamp.in_max != 0.0 {
-            clamp_chained(&self.ctx, &self.pipes, enc, &s.h_norm, n_h, up_clamp.in_min, up_clamp.in_max);
+            clamp_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &s.h_norm,
+                n_h,
+                up_clamp.in_min,
+                up_clamp.in_max,
+            );
         }
         matmul_bf16_batched_chained(
-            &self.ctx, &self.pipes, enc,
-            up_w, &s.h_norm, &s.ffw_h,
-            hidden, ffn, seq,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            up_w,
+            &s.h_norm,
+            &s.ffw_h,
+            hidden,
+            ffn,
+            seq,
         );
         if up_clamp.out_max != 0.0 {
-            clamp_chained(&self.ctx, &self.pipes, enc, &s.ffw_h, n_f, up_clamp.out_min, up_clamp.out_max);
+            clamp_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &s.ffw_h,
+                n_f,
+                up_clamp.out_min,
+                up_clamp.out_max,
+            );
         }
         // SiLU in place
         silu_chained(&self.ctx, &self.pipes, enc, &s.ffw_h, n_f);
         // Down linear (clipped): ffw_h → ffw_out
         if down_clamp.in_max != 0.0 {
-            clamp_chained(&self.ctx, &self.pipes, enc, &s.ffw_h, n_f, down_clamp.in_min, down_clamp.in_max);
+            clamp_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &s.ffw_h,
+                n_f,
+                down_clamp.in_min,
+                down_clamp.in_max,
+            );
         }
         matmul_bf16_batched_chained(
-            &self.ctx, &self.pipes, enc,
-            down_w, &s.ffw_h, &s.ffw_out,
-            ffn, hidden, seq,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            down_w,
+            &s.ffw_h,
+            &s.ffw_out,
+            ffn,
+            hidden,
+            seq,
         );
         if down_clamp.out_max != 0.0 {
-            clamp_chained(&self.ctx, &self.pipes, enc, &s.ffw_out, n_h, down_clamp.out_min, down_clamp.out_max);
+            clamp_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &s.ffw_out,
+                n_h,
+                down_clamp.out_min,
+                down_clamp.out_max,
+            );
         }
         // clamp to ±gc
         clamp_chained(&self.ctx, &self.pipes, enc, &s.ffw_out, n_h, -gc, gc);
         // Post-norm: ffw_out → h_norm
         rmsnorm_per_row_chained(
-            &self.ctx, &self.pipes, enc,
-            &s.ffw_out, Some(post_norm_w), &s.ffw_out,
-            &s.h_norm, seq, hidden, eps,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &s.ffw_out,
+            Some(post_norm_w),
+            &s.ffw_out,
+            &s.h_norm,
+            seq,
+            hidden,
+            eps,
         );
         // half_residual_add: residual += 0.5 * h_norm
         half_residual_add_chained(&self.ctx, &self.pipes, enc, &s.residual, &s.h_norm, n_h);
@@ -636,7 +932,10 @@ impl GpuAudioForward {
         enc: &mut wgpu::CommandEncoder,
         meta: &GpuAudioBlockMeta,
         w: &GpuAudioBlockWeights,
-        seq: usize, hidden: usize, eps: f32, gc: f32,
+        seq: usize,
+        hidden: usize,
+        eps: f32,
+        gc: f32,
     ) {
         let s = &self.scratch;
         let n_h = seq * hidden;
@@ -647,59 +946,135 @@ impl GpuAudioForward {
         enc.copy_buffer_to_buffer(&s.h_main, 0, &s.residual, 0, (n_h * 4) as u64);
         // RMSNorm with conv_norm: h_main → h_norm
         rmsnorm_per_row_chained(
-            &self.ctx, &self.pipes, enc,
-            &s.h_main, Some(&w.conv_norm), &s.h_main,
-            &s.h_norm, seq, hidden, eps,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &s.h_main,
+            Some(&w.conv_norm),
+            &s.h_main,
+            &s.h_norm,
+            seq,
+            hidden,
+            eps,
         );
         // conv_pw1 (clipped): h_norm → pw1_out [seq, 2*hidden]
         let cl_pw1 = &meta.cl_conv_pw1;
         if cl_pw1.in_max != 0.0 {
-            clamp_chained(&self.ctx, &self.pipes, enc, &s.h_norm, n_h, cl_pw1.in_min, cl_pw1.in_max);
+            clamp_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &s.h_norm,
+                n_h,
+                cl_pw1.in_min,
+                cl_pw1.in_max,
+            );
         }
         matmul_bf16_batched_chained(
-            &self.ctx, &self.pipes, enc,
-            &w.conv_pw1, &s.h_norm, &s.pw1_out,
-            hidden, 2 * hidden, seq,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &w.conv_pw1,
+            &s.h_norm,
+            &s.pw1_out,
+            hidden,
+            2 * hidden,
+            seq,
         );
         if cl_pw1.out_max != 0.0 {
-            clamp_chained(&self.ctx, &self.pipes, enc, &s.pw1_out, n_2h, cl_pw1.out_min, cl_pw1.out_max);
+            clamp_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &s.pw1_out,
+                n_2h,
+                cl_pw1.out_min,
+                cl_pw1.out_max,
+            );
         }
         // GLU split: pw1_out → glu_out
-        glu_split_chained(&self.ctx, &self.pipes, enc, &s.pw1_out, &s.glu_out, seq, hidden);
+        glu_split_chained(
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &s.pw1_out,
+            &s.glu_out,
+            seq,
+            hidden,
+        );
         // Depthwise conv: glu_out × conv_dw → conv_dw_out
         depthwise_conv1d_chained(
-            &self.ctx, &self.pipes, enc,
-            &s.glu_out, &meta.conv_dw, &s.conv_dw_out,
-            seq, hidden, kernel,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &s.glu_out,
+            &meta.conv_dw,
+            &s.conv_dw_out,
+            seq,
+            hidden,
+            kernel,
         );
         // clamp ±gc
         clamp_chained(&self.ctx, &self.pipes, enc, &s.conv_dw_out, n_h, -gc, gc);
         // RMSNorm with norm_conv (in-place via h_norm scratch)
         rmsnorm_per_row_chained(
-            &self.ctx, &self.pipes, enc,
-            &s.conv_dw_out, Some(&w.norm_conv), &s.conv_dw_out,
-            &s.h_norm, seq, hidden, eps,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &s.conv_dw_out,
+            Some(&w.norm_conv),
+            &s.conv_dw_out,
+            &s.h_norm,
+            seq,
+            hidden,
+            eps,
         );
         // SiLU in place
         silu_chained(&self.ctx, &self.pipes, enc, &s.h_norm, n_h);
         // conv_pw2 (clipped): h_norm → pw2_out
         let cl_pw2 = &meta.cl_conv_pw2;
         if cl_pw2.in_max != 0.0 {
-            clamp_chained(&self.ctx, &self.pipes, enc, &s.h_norm, n_h, cl_pw2.in_min, cl_pw2.in_max);
+            clamp_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &s.h_norm,
+                n_h,
+                cl_pw2.in_min,
+                cl_pw2.in_max,
+            );
         }
         matmul_bf16_batched_chained(
-            &self.ctx, &self.pipes, enc,
-            &w.conv_pw2, &s.h_norm, &s.pw2_out,
-            hidden, hidden, seq,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &w.conv_pw2,
+            &s.h_norm,
+            &s.pw2_out,
+            hidden,
+            hidden,
+            seq,
         );
         if cl_pw2.out_max != 0.0 {
-            clamp_chained(&self.ctx, &self.pipes, enc, &s.pw2_out, n_h, cl_pw2.out_min, cl_pw2.out_max);
+            clamp_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &s.pw2_out,
+                n_h,
+                cl_pw2.out_min,
+                cl_pw2.out_max,
+            );
         }
         // residual_add is in-place: copy residual → h_main, then add pw2_out.
         enc.copy_buffer_to_buffer(&s.residual, 0, &s.h_main, 0, (n_h * 4) as u64);
         crate::backend::dispatch::residual_add_chained(
-            &self.ctx, &self.pipes, enc,
-            &s.h_main, &s.pw2_out, n_h,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &s.h_main,
+            &s.pw2_out,
+            n_h,
         );
     }
 
@@ -708,7 +1083,9 @@ impl GpuAudioForward {
     fn dispatch_projector(
         &self,
         enc: &mut wgpu::CommandEncoder,
-        seq: usize, hidden: usize, d_text: usize,
+        seq: usize,
+        hidden: usize,
+        d_text: usize,
     ) {
         let s = &self.scratch;
         let eps = self.cfg.eps;
@@ -717,41 +1094,69 @@ impl GpuAudioForward {
         // proj_fc is F16 in our GGUF.
         match self.proj_fc_dtype {
             GgmlDtype::F16 => matmul_f16_batched_chained(
-                &self.ctx, &self.pipes, enc,
-                &self.proj_fc, &s.h_main, &s.fc_out,
-                hidden, d_text, seq,
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &self.proj_fc,
+                &s.h_main,
+                &s.fc_out,
+                hidden,
+                d_text,
+                seq,
             ),
             GgmlDtype::BF16 => matmul_bf16_batched_chained(
-                &self.ctx, &self.pipes, enc,
-                &self.proj_fc, &s.h_main, &s.fc_out,
-                hidden, d_text, seq,
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &self.proj_fc,
+                &s.h_main,
+                &s.fc_out,
+                hidden,
+                d_text,
+                seq,
             ),
             other => panic!("audio projector FC dtype {other:?} not supported"),
         }
         // Bias add (per-output-dim).
         if let Some(bias) = self.proj_fc_bias.as_ref() {
-            add_bias_batched_chained(
-                &self.ctx, &self.pipes, enc,
-                &s.fc_out, bias, d_text, seq,
-            );
+            add_bias_batched_chained(&self.ctx, &self.pipes, enc, &s.fc_out, bias, d_text, seq);
         }
         // Unweighted RMSNorm: fc_out → fc_normed (no learned weight).
         rmsnorm_per_row_chained(
-            &self.ctx, &self.pipes, enc,
-            &s.fc_out, None, &s.fc_out,
-            &s.fc_normed, seq, d_text, eps,
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &s.fc_out,
+            None,
+            &s.fc_out,
+            &s.fc_normed,
+            seq,
+            d_text,
+            eps,
         );
         // Final projection: fc_normed [seq, d_text] × proj_input [d_text, d_text] → soft.
         match self.proj_input_dtype {
             GgmlDtype::F16 => matmul_f16_batched_chained(
-                &self.ctx, &self.pipes, enc,
-                &self.proj_input, &s.fc_normed, &s.soft,
-                d_text, d_text, seq,
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &self.proj_input,
+                &s.fc_normed,
+                &s.soft,
+                d_text,
+                d_text,
+                seq,
             ),
             GgmlDtype::BF16 => matmul_bf16_batched_chained(
-                &self.ctx, &self.pipes, enc,
-                &self.proj_input, &s.fc_normed, &s.soft,
-                d_text, d_text, seq,
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &self.proj_input,
+                &s.fc_normed,
+                &s.soft,
+                d_text,
+                d_text,
+                seq,
             ),
             other => panic!("audio projector input dtype {other:?} not supported"),
         }
@@ -762,21 +1167,29 @@ impl GpuAudioForward {
 /// depthwise conv kernel, and the 10 ClippableLinear clamps. Total ~5 KB —
 /// safe to keep resident for the model's lifetime.
 async fn load_gpu_block_meta(
-    wcache: &Arc<WeightCache>, i: u32, ctx: &WgpuCtx, q_scale_base: f32,
+    wcache: &Arc<WeightCache>,
+    i: u32,
+    ctx: &WgpuCtx,
+    q_scale_base: f32,
 ) -> Result<GpuAudioBlockMeta> {
     let p = format!("a.blk.{i}.");
     let r = wcache.reader();
 
     // Pre-multiply q_scale_base into per_dim_scale and upload as a GPU buffer.
-    let per_dim_scale_cpu = dequant_tensor_to_f32_async(r, &format!("{p}per_dim_scale.weight")).await?;
-    let scaled: Vec<f32> = per_dim_scale_cpu.iter().map(|&v| v * q_scale_base).collect();
+    let per_dim_scale_cpu =
+        dequant_tensor_to_f32_async(r, &format!("{p}per_dim_scale.weight")).await?;
+    let scaled: Vec<f32> = per_dim_scale_cpu
+        .iter()
+        .map(|&v| v * q_scale_base)
+        .collect();
     let per_dim_scale_buf = ctx.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("aud.per_dim_scale"),
         size: (scaled.len() * 4) as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    ctx.queue.write_buffer(&per_dim_scale_buf, 0, cast_slice(&scaled));
+    ctx.queue
+        .write_buffer(&per_dim_scale_buf, 0, cast_slice(&scaled));
 
     // conv_dw to GPU buffer.
     let conv_dw_cpu = dequant_tensor_to_f32_async(r, &format!("{p}conv_dw.weight")).await?;
@@ -786,21 +1199,22 @@ async fn load_gpu_block_meta(
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    ctx.queue.write_buffer(&conv_dw_buf, 0, cast_slice(&conv_dw_cpu));
+    ctx.queue
+        .write_buffer(&conv_dw_buf, 0, cast_slice(&conv_dw_cpu));
 
     Ok(GpuAudioBlockMeta {
-        per_dim_scale:   per_dim_scale_buf,
-        conv_dw:         conv_dw_buf,
-        cl_attn_q:       load_clamp(wcache, &format!("{p}attn_q")).await,
-        cl_attn_k:       load_clamp(wcache, &format!("{p}attn_k")).await,
-        cl_attn_v:       load_clamp(wcache, &format!("{p}attn_v")).await,
-        cl_attn_o:       load_clamp(wcache, &format!("{p}attn_out")).await,
-        cl_ffw_up:       load_clamp(wcache, &format!("{p}ffn_up")).await,
-        cl_ffw_down:     load_clamp(wcache, &format!("{p}ffn_down")).await,
-        cl_ffw_up_1:     load_clamp(wcache, &format!("{p}ffn_up_1")).await,
-        cl_ffw_down_1:   load_clamp(wcache, &format!("{p}ffn_down_1")).await,
-        cl_conv_pw1:     load_clamp(wcache, &format!("{p}conv_pw1")).await,
-        cl_conv_pw2:     load_clamp(wcache, &format!("{p}conv_pw2")).await,
+        per_dim_scale: per_dim_scale_buf,
+        conv_dw: conv_dw_buf,
+        cl_attn_q: load_clamp(wcache, &format!("{p}attn_q")).await,
+        cl_attn_k: load_clamp(wcache, &format!("{p}attn_k")).await,
+        cl_attn_v: load_clamp(wcache, &format!("{p}attn_v")).await,
+        cl_attn_o: load_clamp(wcache, &format!("{p}attn_out")).await,
+        cl_ffw_up: load_clamp(wcache, &format!("{p}ffn_up")).await,
+        cl_ffw_down: load_clamp(wcache, &format!("{p}ffn_down")).await,
+        cl_ffw_up_1: load_clamp(wcache, &format!("{p}ffn_up_1")).await,
+        cl_ffw_down_1: load_clamp(wcache, &format!("{p}ffn_down_1")).await,
+        cl_conv_pw1: load_clamp(wcache, &format!("{p}conv_pw1")).await,
+        cl_conv_pw2: load_clamp(wcache, &format!("{p}conv_pw2")).await,
     })
 }
 
@@ -811,7 +1225,8 @@ async fn load_gpu_block_meta(
 /// via `Model::release_audio_weights()` when switching to a text-only or
 /// vision turn on a memory-constrained device.
 async fn fetch_gpu_block_weights(
-    wcache: &Arc<WeightCache>, i: u32,
+    wcache: &Arc<WeightCache>,
+    i: u32,
 ) -> Result<GpuAudioBlockWeights> {
     let p = format!("a.blk.{i}.");
     // All 20 per-block fetches concurrently. Cold cache: 20 overlapping
@@ -842,34 +1257,33 @@ async fn fetch_gpu_block_weights(
         "conv_pw1.weight",
         "conv_pw2.weight",
     ];
-    let buffers: Vec<wgpu::Buffer> = futures_util::future::try_join_all(
-        names.iter().map(|n| {
-            let full = format!("{p}{n}");
-            async move { wcache.buffer_async(&full).await }
-        }),
-    ).await?;
+    let buffers: Vec<wgpu::Buffer> = futures_util::future::try_join_all(names.iter().map(|n| {
+        let full = format!("{p}{n}");
+        async move { wcache.buffer_async(&full).await }
+    }))
+    .await?;
     let mut it = buffers.into_iter();
     Ok(GpuAudioBlockWeights {
-        pre_norm:        it.next().unwrap(),
-        ffw_norm:        it.next().unwrap(),
-        ffw_up:          it.next().unwrap(),
-        ffw_down:        it.next().unwrap(),
-        ffw_post_norm:   it.next().unwrap(),
-        ffw_norm_1:      it.next().unwrap(),
-        ffw_up_1:        it.next().unwrap(),
-        ffw_down_1:      it.next().unwrap(),
+        pre_norm: it.next().unwrap(),
+        ffw_norm: it.next().unwrap(),
+        ffw_up: it.next().unwrap(),
+        ffw_down: it.next().unwrap(),
+        ffw_post_norm: it.next().unwrap(),
+        ffw_norm_1: it.next().unwrap(),
+        ffw_up_1: it.next().unwrap(),
+        ffw_down_1: it.next().unwrap(),
         ffw_post_norm_1: it.next().unwrap(),
-        attn_pre_norm:   it.next().unwrap(),
-        attn_post_norm:  it.next().unwrap(),
-        attn_q:          it.next().unwrap(),
-        attn_k:          it.next().unwrap(),
-        attn_v:          it.next().unwrap(),
-        attn_o:          it.next().unwrap(),
-        linear_pos:      it.next().unwrap(),
-        conv_norm:       it.next().unwrap(),
-        norm_conv:       it.next().unwrap(),
-        conv_pw1:        it.next().unwrap(),
-        conv_pw2:        it.next().unwrap(),
+        attn_pre_norm: it.next().unwrap(),
+        attn_post_norm: it.next().unwrap(),
+        attn_q: it.next().unwrap(),
+        attn_k: it.next().unwrap(),
+        attn_v: it.next().unwrap(),
+        attn_o: it.next().unwrap(),
+        linear_pos: it.next().unwrap(),
+        conv_norm: it.next().unwrap(),
+        norm_conv: it.next().unwrap(),
+        conv_pw1: it.next().unwrap(),
+        conv_pw2: it.next().unwrap(),
     })
 }
 
@@ -878,15 +1292,18 @@ async fn load_clamp(wcache: &Arc<WeightCache>, prefix: &str) -> Clamp {
         let name = format!("{prefix}.{suffix}");
         async move {
             match wcache.reader().tensor(&name) {
-                Ok(_) => dequant_tensor_to_f32_async(wcache.reader(), &name).await
-                    .ok().and_then(|v| v.first().copied()).unwrap_or(0.0),
+                Ok(_) => dequant_tensor_to_f32_async(wcache.reader(), &name)
+                    .await
+                    .ok()
+                    .and_then(|v| v.first().copied())
+                    .unwrap_or(0.0),
                 Err(_) => 0.0,
             }
         }
     };
     Clamp {
-        in_min:  one("input_min").await,
-        in_max:  one("input_max").await,
+        in_min: one("input_min").await,
+        in_max: one("input_max").await,
         out_min: one("output_min").await,
         out_max: one("output_max").await,
     }
