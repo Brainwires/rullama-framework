@@ -1,17 +1,13 @@
 /**
  * @module @brainwires/knowledge
  *
- * Knowledge layer (BrainClient + entity/relationship/thought graph + BKS/PKS)
- * for the Brainwires Agent Framework.
+ * Knowledge layer: BrainClient + entity/relationship/thought graph + BKS/PKS.
+ * Equivalent to Rust's `brainwires-knowledge` crate.
  *
- * In v0.11.0 prompting moved to `@brainwires/prompting`, and RAG +
- * code_analysis moved to `@brainwires/rag` (to mirror Rust's
- * `brainwires-prompting` + `brainwires-rag` extraction). Both are re-exported
- * here through the 0.11.x window as a back-compat shim; remove these imports
- * by 0.12.0.
+ * Prompting moved to `@brainwires/prompting`. RAG and code analysis moved
+ * to `@brainwires/rag`. No transitional re-exports — update imports.
  */
 
-// ── Knowledge ─────────────────────────────────────────────────────────────
 export {
   ALL_THOUGHT_CATEGORIES,
   createThought,
@@ -50,7 +46,3 @@ export type {
   ThoughtStats,
   ThoughtSummary,
 } from "./knowledge/mod.ts";
-
-// ── Transitional re-exports (moved to dedicated packages in v0.11.0) ──────
-export * from "@brainwires/prompting";
-export * from "@brainwires/rag";

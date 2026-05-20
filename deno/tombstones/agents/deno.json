@@ -1,7 +1,0 @@
-{
-  "name": "@brainwires/agents",
-  "license": "MIT",
-  "version": "0.10.2",
-  "exports": "./mod.ts",
-  "description": "DEPRECATED — split in v0.11.0 into @brainwires/agent (coordination), @brainwires/inference (LLM workhorses), @brainwires/mdap, @brainwires/seal, @brainwires/skills, @brainwires/eval."
-}

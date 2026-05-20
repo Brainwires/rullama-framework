@@ -1,7 +1,0 @@
-{
-  "name": "@brainwires/providers",
-  "license": "MIT",
-  "version": "0.10.2",
-  "exports": "./mod.ts",
-  "description": "DEPRECATED — renamed in v0.11.0. LLMs → @brainwires/provider; speech clients → @brainwires/provider-speech."
-}

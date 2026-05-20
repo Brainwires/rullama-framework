@@ -1,7 +1,0 @@
-{
-  "name": "@brainwires/tools",
-  "license": "MIT",
-  "version": "0.10.2",
-  "exports": "./mod.ts",
-  "description": "DEPRECATED — split in v0.11.0 into @brainwires/tool-runtime (registry/executor/router/sanitization/OpenAPI/OAuth) and @brainwires/tool-builtins (Bash/FileOps/Git/Web/Search/SemanticSearch/Calendar/Sessions)."
-}

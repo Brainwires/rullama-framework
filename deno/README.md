@@ -7,9 +7,10 @@ communication, and fine-grained permissions — all running on Deno.
 
 ## Packages (v0.11.0)
 
-All 28 packages publish to JSR under the `@brainwires/*` scope. The shape
+All 27 packages publish to JSR under the `@brainwires/*` scope. The shape
 mirrors the Rust workspace 1:1 (post-v0.11.0 restructure): singular crate names,
-mcp-client / mcp-server split, finetune-not-training, etc.
+mcp-client / mcp-server split, finetune-not-training, etc. No transitional
+shims — v0.11.0 is a clean break from 0.10.x.
 
 | Package                       | Description                                                                                                      |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------- |
@@ -40,12 +41,10 @@ mcp-client / mcp-server split, finetune-not-training, etc.
 | `@brainwires/telemetry`       | Analytics events, sinks, Prometheus metrics, billing hooks, anomaly detection                                    |
 | `@brainwires/reasoning`       | Plan parser, complexity/router/validator/retrieval scorers                                                       |
 | `@brainwires/finetune`        | Cloud fine-tuning (OpenAI, Together, Fireworks)                                                                  |
-| `@brainwires/tools`           | **DEPRECATED — 0.11.x transitional barrel** — re-exports `tool-runtime` + `tool-builtins`. Remove in 0.12.0.     |
 
-A `0.10.2` tombstone publish of the pre-rename package names (`providers`,
-`permissions`, `agents`, `mcp`, `resilience`, `training`, `tools`) is published
-from a release branch — each re-exports the new name and carries a deprecation
-banner.
+v0.11.0 is a breaking release. The pre-rename package names (`providers`,
+`permissions`, `agents`, `mcp`, `resilience`, `training`, `tools`) are **not**
+published as tombstones — consumers must update imports to the new names.
 
 ## Documentation & Examples
 

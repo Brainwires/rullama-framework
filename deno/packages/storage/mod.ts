@@ -1,8 +1,8 @@
 /**
  * @module @brainwires/storage
  *
- * Backend-agnostic persistent storage substrate for the Brainwires Agent
- * Framework. Equivalent to Rust's `brainwires-storage` crate (post-Phase-9 shape).
+ * Backend-agnostic persistent storage substrate. Equivalent to Rust's
+ * `brainwires-storage` crate.
  *
  * Provides:
  * - `StorageBackend` and `VectorDatabase` interfaces
@@ -11,10 +11,8 @@
  * - Concrete database adapters: Postgres / MySQL / Qdrant / SurrealDB /
  *   Pinecone / Weaviate / Milvus
  *
- * In v0.11.0 the domain stores moved to `@brainwires/stores` and tiered
- * memory orchestration moved to `@brainwires/memory`. Both are re-exported
- * here through the 0.11.x window as a back-compat shim; remove these imports
- * by 0.12.0.
+ * Domain stores moved to `@brainwires/stores`. Tiered memory orchestration
+ * moved to `@brainwires/memory`. No transitional re-exports — update imports.
  */
 
 // -- Core types -------------------------------------------------------------
@@ -54,9 +52,6 @@ export {
   type EmbeddingProvider,
 } from "./embeddings.ts";
 
-// -- Tiered memory (moved to @brainwires/memory in v0.11.0; transitional) ----
-export * from "@brainwires/memory";
-
 // -- Database backends ------------------------------------------------------
 export {
   MilvusDatabase,
@@ -70,6 +65,3 @@ export {
   SurrealDatabase,
   WeaviateDatabase,
 } from "./backends/mod.ts";
-
-// -- Domain stores (moved to @brainwires/stores in v0.11.0; transitional) ----
-export * from "@brainwires/stores";

@@ -1,19 +1,15 @@
 /**
  * @module @brainwires/network
  *
- * Agent-to-agent networking layer for the Brainwires Agent Framework.
- * Provides identity, routing, discovery, peer table, agent management, remote
- * bridge, and client connectivity.
+ * Agent-to-agent networking layer: identity, routing, discovery, peer table,
+ * agent management, remote bridge, and client connectivity.
  *
- * In v0.11.0 the MCP server framework (McpServer, McpToolRegistry, middleware,
- * transport) moved to `@brainwires/mcp-server` to mirror Rust's standalone
- * `brainwires-mcp-server` crate. The transitional re-export below keeps the
- * old import paths working; remove it in 0.12.0.
+ * The MCP server framework lives in `@brainwires/mcp-server` — import from
+ * there directly. `AgentNetworkError` + `ErrorCode` are re-exported here for
+ * convenience (the underlying class lives in mcp-server).
  */
 
-// MCP server framework (moved to @brainwires/mcp-server in v0.11.0).
-// Includes AgentNetworkError + ErrorCode + transport + middleware.
-export * from "@brainwires/mcp-server";
+export { AgentNetworkError, ErrorCode } from "./error.ts";
 
 // =============================================================================
 // Identity Layer

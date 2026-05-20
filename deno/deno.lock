@@ -332,7 +332,6 @@
       "jsr:@brainwires/telemetry@0.11",
       "jsr:@brainwires/tool-builtins@0.11",
       "jsr:@brainwires/tool-runtime@0.11",
-      "jsr:@brainwires/tools@0.11",
       "jsr:@std/assert@1",
       "jsr:@std/path@1",
       "jsr:@std/yaml@1",

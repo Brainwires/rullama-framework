@@ -10,12 +10,14 @@
  */
 
 import type { PolicyDecision } from "./policy.ts";
-// Anomaly detection moved to @brainwires/telemetry in v0.11.0 (mirrors Rust restructure).
-import {
-  type AnomalyConfig,
-  AnomalyDetector,
-  type AnomalyEvent,
-} from "@brainwires/telemetry";
+
+// Anomaly detection lives in `@brainwires/telemetry`. AuditLogger no longer
+// wires it up internally — callers observe events with their own detector:
+//
+//   import { AnomalyDetector, defaultAnomalyConfig } from "@brainwires/telemetry";
+//   const detector = new AnomalyDetector(defaultAnomalyConfig());
+//   auditLogger.log(event);
+//   detector.observe(event);
 
 // ── Audit Event Type ────────────────────────────────────────────────
 
@@ -308,7 +310,6 @@ export class AuditLogger {
   #buffer: AuditEvent[] = [];
   #maxBufferSize: number;
   #enabled = true;
-  #anomalyDetector: AnomalyDetector | undefined;
 
   private constructor(
     logPath: string,
@@ -348,34 +349,6 @@ export class AuditLogger {
     return new AuditLogger(`${logDir}/audit.jsonl`);
   }
 
-  /**
-   * Attach an anomaly detector (builder pattern).
-   *
-   * Rust equivalent: `AuditLogger::with_anomaly_detection()`
-   */
-  withAnomalyDetection(config: AnomalyConfig): this {
-    this.#anomalyDetector = new AnomalyDetector(config);
-    return this;
-  }
-
-  /**
-   * Drain all accumulated anomaly events.
-   *
-   * Rust equivalent: `AuditLogger::drain_anomalies()`
-   */
-  drainAnomalies(): AnomalyEvent[] | undefined {
-    return this.#anomalyDetector?.drainAnomalies();
-  }
-
-  /**
-   * Return the number of pending anomaly events without draining.
-   *
-   * Rust equivalent: `AuditLogger::pending_anomaly_count()`
-   */
-  pendingAnomalyCount(): number {
-    return this.#anomalyDetector?.pendingCount() ?? 0;
-  }
-
   /** Enable or disable logging. Rust equivalent: `AuditLogger::set_enabled()` */
   setEnabled(enabled: boolean): void {
     this.#enabled = enabled;
@@ -388,9 +361,6 @@ export class AuditLogger {
    */
   log(event: AuditEvent): void {
     if (!this.#enabled) return;
-
-    // Feed to anomaly detector
-    this.#anomalyDetector?.observe(event);
 
     if (IMPORTANT_EVENT_TYPES.has(event.event_type)) {
       this.#writeEvent(event);

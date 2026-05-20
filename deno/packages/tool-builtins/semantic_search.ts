@@ -19,11 +19,13 @@ import {
 } from "@brainwires/core";
 import type {
   AdvancedSearchRequest,
+  GitSearchResult,
   IndexRequest,
   QueryRequest,
   RagClient,
   SearchGitHistoryRequest,
-} from "@brainwires/knowledge";
+  SearchResult,
+} from "@brainwires/rag";
 
 /** Tool definitions and executor for semantic codebase search powered by RAG. */
 export class SemanticSearchTool {
@@ -301,7 +303,7 @@ export class SemanticSearchTool {
 
     const resp = await client.queryCodebase(req);
     let out = `Found ${resp.results.length} results:\n\n`;
-    resp.results.forEach((r, i) => {
+    resp.results.forEach((r: SearchResult, i: number) => {
       out += `${i + 1}. ${r.filePath} (score: ${r.score.toFixed(3)})\n`;
       out += `   Lines ${r.startLine}-${r.endLine}\n`;
       const firstLine = r.content.split("\n")[0] ?? "";
@@ -336,7 +338,7 @@ export class SemanticSearchTool {
 
     const resp = await client.advancedSearch(req);
     let out = `Found ${resp.results.length} filtered results:\n\n`;
-    resp.results.forEach((r, i) => {
+    resp.results.forEach((r: SearchResult, i: number) => {
       out += `${i + 1}. ${r.filePath} (score: ${r.score.toFixed(3)})\n`;
       out += `   Language: ${r.language}\n`;
       out += `   Lines ${r.startLine}-${r.endLine}\n\n`;
@@ -387,7 +389,7 @@ export class SemanticSearchTool {
 
     const resp = await client.searchGitHistory(req);
     let out = `Found ${resp.results.length} commits:\n\n`;
-    resp.results.forEach((r, i) => {
+    resp.results.forEach((r: GitSearchResult, i: number) => {
       out += `${i + 1}. ${r.commitHash.slice(0, 8)} (score: ${
         r.score.toFixed(3)
       })\n`;

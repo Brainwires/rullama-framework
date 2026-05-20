@@ -1,7 +1,0 @@
-{
-  "name": "@brainwires/permissions",
-  "license": "MIT",
-  "version": "0.10.2",
-  "exports": "./mod.ts",
-  "description": "DEPRECATED — renamed to @brainwires/permission in v0.11.0. Anomaly detection moved to @brainwires/telemetry/anomaly."
-}

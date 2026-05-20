@@ -29,8 +29,7 @@
     "./packages/stores",
     "./packages/telemetry",
     "./packages/tool-builtins",
-    "./packages/tool-runtime",
-    "./packages/tools"
+    "./packages/tool-runtime"
   ],
   "imports": {
     "@std/assert": "jsr:@std/assert@^1.0.0",
@@ -68,7 +67,6 @@
     "@brainwires/stores": "jsr:@brainwires/stores@^0.11.0",
     "@brainwires/telemetry": "jsr:@brainwires/telemetry@^0.11.0",
     "@brainwires/tool-builtins": "jsr:@brainwires/tool-builtins@^0.11.0",
-    "@brainwires/tool-runtime": "jsr:@brainwires/tool-runtime@^0.11.0",
-    "@brainwires/tools": "jsr:@brainwires/tools@^0.11.0"
+    "@brainwires/tool-runtime": "jsr:@brainwires/tool-runtime@^0.11.0"
   }
 }

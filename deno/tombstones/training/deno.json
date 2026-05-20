@@ -1,7 +1,0 @@
-{
-  "name": "@brainwires/training",
-  "license": "MIT",
-  "version": "0.10.2",
-  "exports": "./mod.ts",
-  "description": "DEPRECATED — renamed to @brainwires/finetune in v0.11.0."
-}

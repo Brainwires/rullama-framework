@@ -1,7 +1,0 @@
-{
-  "name": "@brainwires/mcp",
-  "license": "MIT",
-  "version": "0.10.2",
-  "exports": "./mod.ts",
-  "description": "DEPRECATED — renamed to @brainwires/mcp-client in v0.11.0. MCP server framework now lives in @brainwires/mcp-server."
-}

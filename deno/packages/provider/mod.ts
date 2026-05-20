@@ -44,10 +44,7 @@ export {
   maxOutputTokensForModel,
 } from "./brainwires_relay.ts";
 
-// Audio providers moved to @brainwires/provider-speech in v0.11.0.
-// Transitional re-export keeps the old import path working through 0.11.x;
-// remove this line in 0.12.0 and import from @brainwires/provider-speech.
-export * from "@brainwires/provider-speech";
+// Speech providers moved to @brainwires/provider-speech.
 
 // Factory
 export { ChatProviderFactory } from "./factory.ts";
