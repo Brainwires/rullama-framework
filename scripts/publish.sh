@@ -25,7 +25,7 @@ case "${1:-}" in
     --live)
         DRY_RUN=false
         echo "=== LIVE PUBLISH MODE ==="
-        echo "This will publish all 21 workspace crates + any unpublished deprecated crates to crates.io."
+        echo "This will publish all 30 workspace crates + any unpublished deprecated crates to crates.io."
         echo "Estimated time: ~5 minutes (burst 30, then 1/min)"
         echo "Press Ctrl+C within 5 seconds to abort..."
         sleep 5
