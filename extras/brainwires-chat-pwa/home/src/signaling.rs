@@ -651,9 +651,10 @@ async fn post_ice(
     // empty `RTCIceCandidateInit.candidate` string as malformed, and the
     // home side doesn't need a sentinel because trickle-ICE keeps gathering
     // until the connection is established or fails.
-    if let Some(s_str) = body.candidate.as_deref() {
-        if !s_str.is_empty() {
-            if let Some(pc) = s.peer.read().await.clone() {
+    if let Some(s_str) = body.candidate.as_deref()
+        && !s_str.is_empty()
+    {
+        if let Some(pc) = s.peer.read().await.clone() {
                 if let Err(e) = pc
                     .add_ice_candidate(RTCIceCandidateInit {
                         candidate: s_str.to_string(),
@@ -674,7 +675,6 @@ async fn post_ice(
                     "received PWA ICE candidate before offer; buffering would race the answerer build"
                 );
             }
-        }
     }
 
     StatusCode::NO_CONTENT

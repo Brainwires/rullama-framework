@@ -1,7 +1,6 @@
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::IpAddr;
 
 use ipnetwork::IpNetwork;
-use tracing::warn;
 
 use super::interfaces::list_interfaces;
 use super::types::IpConfig;
@@ -38,10 +37,13 @@ pub fn get_interface_addrs(name: &str) -> Vec<IpNetwork> {
 /// Returns a map of interface name → gateway IP.
 /// On non-Linux platforms returns an empty map.
 fn read_default_gateways() -> std::collections::HashMap<String, IpAddr> {
+    #[allow(unused_mut)]
     let mut map = std::collections::HashMap::new();
 
     #[cfg(target_os = "linux")]
     {
+        use std::net::Ipv4Addr;
+        use tracing::warn;
         let content = match std::fs::read_to_string("/proc/net/route") {
             Ok(c) => c,
             Err(e) => {

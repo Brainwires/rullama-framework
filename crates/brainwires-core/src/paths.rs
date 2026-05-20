@@ -357,6 +357,7 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "linux")]
+    #[ignore = "modifies HOME / XDG_CONFIG_HOME; races other env-touching tests under cargo test parallelism"]
     fn test_config_dir_fallback_to_home() {
         // Test fallback to HOME/.config when XDG_CONFIG_HOME is not set
         let xdg_original = env::var("XDG_CONFIG_HOME").ok();

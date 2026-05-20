@@ -279,14 +279,11 @@ pub fn spawn_ice_relay(
                         })
                         .await;
                 }
-                Ok(PeerEvent::ConnectionState(s))
-                    if matches!(
-                        s,
-                        RTCPeerConnectionState::Connected
-                            | RTCPeerConnectionState::Failed
-                            | RTCPeerConnectionState::Closed
-                    ) =>
-                {
+                Ok(PeerEvent::ConnectionState(
+                    RTCPeerConnectionState::Connected
+                    | RTCPeerConnectionState::Failed
+                    | RTCPeerConnectionState::Closed,
+                )) => {
                     break;
                 }
                 Err(broadcast::error::RecvError::Closed) => break,
@@ -402,10 +399,10 @@ pub async fn run_a2a_loop_with_session(
                         // case: we buffer a frame the PWA already received,
                         // which the resume-cursor filter then drops. Better
                         // than the alternative (sent-but-not-buffered).
-                        if let Some(s) = session.as_deref() {
-                            if let Some(id) = parse_outbox_id(&reply) {
-                                s.push_outbox(id, reply.clone()).await;
-                            }
+                        if let Some(s) = session.as_deref()
+                            && let Some(id) = parse_outbox_id(&reply)
+                        {
+                            s.push_outbox(id, reply.clone()).await;
                         }
                         if let Err(e) = pump_dc.send_text(&reply).await {
                             tracing::warn!(error = %e, "a2a: send_text failed");
@@ -484,18 +481,18 @@ async fn dispatch_jsonrpc(
     // to the bridge so we don't round-trip system/* or bin/* calls through
     // the agent.
     let parsed_value: Option<Value> = serde_json::from_str(text).ok();
-    if let Some(v) = parsed_value.as_ref() {
-        if let Some(method) = v.get("method").and_then(|m| m.as_str()) {
-            match method {
-                METHOD_SYSTEM_RESUME => return handle_resume(v, session).await,
-                METHOD_BIN_BEGIN | METHOD_BIN_CHUNK | METHOD_BIN_END => {
-                    return handle_bin(method, v, session).await;
-                }
-                METHOD_SYNC_PUSH | METHOD_SYNC_PULL | METHOD_SYNC_ACK => {
-                    return handle_sync(method, v, sync_store);
-                }
-                _ => {}
+    if let Some(v) = parsed_value.as_ref()
+        && let Some(method) = v.get("method").and_then(|m| m.as_str())
+    {
+        match method {
+            METHOD_SYSTEM_RESUME => return handle_resume(v, session).await,
+            METHOD_BIN_BEGIN | METHOD_BIN_CHUNK | METHOD_BIN_END => {
+                return handle_bin(method, v, session).await;
             }
+            METHOD_SYNC_PUSH | METHOD_SYNC_PULL | METHOD_SYNC_ACK => {
+                return handle_sync(method, v, sync_store);
+            }
+            _ => {}
         }
     }
 
