@@ -18,7 +18,7 @@ categories = ["development-tools"]
 brainwires-core = { workspace = true }
 brainwires-agent = { workspace = true }
 brainwires-call-policy = { workspace = true }
-brainwires-tool-runtime = { workspace = true }
+brainwires-tool-runtime = { workspace = true, features = ["native"] }
 
 # Async runtime + streams
 tokio = { version = "1.43", features = ["sync", "time", "rt", "macros", "fs"] }
