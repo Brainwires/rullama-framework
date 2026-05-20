@@ -19,10 +19,11 @@ use brainwires_tool_runtime::{ToolExecutor, ToolRegistry, ToolSearchTool};
 /// # Example
 ///
 /// ```rust,ignore
-/// use brainwires_tools::{BuiltinToolExecutor, ToolRegistry};
+/// use brainwires_tool_builtins::BuiltinToolExecutor;
+/// use brainwires_tool_runtime::ToolRegistry;
 /// use brainwires_core::ToolContext;
 ///
-/// let registry = brainwires_tools::registry_with_builtins();
+/// let registry = brainwires_tool_builtins::registry_with_builtins();
 /// let context = ToolContext::default();
 /// let executor = BuiltinToolExecutor::new(registry, context);
 ///

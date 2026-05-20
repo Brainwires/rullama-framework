@@ -11,7 +11,7 @@
 //! ## Example — client credentials
 //!
 //! ```rust,no_run
-//! use brainwires_tools::oauth::{OAuthConfig, OAuthFlow, OAuthClient, InMemoryTokenStore};
+//! use brainwires_tool_runtime::oauth::{OAuthConfig, OAuthFlow, OAuthClient, InMemoryTokenStore};
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! let config = OAuthConfig::client_credentials(

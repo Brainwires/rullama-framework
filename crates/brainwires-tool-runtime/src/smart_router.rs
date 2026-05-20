@@ -315,7 +315,7 @@ pub fn get_tools_for_categories(registry: &ToolRegistry, categories: &[ToolCateg
 /// Get smart-routed tools for the given messages, picking from `registry`.
 ///
 /// Callers that want to route over the full set of brainwires builtins can
-/// pass `brainwires_tools::registry_with_builtins()`.
+/// pass `brainwires_tool_builtins::registry_with_builtins()`.
 pub fn get_smart_tools(messages: &[Message], registry: &ToolRegistry) -> Vec<Tool> {
     let categories = analyze_messages(messages);
     get_tools_for_categories(registry, &categories)

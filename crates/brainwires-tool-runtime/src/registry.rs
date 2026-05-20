@@ -50,8 +50,8 @@ pub enum ToolCategory {
 /// # Example
 /// ```ignore
 /// use brainwires_tool_runtime::ToolRegistry;
-/// // From brainwires-tools (façade with builtins access):
-/// // use brainwires_tools::{registry_with_builtins, BashTool};
+/// // From brainwires-tool-builtins (concrete tools + registry helper):
+/// // use brainwires_tool_builtins::{registry_with_builtins, BashTool};
 ///
 /// let mut registry = ToolRegistry::new();
 /// // registry.register_tools(BashTool::get_tools());
@@ -68,7 +68,7 @@ impl ToolRegistry {
 
     /// Always-available tools — currently just the meta `tool_search`. The
     /// concrete builtins are not in this crate; use
-    /// `brainwires_tools::registry_with_builtins()` for a pre-populated
+    /// `brainwires_tool_builtins::registry_with_builtins()` for a pre-populated
     /// registry, or call [`Self::register_tools`] manually.
     pub fn with_runtime_meta_tools() -> Self {
         let mut registry = Self::new();

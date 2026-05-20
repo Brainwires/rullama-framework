@@ -15,7 +15,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use brainwires_tools::interpreters::{Executor, ExecutionRequest, Language};
+//! use brainwires_tool_builtins::interpreters::{Executor, ExecutionRequest, Language};
 //!
 //! let executor = Executor::new();
 //! let result = executor.execute(ExecutionRequest {

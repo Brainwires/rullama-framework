@@ -7,7 +7,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use brainwires_tools::interpreters::docker::{DockerExecutor, DockerConfig};
+//! use brainwires_tool_builtins::interpreters::docker::{DockerExecutor, DockerConfig};
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! let executor = DockerExecutor::new(DockerConfig::default());

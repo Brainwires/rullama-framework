@@ -14,7 +14,7 @@
 //! # Usage
 //!
 //! ```rust,ignore
-//! use brainwires_tools::openapi::{openapi_to_tools, execute_openapi_tool, OpenApiAuth};
+//! use brainwires_tool_runtime::openapi::{openapi_to_tools, execute_openapi_tool, OpenApiAuth};
 //!
 //! // Parse spec and get tools
 //! let spec_json = std::fs::read_to_string("openapi.json")?;

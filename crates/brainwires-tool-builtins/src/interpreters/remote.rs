@@ -21,8 +21,8 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use brainwires_tools::interpreters::remote::{RemoteSandboxConfig, RemoteSandboxExecutor};
-//! use brainwires_tools::interpreters::{ExecutionRequest, Language};
+//! use brainwires_tool_builtins::interpreters::remote::{RemoteSandboxConfig, RemoteSandboxExecutor};
+//! use brainwires_tool_builtins::interpreters::{ExecutionRequest, Language};
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! let config = RemoteSandboxConfig::new("https://sandbox.example.com", "sk-my-api-key");

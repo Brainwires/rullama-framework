@@ -131,7 +131,7 @@ pub mod seal {
     pub use brainwires_seal::*;
 }
 
-// Orchestrator is re-exported via brainwires_tools::orchestrator when orchestrator feature is on
+// Orchestrator is re-exported via brainwires_tool_runtime::orchestrator when orchestrator feature is on
 
 /// RAG — codebase indexing, semantic search, and retrieval-augmented generation.
 #[cfg(feature = "rag")]

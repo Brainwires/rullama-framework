@@ -150,7 +150,7 @@ All functions accept plain JSON strings and return JSON strings or descriptive e
 
 ### ExecutionLimits (requires `orchestrator` feature)
 
-WASM-compatible wrapper around `brainwires_tools::orchestrator::ExecutionLimits` with JavaScript getter/setter bindings.
+WASM-compatible wrapper around `brainwires_tool_runtime::orchestrator::ExecutionLimits` with JavaScript getter/setter bindings.
 
 | Constructor | Description |
 |-------------|-------------|

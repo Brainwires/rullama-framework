@@ -29,7 +29,8 @@ use crate::summarization::Summarizer;
 ///
 /// ```rust,ignore
 /// use brainwires_agent::ChatAgent;
-/// use brainwires_tools::{BuiltinToolExecutor, ToolRegistry};
+/// use brainwires_tool_builtins::BuiltinToolExecutor;
+/// use brainwires_tool_runtime::ToolRegistry;
 /// use brainwires_core::{ChatOptions, ToolContext};
 /// use std::sync::Arc;
 ///
