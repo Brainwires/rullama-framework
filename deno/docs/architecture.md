@@ -59,7 +59,37 @@ These types appear throughout the framework:
 | `LifecycleHook` | Event interception for the framework lifecycle |
 | `Provider` | Interface all chat providers implement |
 
+## Runtime boundary — what stays Rust-only
+
+The Deno port is deliberately a subset. A handful of crates in the Rust
+framework are Rust-only on purpose, and Deno consumers should drive the
+Rust binary for those concerns instead of trying to approximate them:
+
+- **`brainwires-hardware`** — GPIO, USB, BLE, CPAL audio, Zigbee, Z-Wave,
+  Matter. Needs OS kernel access; not reachable from Deno without FFI.
+- **`brainwires-sandbox`, `brainwires-sandbox-proxy`** — Bollard Docker
+  orchestration and Hyper-based egress proxy. Run the Rust sidecar.
+- **`local_llm` provider** — llama-cpp FFI. Use `OllamaChatProvider` for
+  local inference from Deno.
+- **`interpreters` / `orchestrator` tools** — Rhai, Boa, RustPython
+  embedded runtimes.
+- **`sandbox_executor` / `code_exec`** — depend on the Rust sandbox crate.
+- **`browser` tool** — pairs with the Rust Thalora headless browser.
+- **LanceDB / ONNX / tantivy RAG** — native indexing and embedding stays
+  in Rust. The Deno `@brainwires/knowledge` package keeps its client
+  role and talks to a Rust RAG service over the existing `RagClient`
+  interface.
+- **Burn-based local training** — Deno ships `@brainwires/training` with
+  cloud backends only (OpenAI, Together, Fireworks).
+
+Communication across the boundary goes through `@brainwires/network`
+(MCP server, IPC transport) or `@brainwires/a2a` (Google A2A protocol).
+
+For per-file detail, see [parity.md](./parity.md) — it links to each
+`SKIPPED.md` under the corresponding package.
+
 ## Further Reading
 
 - [Getting Started](./getting-started.md) for a hands-on quickstart
 - [Extensibility](./extensibility.md) for how to implement custom providers, storage, and tools
+- [Parity](./parity.md) — crate-by-crate diff against the Rust workspace

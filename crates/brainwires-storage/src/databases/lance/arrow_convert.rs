@@ -326,14 +326,9 @@ pub fn filter_to_sql(filter: &Filter) -> String {
             format!("({})", clauses.join(" OR "))
         }
         Filter::Raw(s) => {
-            // DEPRECATED: Filter::Raw passes through unescaped SQL and is
-            // inherently unsafe. Migrate callers to typed Filter variants.
-            // Emitting as-is for backward compatibility but logging a warning.
-            tracing::warn!(
-                "Filter::Raw is deprecated and unsafe — migrate to typed Filter variants. \
-                 Raw SQL: {:?}",
-                s
-            );
+            // Filter::Raw is an explicit escape hatch for backend-specific
+            // SQL expressions. Callers are responsible for ensuring the
+            // contents are safe (no untrusted user input).
             s.clone()
         }
     }

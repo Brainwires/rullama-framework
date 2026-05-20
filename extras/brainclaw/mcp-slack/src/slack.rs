@@ -182,7 +182,9 @@ impl brainwires_network::channels::Channel for SlackChannel {
         // Slack doesn't have a direct typing indicator API for bots.
         // Typing indicators are automatic during message processing in Socket Mode.
         // This is a no-op but we log it for observability.
-        tracing::debug!("Slack typing indicator requested (no-op: Slack handles this automatically)");
+        tracing::debug!(
+            "Slack typing indicator requested (no-op: Slack handles this automatically)"
+        );
         Ok(())
     }
 
@@ -233,9 +235,7 @@ impl brainwires_network::channels::Channel for SlackChannel {
 
         Ok(messages
             .into_iter()
-            .filter_map(|m| {
-                slack_message_to_channel_message(&m, &target.channel_id, team_id).ok()
-            })
+            .filter_map(|m| slack_message_to_channel_message(&m, &target.channel_id, team_id).ok())
             .collect())
     }
 }
@@ -248,25 +248,19 @@ pub fn slack_message_to_channel_message(
     channel_id: &str,
     team_id: &str,
 ) -> Result<ChannelMessage> {
-    let ts = msg
-        .get("ts")
-        .and_then(|v| v.as_str())
-        .unwrap_or("0.000000");
+    let ts = msg.get("ts").and_then(|v| v.as_str()).unwrap_or("0.000000");
 
     let user = msg
         .get("user")
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
 
-    let text = msg
-        .get("text")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let text = msg.get("text").and_then(|v| v.as_str()).unwrap_or("");
 
     let thread_ts = msg
         .get("thread_ts")
         .and_then(|v| v.as_str())
-        .map(|t| ThreadId::new(t));
+        .map(ThreadId::new);
 
     // Parse attachments/files
     let attachments = msg
@@ -281,10 +275,7 @@ pub fn slack_message_to_channel_message(
                         .get("mimetype")
                         .and_then(|v| v.as_str())
                         .unwrap_or("application/octet-stream");
-                    let url = f
-                        .get("url_private")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
+                    let url = f.get("url_private").and_then(|v| v.as_str()).unwrap_or("");
                     let size = f.get("size").and_then(|v| v.as_u64());
 
                     if url.is_empty() {

@@ -15,7 +15,7 @@ categories = ["development-tools"]
 
 [dependencies]
 brainwires-core = { workspace = true }
-brainwires-tools = { workspace = true }
+brainwires-tool-runtime = { workspace = true }
 
 # Async primitives used by scorers
 async-trait = { workspace = true }
@@ -42,3 +42,7 @@ proptest.workspace = true
 
 [features]
 default = []
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

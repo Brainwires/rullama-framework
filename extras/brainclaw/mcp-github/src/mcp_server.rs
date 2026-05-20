@@ -15,7 +15,9 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use brainwires_network::channels::{Channel, ChannelMessage, ConversationId, MessageContent, MessageId};
+use brainwires_network::channels::{
+    Channel, ChannelMessage, ConversationId, MessageContent, MessageId,
+};
 use chrono::Utc;
 use rmcp::{
     ServerHandler, ServiceExt,
@@ -441,9 +443,8 @@ impl ServerHandler for GitHubMcpServer {
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
-        info.server_info =
-            Implementation::new("brainclaw-mcp-github", env!("CARGO_PKG_VERSION"))
-                .with_title("Brainwires GitHub Channel — MCP Tool Server");
+        info.server_info = Implementation::new("brainclaw-mcp-github", env!("CARGO_PKG_VERSION"))
+            .with_title("Brainwires GitHub Channel — MCP Tool Server");
         info.instructions = Some(
             "GitHub channel adapter. Use post_comment to comment on issues/PRs, \
              create_issue to open issues, create_pull_request to open PRs, \

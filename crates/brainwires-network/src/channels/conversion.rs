@@ -3,7 +3,7 @@
 //! These conversions allow channel messages to be routed through the
 //! agent network as standard message envelopes and vice versa.
 
-use brainwires_network::network::{MessageEnvelope, Payload};
+use crate::{MessageEnvelope, Payload};
 use uuid::Uuid;
 
 use super::message::{ChannelMessage, MessageContent};
@@ -73,10 +73,10 @@ impl TryFrom<MessageEnvelope> for ChannelMessage {
 
 #[cfg(test)]
 mod tests {
-    use super::identity::ConversationId;
-    use super::message::{ChannelMessage, MessageContent, MessageId};
+    use super::super::identity::ConversationId;
+    use super::super::message::{ChannelMessage, MessageContent, MessageId};
     use super::*;
-    use brainwires_network::network::MessageTarget;
+    use crate::MessageTarget;
     use chrono::Utc;
     use std::collections::HashMap;
 

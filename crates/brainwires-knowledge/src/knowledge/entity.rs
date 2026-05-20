@@ -145,7 +145,7 @@ pub struct ContradictionEvent {
 pub struct EntityStore {
     entities: HashMap<String, Entity>,
     relationships: Vec<Relationship>,
-    /// Contradiction events accumulated since the last call to [`drain_contradictions`].
+    /// Contradiction events accumulated since the last call to [`Self::drain_contradictions`].
     contradictions: Vec<ContradictionEvent>,
 }
 

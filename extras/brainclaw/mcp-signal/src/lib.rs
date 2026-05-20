@@ -19,11 +19,11 @@
 
 /// Configuration types for the Signal adapter.
 pub mod config;
-/// Signal channel implementation of the `Channel` trait.
-pub mod signal;
 /// Event handler connecting to signal-cli REST API (WebSocket + polling).
 pub mod event_handler;
 /// WebSocket client for connecting to the brainwires-gateway.
 pub mod gateway_client;
 /// MCP server exposing Signal operations as tools.
 pub mod mcp_server;
+/// Signal channel implementation of the `Channel` trait.
+pub mod signal;

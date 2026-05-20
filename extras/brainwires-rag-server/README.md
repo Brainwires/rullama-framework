@@ -2,7 +2,7 @@
 
 Standalone MCP server binary for codebase RAG (Retrieval-Augmented Generation).
 
-This is the executable wrapper for `brainwires-rag` that exposes all indexing, search, and code navigation functionality as MCP tools and slash commands.
+This is the executable wrapper for `brainwires-knowledge::rag` (formerly the standalone `brainwires-rag` crate, absorbed in the 0.10 consolidation) that exposes all indexing, search, and code navigation functionality as MCP tools and slash commands.
 
 ## Quick Start
 
@@ -53,4 +53,4 @@ See [brainwires-knowledge README](../../crates/brainwires-knowledge/README.md) f
 
 ## License
 
-Licensed under the MIT License. See [LICENSE](../../LICENSE) for details.
+Licensed under either MIT or Apache-2.0 at your option. See [LICENSE-MIT](https://github.com/Brainwires/brainwires-framework/blob/main/LICENSE-MIT) and [LICENSE-APACHE](https://github.com/Brainwires/brainwires-framework/blob/main/LICENSE-APACHE).

@@ -13,7 +13,7 @@
 //! Only compiled when the `oauth` feature is enabled.
 
 use async_trait::async_trait;
-use brainwires_mcp::{JsonRpcError, JsonRpcRequest};
+use brainwires_mcp_client::{JsonRpcError, JsonRpcRequest};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 
 use super::{Middleware, MiddlewareResult};

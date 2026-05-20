@@ -48,6 +48,17 @@ pub fn init() {
 /// When `enable_output` is false, console tracing will be disabled (useful for TUI mode)
 /// File logging is ALWAYS enabled regardless of enable_output
 pub fn init_with_output(enable_output: bool) {
+    init_with_options(enable_output, false);
+}
+
+/// Initialize the logger with console output + quiet flag.
+///
+/// When `quiet` is true AND `RUST_LOG` is not set explicitly, the console
+/// tracing filter is raised to `warn` so only warnings and errors reach
+/// stderr. This keeps `--quiet` output clean for scripts. File logging is
+/// unaffected (always captures at the default verbosity) and any explicit
+/// `RUST_LOG` setting wins so debugging workflows are preserved.
+pub fn init_with_options(enable_output: bool, quiet: bool) {
     // Only initialize once to avoid panic
     if LOGGER_INITIALIZED.swap(true, Ordering::SeqCst) {
         return;
@@ -61,9 +72,15 @@ pub fn init_with_output(enable_output: bool) {
     let file_appender = tracing_appender::rolling::daily(&log_dir, "brainwires.log");
     let (non_blocking_file, _guard) = tracing_appender::non_blocking(file_appender);
 
-    // Filter level based on environment
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("brainwires_cli=debug,info"));
+    // Filter level based on environment. Explicit `RUST_LOG` always wins so
+    // developers debugging under `--quiet` can still opt into verbosity.
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        if quiet {
+            EnvFilter::new("warn")
+        } else {
+            EnvFilter::new("brainwires_cli=debug,info")
+        }
+    });
 
     // Analytics layer — None is a no-op, so this compiles the same regardless.
     let analytics_layer = ANALYTICS
@@ -119,7 +136,7 @@ pub fn init_with_output(enable_output: bool) {
     // Leak the guard so it persists for the program lifetime
     std::mem::forget(_guard);
 
-    tracing::info!("Logging initialized - files: {}", log_dir.display());
+    tracing::debug!("Logging initialized - files: {}", log_dir.display());
 }
 
 /// Logger utility for pretty terminal output

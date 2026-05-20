@@ -30,7 +30,7 @@ As Nate B Jones put it: *"whoever solves orchestration at infrastructure grade i
 
 ```toml
 [dependencies]
-brainwires-telemetry = { version = "0.10", features = ["sqlite"] }
+brainwires-telemetry = { version = "0.11", features = ["sqlite"] }
 ```
 
 ### Analytics

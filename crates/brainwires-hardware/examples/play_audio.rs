@@ -57,17 +57,17 @@ fn decode_flac_or_bail(_raw: &[u8]) -> anyhow::Result<AudioBuffer> {
 fn audio_path_from_args() -> anyhow::Result<String> {
     let args: Vec<String> = std::env::args().collect();
 
-    if let Some(i) = args.iter().position(|a| a == "--file") {
-        if let Some(path) = args.get(i + 1) {
-            return Ok(path.clone());
-        }
+    if let Some(i) = args.iter().position(|a| a == "--file")
+        && let Some(path) = args.get(i + 1)
+    {
+        return Ok(path.clone());
     }
 
     // Positional: first non-flag argument after the binary name
-    if let Some(path) = args.get(1) {
-        if !path.starts_with('-') {
-            return Ok(path.clone());
-        }
+    if let Some(path) = args.get(1)
+        && !path.starts_with('-')
+    {
+        return Ok(path.clone());
     }
 
     anyhow::bail!("Usage: play_audio <file.wav|file.flac>")

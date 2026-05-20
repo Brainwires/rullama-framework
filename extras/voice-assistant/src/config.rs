@@ -48,6 +48,20 @@ pub struct VaConfig {
 
     /// Whether to speak responses via TTS. Default: true.
     pub tts_enabled: bool,
+
+    /// Session id used as the persistence key. Default: "voice-assistant".
+    pub session_id: String,
+
+    /// Optional path to a SQLite file for persisted session history.
+    /// If unset, conversation state lives only in memory for the process.
+    pub session_db: Option<std::path::PathBuf>,
+
+    /// Hard USD-cent budget for a single run. `None` = unbounded.
+    /// Default: None.
+    pub max_usd_cents: Option<u64>,
+
+    /// Hard token budget for a single run. `None` = unbounded.
+    pub max_tokens: Option<u64>,
 }
 
 impl Default for VaConfig {
@@ -69,6 +83,10 @@ impl Default for VaConfig {
                     .into(),
             llm_model: "gpt-4o-mini".into(),
             tts_enabled: true,
+            session_id: "voice-assistant".into(),
+            session_db: None,
+            max_usd_cents: None,
+            max_tokens: None,
         }
     }
 }
@@ -79,6 +97,18 @@ impl VaConfig {
         let text = std::fs::read_to_string(path)?;
         let config: VaConfig = toml::from_str(&text)?;
         Ok(config)
+    }
+
+    /// Load from the given path, or fall back to [`VaConfig::default`] if the
+    /// file does not exist. This mirrors the behaviour the binary uses when
+    /// `--config` is omitted: if no config has been written yet, running on
+    /// defaults is a friendlier outcome than an error.
+    pub fn load_from(path: &std::path::Path) -> anyhow::Result<Self> {
+        if path.exists() {
+            Self::from_file(path)
+        } else {
+            Ok(Self::default())
+        }
     }
 
     /// Resolve the OpenAI API key: config file first, then `OPENAI_API_KEY` env var.

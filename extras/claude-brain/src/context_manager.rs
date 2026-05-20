@@ -95,6 +95,7 @@ impl ContextManager {
                 limit: self.config.session_start.max_summaries,
                 category: None,
                 since: None,
+                owner_id: None,
             })
             .await;
 
@@ -184,6 +185,7 @@ impl ContextManager {
                 tags: Some(vec!["claude-code".to_string(), "auto-capture".to_string()]),
                 importance: Some(0.5),
                 source: Some(source.to_string()),
+                owner_id: None,
             })
             .await
     }
@@ -203,6 +205,7 @@ impl ContextManager {
                 min_score,
                 category: None,
                 sources: Some(vec!["thoughts".to_string()]),
+                owner_id: None,
             })
             .await
     }
@@ -222,6 +225,7 @@ impl ContextManager {
                 min_score,
                 category: None,
                 sources: None,
+                owner_id: None,
             })
             .await
     }

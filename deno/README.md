@@ -16,8 +16,13 @@ A modular, Deno-native TypeScript port of the [Brainwires Agent Framework](https
 | `@brainwires/tools` | `deno add @brainwires/tools` | Tool registry, built-in tools (bash, files, git, web, search) |
 | `@brainwires/knowledge` | `deno add @brainwires/knowledge` | Prompting techniques, knowledge graph, RAG interfaces |
 | `@brainwires/network` | `deno add @brainwires/network` | MCP server framework, middleware, routing, discovery |
+| `@brainwires/session` | `deno add @brainwires/session` | Pluggable session persistence (in-memory, Deno KV) |
+| `@brainwires/resilience` | `deno add @brainwires/resilience` | Retry / budget / circuit-breaker / cache provider decorators |
+| `@brainwires/telemetry` | `deno add @brainwires/telemetry` | Analytics events, sinks, Prometheus metrics, billing hooks |
+| `@brainwires/reasoning` | `deno add @brainwires/reasoning` | Plan parser, complexity/router/validator/retrieval scorers |
+| `@brainwires/training` | `deno add @brainwires/training` | Cloud fine-tuning (OpenAI, Together, Fireworks) |
 
-All packages are versioned at **0.5.0** and published to JSR under the `@brainwires` scope.
+The core 10 packages are at **0.5.0**; the five new packages start at **0.1.0**. All are published to JSR under the `@brainwires` scope.
 
 ## Documentation & Examples
 
@@ -114,22 +119,28 @@ console.log("Available tools:", tools.map((t) => t.name));
 
 ## What's Ported vs What's Not
 
+Per-file detail lives in [docs/parity.md](./docs/parity.md). Summary:
+
 | Rust Crate | Deno Package | Status |
 |------------|-------------|--------|
-| `brainwires-core` | `@brainwires/core` | Fully ported |
-| `brainwires-providers` | `@brainwires/providers` | Ported (Anthropic, OpenAI, Google, Ollama). OpenAI Responses API and Brainwires Relay not yet implemented. |
-| `brainwires-agents` | `@brainwires/agents` | Fully ported (runtime, task agent, coordination patterns) |
-| `brainwires-mcp` | `@brainwires/mcp` | Fully ported (client, stdio transport, config) |
-| `brainwires-a2a` | `@brainwires/a2a` | Fully ported (JSON-RPC + REST, no gRPC) |
-| `brainwires-storage` | `@brainwires/storage` | Fully ported (in-memory backend, domain stores, tiered memory) |
-| `brainwires-permissions` | `@brainwires/permissions` | Fully ported (capabilities, policies, audit, trust, anomaly) |
-| `brainwires-tools` | `@brainwires/tools` | Fully ported (bash, file ops, git, web, search) |
-| `brainwires-knowledge` | `@brainwires/knowledge` | Fully ported (prompting, knowledge, RAG interfaces) |
-| `brainwires-network` | `@brainwires/network` | Fully ported (MCP server, middleware, routing, discovery) |
-| `brainwires-hardware` | -- | Not ported |
-| `brainwires-reasoning` | -- | Not ported (re-exports from core in Rust) |
-| `brainwires-training` | -- | Not ported |
-| `brainwires-telemetry` | -- | Not ported |
+| `brainwires-core` | `@brainwires/core` | Faithful (+ event.ts, workflow_state.ts, output parsers) |
+| `brainwires-providers` | `@brainwires/providers` | Chat providers + Relay + 7 audio HTTP clients. `local_llm` (llama-cpp) stays Rust-only. |
+| `brainwires-agent` | `@brainwires/agents` | Runtime, task agent, coordination, MDAP, skills, seal, eval, system_prompts, roles |
+| `brainwires-mcp` | `@brainwires/mcp` | Client + stdio transport + JSON-RPC |
+| `brainwires-mcp-server` | folded into `@brainwires/network` | Server framework + middleware pipeline |
+| `brainwires-a2a` | `@brainwires/a2a` | JSON-RPC + REST (no gRPC by design) |
+| `brainwires-storage` | `@brainwires/storage` | In-memory + Postgres/MySQL/Qdrant/SurrealDB/Pinecone/Weaviate/Milvus + domain stores |
+| `brainwires-permissions` | `@brainwires/permissions` | Capabilities, policy, audit, trust, anomaly |
+| `brainwires-tools` | `@brainwires/tools` | Bash, file_ops, git, web, search, validation, openapi, oauth, calendar, sessions, tool_search, tool_embedding, semantic_search. `interpreters`/`orchestrator`/`sandbox_executor`/`code_exec`/`browser` stay Rust-only (see packages/tools/tools/SKIPPED.md). |
+| `brainwires-knowledge` | `@brainwires/knowledge` | Prompting + code analysis implemented; RAG / BKS / PKS stay as client interfaces. |
+| `brainwires-network` | `@brainwires/network` | MCP server, middleware, routing, discovery, remote bridge |
+| `brainwires-session` | `@brainwires/session` | InMemory + DenoKv backends (replaces the Rust SQLite backend) |
+| `brainwires-resilience` | `@brainwires/resilience` | Retry / budget / circuit-breaker / memory-cache decorators |
+| `brainwires-telemetry` | `@brainwires/telemetry` | Analytics events, sinks, Prometheus metrics, billing hook (SQLite sink + tracing-crate layer intentionally omitted) |
+| `brainwires-reasoning` | `@brainwires/reasoning` | Tier-1 slice: plan parser, complexity, router, validator, retrieval. `strategies`, `strategy_selector`, `summarizer`, `relevance_scorer`, `entity_enhancer` deferred. |
+| `brainwires-training` | `@brainwires/training` | Cloud-only: OpenAI, Together, Fireworks + JobPoller + TrainingManager. Bedrock/Vertex (vendor SDKs) and the local Burn-based path intentionally stay Rust-only. |
+| `brainwires-hardware` | — | Runtime boundary — Rust-only (GPIO/USB/BLE/CPAL audio/Zigbee/Z-Wave/Matter). |
+| `brainwires-sandbox` · `-sandbox-proxy` | — | Infra sidecars (Bollard Docker, Hyper HTTP proxy) — drive from the Rust binary. |
 
 ## Installation
 

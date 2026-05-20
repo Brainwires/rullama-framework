@@ -169,7 +169,6 @@ impl WebRtcConfig {
                 urls: s.urls.clone(),
                 username: s.username.clone().unwrap_or_default(),
                 credential: s.credential.clone().unwrap_or_default(),
-                ..Default::default()
             })
             .collect();
 

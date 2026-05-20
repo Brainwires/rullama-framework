@@ -1,0 +1,46 @@
+# Excludes for any Dockerfile in this workspace. Keep the build context
+# lean so docker doesn't have to ship gigabytes of build output to the
+# daemon on every `docker build`.
+
+# Rust build output
+target/
+**/target/
+
+# Node
+**/node_modules/
+**/npm-debug.log
+
+# Chat-PWA build artifacts (regenerated inside the builder stage)
+extras/brainwires-chat-pwa/web/pkg/
+extras/brainwires-chat-pwa/web/app.js
+extras/brainwires-chat-pwa/web/app.js.map
+extras/brainwires-chat-pwa/web/sw.js
+extras/brainwires-chat-pwa/web/sw.bundle.js
+extras/brainwires-chat-pwa/web/build-info.js
+
+# Other extras' build dirs
+extras/brainwires-docs/.next/
+extras/brainwires-docs/node_modules/
+
+# Git + IDE
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+.claude/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Local dev / test
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+
+# Docs and changelogs aren't needed in the image
+*.md
+!extras/brainwires-chat-pwa/web/**/*.md

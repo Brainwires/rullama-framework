@@ -6,7 +6,7 @@
 /// and demonstrates semantic search retrieval.
 use anyhow::Result;
 use brainwires_cli::storage::{
-    EmbeddingProvider, LanceDatabase, MessageMetadata, MessageStore, VectorDatabase,
+    CachedEmbeddingProvider, LanceDatabase, MessageMetadata, MessageStore, VectorDatabase,
 };
 use chrono::Utc;
 use std::sync::Arc;
@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
 
     println!("1️⃣  Initializing LanceDB and embedding model...");
     let client = Arc::new(LanceDatabase::new(test_db_path).await?);
-    let embeddings = Arc::new(EmbeddingProvider::new()?);
+    let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
 
     println!("   ✓ Embedding dimension: {}", embeddings.dimension());
 

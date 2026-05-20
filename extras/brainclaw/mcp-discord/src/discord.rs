@@ -6,10 +6,10 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serenity::model::channel::Message as SerenityMessage;
-use serenity::model::id::ChannelId;
 use serenity::all::{CreateMessage, EditMessage, GetMessages, ReactionType};
 use serenity::http::Http;
+use serenity::model::channel::Message as SerenityMessage;
+use serenity::model::id::ChannelId;
 use tokio::sync::RwLock;
 
 use brainwires_network::channels::{
@@ -100,10 +100,7 @@ impl brainwires_network::channels::Channel for DiscordChannel {
             .channel_id
             .parse::<u64>()
             .context("Invalid Discord channel ID")?;
-        let message_id = id
-            .0
-            .parse::<u64>()
-            .context("Invalid Discord message ID")?;
+        let message_id = id.0.parse::<u64>().context("Invalid Discord message ID")?;
 
         let channel = ChannelId::new(channel_id);
         let content = channel_message_to_discord_content(message);
@@ -141,10 +138,7 @@ impl brainwires_network::channels::Channel for DiscordChannel {
 
         let channel = ChannelId::new(channel_id);
         channel
-            .delete_message(
-                &*self.http,
-                serenity::model::id::MessageId::new(message_id),
-            )
+            .delete_message(&*self.http, serenity::model::id::MessageId::new(message_id))
             .await
             .map_err(|e| anyhow::anyhow!("Failed to delete Discord message: {}", e))?;
 
@@ -223,10 +217,7 @@ impl brainwires_network::channels::Channel for DiscordChannel {
 // ── Conversion helpers ──────────────────────────────────────────────────
 
 /// Convert a Discord `Message` to a `ChannelMessage`.
-pub fn discord_message_to_channel_message(
-    msg: &SerenityMessage,
-    guild_id: &str,
-) -> ChannelMessage {
+pub fn discord_message_to_channel_message(msg: &SerenityMessage, guild_id: &str) -> ChannelMessage {
     let content = if msg.content.is_empty() && !msg.embeds.is_empty() {
         let e = &msg.embeds[0];
         MessageContent::Embed(EmbedPayload {
@@ -264,10 +255,7 @@ pub fn discord_message_to_channel_message(
         })
         .collect();
 
-    let thread_id = msg
-        .thread
-        .as_ref()
-        .map(|t| ThreadId::new(t.id.to_string()));
+    let thread_id = msg.thread.as_ref().map(|t| ThreadId::new(t.id.to_string()));
 
     let reply_to = msg
         .referenced_message

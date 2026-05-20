@@ -1,0 +1,35 @@
+# brainwires-chat-pwa — dev overlay.
+#
+# Bind-mounts the host's `web/` directory into nginx's docroot so edits
+# to the bundled output (web/app.js, web/sw.js, web/pkg/*, etc.) appear
+# in the running container immediately — no image rebuild, no compose
+# watch, no shell-job hack. Compose `up -d` works as documented.
+#
+# esbuild and wasm-pack still have to run on the host to regenerate
+# those bundled outputs from the source (web/src/, wasm/src/). The
+# `start.sh dev` launcher backgrounds those for you; if you'd rather
+# drive it manually:
+#
+#   cd web && npm run watch &        # esbuild → web/app.js, web/sw.js
+#   cargo watch ... wasm-pack build  # wasm/    → web/pkg/
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml \
+#       up -d --build                # nginx serves the bind-mounted web/
+#
+# Combined with `DEV_MODE=true` (which `start.sh dev` exports), boot.js
+# unregisters the service worker and clears bw-chat-cache-v1, so each
+# browser reload sees the freshly bundled output.
+#
+# This overlay is dev-only. Plain `docker compose up` (without `-f
+# docker-compose.dev.yml`) ignores it, so prod is unaffected.
+
+services:
+  chat-pwa:
+    volumes:
+      # Read-only bind mount: nginx serves directly from the host's
+      # bundled output. Read-only so the container can't accidentally
+      # write back into the source tree.
+      - ./web:/usr/share/nginx/html:ro
+    environment:
+      # Force DEV_MODE=true regardless of `.env` — the overlay file
+      # being loaded is the explicit dev signal.
+      - BRAINWIRES_DEV_MODE=true

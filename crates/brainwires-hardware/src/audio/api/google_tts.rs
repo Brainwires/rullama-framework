@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use base64::Engine as _;
 use futures::stream::BoxStream;
 
-use brainwires_providers::google_tts::{
+use brainwires_provider_speech::google_tts::{
     GoogleTtsAudioConfig, GoogleTtsClient, GoogleTtsInput, GoogleTtsSynthesizeRequest,
     GoogleTtsVoiceSelection,
 };
@@ -17,7 +17,7 @@ use crate::audio::types::{
 
 /// Google Cloud TTS text-to-speech implementation.
 ///
-/// Wraps a [`GoogleTtsClient`] from `brainwires-providers`.
+/// Wraps a [`GoogleTtsClient`] from `brainwires-provider`.
 pub struct GoogleTts {
     client: Arc<GoogleTtsClient>,
 }

@@ -142,8 +142,8 @@ Permission modes control tool approval:
 ```toml
 [features]
 default = []
-bedrock = ["brainwires-providers/bedrock"]    # AWS Bedrock
-vertex-ai = ["brainwires-providers/vertex-ai"] # Google Vertex AI
+bedrock = ["brainwires-provider/bedrock"]    # AWS Bedrock
+vertex-ai = ["brainwires-provider/vertex-ai"] # Google Vertex AI
 ```
 
 ## License

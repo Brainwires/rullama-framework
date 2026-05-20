@@ -2,7 +2,7 @@
 
 Agent orchestration, coordination, and lifecycle management for the Brainwires Agent Framework. Provides the core agentic execution loop, task agents, inter-agent communication, and distributed coordination patterns.
 
-Equivalent to the Rust `brainwires-agents` crate.
+Equivalent to the Rust `brainwires-agent` crate.
 
 ## Install
 

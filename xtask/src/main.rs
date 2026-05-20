@@ -1,6 +1,7 @@
 use std::env;
 use std::process::{Command, ExitCode};
 
+mod lint_deps;
 mod package_count;
 mod stubs;
 mod version;
@@ -58,6 +59,7 @@ fn main() -> ExitCode {
     match args.first().map(|s| s.as_str()) {
         Some("bump-version") => return version::bump_version(&args[1..]),
         Some("check-stubs") => return stubs::check_stubs(&args[1..]),
+        Some("lint-deps") => return lint_deps::lint_deps(&args[1..]),
         Some("package-count") => return package_count::update_package_count(&args[1..]),
         Some("--help" | "-h") => {
             print_help();
@@ -78,6 +80,7 @@ fn print_help() {
         "  bump-version <VERSION> [--crates a,b]  Bump versions (patch=selective, minor/major=all)"
     );
     println!("  check-stubs             Scan for unfinished code (todo!(), FIXME, etc.)");
+    println!("  lint-deps               Enforce framework/extras boundary (ADR-0004)");
     println!("  package-count [--dry-run]  Update crate/extras count references in .md files");
     println!("  [step ...]              Run CI steps: fmt, check, clippy, test, doc");
     println!();

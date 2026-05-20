@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use brainwires_mcp::{CallToolResult, JsonRpcRequest};
+use brainwires_mcp_client::{CallToolResult, JsonRpcRequest};
 use brainwires_mcp_server::ToolFilterMiddleware;
 use brainwires_mcp_server::connection::RequestContext;
 use brainwires_mcp_server::middleware::MiddlewareChain;

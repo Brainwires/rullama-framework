@@ -30,6 +30,18 @@ pub struct WorkingSetEntry {
     pub pinned: bool,
     /// Optional label for categorizing the entry.
     pub label: Option<String>,
+    /// SHA-256 of the most recent content this agent intended to write to
+    /// `path`, set by `write_file` after its read-back check succeeds.
+    ///
+    /// Used by the validation loop to detect post-validation clobber: if the
+    /// file on disk no longer hashes to `intended_hash` at finalization time,
+    /// another writer has overwritten our content and the agent must NOT
+    /// report `Success: true`.
+    ///
+    /// `None` for files that were only read, or for entries added before any
+    /// write occurred.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intended_hash: Option<[u8; 32]>,
 }
 
 impl WorkingSetEntry {
@@ -43,6 +55,7 @@ impl WorkingSetEntry {
             added_at_turn: current_turn,
             pinned: false,
             label: None,
+            intended_hash: None,
         }
     }
 
@@ -266,6 +279,33 @@ impl WorkingSet {
         self.entries.values().map(|e| &e.path).collect()
     }
 
+    /// Record the SHA-256 of content a tool has just written to `path`.
+    ///
+    /// If the entry is already present, its `intended_hash` is overwritten
+    /// (the most recent write wins) and `last_access_turn` is refreshed.
+    /// If the entry does not exist yet, a new one is inserted with zero
+    /// estimated tokens — the caller is expected to update token estimates
+    /// separately via `add`/`add_labeled` when loading file content.
+    pub fn record_write(&mut self, path: &Path, hash: [u8; 32]) {
+        let key = path.to_string_lossy().to_string();
+        if let Some(entry) = self.entries.get_mut(&key) {
+            entry.intended_hash = Some(hash);
+            entry.access_count += 1;
+            entry.last_access_turn = self.current_turn;
+            return;
+        }
+        let mut entry = WorkingSetEntry::new(path.to_path_buf(), 0, self.current_turn);
+        entry.intended_hash = Some(hash);
+        self.entries.insert(key, entry);
+    }
+
+    /// Return the intended-write SHA-256 previously recorded for `path`, if
+    /// any.  `None` if the path is not tracked or was never written.
+    pub fn get_intended_hash(&self, path: &Path) -> Option<[u8; 32]> {
+        let key = path.to_string_lossy().to_string();
+        self.entries.get(&key).and_then(|e| e.intended_hash)
+    }
+
     fn evict_stale(&mut self) {
         let stale_threshold = self
             .current_turn
@@ -363,5 +403,26 @@ mod tests {
     fn test_estimate_tokens() {
         assert_eq!(estimate_tokens(""), 0);
         assert_eq!(estimate_tokens("test"), 1);
+    }
+
+    #[test]
+    fn test_working_set_records_and_retrieves_hash() {
+        let mut ws = WorkingSet::new();
+        let path = PathBuf::from("/tmp/claim.txt");
+        let hash = [7u8; 32];
+        ws.record_write(&path, hash);
+        assert_eq!(ws.get_intended_hash(&path), Some(hash));
+        assert!(
+            ws.get_intended_hash(&PathBuf::from("/tmp/other.txt"))
+                .is_none(),
+            "unrecorded path must return None"
+        );
+
+        // Overwriting an existing entry's hash must replace it, not
+        // merely add a new entry.
+        let newer = [42u8; 32];
+        ws.record_write(&path, newer);
+        assert_eq!(ws.get_intended_hash(&path), Some(newer));
+        assert_eq!(ws.len(), 1);
     }
 }

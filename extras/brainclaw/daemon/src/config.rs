@@ -5,11 +5,13 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use brainwires_gateway::config::GatewayConfig;
+use brainwires_gateway::pairing::PairingPolicy;
 use serde::{Deserialize, Serialize};
 
 /// Top-level BrainClaw configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct BrainClawConfig {
     /// Gateway (WebSocket server) settings.
     pub gateway: GatewaySection,
@@ -33,6 +35,11 @@ pub struct BrainClawConfig {
     pub hooks: HooksSection,
     /// Email tool settings (requires `email` feature; tool group `"email"` must be in `tools.enabled`).
     pub email: Option<EmailSection>,
+    /// Gmail push ingestion settings (requires `email-push` feature).
+    /// When enabled, inbound Gmail is delivered via Google Pub/Sub instead
+    /// of (or in addition to) IMAP polling.
+    #[serde(default)]
+    pub gmail_push: GmailPushSection,
     /// Calendar tool settings (requires `calendar` feature; tool group `"calendar"` must be in `tools.enabled`).
     pub calendar: Option<CalendarSection>,
     /// Browser automation settings (requires `browser` feature; tool group `"browser"` must be in `tools.enabled`).
@@ -41,6 +48,69 @@ pub struct BrainClawConfig {
     pub voice: Option<VoiceSection>,
     /// Cross-channel user identity settings.
     pub identity: IdentitySection,
+    /// Sandbox settings — container-based isolation for dangerous tool calls.
+    pub sandbox: SandboxConfig,
+    /// DM pairing policy — gates unknown peers behind an operator-approval flow.
+    pub pairing: PairingSection,
+    /// Browser-based WebChat channel settings.
+    pub webchat: WebChatSection,
+}
+
+/// Browser-based WebChat channel settings.
+///
+/// The webchat channel is exposed at `/webchat/ws` on the gateway and
+/// authenticates each browser connection with an HS256 JWT signed by
+/// `jwt_secret`. When `jwt_secret` is `None` at startup, the daemon
+/// derives a stable secret from `security.admin_token`; if that is also
+/// unset, a fresh random secret is generated and logged on first boot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WebChatSection {
+    /// Whether the `/webchat/ws` endpoint is enabled.
+    pub enabled: bool,
+    /// Explicit HS256 shared secret. When unset, derived from
+    /// `security.admin_token` or randomly generated at startup.
+    pub jwt_secret: Option<String>,
+    /// Maximum history entries retained per webchat session.
+    pub session_history_limit: usize,
+    /// Maximum attachment size in bytes (reserved — attachments scoped
+    /// out in the initial cut).
+    pub attachment_max_bytes: u64,
+    /// Optional per-channel origin allow-list.  When empty, inherits
+    /// `security.allowed_origins`.
+    pub allowed_origins: Vec<String>,
+}
+
+impl Default for WebChatSection {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            jwt_secret: None,
+            session_history_limit: 50,
+            attachment_max_bytes: 10 * 1024 * 1024,
+            allowed_origins: Vec::new(),
+        }
+    }
+}
+
+/// Per-channel DM pairing policy configuration.
+///
+/// The gateway rejects direct messages from unknown peers unless they are
+/// explicitly paired via the approval flow. `default` is applied to any
+/// channel not listed in `channels`; `allow_from` pre-approves peers
+/// without requiring a code.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct PairingSection {
+    /// Default policy applied to channels without their own override.
+    /// `None` resolves to the library default (Pairing mode, 15-minute TTL).
+    pub default: Option<PairingPolicy>,
+    /// Per-channel overrides keyed by channel name (e.g. "discord", "telegram").
+    pub channels: std::collections::HashMap<String, PairingPolicy>,
+    /// Pre-approved peers keyed by `<channel>:<user_id>`.
+    pub allow_from: Vec<String>,
+    /// Path to the pairing store JSON file.
+    pub store_path: Option<String>,
 }
 
 // ── Section structs ─────────────────────────────────────────────────────
@@ -137,6 +207,7 @@ pub struct MemorySection {
 /// Skill system configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct SkillsSection {
     /// Whether the skill system is enabled.
     pub enabled: bool,
@@ -239,9 +310,68 @@ pub struct EmailSection {
     pub from_address: String,
 }
 
-fn default_imap_port() -> u16 { 993 }
-fn default_smtp_port() -> u16 { 587 }
-fn default_true() -> bool { true }
+fn default_imap_port() -> u16 {
+    993
+}
+
+/// Gmail push (Google Pub/Sub) ingestion configuration.
+///
+/// Each watched Gmail account needs its own entry in `accounts`. When
+/// `enabled = false`, no watches are registered and the webhook is not
+/// exposed — IMAP polling (if configured) remains the only inbound path.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct GmailPushSection {
+    /// Whether Gmail push is enabled.
+    pub enabled: bool,
+    /// Watched Gmail accounts.
+    pub accounts: Vec<GmailAccountConfig>,
+    /// Optional override for the history-cursor JSON file.
+    /// Defaults to `~/.brainclaw/gmail_cursor.json`.
+    pub cursor_store: Option<PathBuf>,
+}
+
+/// One Gmail mailbox pushing into this daemon.
+///
+/// The OAuth token is resolved from either `oauth_token_env` (preferred,
+/// keeps secrets off disk) or `oauth_token` (inline fallback).  When
+/// neither is set and the environment variable isn't present at startup,
+/// the handler for that account is not constructed and a warning is
+/// emitted — the daemon continues to serve other channels.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GmailAccountConfig {
+    /// The mailbox address being watched (used as the lookup key when
+    /// Pub/Sub pushes arrive).
+    pub email_address: String,
+    /// GCP project id that owns the Pub/Sub topic.
+    pub project_id: String,
+    /// Fully-qualified topic name (`projects/<proj>/topics/<topic>`).
+    pub topic_name: String,
+    /// Expected `aud` claim on the Google-signed push JWT.
+    pub push_audience: String,
+    /// Gmail labels to watch — defaults to `["INBOX"]`.
+    #[serde(default = "default_inbox_labels")]
+    pub watched_label_ids: Vec<String>,
+    /// Name of the environment variable that holds the user's Gmail
+    /// OAuth 2.0 access token.  Mutually exclusive with `oauth_token`.
+    #[serde(default)]
+    pub oauth_token_env: Option<String>,
+    /// Inline OAuth 2.0 access token (dev/testing only). Prefer
+    /// `oauth_token_env` in production so secrets are never written to
+    /// disk.
+    #[serde(default)]
+    pub oauth_token: Option<String>,
+}
+
+fn default_inbox_labels() -> Vec<String> {
+    vec!["INBOX".to_string()]
+}
+fn default_smtp_port() -> u16 {
+    587
+}
+fn default_true() -> bool {
+    true
+}
 
 /// Calendar tool configuration.
 ///
@@ -277,7 +407,9 @@ pub enum CalendarSection {
     },
 }
 
-fn default_calendar_id() -> String { "primary".to_string() }
+fn default_calendar_id() -> String {
+    "primary".to_string()
+}
 
 /// Browser automation configuration (Thalora).
 ///
@@ -309,7 +441,6 @@ pub struct VoiceSection {
     pub language: Option<String>,
 
     // ── TTS settings ──────────────────────────────────────────────────────
-
     /// TTS provider name (optional).
     ///
     /// When set, agent text responses are also synthesised to audio and
@@ -356,29 +487,131 @@ impl Default for IdentitySection {
     }
 }
 
-// ── Defaults ────────────────────────────────────────────────────────────
+/// Sandbox configuration — how BrainClaw isolates dangerous tool calls.
+///
+/// When `enabled`, the built-in tool executor is wrapped in a
+/// `SandboxedToolExecutor` that routes `bash` / `execute_command` and
+/// `execute_code` / `code_exec` calls through the configured runtime
+/// (Docker, Podman, or — dev only — the host).
+///
+/// See `[sandbox]` in `brainclaw.example.toml` for a fully-annotated sample.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SandboxConfig {
+    /// Whether sandboxing is enabled. Defaults to true — tool calls are
+    /// isolated by default.
+    pub enabled: bool,
+    /// Which runtime to use: `"docker"`, `"podman"`, or `"host"` (dev only,
+    /// requires the `sandbox-unsafe-host` build feature).
+    pub runtime: String,
+    /// Container image to launch. Ignored for the `host` runtime.
+    pub image: String,
+    /// CPU core limit (e.g. `2.0` = two cores). `None` disables the limit.
+    pub cpu_limit: Option<f64>,
+    /// Memory cap in megabytes. `None` disables the limit.
+    pub memory_limit_mb: Option<u64>,
+    /// Max process count inside the sandbox. `None` disables the limit.
+    pub pid_limit: Option<u64>,
+    /// Network policy: `"none"` (default), `"full"`, or `"limited"`. When
+    /// `"limited"`, only hosts in `allowed_hosts` are reachable via the
+    /// egress proxy sidecar.
+    pub network: String,
+    /// Hostnames permitted when `network = "limited"`. Exact or `*.wildcard`.
+    pub allowed_hosts: Vec<String>,
+    /// Optional workspace directory mounted into the container. If set, the
+    /// sandbox's workdir defaults to this path.
+    pub workspace_mount: Option<PathBuf>,
+    /// Additional host paths allowed as bind-mount sources. Every requested
+    /// mount is validated against this list plus `workspace_mount`.
+    pub allowed_mount_sources: Vec<PathBuf>,
+    /// Container image for the egress proxy sidecar (used when
+    /// `network = "limited"`).
+    pub proxy_image: String,
+    /// TCP port the proxy listens on inside the internal network.
+    pub proxy_listen_port: u16,
+    /// If set, reuse a named long-lived proxy container across spawns
+    /// instead of creating an ephemeral one per sandbox.
+    pub proxy_container_name: Option<String>,
+    /// Wall-clock timeout applied to sandboxed tool calls.
+    pub default_timeout_secs: u64,
+    /// If `true`, fall back to the unsandboxed executor when the sandbox
+    /// backend can't be constructed (e.g. Docker socket missing). Defaults
+    /// to `false` — a broken sandbox is an error, not a silent downgrade.
+    pub fallback_to_host_on_error: bool,
+}
 
-impl Default for BrainClawConfig {
+impl Default for SandboxConfig {
     fn default() -> Self {
         Self {
-            gateway: GatewaySection::default(),
-            provider: ProviderSection::default(),
-            agent: AgentSection::default(),
-            tools: ToolsSection::default(),
-            persona: PersonaSection::default(),
-            memory: MemorySection::default(),
-            skills: SkillsSection::default(),
-            security: SecuritySection::default(),
-            cron: CronSection::default(),
-            hooks: HooksSection::default(),
-            email: None,
-            calendar: None,
-            browser: None,
-            voice: None,
-            identity: IdentitySection::default(),
+            enabled: true,
+            runtime: "docker".to_string(),
+            image: "ghcr.io/brainwires/brainclaw-sandbox:latest".to_string(),
+            cpu_limit: Some(2.0),
+            memory_limit_mb: Some(1024),
+            pid_limit: Some(256),
+            network: "none".to_string(),
+            allowed_hosts: Vec::new(),
+            workspace_mount: None,
+            allowed_mount_sources: Vec::new(),
+            proxy_image: "ghcr.io/brainwires/brainwires-sandbox-proxy:latest".to_string(),
+            proxy_listen_port: 3128,
+            proxy_container_name: None,
+            default_timeout_secs: 300,
+            fallback_to_host_on_error: false,
         }
     }
 }
+
+#[cfg(feature = "sandbox")]
+impl SandboxConfig {
+    /// Translate this config into a [`brainwires_sandbox::SandboxPolicy`].
+    ///
+    /// Returns an error if `runtime` or `network` contains an unknown value.
+    pub fn to_policy(&self) -> anyhow::Result<brainwires_sandbox::SandboxPolicy> {
+        use brainwires_sandbox::{NetworkPolicy, SandboxPolicy, SandboxRuntime};
+
+        let runtime = match self.runtime.to_lowercase().as_str() {
+            "docker" => SandboxRuntime::Docker,
+            "podman" => SandboxRuntime::Podman,
+            "host" => SandboxRuntime::Host,
+            other => {
+                anyhow::bail!(
+                    "sandbox.runtime '{}' is not recognised; use 'docker', 'podman', or 'host'",
+                    other
+                );
+            }
+        };
+
+        let network = match self.network.to_lowercase().as_str() {
+            "none" => NetworkPolicy::None,
+            "full" => NetworkPolicy::Full,
+            "limited" => NetworkPolicy::Limited(self.allowed_hosts.clone()),
+            other => {
+                anyhow::bail!(
+                    "sandbox.network '{}' is not recognised; use 'none', 'full', or 'limited'",
+                    other
+                );
+            }
+        };
+
+        Ok(SandboxPolicy {
+            runtime,
+            image: self.image.clone(),
+            network,
+            cpu_limit: self.cpu_limit,
+            memory_limit_mb: self.memory_limit_mb,
+            pid_limit: self.pid_limit,
+            read_only_rootfs: true,
+            workspace_mount: self.workspace_mount.clone(),
+            allowed_mount_sources: self.allowed_mount_sources.clone(),
+            proxy_image: self.proxy_image.clone(),
+            proxy_listen_port: self.proxy_listen_port,
+            proxy_container_name: self.proxy_container_name.clone(),
+        })
+    }
+}
+
+// ── Defaults ────────────────────────────────────────────────────────────
 
 impl Default for GatewaySection {
     fn default() -> Self {
@@ -459,16 +692,6 @@ impl Default for MemorySection {
             storage_dir: "~/.brainclaw/memory".to_string(),
             max_history_messages: 100,
             persist_conversations: true,
-        }
-    }
-}
-
-impl Default for SkillsSection {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            directories: Vec::new(),
-            registry_url: None,
         }
     }
 }
@@ -595,10 +818,7 @@ impl BrainClawConfig {
         use brainwires_tools::{EmailConfig, EmailProvider};
         self.email.as_ref().map(|e| {
             let password = std::env::var(&e.password_env).map_err(|_| {
-                anyhow::anyhow!(
-                    "Email password env var '{}' is not set",
-                    e.password_env
-                )
+                anyhow::anyhow!("Email password env var '{}' is not set", e.password_env)
             })?;
             Ok(EmailConfig {
                 provider: EmailProvider::ImapSmtp {
@@ -615,6 +835,60 @@ impl BrainClawConfig {
         })
     }
 
+    /// Build [`GmailPushConfig`]s from the `[gmail_push]` section.
+    ///
+    /// Returns `None` when the section is disabled or contains no
+    /// accounts.  Individual account entries with missing OAuth tokens
+    /// are skipped with a warning — the returned list only holds
+    /// well-formed configs ready for [`brainwires_tools::gmail_push::GmailPushHandler::new`].
+    #[cfg(feature = "email-push")]
+    pub fn to_gmail_push_configs(
+        &self,
+    ) -> Option<Vec<brainwires_tools::gmail_push::GmailPushConfig>> {
+        use brainwires_tools::gmail_push::GmailPushConfig;
+        if !self.gmail_push.enabled || self.gmail_push.accounts.is_empty() {
+            return None;
+        }
+        let mut out = Vec::with_capacity(self.gmail_push.accounts.len());
+        for acct in &self.gmail_push.accounts {
+            let token = match (&acct.oauth_token_env, &acct.oauth_token) {
+                (Some(env), _) => match std::env::var(env) {
+                    Ok(v) if !v.is_empty() => v,
+                    _ => {
+                        tracing::warn!(
+                            email = %acct.email_address,
+                            env = %env,
+                            "Gmail push: OAuth token env var is not set; skipping account"
+                        );
+                        continue;
+                    }
+                },
+                (None, Some(inline)) if !inline.is_empty() => inline.clone(),
+                _ => {
+                    tracing::warn!(
+                        email = %acct.email_address,
+                        "Gmail push: account has no oauth_token_env or oauth_token; skipping"
+                    );
+                    continue;
+                }
+            };
+            let label_ids = if acct.watched_label_ids.is_empty() {
+                vec!["INBOX".to_string()]
+            } else {
+                acct.watched_label_ids.clone()
+            };
+            out.push(GmailPushConfig {
+                project_id: acct.project_id.clone(),
+                topic_name: acct.topic_name.clone(),
+                push_audience: acct.push_audience.clone(),
+                watched_label_ids: label_ids,
+                oauth_token: token,
+                gmail_base_url: None,
+            });
+        }
+        if out.is_empty() { None } else { Some(out) }
+    }
+
     /// Build a [`CalendarConfig`] from the `[calendar]` section.
     ///
     /// Credentials are resolved from environment variables at runtime.
@@ -622,8 +896,8 @@ impl BrainClawConfig {
     #[cfg(feature = "calendar")]
     pub fn to_calendar_config(
         &self,
-    ) -> Option<anyhow::Result<brainwires_tools::CalendarConfig>> {
-        use brainwires_tools::{CalendarConfig, CalendarProvider};
+    ) -> Option<anyhow::Result<brainwires_tools::calendar::CalendarConfig>> {
+        use brainwires_tools::calendar::{CalendarConfig, CalendarProvider};
         self.calendar.as_ref().map(|c| match c {
             CalendarSection::Google {
                 client_id,
@@ -653,10 +927,7 @@ impl BrainClawConfig {
                 default_calendar_id,
             } => {
                 let password = std::env::var(password_env).map_err(|_| {
-                    anyhow::anyhow!(
-                        "CalDAV password env var '{}' is not set",
-                        password_env
-                    )
+                    anyhow::anyhow!("CalDAV password env var '{}' is not set", password_env)
                 })?;
                 Ok(CalendarConfig {
                     provider: CalendarProvider::CalDav {
@@ -668,6 +939,33 @@ impl BrainClawConfig {
                 })
             }
         })
+    }
+
+    /// Resolve the webchat JWT secret. Precedence:
+    ///
+    /// 1. Explicit `[webchat] jwt_secret` from config.
+    /// 2. A secret derived deterministically from `security.admin_token`
+    ///    so that webchat tokens survive daemon restarts without extra
+    ///    setup. The derivation is `sha256("brainclaw-webchat:" + admin)`
+    ///    hex-encoded, keeping the admin token itself off disk and out
+    ///    of log messages.
+    /// 3. `None` — callers must then generate their own.
+    pub fn resolve_webchat_secret(&self) -> Option<String> {
+        if let Some(s) = &self.webchat.jwt_secret
+            && !s.is_empty()
+        {
+            return Some(s.clone());
+        }
+        if let Some(admin) = &self.security.admin_token
+            && !admin.is_empty()
+        {
+            use sha2::{Digest, Sha256};
+            let mut h = Sha256::new();
+            h.update(b"brainclaw-webchat:");
+            h.update(admin.as_bytes());
+            return Some(hex::encode(h.finalize()));
+        }
+        None
     }
 
     /// Convert to a [`GatewayConfig`] for the gateway server.
@@ -687,7 +985,9 @@ impl BrainClawConfig {
             redact_secrets_in_output: self.security.redact_secrets_in_output,
             max_messages_per_minute: self.security.max_messages_per_minute,
             max_tool_calls_per_minute: self.security.max_tool_calls_per_minute,
-            webchat_enabled: true,
+            webchat_enabled: self.webchat.enabled,
+            webchat_jwt_secret: self.resolve_webchat_secret(),
+            webchat_session_history_limit: self.webchat.session_history_limit,
             max_attachment_size_mb: 10,
             admin_token: self.security.admin_token.clone(),
             webhook_secret: self.security.webhook_secret.clone(),
@@ -786,10 +1086,7 @@ require_signed_skills = true
         assert_eq!(config.memory.max_history_messages, 50);
         assert!(config.skills.enabled);
         assert_eq!(config.skills.directories, vec!["/home/user/skills"]);
-        assert_eq!(
-            config.security.allowed_origins,
-            vec!["https://example.com"]
-        );
+        assert_eq!(config.security.allowed_origins, vec!["https://example.com"]);
         assert_eq!(config.security.max_messages_per_minute, 10);
         assert!(config.security.require_signed_skills);
     }

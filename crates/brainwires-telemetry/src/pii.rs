@@ -6,7 +6,7 @@
 //! # Feature flag
 //! This module is always compiled; regex-based custom patterns are a runtime
 //! option. Add the `regex` crate to your own crate if you need to build
-//! [`PiiRedactionRules::custom_patterns`].
+//! [`PiiRedactionRules::custom_patterns`](crate::pii::PiiRedactionRules::custom_patterns).
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -87,6 +87,8 @@ pub fn redact_event(event: AnalyticsEvent, rules: &PiiRedactionRules) -> Analyti
             cost_usd,
             success,
             timestamp,
+            cache_creation_input_tokens,
+            cache_read_input_tokens,
             compliance,
         } => AnalyticsEvent::ProviderCall {
             session_id: maybe_hash_session(session_id, rules),
@@ -98,6 +100,8 @@ pub fn redact_event(event: AnalyticsEvent, rules: &PiiRedactionRules) -> Analyti
             cost_usd,
             success,
             timestamp,
+            cache_creation_input_tokens,
+            cache_read_input_tokens,
             compliance,
         },
         AnalyticsEvent::AgentRun {
@@ -269,6 +273,8 @@ mod tests {
             cost_usd: 0.01,
             success: true,
             timestamp: Utc::now(),
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             compliance: None,
         };
         let redacted = redact_event(event, &rules);

@@ -11,19 +11,22 @@ use brainwires_gateway::channel_registry::ChannelRegistry;
 use brainwires_gateway::identity::UserIdentityStore;
 use brainwires_gateway::media::MediaProcessor;
 use brainwires_gateway::metrics::MetricsCollector;
+use brainwires_gateway::middleware::rate_limit::RateLimiter;
+use brainwires_gateway::middleware::sanitizer::MessageSanitizer;
+use brainwires_gateway::pairing::{PairingHandler, PairingStore, default_policy};
 use brainwires_gateway::server::Gateway;
 use brainwires_gateway::session::SessionManager;
 use brainwires_gateway::session_persistence::{JsonFileStore, expand_tilde};
-use brainwires_gateway::middleware::rate_limit::RateLimiter;
-use brainwires_gateway::middleware::sanitizer::MessageSanitizer;
+use brainwires_gateway::sessions_broker::{GatewaySessionBroker, SessionRegistry};
 use brainwires_providers::{ChatProviderFactory, ProviderConfig, ProviderType};
-use brainwires_tools::BuiltinToolExecutor;
+use brainwires_tools::{BuiltinToolExecutor, SessionBroker, ToolExecutor};
 
 use brainwires_gateway::cron::CronStore;
 
 use crate::config::BrainClawConfig;
 use crate::cron::CronRunner;
 use crate::persona::Persona;
+use crate::session_spawn::BrainClawSpawnFactory;
 use crate::shell_hooks::{ShellHookRunner, ShellPreToolHook};
 use crate::skill_handler::SkillHandler;
 use crate::tools::build_tool_registry;
@@ -91,7 +94,8 @@ impl BrainClaw {
         let mut context = ToolContext::default();
         self.inject_tool_configs(&mut context);
 
-        let executor = Arc::new(BuiltinToolExecutor::new(registry, context));
+        let builtin = BuiltinToolExecutor::new(registry, context);
+        let executor: Arc<dyn ToolExecutor> = self.wrap_with_sandbox(builtin)?;
 
         tracing::info!(tools = tool_count, "Tool registry built");
 
@@ -133,11 +137,30 @@ impl BrainClaw {
         let mut handler = AgentInboundHandler::new(
             Arc::clone(&sessions),
             Arc::clone(&channels),
-            provider,
-            executor,
-            options,
+            Arc::clone(&provider),
+            Arc::clone(&executor),
+            options.clone(),
         )
         .with_max_tool_rounds(self.config.agent.max_tool_rounds);
+
+        // 7aa. Session-as-tools wiring. Share one `SessionRegistry` between
+        //       the handler (which registers each per-user ChatAgent there
+        //       so the `sessions_*` tools can see them) and the
+        //       `GatewaySessionBroker` (which backs the four tools and
+        //       delegates `sessions_spawn` to `BrainClawSpawnFactory`).
+        let session_registry = Arc::new(SessionRegistry::new());
+        let spawn_factory = Arc::new(BrainClawSpawnFactory::new(
+            Arc::clone(&provider),
+            Arc::clone(&executor),
+            options,
+        ));
+        let session_broker: Arc<dyn SessionBroker> = Arc::new(GatewaySessionBroker::new(
+            (*session_registry).clone(),
+            spawn_factory,
+        ));
+        handler = handler
+            .with_session_registry(Arc::clone(&session_registry))
+            .with_session_broker(Arc::clone(&session_broker));
 
         // 7b. Attach session persistence if configured
         if self.config.memory.persist_conversations {
@@ -233,17 +256,18 @@ impl BrainClaw {
         }
 
         // 7f. Attach media processor (+ optional STT for voice)
+        #[allow(unused_mut)] // mut required when `voice` feature is enabled.
         let mut media = MediaProcessor::new(10); // 10 MB attachment limit
 
         #[cfg(feature = "voice")]
-        if let Some(ref voice_cfg) = self.config.voice {
-            if let Some(stt) = build_stt_provider(voice_cfg) {
-                tracing::info!(
-                    provider = %voice_cfg.stt_provider,
-                    "Speech-to-text enabled"
-                );
-                media = media.with_stt(stt);
-            }
+        if let Some(ref voice_cfg) = self.config.voice
+            && let Some(stt) = build_stt_provider(voice_cfg)
+        {
+            tracing::info!(
+                provider = %voice_cfg.stt_provider,
+                "Speech-to-text enabled"
+            );
+            media = media.with_stt(stt);
         }
 
         handler = handler.with_media(Arc::new(media));
@@ -293,61 +317,107 @@ impl BrainClaw {
             }
         }
 
+        // 7l. Wire DM pairing policy. Secure default: if no config is
+        //      provided, the gateway runs in Pairing mode and unknown peers
+        //      are intercepted before their messages reach the agent.
+        let pairing_store = self.build_pairing_store().await;
+        if let Some(ref store) = pairing_store {
+            let default_pol = self
+                .config
+                .pairing
+                .default
+                .clone()
+                .unwrap_or_else(default_policy);
+            let per_channel = self.config.pairing.channels.clone();
+            let policy_fn = std::sync::Arc::new(move |channel: &str| {
+                per_channel
+                    .get(channel)
+                    .cloned()
+                    .unwrap_or_else(|| default_pol.clone())
+            });
+            let pairing_handler =
+                std::sync::Arc::new(PairingHandler::new(Arc::clone(store), policy_fn));
+            handler = handler.with_pairing(pairing_handler);
+            tracing::info!(
+                path = %store.path().display(),
+                "DM pairing policy enabled"
+            );
+        }
+
         // 7j. Wire TTS if configured (voice feature only).
+        #[allow(unused_mut)] // mut required when `voice` feature is enabled.
         let mut tts_audio_dir: Option<std::path::PathBuf> = None;
         #[cfg(feature = "voice")]
-        if let Some(ref voice_cfg) = self.config.voice {
-            if let Some(ref tts_provider_name) = voice_cfg.tts_provider {
-                if let Some(tts_provider) = build_tts_provider(voice_cfg) {
-                    use brainwires_hardware::{OutputFormat, TtsOptions, Voice};
-                    use brainwires_gateway::tts::TtsProcessor;
+        if let Some(ref voice_cfg) = self.config.voice
+            && let Some(ref tts_provider_name) = voice_cfg.tts_provider
+            && let Some(tts_provider) = build_tts_provider(voice_cfg)
+        {
+            use brainwires_gateway::tts::TtsProcessor;
+            use brainwires_hardware::{OutputFormat, TtsOptions, Voice};
 
-                    let format = match voice_cfg.tts_format.as_deref().unwrap_or("mp3") {
-                        "opus" => OutputFormat::Opus,
-                        "flac" => OutputFormat::Flac,
-                        "wav" => OutputFormat::Wav,
-                        _ => OutputFormat::Mp3,
-                    };
-                    let voice_id = voice_cfg.tts_voice.clone().unwrap_or_else(|| "alloy".to_string());
-                    let options = TtsOptions {
-                        voice: Voice { id: voice_id, name: None, language: None },
-                        output_format: format,
-                        speed: None,
-                        language: voice_cfg.language.clone(),
-                    };
-                    let audio_dir = voice_cfg
-                        .tts_audio_dir
-                        .as_deref()
-                        .map(|p| std::path::PathBuf::from(expand_tilde_str(p)))
-                        .unwrap_or_else(|| std::env::temp_dir().join("brainclaw-audio"));
-                    let base_url = voice_cfg
-                        .tts_base_url
-                        .clone()
-                        .unwrap_or_else(|| format!(
-                            "http://{}:{}/audio",
-                            self.config.gateway.host,
-                            self.config.gateway.port
-                        ));
+            let format = match voice_cfg.tts_format.as_deref().unwrap_or("mp3") {
+                "opus" => OutputFormat::Opus,
+                "flac" => OutputFormat::Flac,
+                "wav" => OutputFormat::Wav,
+                _ => OutputFormat::Mp3,
+            };
+            let voice_id = voice_cfg
+                .tts_voice
+                .clone()
+                .unwrap_or_else(|| "alloy".to_string());
+            let options = TtsOptions {
+                voice: Voice {
+                    id: voice_id,
+                    name: None,
+                    language: voice_cfg.language.clone(),
+                },
+                output_format: format,
+                speed: None,
+            };
+            let audio_dir = voice_cfg
+                .tts_audio_dir
+                .as_deref()
+                .map(|p| std::path::PathBuf::from(expand_tilde_str(p)))
+                .unwrap_or_else(|| std::env::temp_dir().join("brainclaw-audio"));
+            let base_url = voice_cfg.tts_base_url.clone().unwrap_or_else(|| {
+                format!(
+                    "http://{}:{}/audio",
+                    self.config.gateway.host, self.config.gateway.port
+                )
+            });
 
-                    let processor = Arc::new(TtsProcessor::new(
-                        tts_provider,
-                        options,
-                        audio_dir.clone(),
-                        base_url,
-                    ));
-                    handler = handler.with_tts(processor);
-                    tts_audio_dir = Some(audio_dir);
-                    tracing::info!(provider = %tts_provider_name, "TTS output enabled");
-                }
-            }
+            let processor = Arc::new(TtsProcessor::new(
+                tts_provider,
+                options,
+                audio_dir.clone(),
+                base_url,
+            ));
+            handler = handler.with_tts(processor);
+            tts_audio_dir = Some(audio_dir);
+            tracing::info!(provider = %tts_provider_name, "TTS output enabled");
         }
+
+        // 7n. Wire Gmail push ingestion.  Each configured account gets a
+        //       long-lived `GmailPushHandler`; the in-memory registry owns
+        //       the per-mailbox cursors and is attached to both the
+        //       gateway (for the webhook) and a background task (for watch
+        //       renewal every ~6 days).  Gmail push and IMAP polling are
+        //       mutually exclusive per account — if both are configured,
+        //       push wins and a warning is emitted on startup.
+        #[cfg(feature = "email-push")]
+        let gmail_push_registry = self.build_gmail_push_registry().await;
 
         // 8. Create Gateway with handler, sharing the same sessions/channels/metrics.
         let handler = Arc::new(handler);
-        let mut gateway =
-            Gateway::with_handler(gateway_config.clone(), Arc::clone(&handler) as _)
-                .with_shared_state(Arc::clone(&sessions), Arc::clone(&channels))
-                .with_metrics(Arc::clone(&metrics));
+        let mut gateway = Gateway::with_handler(gateway_config.clone(), Arc::clone(&handler) as _)
+            .with_shared_state(Arc::clone(&sessions), Arc::clone(&channels))
+            .with_metrics(Arc::clone(&metrics));
+
+        #[cfg(feature = "email-push")]
+        if let Some(ref registry) = gmail_push_registry {
+            gateway = gateway.with_gmail_push(Arc::clone(registry));
+            tracing::info!("Gmail push webhook mounted at /webhooks/gmail-push");
+        }
 
         if let Some(audio_dir) = tts_audio_dir {
             gateway = gateway.with_audio_dir(audio_dir);
@@ -356,9 +426,35 @@ impl BrainClaw {
         // 8a. Attach provider for OpenAI-compatible endpoint.
         gateway = gateway.with_openai_provider(openai_provider);
 
+        // 8ab. Wire the webchat verifier + history store when the browser
+        //      chat channel is enabled and we have (or can derive) a
+        //      shared HS256 secret.
+        if self.config.webchat.enabled {
+            if let Some(secret) = self.config.resolve_webchat_secret() {
+                let verifier = Arc::new(brainwires_gateway::webchat::Hs256Verifier::new(
+                    secret.as_bytes().to_vec(),
+                ));
+                let history = Arc::new(brainwires_gateway::webchat::WebChatHistory::new());
+                gateway = gateway.with_webchat_verifier(verifier, history);
+                tracing::info!("WebChat JWT endpoint enabled at /webchat/ws");
+            } else {
+                tracing::warn!(
+                    "WebChat is enabled but no JWT secret could be resolved \
+                     (set [webchat] jwt_secret or [security] admin_token); \
+                     /webchat/ws will reject all upgrade attempts"
+                );
+            }
+        }
+
         // 8c. Attach identity store to gateway if enabled.
         if let Some(ref store) = identity_store {
             gateway = gateway.with_identity_store(Arc::clone(store));
+        }
+
+        // 8d. Attach pairing store to gateway so the admin pairing endpoints
+        //     are wired up.
+        if let Some(ref store) = pairing_store {
+            gateway = gateway.with_pairing_store(Arc::clone(store));
         }
         tracing::info!("OpenAI-compatible API enabled at /v1/chat/completions");
 
@@ -384,6 +480,17 @@ impl BrainClaw {
             }
         }
 
+        // 8e. Spawn the Gmail watch-renewal task(s). Gmail watches expire
+        //       after 7 days; we re-register every 6 days with a small
+        //       random jitter so concurrent daemons don't all hammer
+        //       Google at the same second. The task is detached — if
+        //       renewal starts failing the operator finds out via the
+        //       doctor check and the log.
+        #[cfg(feature = "email-push")]
+        if let Some(ref registry) = gmail_push_registry {
+            self.spawn_gmail_watch_renewals(Arc::clone(registry)).await;
+        }
+
         tracing::info!(
             address = %gateway_config.bind_address(),
             "BrainClaw ready"
@@ -393,11 +500,295 @@ impl BrainClaw {
         gateway.run().await
     }
 
+    /// Build the [`GmailPushRegistry`] from config, seeding each handler
+    /// and kicking off an initial watch registration when the cursor
+    /// store has no entry for that mailbox yet.
+    #[cfg(feature = "email-push")]
+    async fn build_gmail_push_registry(
+        &self,
+    ) -> Option<Arc<brainwires_gateway::gmail_push::GmailPushRegistry>> {
+        use brainwires_gateway::gmail_push::{GmailCursorStore, GmailPushRegistry};
+        use brainwires_tools::gmail_push::GmailPushHandler;
+
+        if !self.config.gmail_push.enabled || self.config.gmail_push.accounts.is_empty() {
+            return None;
+        }
+
+        // The email tool (IMAP/SMTP) only runs on demand — it has no
+        // polling loop in this codebase — so there's no double-delivery
+        // to guard against.  Still, warn the operator when the same
+        // mailbox is wired into both: it usually means the config was
+        // copy-pasted.
+        if let Some(ref email) = self.config.email {
+            for acct in &self.config.gmail_push.accounts {
+                if email.username.eq_ignore_ascii_case(&acct.email_address) {
+                    tracing::warn!(
+                        email = %acct.email_address,
+                        "Gmail push is configured for the same account that has IMAP/SMTP credentials. \
+                         Push will deliver inbound messages; the IMAP tool remains available for on-demand search."
+                    );
+                }
+            }
+        }
+
+        let cursor_path = match self.config.gmail_push.cursor_store.clone() {
+            Some(p) => p,
+            None => match dirs::home_dir() {
+                Some(h) => h.join(".brainclaw").join("gmail_cursor.json"),
+                None => {
+                    tracing::warn!(
+                        "Cannot resolve home directory for gmail cursor store; Gmail push disabled"
+                    );
+                    return None;
+                }
+            },
+        };
+
+        let cursors = match GmailCursorStore::load(&cursor_path).await {
+            Ok(c) => Arc::new(c),
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    path = %cursor_path.display(),
+                    "Failed to open Gmail cursor store; Gmail push disabled"
+                );
+                return None;
+            }
+        };
+        let registry = Arc::new(GmailPushRegistry::new(Arc::clone(&cursors)));
+
+        for acct in &self.config.gmail_push.accounts {
+            // Resolve token again — keeps secrets off our argument list.
+            let token = match (&acct.oauth_token_env, &acct.oauth_token) {
+                (Some(env), _) => match std::env::var(env) {
+                    Ok(v) if !v.is_empty() => v,
+                    _ => continue,
+                },
+                (None, Some(inline)) if !inline.is_empty() => inline.clone(),
+                _ => continue,
+            };
+            let label_ids = if acct.watched_label_ids.is_empty() {
+                vec!["INBOX".to_string()]
+            } else {
+                acct.watched_label_ids.clone()
+            };
+            let cfg = brainwires_tools::gmail_push::GmailPushConfig {
+                project_id: acct.project_id.clone(),
+                topic_name: acct.topic_name.clone(),
+                push_audience: acct.push_audience.clone(),
+                watched_label_ids: label_ids,
+                oauth_token: token,
+                gmail_base_url: None,
+            };
+            let handler = Arc::new(GmailPushHandler::new(cfg));
+            registry
+                .register(acct.email_address.clone(), Arc::clone(&handler))
+                .await;
+            tracing::info!(
+                email = %acct.email_address,
+                topic = %acct.topic_name,
+                "Gmail push handler registered"
+            );
+        }
+
+        Some(registry)
+    }
+
+    /// Spawn background watch-renewal tasks — one per registered mailbox.
+    ///
+    /// Watches expire at 7 days; we renew at 6 days with ±1 hour jitter.
+    /// Failures are logged but do not crash the daemon — the operator can
+    /// re-run `brainclaw gmail-watch register --account <email>` to
+    /// recover.
+    #[cfg(feature = "email-push")]
+    async fn spawn_gmail_watch_renewals(
+        &self,
+        registry: Arc<brainwires_gateway::gmail_push::GmailPushRegistry>,
+    ) {
+        use std::time::Duration;
+        for acct in &self.config.gmail_push.accounts {
+            let email = acct.email_address.clone();
+            let registry = Arc::clone(&registry);
+            tokio::spawn(async move {
+                // Perform an initial registration immediately so Pub/Sub
+                // has a live subscription before the first message lands.
+                if let Some(handler) = registry.get(&email).await {
+                    match brainwires_gateway::gmail_push::register_watch_and_seed(
+                        &handler,
+                        &email,
+                        &registry.cursors(),
+                    )
+                    .await
+                    {
+                        Ok(resp) => {
+                            tracing::info!(
+                                email = %email,
+                                expires = %resp.expiration,
+                                history_id = resp.history_id,
+                                "Gmail watch registered"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                email = %email,
+                                error = %e,
+                                "Initial Gmail watch registration failed"
+                            );
+                        }
+                    }
+                }
+                loop {
+                    // 6 days +/- 1 hour.
+                    let base = Duration::from_secs(6 * 24 * 60 * 60);
+                    // Cheap jitter without pulling rand into the daemon
+                    // for this one call — 0..3600 via the nanosecond
+                    // clock.
+                    let jitter_secs = (std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.subsec_nanos() as u64 % 7200)
+                        .unwrap_or(0))
+                    .saturating_sub(3600);
+                    let sleep_for = base + Duration::from_secs(jitter_secs);
+                    tokio::time::sleep(sleep_for).await;
+
+                    if let Some(handler) = registry.get(&email).await {
+                        match handler.register_watch().await {
+                            Ok(resp) => {
+                                tracing::info!(
+                                    email = %email,
+                                    expires = %resp.expiration,
+                                    history_id = resp.history_id,
+                                    "Gmail watch renewed"
+                                );
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    email = %email,
+                                    error = %e,
+                                    "Gmail watch renewal failed; will retry on next cycle"
+                                );
+                            }
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            });
+        }
+    }
+
+    /// Wrap `builtin` with a `SandboxedToolExecutor` if the `sandbox` feature
+    /// is enabled AND `config.sandbox.enabled` is true. Otherwise return the
+    /// builtin executor untouched.
+    ///
+    /// On sandbox construction failure, this method obeys
+    /// `config.sandbox.fallback_to_host_on_error`: when `true`, it logs the
+    /// error and falls back to the unsandboxed builtin; when `false`, it
+    /// returns the error so the daemon exits instead of silently downgrading
+    /// isolation.
+    #[cfg(feature = "sandbox")]
+    fn wrap_with_sandbox(&self, builtin: BuiltinToolExecutor) -> Result<Arc<dyn ToolExecutor>> {
+        use brainwires_sandbox::{Sandbox, SandboxRuntime};
+        use brainwires_tools::SandboxedToolExecutor;
+        use std::time::Duration;
+
+        let sb = &self.config.sandbox;
+        if !sb.enabled {
+            tracing::info!("Sandbox disabled by config; tool calls run on the host");
+            return Ok(Arc::new(builtin) as Arc<dyn ToolExecutor>);
+        }
+
+        let policy = match sb.to_policy() {
+            Ok(p) => p,
+            Err(e) => {
+                if sb.fallback_to_host_on_error {
+                    tracing::error!(
+                        error = %e,
+                        "Sandbox policy invalid; falling back to unsandboxed executor"
+                    );
+                    return Ok(Arc::new(builtin) as Arc<dyn ToolExecutor>);
+                }
+                return Err(e);
+            }
+        };
+
+        let sandbox_result: Result<Arc<dyn Sandbox>> = match policy.runtime {
+            SandboxRuntime::Docker | SandboxRuntime::Podman => {
+                match brainwires_sandbox::DockerSandbox::connect(policy.clone()) {
+                    Ok(s) => Ok(Arc::new(s) as Arc<dyn Sandbox>),
+                    Err(e) => Err(anyhow::anyhow!(
+                        "sandbox: failed to connect to {:?} daemon: {}",
+                        policy.runtime,
+                        e
+                    )),
+                }
+            }
+            SandboxRuntime::Host => {
+                #[cfg(feature = "sandbox-unsafe-host")]
+                {
+                    tracing::warn!(
+                        "Sandbox runtime = 'host' — dev/testing only, NO isolation is applied"
+                    );
+                    Ok(
+                        Arc::new(brainwires_sandbox::HostSandbox::new(policy.clone()))
+                            as Arc<dyn Sandbox>,
+                    )
+                }
+                #[cfg(not(feature = "sandbox-unsafe-host"))]
+                {
+                    Err(anyhow::anyhow!(
+                        "sandbox.runtime = 'host' requires the `sandbox-unsafe-host` build feature"
+                    ))
+                }
+            }
+        };
+
+        let sandbox = match sandbox_result {
+            Ok(s) => s,
+            Err(e) => {
+                if sb.fallback_to_host_on_error {
+                    tracing::error!(
+                        error = %e,
+                        "Sandbox backend unavailable; falling back to unsandboxed executor \
+                         (sandbox.fallback_to_host_on_error = true)"
+                    );
+                    return Ok(Arc::new(builtin) as Arc<dyn ToolExecutor>);
+                }
+                return Err(e);
+            }
+        };
+
+        tracing::info!(
+            runtime = ?policy.runtime,
+            image = %policy.image,
+            timeout_secs = sb.default_timeout_secs,
+            "Sandbox enabled; dangerous tool calls will be isolated"
+        );
+
+        let wrapped = SandboxedToolExecutor::new(builtin, sandbox, policy)
+            .with_timeout(Duration::from_secs(sb.default_timeout_secs));
+        Ok(Arc::new(wrapped) as Arc<dyn ToolExecutor>)
+    }
+
+    /// No-op stub used when the daemon is built without the `sandbox` feature.
+    #[cfg(not(feature = "sandbox"))]
+    fn wrap_with_sandbox(&self, builtin: BuiltinToolExecutor) -> Result<Arc<dyn ToolExecutor>> {
+        tracing::info!("Sandbox feature not compiled in; tool calls run directly on the host");
+        Ok(Arc::new(builtin) as Arc<dyn ToolExecutor>)
+    }
+
     /// Inject tool-specific configs into `ToolContext.metadata` as JSON strings.
     ///
     /// Tools read their config from metadata at call time; this avoids passing
     /// typed configs through the generic tool registry.
-    fn inject_tool_configs(&self, #[cfg_attr(not(any(feature = "email", feature = "calendar")), allow(unused_variables))] context: &mut ToolContext) {
+    fn inject_tool_configs(
+        &self,
+        #[cfg_attr(
+            not(any(feature = "email", feature = "calendar")),
+            allow(unused_variables)
+        )]
+        context: &mut ToolContext,
+    ) {
         #[cfg(feature = "email")]
         if let Some(result) = self.config.to_email_config() {
             match result {
@@ -447,22 +838,61 @@ impl BrainClaw {
         let _ = &self.config.browser;
     }
 
+    /// Build (and load) the pairing store from the `[pairing]` config section.
+    ///
+    /// Falls back to `~/.brainclaw/pairing.json` when `pairing.store_path`
+    /// is unset. Returns `None` if the path cannot be resolved (e.g.
+    /// missing `$HOME`).
+    async fn build_pairing_store(&self) -> Option<Arc<PairingStore>> {
+        let configured = self.config.pairing.store_path.clone();
+        let path: std::path::PathBuf = match configured {
+            Some(p) => std::path::PathBuf::from(expand_tilde_str(&p)),
+            None => match dirs::home_dir() {
+                Some(home) => home.join(".brainclaw").join("pairing.json"),
+                None => {
+                    tracing::warn!(
+                        "Cannot resolve home directory for default pairing store path; \
+                         pairing disabled"
+                    );
+                    return None;
+                }
+            },
+        };
+
+        match PairingStore::load(&path) {
+            Ok(store) => {
+                let store = Arc::new(store);
+                store
+                    .set_allowlist(self.config.pairing.allow_from.clone())
+                    .await;
+                Some(store)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    path = %path.display(),
+                    "Failed to open pairing store; pairing disabled"
+                );
+                None
+            }
+        }
+    }
+
     /// Resolve the API key from config, environment variable, or standard env vars.
     fn resolve_api_key(&self) -> Result<Option<String>> {
         // 1. Direct config value
-        if let Some(ref key) = self.config.provider.api_key {
-            if !key.is_empty() {
-                return Ok(Some(key.clone()));
-            }
+        if let Some(ref key) = self.config.provider.api_key
+            && !key.is_empty()
+        {
+            return Ok(Some(key.clone()));
         }
 
         // 2. Custom env var name from config
-        if let Some(ref env_name) = self.config.provider.api_key_env {
-            if let Ok(key) = std::env::var(env_name) {
-                if !key.is_empty() {
-                    return Ok(Some(key));
-                }
-            }
+        if let Some(ref env_name) = self.config.provider.api_key_env
+            && let Ok(key) = std::env::var(env_name)
+            && !key.is_empty()
+        {
+            return Ok(Some(key));
         }
 
         // 3. Standard env vars based on provider
@@ -480,12 +910,11 @@ impl BrainClaw {
             _ => "",
         };
 
-        if !env_var.is_empty() {
-            if let Ok(key) = std::env::var(env_var) {
-                if !key.is_empty() {
-                    return Ok(Some(key));
-                }
-            }
+        if !env_var.is_empty()
+            && let Ok(key) = std::env::var(env_var)
+            && !key.is_empty()
+        {
+            return Ok(Some(key));
         }
 
         Ok(None)
@@ -506,10 +935,7 @@ fn build_stt_provider(
 
     /// Resolve an API key: first from `api_key_env`, then from a named env var.
     fn resolve_key(cfg: &crate::config::VoiceSection, default_var: &str) -> Option<String> {
-        let var_name = cfg
-            .api_key_env
-            .as_deref()
-            .unwrap_or(default_var);
+        let var_name = cfg.api_key_env.as_deref().unwrap_or(default_var);
         std::env::var(var_name).ok().filter(|k| !k.is_empty())
     }
 
@@ -533,12 +959,23 @@ fn build_stt_provider(
         "azure" => {
             // Azure requires both subscription key and region.
             let key = resolve_key(cfg, "AZURE_SPEECH_KEY")?;
-            let region = std::env::var("AZURE_SPEECH_REGION").ok().filter(|r| !r.is_empty())?;
+            let region = std::env::var("AZURE_SPEECH_REGION")
+                .ok()
+                .filter(|r| !r.is_empty())?;
             Some(std::sync::Arc::new(AzureStt::new(key, region)) as Arc<dyn SpeechToText>)
         }
         #[cfg(feature = "local-stt")]
         "whisper-local" | "whisper" => {
-            Some(std::sync::Arc::new(brainwires_hardware::WhisperStt::new()) as Arc<dyn SpeechToText>)
+            // Local Whisper requires a GGML model file. Resolve from
+            // `WHISPER_MODEL_PATH`; if unset, voice transcription stays
+            // disabled rather than panicking at runtime.
+            let model_path = std::env::var("WHISPER_MODEL_PATH")
+                .ok()
+                .filter(|p| !p.is_empty())?;
+            Some(
+                std::sync::Arc::new(brainwires_hardware::WhisperStt::new(model_path))
+                    as Arc<dyn SpeechToText>,
+            )
         }
         other => {
             tracing::warn!(provider = %other, "Unknown STT provider; voice transcription disabled");
@@ -636,10 +1073,10 @@ fn load_context_files(extra_paths: &[String]) -> String {
 
 /// Expand a leading `~` to the home directory.
 fn expand_tilde_str(path: &str) -> String {
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(rest).to_string_lossy().into_owned();
-        }
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Some(home) = dirs::home_dir()
+    {
+        return home.join(rest).to_string_lossy().into_owned();
     }
     path.to_string()
 }

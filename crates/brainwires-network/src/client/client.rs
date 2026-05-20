@@ -66,7 +66,7 @@ impl AgentNetworkClient {
         params: Option<serde_json::Value>,
     ) -> Result<serde_json::Value, AgentNetworkClientError> {
         let id = self.next_id();
-        let request = brainwires_mcp::JsonRpcRequest {
+        let request = brainwires_mcp_client::JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             id: serde_json::json!(id),
             method: method.to_string(),

@@ -15,7 +15,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use brainwires_mcp::{CallToolResult, ServerCapabilities, ServerInfo};
+use brainwires_mcp_client::{CallToolResult, ServerCapabilities, ServerInfo};
 use brainwires_mcp_server::{
     AuthMiddleware, LoggingMiddleware, McpServer, McpToolDef, McpToolRegistry, MiddlewareChain,
     RateLimitMiddleware, RequestContext, ToolFilterMiddleware, ToolHandler,

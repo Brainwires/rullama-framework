@@ -3,8 +3,8 @@ use async_trait::async_trait;
 
 use super::peer_table::PeerTable;
 use super::traits::{Router, RoutingStrategy};
-use crate::network::{MessageEnvelope, MessageTarget};
 use crate::transport::TransportAddress;
+use crate::{MessageEnvelope, MessageTarget};
 
 /// Content-based (topic) router.
 ///
@@ -61,8 +61,8 @@ impl Router for ContentRouter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Payload;
     use crate::identity::AgentIdentity;
-    use crate::network::Payload;
     use uuid::Uuid;
 
     #[tokio::test]

@@ -4,16 +4,15 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use rmcp::{
-    ServerHandler, ServiceExt,
-    handler::server::tool::ToolRouter,
-    handler::server::wrapper::Parameters,
-    model::*,
-    tool, tool_handler, tool_router,
+    ServerHandler, ServiceExt, handler::server::tool::ToolRouter,
+    handler::server::wrapper::Parameters, model::*, tool, tool_handler, tool_router,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use brainwires_network::channels::{Channel, ChannelMessage, ConversationId, MessageContent, MessageId};
+use brainwires_network::channels::{
+    Channel, ChannelMessage, ConversationId, MessageContent, MessageId,
+};
 
 use crate::whatsapp::WhatsAppChannel;
 
@@ -65,7 +64,9 @@ pub struct AddReactionRequest {
 
 #[tool_router(router = tool_router)]
 impl WhatsAppMcpServer {
-    #[tool(description = "Send a text message to a WhatsApp phone number. Returns the sent message ID.")]
+    #[tool(
+        description = "Send a text message to a WhatsApp phone number. Returns the sent message ID."
+    )]
     async fn send_message(
         &self,
         Parameters(req): Parameters<SendMessageRequest>,
@@ -119,9 +120,8 @@ impl ServerHandler for WhatsAppMcpServer {
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
-        info.server_info =
-            Implementation::new("brainwires-whatsapp", env!("CARGO_PKG_VERSION"))
-                .with_title("Brainwires WhatsApp Channel — MCP Tool Server");
+        info.server_info = Implementation::new("brainwires-whatsapp", env!("CARGO_PKG_VERSION"))
+            .with_title("Brainwires WhatsApp Channel — MCP Tool Server");
         info.instructions = Some(
             "WhatsApp Business channel adapter MCP server. \
              Use send_message to send a text message to a phone number, \

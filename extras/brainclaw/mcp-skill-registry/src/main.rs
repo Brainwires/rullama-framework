@@ -39,10 +39,7 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Some(Commands::Version) => {
-            println!(
-                "brainwires-skill-registry v{}",
-                env!("CARGO_PKG_VERSION")
-            );
+            println!("brainwires-skill-registry v{}", env!("CARGO_PKG_VERSION"));
             println!();
             println!("Skill Marketplace registry server");
             println!("  Storage: SQLite with FTS5 full-text search");

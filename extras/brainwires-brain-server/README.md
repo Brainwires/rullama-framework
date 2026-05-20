@@ -2,7 +2,7 @@
 
 Standalone MCP server binary for the Open Brain knowledge system.
 
-This is the executable wrapper for `brainwires-brain` that exposes all thought capture, memory search, and knowledge system functionality as MCP tools and prompts.
+This is the executable wrapper for `brainwires-knowledge::knowledge` (the subsystem absorbed from the deprecated `brainwires-brain` crate in the 0.10 consolidation) that exposes all thought capture, memory search, and knowledge-system functionality as MCP tools and prompts.
 
 ## Quick Start
 
@@ -59,4 +59,4 @@ See [brainwires-knowledge README](../../crates/brainwires-knowledge/README.md) f
 
 ## License
 
-Licensed under the MIT License. See [LICENSE](../../LICENSE) for details.
+Licensed under either MIT or Apache-2.0 at your option. See [LICENSE-MIT](https://github.com/Brainwires/brainwires-framework/blob/main/LICENSE-MIT) and [LICENSE-APACHE](https://github.com/Brainwires/brainwires-framework/blob/main/LICENSE-APACHE).

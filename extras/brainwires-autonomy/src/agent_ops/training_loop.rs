@@ -66,7 +66,7 @@ pub struct TrainingLoopReport {
 /// Orchestrates autonomous training cycles with evaluation checkpoints.
 ///
 /// The actual training and evaluation implementations are provided by
-/// `brainwires-training` and `brainwires-eval` respectively. This struct
+/// `brainwires-finetune` and `brainwires-eval` respectively. This struct
 /// manages the loop logic, convergence detection, and reporting.
 pub struct AutonomousTrainingLoop {
     config: TrainingLoopConfig,

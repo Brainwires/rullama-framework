@@ -47,10 +47,10 @@ impl DiscordEventHandler {
             return true;
         }
         // Check optional prefix
-        if let Some(ref prefix) = self.config.bot_prefix {
-            if msg.content.starts_with(prefix.as_str()) {
-                return true;
-            }
+        if let Some(ref prefix) = self.config.bot_prefix
+            && msg.content.starts_with(prefix.as_str())
+        {
+            return true;
         }
         // Check configured keyword patterns (case-insensitive)
         let lower = msg.content.to_lowercase();

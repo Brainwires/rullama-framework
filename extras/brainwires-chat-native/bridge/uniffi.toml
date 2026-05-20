@@ -1,0 +1,11 @@
+# Configuration for uniffi binding generation across target languages.
+# Used by `cargo run --bin uniffi-bindgen -- generate ...`.
+
+[bindings.kotlin]
+package_name = "com.brainwires.chat.bridge"
+cdylib_name = "brainwires_chat_native_bridge"
+
+[bindings.swift]
+ffi_module_name = "BrainwiresChatNativeBridgeFFI"
+module_name = "BrainwiresChatNativeBridge"
+generate_module_map = true

@@ -16,7 +16,7 @@ impl App {
     ) -> Result<()> {
         use crate::agents::{ExecutionApprovalMode, PlanExecutionConfig, PlanExecutorAgent};
         use crate::config::PlatformPaths;
-        use crate::storage::{EmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
+        use crate::storage::{CachedEmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
         use crate::utils::plan_parser::{parse_plan_steps, steps_to_tasks};
 
         // Parse approval mode
@@ -37,7 +37,7 @@ impl App {
             )
             .await?,
         );
-        let embeddings = Arc::new(EmbeddingProvider::new()?);
+        let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
         client.initialize(embeddings.dimension()).await?;
         let plan_store = PlanStore::new(client.clone(), embeddings);
 

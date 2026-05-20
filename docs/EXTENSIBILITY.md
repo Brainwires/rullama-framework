@@ -26,7 +26,7 @@ The framework is trait-based: implement a trait, pass it to the component, done.
 | `VectorDatabase` | 10 methods (initialize, store, search, etc.) | Full RAG vector DB |
 | `RelationsProvider` | `extract_definitions`, `extract_references`, `supports_language`, `precision_level` | Code symbol extraction |
 
-### Agent Traits (brainwires-agents)
+### Agent Traits (brainwires-agent)
 
 | Trait | Required Methods | Purpose |
 |-------|-----------------|---------|
@@ -35,14 +35,14 @@ The framework is trait-based: implement a trait, pass it to the component, done.
 | `CompensableOperation` | `execute`, `compensate`, `description` (+`operation_type` default) | Saga step with rollback |
 | `EvaluationCase` | `name`, `category`, `run` | Eval scenario |
 
-### Tool Traits (brainwires-tools)
+### Tool Traits (brainwires-tool-runtime)
 
 | Trait | Required Methods | Purpose |
 |-------|-----------------|---------|
 | `ToolExecutor` | `execute`, `available_tools` | Custom tool execution backend |
 | `ToolPreHook` | `before_execute` | Pre-execution tool gate |
 
-### MDAP Traits (brainwires-agents, feature `mdap`)
+### MDAP Traits (brainwires-mdap)
 
 | Trait | Required Methods | Purpose |
 |-------|-----------------|---------|
@@ -51,12 +51,12 @@ The framework is trait-based: implement a trait, pass it to the component, done.
 | `RedFlagValidator` | `validate` | Response quality check |
 | `ResultComposer` | `compose` | Subtask output composition |
 
-### Training Traits (brainwires-training)
+### Fine-tune Traits (brainwires-finetune)
 
 | Trait | Required Methods | Purpose |
 |-------|-----------------|---------|
 | `FineTuneProvider` | 9 methods (create_job, get_status, etc.) | Cloud fine-tuning provider |
-| `TrainingBackend` | `name`, `available_devices`, `train` | Local training execution |
+| `TrainingBackend` | `name`, `available_devices`, `train` | Local training execution (impl lives in `rullama-finetune`) |
 
 ### Other Extension Traits
 
@@ -64,10 +64,10 @@ The framework is trait-based: implement a trait, pass it to the component, done.
 |-------|-------|---------|
 | `TextToSpeech` | brainwires-hardware | TTS synthesis backend |
 | `SpeechToText` | brainwires-hardware | STT transcription backend |
-| `LanguageExecutor` | brainwires-tools (interpreters) | Sandboxed code execution |
-| `Dataset` | brainwires-training | Training data container |
-| `FormatConverter` | brainwires-training | Training data format conversion |
-| `Tokenizer` | brainwires-training | Token encoding/counting |
+| `LanguageExecutor` | brainwires-tool-builtins (interpreters) | Sandboxed code execution |
+| `Dataset` | brainwires-finetune | Training data container |
+| `FormatConverter` | brainwires-finetune | Training data format conversion |
+| `Tokenizer` | brainwires-finetune | Token encoding/counting |
 | `ApprovalPolicy` | brainwires-autonomy | Autonomous operation approval |
 | `GitForge` | brainwires-autonomy | Git forge API (GitHub, GitLab) |
 
@@ -227,7 +227,7 @@ The facade crate (`brainwires`) gates each subsystem behind a feature flag.
 
 ```toml
 [dependencies]
-brainwires = { version = "0.10", features = ["researcher"] }
+brainwires = { version = "0.11", features = ["researcher"] }
 ```
 
 This enables: `providers`, `agents`, `storage`, `rag`, `training`, `datasets`.
@@ -236,24 +236,29 @@ This enables: `providers`, `agents`, `storage`, `rag`, `training`, `datasets`.
 
 | Feature | Enables | Transitive Dependencies |
 |---------|---------|------------------------|
-| `tools` | `brainwires-tools` | — |
-| `agents` | `brainwires-agents` | brainwires-tools |
+| `tools` | `brainwires-tool-runtime` + `brainwires-tool-builtins` | — |
+| `agents` | `brainwires-agent` | — |
+| `inference` | `brainwires-inference` | brainwires-agent, brainwires-call-policy |
 | `storage` | `brainwires-storage` (with native) | lancedb, arrow, fastembed |
-| `mcp` | `brainwires-mcp` | rmcp |
-| `mdap` | `brainwires-agents/mdap` | — |
-| `prompting` | `brainwires-knowledge/prompting` | linfa-clustering, ndarray |
-| `permissions` | `brainwires-permissions` | — |
-| `rag` | `brainwires-knowledge/rag` + `brainwires-storage` | lancedb, tantivy, tree-sitter |
-| `providers` | `brainwires-providers` | reqwest |
-| `seal` | `brainwires-agents/seal` | — |
+| `memory` | `brainwires-stores` | — |
+| `tiered` | `brainwires-memory` | brainwires-stores |
+| `mcp` | `brainwires-mcp-client` | rmcp |
+| `mcp-server-framework` | `brainwires-mcp-server` | — |
+| `mdap` | `brainwires-mdap` | — |
+| `prompting` | `brainwires-prompting` | linfa-clustering, ndarray |
+| `permissions` | `brainwires-permission` | — |
+| `rag` | `brainwires-rag` + `brainwires-storage` | lancedb, tantivy, tree-sitter |
+| `providers` | `brainwires-provider` | reqwest |
+| `seal` | `brainwires-seal` | — |
+| `eval` | `brainwires-eval` | — |
 | `agent-network` | `brainwires-network` | — |
-| `skills` | `brainwires-agents` (skills) | — |
+| `skills` | `brainwires-skills` | — |
 | `audio` | `brainwires-hardware/audio` | — |
 | `gpio` | `brainwires-hardware/gpio` | — |
 | `bluetooth` | `brainwires-hardware/bluetooth` | — |
 | `network-hardware` | `brainwires-hardware/network` | — |
-| `datasets` | `brainwires-training` | — |
-| `training` | `brainwires-training` | — |
+| `datasets` | `brainwires-finetune/datasets-full` | — |
+| `training` | `brainwires-finetune` | cloud-only since v0.11 |
 | `autonomy` | `brainwires-autonomy` | — |
 | `brain` | `brainwires-knowledge/knowledge` | — |
 
@@ -266,7 +271,6 @@ This enables: `providers`, `agents`, `storage`, `rag`, `training`, `datasets`.
 | `learning` | seal + knowledge + seal/knowledge |
 | `full` | Everything |
 | `rag-full-languages` | rag + tree-sitter language grammars |
-| `training-full` | training/full + datasets/full |
 
 ### Default features
 
@@ -281,22 +285,33 @@ This enables: `providers`, `agents`, `storage`, `rag`, `training`, `datasets`.
 ```
 brainwires (facade)
   ├── brainwires-core (always)       ← core traits, types, errors
-  ├── brainwires-tools         ← ToolExecutor, built-in tools
-  ├── brainwires-agents              ← AgentRuntime, CommunicationHub, SEAL
-  ├── brainwires-providers           ← Anthropic, OpenAI, Google, Ollama
-  ├── brainwires-knowledge           ← RAG, Knowledge/Brain, Prompting, Spectral
-  ├── brainwires-network       ← MCP server, IPC, remote, mesh
-  ├── brainwires-storage             ← TieredMemory, LanceDB stores
-  ├── brainwires-training            ← Fine-tuning backends
-  └── brainwires-training            ← Dataset containers, format converters
+  ├── brainwires-tool-runtime        ← ToolExecutor, ToolRegistry, validation, smart router
+  ├── brainwires-tool-builtins       ← Built-in tool implementations
+  ├── brainwires-agent               ← AgentRuntime, CommunicationHub, MDAP, SEAL
+  ├── brainwires-provider            ← Anthropic, OpenAI, Google, Ollama, Bedrock, Vertex AI
+  ├── brainwires-provider-speech     ← TTS / STT providers
+  ├── brainwires-knowledge           ← BKS / PKS, BrainClient, entity graph
+  ├── brainwires-rag                 ← Codebase indexing + hybrid retrieval
+  ├── brainwires-prompting           ← Adaptive prompting
+  ├── brainwires-network             ← IPC, remote, mesh, LAN discovery
+  ├── brainwires-mcp-client          ← MCP client
+  ├── brainwires-mcp-server          ← MCP server framework
+  ├── brainwires-storage             ← StorageBackend trait, embeddings, BM25, LanceDB
+  ├── brainwires-stores              ← Schema + CRUD: sessions, tasks, plans, conversations, …
+  ├── brainwires-memory              ← TieredMemory orchestration + dream consolidation
+  └── brainwires-finetune            ← Cloud fine-tune APIs + dataset pipelines
+                                     ← (local PEFT moved to rullama-finetune)
 ```
 
 ### Where to define new traits
 
 - **Pure types/traits with no heavy deps** → `brainwires-core`
-- **Tool implementations** → `brainwires-tools`
-- **Agent coordination** → `brainwires-agents`
-- **RAG pipeline components** → `brainwires-knowledge`
+- **Tool framework** → `brainwires-tool-runtime` (the `ToolExecutor` trait + dispatch)
+- **Concrete tool implementations** → `brainwires-tool-builtins`
+- **Agent coordination** → `brainwires-agent`
+- **RAG pipeline components** → `brainwires-rag`
+- **A new persisted store** → `brainwires-stores` (schema + CRUD)
+- **Memory orchestration** → `brainwires-memory` (engines over the schema stores)
 
 ### Error handling
 

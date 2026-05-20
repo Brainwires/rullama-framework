@@ -16,9 +16,10 @@ path = "src/main.rs"
 
 [dependencies]
 brainwires-core.workspace = true
-brainwires-providers.workspace = true
-brainwires-tools.workspace = true
-brainwires-agents.workspace = true
+brainwires-provider.workspace = true
+brainwires-agent.workspace = true
+brainwires-tool-runtime = { workspace = true }
+brainwires-tool-builtins = { workspace = true }
 
 tokio = { workspace = true }
 anyhow = { workspace = true }
@@ -36,7 +37,10 @@ ratatui = "0.29"
 crossterm = { version = "0.28", features = ["event-stream"] }
 rpassword = "5"
 
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [features]
 default = []
-bedrock = ["brainwires-providers/bedrock"]
-vertex-ai = ["brainwires-providers/vertex-ai"]
+bedrock = ["brainwires-provider/bedrock"]
+vertex-ai = ["brainwires-provider/vertex-ai"]

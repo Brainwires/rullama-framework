@@ -1,16 +1,22 @@
-# Distributed Training for `brainwires-training`
+# Distributed Training for `rullama-finetune` / `rullama-training`
+
+> **Note (v0.11):** `brainwires-training` and `brainwires-finetune-local` moved
+> to the sibling `rullama` workspace as `rullama-training` and `rullama-finetune`.
+> This wishlist is preserved here for historical context; if you pick it up,
+> implement it against the rullama crates and `brainwires-network::mesh`
+> (which remains in this workspace) for the transport layer.
 
 ## Context
 
-The `brainwires-training` crate currently supports two training modes: **cloud fine-tuning** (delegated to providers like OpenAI, Together, etc.) and **local training** (single-machine Burn framework with LoRA/QLoRA/DoRA adapters). There is no support for distributing local training across multiple machines or GPUs on different nodes.
+The `rullama-finetune` crate (formerly `brainwires-finetune-local` in this workspace) supports local training (single-machine Burn framework with LoRA/QLoRA/DoRA adapters). Cloud fine-tuning lives separately in this workspace's `brainwires-finetune`. There is no support for distributing local training across multiple machines or GPUs on different nodes.
 
-The goal is to add a feature-gated `distributed` module that enables **data-parallel distributed training** across a mesh of nodes, leveraging the existing `brainwires-mesh` (topology, routing, discovery abstractions) and `brainwires-relay` (actual network transport) crates for communication.
+The goal is to add a feature-gated `distributed` module that enables **data-parallel distributed training** across a mesh of nodes, leveraging the existing `brainwires-network::mesh` (topology, routing, discovery abstractions) and the rest of `brainwires-network` (transport layers) for communication.
 
 ## Decision: Coordinator Layer in `brainwires-training`, Not a New Crate
 
 **Why not a new crate?** Distributed training is tightly coupled to training internals (gradient extraction, optimizer state, checkpoint format, dataset sharding). Separating it would require exposing a large internal API surface. It belongs in `brainwires-training` behind a feature flag.
 
-**Why not self-contained?** `brainwires-mesh` already provides exactly the right abstractions (topology, routing, discovery) and `brainwires-relay` provides the transport layer. Reimplementing networking would be wasteful.
+**Why not self-contained?** `brainwires-network::mesh` already provides exactly the right abstractions (topology, routing, discovery) and the rest of `brainwires-network` provides the transport layer. Reimplementing networking would be wasteful.
 
 **Architecture:** A coordinator layer that wraps the existing `BurnBackend`. Each node runs Burn locally; the coordinator orchestrates data sharding, gradient sync, and checkpointing via mesh message routing.
 
@@ -39,7 +45,7 @@ src/distributed/
 ```
 
 Modified files:
-- `Cargo.toml` — add `distributed` feature, `brainwires-mesh` + `brainwires-relay` deps
+- `Cargo.toml` — add `distributed` feature, `brainwires-network` dep (with `mesh` feature)
 - `src/lib.rs` — add `#[cfg(feature = "distributed")] pub mod distributed;` + re-exports
 - `src/error.rs` — add distributed error variants (GradientSync, WorkerFailed, InsufficientWorkers, Mesh)
 - `src/manager.rs` — add `#[cfg(feature = "distributed")] pub async fn train_distributed()`
@@ -144,11 +150,10 @@ Uses step-level Burn helpers directly (not `TrainingBackend` trait).
 
 ```toml
 # New optional dependencies
-brainwires-mesh = { workspace = true, optional = true }
-brainwires-relay = { workspace = true, optional = true }
+brainwires-network = { workspace = true, optional = true, features = ["mesh"] }
 
 [features]
-distributed = ["local", "dep:brainwires-mesh", "dep:brainwires-relay", "dep:tokio"]
+distributed = ["local", "dep:brainwires-network", "dep:tokio"]
 full = ["cloud", "local", "bedrock", "vertex", "distributed"]
 ```
 

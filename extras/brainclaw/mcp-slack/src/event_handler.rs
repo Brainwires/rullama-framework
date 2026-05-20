@@ -14,7 +14,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use brainwires_network::channels::{ChannelEvent, ChannelUser, ConversationId, MessageId};
 
-use crate::slack::{slack_message_to_channel_message, SlackChannel};
+use crate::slack::{SlackChannel, slack_message_to_channel_message};
 
 /// Slack Socket Mode event handler that forwards events as `ChannelEvent` values
 /// over an mpsc channel.
@@ -206,9 +206,7 @@ impl SlackEventHandler {
                             {
                                 let ack =
                                     serde_json::json!({"envelope_id": envelope_id}).to_string();
-                                if let Err(e) =
-                                    ws_sender.send(Message::Text(ack.into())).await
-                                {
+                                if let Err(e) = ws_sender.send(Message::Text(ack.into())).await {
                                     tracing::error!("Failed to send acknowledgment: {}", e);
                                     break;
                                 }
@@ -244,10 +242,7 @@ impl SlackEventHandler {
 
     /// Handle a Socket Mode envelope.
     async fn handle_envelope(&self, envelope: &Value, bot_token: &str) -> Result<()> {
-        let envelope_type = envelope
-            .get("type")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let envelope_type = envelope.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
         match envelope_type {
             "events_api" => {
@@ -276,10 +271,7 @@ impl SlackEventHandler {
             .get("event")
             .context("Missing event in Events API payload")?;
 
-        let event_type = event
-            .get("type")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let event_type = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
         let team_id = payload
             .get("team_id")
@@ -318,10 +310,7 @@ impl SlackEventHandler {
             return Ok(());
         }
 
-        let channel_id = event
-            .get("channel")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let channel_id = event.get("channel").and_then(|v| v.as_str()).unwrap_or("");
 
         // Cache team mapping
         self.slack_channel.register_team(channel_id, team_id).await;
@@ -339,8 +328,7 @@ impl SlackEventHandler {
         match subtype {
             None => {
                 // New message
-                let channel_message =
-                    slack_message_to_channel_message(event, channel_id, team_id)?;
+                let channel_message = slack_message_to_channel_message(event, channel_id, team_id)?;
                 let evt = ChannelEvent::MessageReceived(channel_message);
                 self.event_tx.send(evt).await.ok();
             }
@@ -381,10 +369,7 @@ impl SlackEventHandler {
             .get("user")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
-        let emoji = event
-            .get("reaction")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let emoji = event.get("reaction").and_then(|v| v.as_str()).unwrap_or("");
         let item_ts = event
             .get("item")
             .and_then(|v| v.get("ts"))
@@ -417,10 +402,7 @@ impl SlackEventHandler {
             .get("user")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
-        let emoji = event
-            .get("reaction")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let emoji = event.get("reaction").and_then(|v| v.as_str()).unwrap_or("");
         let item_ts = event
             .get("item")
             .and_then(|v| v.get("ts"))

@@ -11,10 +11,16 @@ use crate::{BillingImplError, BillingLedger};
 /// `UsageEvent` fired by the agent loop is forwarded here, persisted to the
 /// ledger, and checked against the optional USD ceiling.
 ///
-/// When the ceiling is breached `on_usage` returns
-/// `BillingError::Hook("BudgetExceeded …")` which the agent logs but does not
-/// abort on (fail-open). To hard-abort on budget exhaustion, check
-/// `wallet.budget_exhausted()` between agent iterations.
+/// # Advisory vs enforced
+///
+/// * [`AgentWallet::on_usage`] (advisory) records spend and — when the
+///   ceiling is crossed — returns `BillingError::Hook(...)`. The agent logs
+///   this but keeps running (fail-open).
+/// * [`AgentWallet::authorize`] (enforced) is called *before* the agent
+///   dispatches a tool or provider call. It returns
+///   [`BillingError::BudgetExhausted`] as soon as
+///   [`AgentWallet::budget_exhausted`] is true, causing the agent to reject
+///   the pending call outright (fail-closed).
 pub struct AgentWallet<L: BillingLedger> {
     agent_id: String,
     max_cost_usd: Option<f64>,
@@ -67,6 +73,25 @@ impl<L: BillingLedger> BillingHook for AgentWallet<L> {
                 "agent '{}' exceeded cost budget: ${:.6} / ${:.6} USD",
                 self.agent_id, *acc, limit
             )));
+        }
+
+        Ok(())
+    }
+
+    async fn authorize(&self, pending: &UsageEvent) -> Result<(), BillingError> {
+        let _ = pending;
+
+        let Some(limit) = self.max_cost_usd else {
+            return Ok(());
+        };
+
+        let spent = *self.accumulated.lock().await;
+        if spent >= limit {
+            return Err(BillingError::BudgetExhausted {
+                agent_id: self.agent_id.clone(),
+                spent,
+                limit,
+            });
         }
 
         Ok(())

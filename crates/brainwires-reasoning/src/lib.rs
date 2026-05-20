@@ -22,7 +22,7 @@
 //! to `bks_pks` inside `brainwires-knowledge` and a move would have pulled
 //! an entire knowledge-store dependency into this crate. The deviation is
 //! intentional; tests and consumers of prompting should continue to target
-//! `brainwires_knowledge::prompting`.
+//! `brainwires_prompting`.
 //!
 //! ## Configuration
 //!
@@ -46,7 +46,7 @@ pub mod plan_parser;
 pub use output_parser::{JsonListParser, JsonOutputParser, OutputParser, RegexOutputParser};
 pub use plan_parser::{ParsedStep, parse_plan_steps, steps_to_tasks};
 
-// ── Scorers (moved from brainwires-agents::reasoning) ────────────────────
+// ── Scorers (moved from brainwires-agent::reasoning) ────────────────────
 mod complexity;
 mod entity_enhancer;
 mod relevance_scorer;

@@ -312,7 +312,7 @@ Supabase Realtime WebSocket client that:
 - Exchanges API key for Supabase-compatible JWT via `/api/remote/connect`
 - Handles automatic reconnection on disconnect
 
-#### RemoteBridge (`crates/brainwires-framework/crates/brainwires-relay/src/remote/bridge.rs`)
+#### RemoteBridge (`crates/brainwires-framework/crates/brainwires-network/src/remote/bridge.rs`)
 
 Bridge coordinator that:
 - Manages RealtimeClient lifecycle
@@ -629,7 +629,7 @@ Tests cover:
 | `src/ipc/socket.rs` | Unix socket utilities |
 | `src/remote/mod.rs` | Remote module root |
 | `src/remote/protocol.rs` | Remote protocol types |
-| `crates/brainwires-framework/crates/brainwires-relay/src/remote/bridge.rs` | Bridge coordinator |
+| `crates/brainwires-framework/crates/brainwires-network/src/remote/bridge.rs` | Bridge coordinator |
 | `src/remote/realtime.rs` | Supabase Realtime WebSocket client |
 | `src/remote/heartbeat.rs` | Agent status collection |
 | `src/remote/manager.rs` | Bridge lifecycle management |

@@ -6,9 +6,9 @@ use anyhow::Result;
 use tokio::sync::Mutex;
 
 use brainwires_core::Message;
-use brainwires_knowledge::dream::consolidator::DreamSessionStore;
 use brainwires_knowledge::knowledge::brain_client::BrainClient;
 use brainwires_knowledge::knowledge::types::*;
+use brainwires_memory::dream::consolidator::DreamSessionStore;
 
 /// Adapts BrainClient's thought storage to the DreamSessionStore trait
 /// required by the DreamConsolidator.
@@ -34,6 +34,7 @@ impl DreamSessionStore for BrainSessionAdapter {
                 limit: 1000,
                 category: None,
                 since: None,
+                owner_id: None,
             })
             .await?;
 
@@ -130,6 +131,7 @@ impl DreamSessionStore for BrainSessionAdapter {
                     ]),
                     importance: Some(0.85),
                     source: Some("dream-consolidation".to_string()),
+                    owner_id: None,
                 })
                 .await?;
         }

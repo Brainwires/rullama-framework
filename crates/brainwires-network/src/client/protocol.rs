@@ -1,4 +1,4 @@
-use brainwires_mcp::{JsonRpcRequest, JsonRpcResponse};
+use brainwires_mcp_client::{JsonRpcRequest, JsonRpcResponse};
 use serde_json::{Value, json};
 
 use super::error::AgentNetworkClientError;
@@ -14,7 +14,7 @@ pub fn build_initialize_request(id: u64) -> JsonRpcRequest {
             "capabilities": {},
             "clientInfo": {
                 "name": "brainwires-relay-client",
-                "version": "0.10.0"
+                "version": env!("CARGO_PKG_VERSION")
             }
         })),
     }

@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 pub enum UsageEvent {
     /// Tokens consumed by a provider `chat()` call.
     Tokens {
+        /// Agent that incurred this cost.
         agent_id: String,
         /// Human-readable model identifier, e.g. `"anthropic/claude-sonnet-4-6"`.
         model: String,
@@ -19,45 +20,60 @@ pub enum UsageEvent {
         total_tokens: u64,
         /// Pre-computed USD charge for this call.
         cost_usd: f64,
+        /// When the call completed.
         timestamp: DateTime<Utc>,
     },
 
     /// A single tool invocation (bash, file read, MCP call, etc.).
     ToolCall {
+        /// Agent that invoked the tool.
         agent_id: String,
+        /// Tool identifier as seen by the agent runtime.
         tool_name: String,
         /// Pre-computed USD charge (zero for most built-in tools; non-zero for
         /// paid external APIs billed per-call).
         cost_usd: f64,
+        /// When the tool call completed.
         timestamp: DateTime<Utc>,
     },
 
     /// Seconds of remote sandbox execution consumed (E2B, OpenSandbox, etc.).
     SandboxSeconds {
+        /// Agent that ran the sandbox.
         agent_id: String,
         /// Which sandbox provider was used.
         provider: String,
+        /// Wall-clock seconds billed.
         seconds: f64,
         /// Pre-computed USD charge.
         cost_usd: f64,
+        /// When the sandbox run ended.
         timestamp: DateTime<Utc>,
     },
 
     /// A call to an external paid API (image generation, web search, etc.).
     ApiCall {
+        /// Agent that initiated the call.
         agent_id: String,
         /// Service identifier, e.g. `"openai/dall-e-3"`.
         service: String,
+        /// Pre-computed USD charge.
         cost_usd: f64,
+        /// When the API call completed.
         timestamp: DateTime<Utc>,
     },
 
     /// Escape hatch for custom billable events.
     Custom {
+        /// Agent that incurred this cost.
         agent_id: String,
+        /// Caller-defined event name (surfaced to the billing hook).
         name: String,
+        /// Pre-computed USD charge.
         cost_usd: f64,
+        /// Free-form payload for the billing hook to interpret.
         metadata: serde_json::Value,
+        /// When the event occurred.
         timestamp: DateTime<Utc>,
     },
 }

@@ -49,6 +49,23 @@ fn default_poll_interval_ms() -> u64 {
     2000
 }
 
+impl Default for SignalConfig {
+    fn default() -> Self {
+        Self {
+            api_url: "http://127.0.0.1:8080".to_string(),
+            phone_number: String::new(),
+            gateway_url: "ws://127.0.0.1:18789/ws".to_string(),
+            gateway_token: None,
+            group_mention_required: false,
+            bot_name: None,
+            mention_patterns: Vec::new(),
+            sender_allowlist: Vec::new(),
+            group_allowlist: Vec::new(),
+            poll_interval_ms: 2000,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,22 +125,5 @@ mod tests {
         assert!(cfg.mention_patterns.is_empty());
         assert!(cfg.sender_allowlist.is_empty());
         assert_eq!(cfg.poll_interval_ms, 2000);
-    }
-}
-
-impl Default for SignalConfig {
-    fn default() -> Self {
-        Self {
-            api_url: "http://127.0.0.1:8080".to_string(),
-            phone_number: String::new(),
-            gateway_url: "ws://127.0.0.1:18789/ws".to_string(),
-            gateway_token: None,
-            group_mention_required: false,
-            bot_name: None,
-            mention_patterns: Vec::new(),
-            sender_allowlist: Vec::new(),
-            group_allowlist: Vec::new(),
-            poll_interval_ms: 2000,
-        }
     }
 }

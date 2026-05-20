@@ -1,7 +1,7 @@
 //! # Routing Layer
 //!
 //! Decides where messages go. The [`Router`](crate::routing::Router) trait takes a
-//! [`MessageEnvelope`](crate::network::MessageEnvelope) and a
+//! [`MessageEnvelope`](crate::MessageEnvelope) and a
 //! [`PeerTable`](crate::routing::PeerTable) and returns the
 //! transport addresses that the message should be delivered to.
 //!

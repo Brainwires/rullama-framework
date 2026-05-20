@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::sync::Arc;
 
-use brainwires::eval::EvaluationCase;
+use brainwires_eval::EvaluationCase;
 
 use crate::self_improve::{
     AutonomousFeedbackLoop, FeedbackLoopConfig, SelfImprovementConfig, SelfImprovementController,
@@ -22,7 +22,7 @@ pub async fn handle_eval_improve(
 ) -> Result<()> {
     // Use the standard long-horizon stability suite as default eval cases.
     // Contributors can extend this by passing a custom case set programmatically.
-    let cases: Vec<Arc<dyn EvaluationCase>> = brainwires::eval::long_horizon_stability_suite();
+    let cases: Vec<Arc<dyn EvaluationCase>> = brainwires_eval::long_horizon_stability_suite();
 
     let self_improve_config = SelfImprovementConfig {
         max_cycles: 10,
@@ -43,8 +43,8 @@ pub async fn handle_eval_improve(
 
     if dry_run {
         // Dry-run: just print the detected faults and exit.
-        use brainwires::eval::fault_report::analyze_suite_for_faults;
-        use brainwires::eval::{EvaluationSuite, RegressionSuite, SuiteConfig};
+        use brainwires_eval::fault_report::analyze_suite_for_faults;
+        use brainwires_eval::{EvaluationSuite, RegressionSuite, SuiteConfig};
 
         println!("\n=== Eval-Improve Dry Run ===\n");
         println!(

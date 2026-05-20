@@ -4,16 +4,15 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use rmcp::{
-    ServerHandler, ServiceExt,
-    handler::server::tool::ToolRouter,
-    handler::server::wrapper::Parameters,
-    model::*,
-    tool, tool_handler, tool_router,
+    ServerHandler, ServiceExt, handler::server::tool::ToolRouter,
+    handler::server::wrapper::Parameters, model::*, tool, tool_handler, tool_router,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use brainwires_network::channels::{Channel, ChannelMessage, ConversationId, MessageContent, MessageId};
+use brainwires_network::channels::{
+    Channel, ChannelMessage, ConversationId, MessageContent, MessageId,
+};
 
 use crate::telegram::TelegramChannel;
 
@@ -96,9 +95,7 @@ pub struct AddReactionRequest {
 
 #[tool_router(router = tool_router)]
 impl TelegramMcpServer {
-    #[tool(
-        description = "Send a message to a Telegram chat. Returns the ID of the sent message."
-    )]
+    #[tool(description = "Send a message to a Telegram chat. Returns the ID of the sent message.")]
     async fn send_message(
         &self,
         Parameters(req): Parameters<SendMessageRequest>,
@@ -174,7 +171,9 @@ impl TelegramMcpServer {
         Ok("{\"status\": \"deleted\"}".to_string())
     }
 
-    #[tool(description = "Send a typing indicator to a Telegram chat. The indicator lasts ~5 seconds or until a message is sent.")]
+    #[tool(
+        description = "Send a typing indicator to a Telegram chat. The indicator lasts ~5 seconds or until a message is sent."
+    )]
     async fn send_typing(
         &self,
         Parameters(req): Parameters<SendTypingRequest>,
@@ -215,9 +214,8 @@ impl ServerHandler for TelegramMcpServer {
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
-        info.server_info =
-            Implementation::new("brainwires-telegram", env!("CARGO_PKG_VERSION"))
-                .with_title("Brainwires Telegram Channel — MCP Tool Server");
+        info.server_info = Implementation::new("brainwires-telegram", env!("CARGO_PKG_VERSION"))
+            .with_title("Brainwires Telegram Channel — MCP Tool Server");
         info.instructions = Some(
             "Telegram channel adapter MCP server. \
              Use send_message to send messages, edit_message to edit, \

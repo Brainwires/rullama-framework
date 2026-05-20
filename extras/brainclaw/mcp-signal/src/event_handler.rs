@@ -219,10 +219,11 @@ impl SignalEventHandler {
         };
 
         // Group allowlist
-        if let Some(ref gid) = group_id {
-            if !self.group_allowlist.is_empty() && !self.group_allowlist.contains(gid) {
-                return Ok(());
-            }
+        if let Some(ref gid) = group_id
+            && !self.group_allowlist.is_empty()
+            && !self.group_allowlist.contains(gid)
+        {
+            return Ok(());
         }
 
         // Mention filter: group messages only respond when mentioned (if required)

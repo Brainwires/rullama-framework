@@ -48,8 +48,11 @@
 //! On Windows, a WinUSB-compatible driver must be installed for the target
 //! device (e.g. via [Zadig](https://zadig.akeo.ie/)).
 
+/// USB device enumeration and lookup helpers.
 pub mod device;
+/// Open-device handle and bulk/interrupt/control transfer primitives.
 pub mod transfer;
+/// Typed descriptors: device, class codes, speeds, errors.
 pub mod types;
 
 pub use device::{find_device, list_usb_devices};

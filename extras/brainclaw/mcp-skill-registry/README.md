@@ -46,10 +46,10 @@ Skills are distributed as `SkillPackage` JSON containing:
 
 ## Publishing from CLI
 
-Use the `RegistryClient` from `brainwires-skills`:
+Use the `RegistryClient` from `brainwires-agent::skills` (formerly the standalone `brainwires-skills` crate, absorbed in the 0.10 consolidation):
 
 ```rust
-use brainwires_skills::{RegistryClient, SkillPackage, SkillManifest};
+use brainwires_agent::skills::{RegistryClient, SkillPackage, SkillManifest};
 
 let client = RegistryClient::new("http://localhost:3000", None);
 let package = SkillPackage::from_skill_file("my-skill/SKILL.md", manifest)?;

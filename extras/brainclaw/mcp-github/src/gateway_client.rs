@@ -6,7 +6,6 @@ use anyhow::{Context, Result};
 use futures::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
-use tracing;
 
 use brainwires_network::channels::{
     Channel, ChannelCapabilities, ChannelEvent, ChannelHandshake, ChannelHandshakeResponse,
@@ -69,8 +68,8 @@ impl GatewayClient {
             .await?
             .context("Gateway closed connection before handshake response")?;
 
-        let response: ChannelHandshakeResponse = serde_json::from_str(&response_text)
-            .context("Failed to parse handshake response")?;
+        let response: ChannelHandshakeResponse =
+            serde_json::from_str(&response_text).context("Failed to parse handshake response")?;
 
         if !response.accepted {
             let err_msg = response.error.unwrap_or_else(|| "unknown reason".into());

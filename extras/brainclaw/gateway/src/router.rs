@@ -35,10 +35,7 @@ pub struct MessageRouter {
 impl MessageRouter {
     /// Create a new message router with references to the session manager and channel registry.
     pub fn new(sessions: Arc<SessionManager>, channels: Arc<ChannelRegistry>) -> Self {
-        Self {
-            sessions,
-            channels,
-        }
+        Self { sessions, channels }
     }
 
     /// Route an inbound event from a channel adapter to the appropriate agent session.
@@ -193,10 +190,7 @@ impl MessageRouter {
             }
         }
 
-        bail!(
-            "All channels for platform '{}' have disconnected",
-            platform
-        );
+        bail!("All channels for platform '{}' have disconnected", platform);
     }
 }
 

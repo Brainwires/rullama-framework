@@ -32,9 +32,7 @@ pub fn build_tool_registry(config: &ToolsSection) -> ToolRegistry {
 /// Register all tools belonging to a named group.
 #[cfg(feature = "native-tools")]
 fn register_tool_group(registry: &mut ToolRegistry, group: &str) {
-    use brainwires_tools::{
-        BashTool, FileOpsTool, GitTool, SearchTool, ValidationTool, WebTool,
-    };
+    use brainwires_tools::{BashTool, FileOpsTool, GitTool, SearchTool, ValidationTool, WebTool};
 
     match group {
         "bash" => registry.register_tools(BashTool::get_tools()),
@@ -51,7 +49,9 @@ fn register_tool_group(registry: &mut ToolRegistry, group: &str) {
         }
         #[cfg(not(feature = "email"))]
         "email" => {
-            tracing::warn!("Tool group 'email' requested but BrainClaw was not compiled with the 'email' feature");
+            tracing::warn!(
+                "Tool group 'email' requested but BrainClaw was not compiled with the 'email' feature"
+            );
         }
 
         #[cfg(feature = "calendar")]
@@ -61,7 +61,9 @@ fn register_tool_group(registry: &mut ToolRegistry, group: &str) {
         }
         #[cfg(not(feature = "calendar"))]
         "calendar" => {
-            tracing::warn!("Tool group 'calendar' requested but BrainClaw was not compiled with the 'calendar' feature");
+            tracing::warn!(
+                "Tool group 'calendar' requested but BrainClaw was not compiled with the 'calendar' feature"
+            );
         }
 
         #[cfg(feature = "rag")]
@@ -71,7 +73,9 @@ fn register_tool_group(registry: &mut ToolRegistry, group: &str) {
         }
         #[cfg(not(feature = "rag"))]
         "semantic-search" => {
-            tracing::warn!("Tool group 'semantic-search' requested but BrainClaw was not compiled with the 'rag' feature");
+            tracing::warn!(
+                "Tool group 'semantic-search' requested but BrainClaw was not compiled with the 'rag' feature"
+            );
         }
 
         #[cfg(feature = "browser")]
@@ -81,7 +85,9 @@ fn register_tool_group(registry: &mut ToolRegistry, group: &str) {
         }
         #[cfg(not(feature = "browser"))]
         "browser" => {
-            tracing::warn!("Tool group 'browser' requested but BrainClaw was not compiled with the 'browser' feature");
+            tracing::warn!(
+                "Tool group 'browser' requested but BrainClaw was not compiled with the 'browser' feature"
+            );
         }
 
         other => {
@@ -109,7 +115,7 @@ mod tests {
         let registry = build_tool_registry(&config);
         // With native-tools feature, should have registered tools from all 6 groups
         #[cfg(feature = "native-tools")]
-        assert!(registry.len() > 0);
+        assert!(!registry.is_empty());
         #[cfg(not(feature = "native-tools"))]
         assert_eq!(registry.len(), 0);
     }

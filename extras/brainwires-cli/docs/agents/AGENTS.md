@@ -21,7 +21,7 @@ The agent system enables autonomous, concurrent execution of coding tasks. An ex
 | Agent Tools | `src/mcp_server/agent_tools.rs` | MCP tool definitions for spawning/querying |
 | Task Type | `src/types/agent.rs` | Task struct and lifecycle methods |
 
-> ¹ Implemented in the `brainwires-agents` framework crate; re-exported into the CLI via
+> ¹ Implemented in the `brainwires-agent` framework crate; re-exported into the CLI via
 > `pub use brainwires::agents::*` in `src/agents/mod.rs`. Fully accessible from CLI code
 > but not present as local files under `src/agents/`.
 

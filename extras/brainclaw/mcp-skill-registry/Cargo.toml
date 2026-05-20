@@ -19,6 +19,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
+brainwires-agent = { workspace = true, features = ["skills-registry"] }
 axum.workspace = true
 tokio.workspace = true
 serde.workspace = true

@@ -1,10 +1,10 @@
-# Testing Guide — `brainwires_agents::eval`
+# Testing Guide — `brainwires_agent::eval`
 
 The evaluation framework for Brainwires agents lives at
-`crates/brainwires-agents/src/eval/` (behind the `eval` feature), not in a
+`crates/brainwires-agent/src/eval/` (behind the `eval` feature), not in a
 separate `brainwires-eval` crate. The types are reached as
-`brainwires_agents::eval::…` in Rust code and via `cargo test -p
-brainwires-agents --features eval eval::…` on the CLI.
+`brainwires_agent::eval::…` in Rust code and via `cargo test -p
+brainwires-agent --features eval eval::…` on the CLI.
 It provides an N-trial Monte Carlo runner, Wilson-score confidence intervals,
 adversarial test cases, long-horizon stability tests, regression baselines, and
 an eval-driven autonomous self-improvement loop.
@@ -27,7 +27,7 @@ an eval-driven autonomous self-improvement loop.
 
 ```rust
 use async_trait::async_trait;
-use brainwires_agents::eval::{EvaluationCase, TrialResult};
+use brainwires_agent::eval::{EvaluationCase, TrialResult};
 
 struct MyAgentCase {
     task: String,
@@ -63,7 +63,7 @@ impl EvaluationCase for MyAgentCase {
 | `StochasticCase::new("name", 0.7)` | Succeeds with probability 0.7; deterministic per `trial_id` |
 
 ```rust
-use brainwires_agents::eval::{AlwaysPassCase, AlwaysFailCase, StochasticCase};
+use brainwires_agent::eval::{AlwaysPassCase, AlwaysFailCase, StochasticCase};
 
 let pass  = AlwaysPassCase::new("infra_smoke");
 let fail  = AlwaysFailCase::new("always_fail", "expected failure");
@@ -80,13 +80,13 @@ let flaky = StochasticCase::new("flaky_50pct", 0.5);
 ### Quick start
 
 ```rust
-use brainwires_agents::eval::{EvaluationSuite, AlwaysPassCase};
+use brainwires_agent::eval::{EvaluationSuite, AlwaysPassCase};
 use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
     let suite = EvaluationSuite::new(30);   // 30 trials per case
-    let cases: Vec<Arc<dyn brainwires_agents::eval::EvaluationCase>> = vec![
+    let cases: Vec<Arc<dyn brainwires_agent::eval::EvaluationCase>> = vec![
         Arc::new(AlwaysPassCase::new("smoke")),
     ];
     let result = suite.run_suite(&cases).await;
@@ -105,7 +105,7 @@ async fn main() {
 ### Parallel execution
 
 ```rust
-use brainwires_agents::eval::{EvaluationSuite, SuiteConfig};
+use brainwires_agent::eval::{EvaluationSuite, SuiteConfig};
 
 let suite = EvaluationSuite::with_config(SuiteConfig {
     n_trials: 50,
@@ -167,7 +167,7 @@ println!("p50_duration={}ms  p95_duration={}ms",
 
 ```rust
 // Compute stats from a custom trial slice
-use brainwires_agents::eval::{EvaluationStats, TrialResult};
+use brainwires_agent::eval::{EvaluationStats, TrialResult};
 
 let trials = vec![
     TrialResult::success(0, 42),
@@ -183,7 +183,7 @@ if let Some(stats) = EvaluationStats::from_trials(&trials) {
 ### Compute a Wilson CI directly
 
 ```rust
-use brainwires_agents::eval::trial::ConfidenceInterval95;
+use brainwires_agent::eval::trial::ConfidenceInterval95;
 
 let ci = ConfidenceInterval95::wilson(70, 100);
 // 70 successes out of 100 trials
@@ -201,7 +201,7 @@ passes the payload to your agent.
 ### All four scenario types
 
 ```rust
-use brainwires_agents::eval::{AdversarialTestCase, AdversarialTestType};
+use brainwires_agent::eval::{AdversarialTestCase, AdversarialTestType};
 
 // 1. Prompt injection — agent must reject the payload
 let inj = AdversarialTestCase::prompt_injection(
@@ -239,7 +239,7 @@ let budget = AdversarialTestCase::budget_exhaustion(
 Returns a pre-built set of all four scenario types (9 cases total):
 
 ```rust
-use brainwires_agents::eval::adversarial::standard_adversarial_suite;
+use brainwires_agent::eval::adversarial::standard_adversarial_suite;
 
 let cases = standard_adversarial_suite();
 println!("{} adversarial cases", cases.len()); // → 9
@@ -249,7 +249,7 @@ println!("{} adversarial cases", cases.len()); // → 9
 
 ```rust
 use async_trait::async_trait;
-use brainwires_agents::eval::{AdversarialTestCase, EvaluationCase, TrialResult};
+use brainwires_agent::eval::{AdversarialTestCase, EvaluationCase, TrialResult};
 use std::sync::Arc;
 
 struct AdversarialRunner {
@@ -290,7 +290,7 @@ Verifies that the sliding-window loop-detection algorithm fires at the right
 iteration when a tool is called repeatedly.
 
 ```rust
-use brainwires_agents::eval::stability_tests::LoopDetectionSimCase;
+use brainwires_agent::eval::stability_tests::LoopDetectionSimCase;
 
 // Loop detector should fire: read_file repeats from step 3, window=5, fires at step 7
 let fires = LoopDetectionSimCase::should_detect(
@@ -313,7 +313,7 @@ Verifies that the goal text is re-injected at the expected iterations across
 long runs.
 
 ```rust
-use brainwires_agents::eval::stability_tests::GoalPreservationCase;
+use brainwires_agent::eval::stability_tests::GoalPreservationCase;
 
 // 20 iterations, inject goal reminder every 5 → fires at iterations 6, 11, 16
 let case = GoalPreservationCase::new(20, 5);
@@ -325,7 +325,7 @@ Returns the full standard set of stability cases covering loop detection (4
 should-fire + 2 should-not-fire) and goal preservation (4 cases):
 
 ```rust
-use brainwires_agents::eval::{EvaluationSuite, long_horizon_stability_suite};
+use brainwires_agent::eval::{EvaluationSuite, long_horizon_stability_suite};
 
 #[tokio::main]
 async fn main() {
@@ -349,7 +349,7 @@ per-category baselines.  Use it to gate CI on eval regressions.
 ### Workflow
 
 ```rust
-use brainwires_agents::eval::{
+use brainwires_agent::eval::{
     EvaluationSuite, AlwaysPassCase,
     regression::{RegressionConfig, RegressionSuite},
 };
@@ -387,7 +387,7 @@ if !check.is_ci_passing() {
 ### Custom regression tolerance
 
 ```rust
-use brainwires_agents::eval::regression::{RegressionConfig, RegressionSuite};
+use brainwires_agent::eval::regression::{RegressionConfig, RegressionSuite};
 
 let config = RegressionConfig {
     max_regression: 0.10, // allow up to 10% drop before failing CI
@@ -468,7 +468,7 @@ for round in 1..=max_feedback_rounds:
 | `Flaky` | CI width > 0.25 (default) and at least one failure | 4 |
 
 ```rust
-use brainwires_agents::eval::{EvaluationSuite, RegressionSuite, SuiteConfig,
+use brainwires_agent::eval::{EvaluationSuite, RegressionSuite, SuiteConfig,
                        long_horizon_stability_suite, analyze_suite_for_faults};
 
 let suite  = EvaluationSuite::new(10);
@@ -508,7 +508,7 @@ brainwires eval-improve --commit-baselines
 
 ```rust
 use brainwires::self_improve::{AutonomousFeedbackLoop, FeedbackLoopConfig, SelfImprovementConfig};
-use brainwires_agents::eval::long_horizon_stability_suite;
+use brainwires_agent::eval::long_horizon_stability_suite;
 
 let cases = long_horizon_stability_suite();
 
@@ -556,16 +556,16 @@ Outer loop adds:
 
 ```bash
 # Run all eval-module tests
-cargo test -p brainwires-agents --features eval eval::
+cargo test -p brainwires-agent --features eval eval::
 
 # Run CLI self-improvement tests (includes EvalStrategy + FeedbackLoop tests)
 cargo test --lib self_improve
 
 # Run only fault_report tests
-cargo test -p brainwires-agents --features eval fault_report
+cargo test -p brainwires-agent --features eval fault_report
 
 # Run stability suite tests
-cargo test -p brainwires-agents --features eval stability_tests
+cargo test -p brainwires-agent --features eval stability_tests
 ```
 
 ---
@@ -619,7 +619,7 @@ let loop_ = AutonomousFeedbackLoop::new(config, cases, provider);
 
 ### Ranking metrics
 
-All cases use the pure functions from `brainwires_agents::eval`:
+All cases use the pure functions from `brainwires_agent::eval`:
 
 | Function | Measures |
 |----------|---------|

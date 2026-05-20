@@ -4,8 +4,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use std::sync::Arc;
 
-use brainwires_agents::eval::fault_report::analyze_suite_for_faults;
-use brainwires_agents::eval::{EvaluationCase, EvaluationSuite, RegressionSuite, SuiteConfig};
+use brainwires_eval::fault_report::analyze_suite_for_faults;
+use brainwires_eval::{EvaluationCase, EvaluationSuite, RegressionSuite, SuiteConfig};
 
 use super::{ImprovementCategory, ImprovementStrategy, ImprovementTask};
 use crate::config::StrategyConfig;

@@ -11,11 +11,11 @@
 
 use std::sync::Arc;
 
+use axum::Json;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Sse};
 use axum::response::sse::Event;
-use axum::Json;
+use axum::response::{IntoResponse, Sse};
 use brainwires_core::{ChatOptions, Message, StreamChunk};
 use chrono::Utc;
 use futures::StreamExt;
@@ -87,47 +87,36 @@ fn oai_messages_to_core(messages: Vec<OaiMessage>) -> Vec<Message> {
         .collect()
 }
 
-fn extract_text_from_response(chunks: Vec<StreamChunk>) -> String {
-    chunks
-        .into_iter()
-        .filter_map(|c| match c {
-            StreamChunk::Text(t) => Some(t),
-            _ => None,
-        })
-        .collect()
-}
-
 fn build_options(req: &ChatCompletionRequest) -> ChatOptions {
     ChatOptions {
         temperature: req.temperature,
         max_tokens: req.max_tokens,
         top_p: req.top_p,
-        stop: req
-            .stop
-            .as_ref()
-            .and_then(|v| match v {
-                Value::String(s) => Some(vec![s.clone()]),
-                Value::Array(arr) => Some(
-                    arr.iter()
-                        .filter_map(|x| x.as_str().map(|s| s.to_string()))
-                        .collect(),
-                ),
-                _ => None,
-            }),
+        stop: req.stop.as_ref().and_then(|v| match v {
+            Value::String(s) => Some(vec![s.clone()]),
+            Value::Array(arr) => Some(
+                arr.iter()
+                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                    .collect(),
+            ),
+            _ => None,
+        }),
         system: None,
         model: Some(req.model.clone()),
+        ..Default::default()
     }
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────
 
 /// `GET /v1/models` — list the provider's models.
-pub async fn list_models(
-    headers: HeaderMap,
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+pub async fn list_models(headers: HeaderMap, State(state): State<AppState>) -> impl IntoResponse {
     if !check_auth(&headers, &state.config.auth_tokens) {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"error": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "Unauthorized"})),
+        )
+            .into_response();
     }
 
     let provider_name = state
@@ -144,7 +133,11 @@ pub async fn list_models(
         owned_by: "brainclaw",
     }];
 
-    Json(ModelsResponse { object: "list", data }).into_response()
+    Json(ModelsResponse {
+        object: "list",
+        data,
+    })
+    .into_response()
 }
 
 /// `POST /v1/chat/completions` — OpenAI-compatible chat completion.
@@ -154,7 +147,11 @@ pub async fn chat_completions(
     Json(req): Json<ChatCompletionRequest>,
 ) -> impl IntoResponse {
     if !check_auth(&headers, &state.config.auth_tokens) {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"error": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "Unauthorized"})),
+        )
+            .into_response();
     }
 
     let provider = match &state.openai_provider {
@@ -190,32 +187,31 @@ pub async fn chat_completions(
             }
         });
 
-        let sse_stream =
-            tokio_stream::wrappers::ReceiverStream::new(rx).map(move |chunk| {
-                let cid = completion_id.clone();
-                let model = model.clone();
-                match chunk {
-                    Ok(StreamChunk::Text(text)) => {
-                        let data = json!({
-                            "id": cid,
-                            "object": "chat.completion.chunk",
-                            "created": Utc::now().timestamp(),
-                            "model": model,
-                            "choices": [{
-                                "index": 0,
-                                "delta": {"role": "assistant", "content": text},
-                                "finish_reason": null
-                            }]
-                        });
-                        Ok::<Event, anyhow::Error>(Event::default().data(data.to_string()))
-                    }
-                    Ok(_) => Ok(Event::default().comment("")),
-                    Err(e) => {
-                        let data = json!({"error": e});
-                        Ok(Event::default().data(data.to_string()))
-                    }
+        let sse_stream = tokio_stream::wrappers::ReceiverStream::new(rx).map(move |chunk| {
+            let cid = completion_id.clone();
+            let model = model.clone();
+            match chunk {
+                Ok(StreamChunk::Text(text)) => {
+                    let data = json!({
+                        "id": cid,
+                        "object": "chat.completion.chunk",
+                        "created": Utc::now().timestamp(),
+                        "model": model,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"role": "assistant", "content": text},
+                            "finish_reason": null
+                        }]
+                    });
+                    Ok::<Event, anyhow::Error>(Event::default().data(data.to_string()))
                 }
-            });
+                Ok(_) => Ok(Event::default().comment("")),
+                Err(e) => {
+                    let data = json!({"error": e});
+                    Ok(Event::default().data(data.to_string()))
+                }
+            }
+        });
 
         // Append the [DONE] sentinel
         let done_event = futures::stream::once(async {
@@ -258,12 +254,13 @@ pub async fn chat_completions(
 }
 
 /// `POST /v1/embeddings` — proxy to provider (returns error if unsupported).
-pub async fn embeddings(
-    headers: HeaderMap,
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+pub async fn embeddings(headers: HeaderMap, State(state): State<AppState>) -> impl IntoResponse {
     if !check_auth(&headers, &state.config.auth_tokens) {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"error": "Unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "Unauthorized"})),
+        )
+            .into_response();
     }
 
     (

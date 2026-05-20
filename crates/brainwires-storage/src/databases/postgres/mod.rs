@@ -137,6 +137,10 @@ impl PostgresDatabase {
 
     /// Execute the core filtered search logic shared by `search` and
     /// `search_filtered`.
+    // reason: this is the union of two public API surfaces (`search` +
+    // `search_filtered`). Bundling args into a struct would just shuffle them
+    // to the call sites without simplifying anything.
+    #[allow(clippy::too_many_arguments)]
     async fn do_search(
         &self,
         query_vector: Vec<f32>,
@@ -570,12 +574,12 @@ impl VectorDatabase for PostgresDatabase {
 
         let language_breakdown: Vec<(String, usize)> = lang_rows
             .iter()
-            .filter_map(|row| {
+            .map(|row| {
                 let lang: String = row
                     .try_get("language")
                     .unwrap_or_else(|_| "Unknown".to_string());
                 let cnt: i64 = row.try_get("lang_count").unwrap_or(0);
-                Some((lang, cnt as usize))
+                (lang, cnt as usize)
             })
             .collect();
 

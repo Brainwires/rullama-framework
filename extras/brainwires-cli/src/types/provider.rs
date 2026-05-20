@@ -1,6 +1,6 @@
 //! Provider types.
 //!
-//! Re-exports ChatOptions from brainwires-core and ProviderType/ProviderConfig from brainwires-providers.
+//! Re-exports ChatOptions from brainwires-core and ProviderType/ProviderConfig from brainwires-provider.
 
 use serde::{Deserialize, Serialize};
 

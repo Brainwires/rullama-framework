@@ -5,7 +5,1205 @@ All notable changes to the Brainwires Framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.0] - 2026-05-15
+
+### Refactored (BREAKING)
+
+#### Home automation moved out to `future/home-automation/`
+
+The `brainwires-hardware` crate sheds its home-automation surface. The
+`homeauto` module (Matter 1.3, Zigbee 3.0, Z-Wave Plus v2, Thread 1.3.0) and
+the `matter-tool` CLI moved to a standalone workspace at
+`future/home-automation/` — outside the framework workspace and not
+published to crates.io. The Matter / Zigbee / Z-Wave / Thread protocol code
+itself is intact, but a handful of surfaces (Matter event subscription,
+BLE transport on Windows, NetworkCommissioning write, full ZCL value-type
+encoding) were unfinished, so the whole stack got parked rather than
+shipping as `Err("not yet implemented")` returns.
+
+- **`crates/brainwires-hardware/src/homeauto/` deleted** — all four protocol
+  subtrees (62 .rs files, ~18,500 LOC) moved to
+  `future/home-automation/brainwires-homeauto/`.
+- **`brainwires-hardware` features dropped**: `zigbee`, `zwave`, `thread`,
+  `matter`, `matter-ble`, `homeauto`, `homeauto-full`. The `full` feature no
+  longer pulls in any home-auto features.
+- **`extras/matter-tool/` deleted** — moved to
+  `future/home-automation/matter-tool/`.
+- **Workspace deps dropped from `brainwires-hardware`**: matter crypto stack
+  (`mdns-sd`, `gethostname`, `p256`, `ecdsa`, `hmac`, `hkdf`, `pbkdf2`,
+  `aes`, `ccm`, `der`, `pkcs8`, `sha2`, `rand_core`, `zeroize`, `hex`),
+  zigbee/zwave serial (`tokio-serial`, `crc`, `bytes`), and thread
+  (`reqwest`).
+
+API breakage:
+- `brainwires_hardware::homeauto::*` — gone. Use `brainwires_homeauto::*`
+  from `future/home-automation/brainwires-homeauto`. Re-folding into the
+  framework will happen once the unfinished pieces are closed.
+
+#### `EmailProvider::Gmail` OAuth2 variant removed
+
+The Gmail OAuth2 backend variant on `brainwires_tool_builtins::email::EmailProvider`
+was a stub returning `Err("Gmail OAuth2 ... not yet implemented")` for send,
+search, read, and list. It's gone.
+
+- **`EmailProvider::Gmail` enum variant deleted** along with its four
+  `bail!()` match arms.
+- IMAP/SMTP still works against Gmail with an app password — that path is
+  the supported Gmail integration.
+- The separate `email::gmail_push::GmailPushHandler` (Google Cloud Pub/Sub
+  webhook ingestion) is **unchanged** and continues to work. The two
+  surfaces share the "Gmail" name but are independent.
+
+API breakage:
+- `EmailProvider::Gmail { client_id, client_secret, refresh_token }` — gone.
+  Switch to `EmailProvider::ImapSmtp { ... }` with a Gmail app password.
+
+#### Stack-graphs name-resolution stub removed
+
+The `brainwires_rag::code_analysis::stack_graphs` module was scaffolded as
+an empty stub in commit `d772b21` (pre-release review, 2026-03-06) only to
+satisfy a dangling `pub mod` declaration that had survived a refactor — it
+had no real implementation and no plan or PRD calling for one. The
+`HybridRelationsProvider` already falls through to the tree-sitter
+(`RepoMap`) path for actual definition/reference extraction, so the stub
+contributed nothing.
+
+- **`code_analysis::stack_graphs` module deleted**.
+- **`PrecisionLevel::High` variant removed** from
+  `brainwires_rag::code_analysis::types::PrecisionLevel`. The remaining
+  variants are `Medium` (AST-based) and `Low` (text-based).
+- **`HybridRelationsProvider::new()` signature simplified** — the
+  `_enable_stack_graphs: bool` parameter is gone. Constructor is no-arg.
+- **`HybridRelationsProvider::has_stack_graphs_for()` removed**.
+- **`RelationsConfig::use_stack_graphs` field removed**.
+
+API breakage:
+- `HybridRelationsProvider::new(false)` → `HybridRelationsProvider::new()`.
+- Matching on `PrecisionLevel::High` no longer compiles.
+- `RelationsConfig { use_stack_graphs: ..., .. }` no longer compiles.
+
+#### Low-level inference + training crates moved out to `rullama`
+
+The framework sheds its low-level layer. `rullama` — originally written
+to *replace* Candle after the earlier on-Candle attempt failed — is
+becoming a small Rust workspace that hosts both the existing wgpu/WASM
+Gemma 4 inference engine and the training crates pulled from here. The
+framework keeps its high-level surface (agents, providers, MCP, RAG,
+prompting, reasoning, cloud fine-tune) and stops carrying a model
+runtime of its own.
+
+- **`crates/brainwires-finetune-local/` deleted** — Burn 0.20-backed
+  LoRA / QLoRA / DoRA fine-tuning. Moves to `rullama` as
+  `rullama-finetune`, gated behind a `training` feature, native-only.
+- **`crates/brainwires-training/` deleted** — from-scratch training
+  placeholder. Moves to `rullama` as `rullama-training`.
+- **`brainwires-provider` `local-llm-candle` feature deleted** — the
+  Candle-based local LLM provider (`CandleLlmProvider`, `gguf_loader`,
+  `quantized_gemma4_pipeline`, ~1,400 LOC). Rullama already covers
+  Gemma 4 inference natively in wgpu, bit-exact vs Ollama, so this
+  path was redundant. Consumers wanting local LLM inference depend on
+  `rullama` directly.
+- **`brainwires-provider` `local-llm-vision` feature deleted** —
+  Gemma 3 SigLIP + Gemma 4 multimodal pipeline (~3,000 LOC). Gemma 4
+  vision is already shipped in rullama (bit-identical to Ollama); the
+  Gemma 3 SigLIP path is out of scope.
+- **Workspace deps pruned** — the Brainwires `candle` 0.10 WebGPU
+  fork, `burn` 0.20, `hf-hub`, and the candle-only `safetensors` /
+  `tokenizers` / `image` pins drop from `[workspace.dependencies]`
+  once `cargo tree -e normal` shows no remaining consumer.
+- **`extras/brainwires-chat-pwa/wasm/` deleted** — the 944-line wasm
+  bridge crate (`brainwires-chat-pwa-wasm`) existed solely to expose
+  `CandleLlmProvider` to JavaScript. With the Candle path gone it has
+  no remaining surface area; the chat PWA loads `rullama`'s wasm
+  bundle directly.
+- **`brainwires-provider`'s candle-only re-exports gone** —
+  `CandleDevice`, `CandleTensor`, `CandleVarBuilder`,
+  `CandleGemmaConfig`, `CandleDeviceLocation`, `WgpuDevice`,
+  `WgpuStorage`, `CandleStorage`, `CandleDType`, and the `gemma4`
+  re-export are removed from `brainwires_provider`'s public API.
+  Along with them, the `candle-wgpu` cargo feature is gone and the
+  candle-bound examples (`gemma4_diag`, `gguf_dump`) are deleted.
+
+API breakage:
+- `brainwires_finetune_local::*` — gone. Use `rullama_finetune::*`.
+- `brainwires_training::*` — gone. Use `rullama_training::*`.
+- `brainwires_provider::local_llm::*` (incl. `CandleLlmProvider`,
+  `CandleDevice`, `CandleGemmaConfig`, vision pipelines) — gone.
+  For local inference, embed `rullama` directly. A
+  `Provider`-trait shim from rullama back into the framework is a
+  later milestone, added only when a concrete agent flow needs one.
+- `brainwires-provider`'s `local-llm-candle` and `local-llm-vision`
+  cargo features — gone (along with their gated deps).
+- The `brainwires` facade crate's re-exports of any of the above —
+  gone. Bumps the facade as a breaking change.
+
+`brainwires-framework` final shape after this move: zero local model
+runtime, zero GPU kernels, zero autodiff. The framework is purely
+about coordinating agents, calling providers (remote or
+rullama-backed), tools, RAG, and policy.
+
+#### Phase 9 — `brainwires-storage` further refinement
+
+Cleanup pass that the original plan flagged as optional. Now done.
+
+- **`hnsw_wasm.rs` deleted** — the in-browser HNSW index module had
+  zero consumers anywhere in the workspace (the doc comment claimed
+  PWA usage but no actual import existed). The `hnsw-wasm` Cargo
+  feature is gone, along with the `instant-distance` and `bincode`
+  optional deps that backed it.
+- **`paths.rs` moved to `brainwires-core::paths`** — pure
+  platform-path helpers (no internal storage deps). Used by
+  `extras/brainwires-rag-server`, `extras/brainwires-issues`, and
+  internally by storage's Lance backend + embeddings cache.
+- **`file_context.rs` moved to `brainwires-core::file_context`** —
+  `FileContextManager`, `FileContent`, `FileChunk`. CLI utility,
+  cross-cutting; native-only (uses tokio::fs). brainwires-core picks
+  up `sha2` as a non-wasm dep.
+- **`bm25_search.rs` and `glob_utils.rs` stay in `brainwires-storage`**
+  — the original plan offered "fold into brainwires-rag" but the
+  audit during execution showed storage's Lance / Postgres / SurrealDB
+  / Qdrant / NornicDB / Weaviate / Milvus backends all use them
+  internally. Moving would create a `storage → rag` cycle. Both
+  remain feature-gated under `lance-backend`.
+
+API breakage:
+- `brainwires_storage::PlatformPaths` → `brainwires_core::paths::PlatformPaths`
+- `brainwires_storage::FileContextManager` (and `FileContent`, `FileChunk`)
+  → `brainwires_core::file_context::*`
+- `brainwires_storage::hnsw_wasm` — gone (was never a real consumer)
+- `brainwires-storage`'s `hnsw-wasm` feature — gone
+
+`brainwires-storage` final shape: substrate (StorageBackend trait,
+9 backends, embeddings, BM25, glob), no cross-cutting filesystem
+utilities. Coherent.
+
+#### Phase 11g — final cleanup of agent decomposition
+
+Cleanup pass after Phases 11a–11f:
+
+- `pub use brainwires_core::confidence::*` shim in
+  `brainwires-agent/src/lib.rs` removed. Use
+  `brainwires_core::confidence::*` directly. (The shim was added in
+  Phase 11a as a one-phase compat layer; all in-tree consumers were
+  migrated by 11f.)
+- `brainwires-agent`'s package description updated to reflect its
+  new shape (coordination primitives + multi-agent patterns; no
+  longer the home of mdap / seal / skills / eval / inference).
+- New READMEs: `crates/brainwires-skills/`, `crates/brainwires-eval/`,
+  `crates/brainwires-inference/` (mdap + seal already had them).
+- New ADR: `docs/adr/ADR-0006-agent-decomposition.md` recording the
+  framing change ("framework stays minimal" → "every crate has one
+  cohesive responsibility") and explicitly overturning the previous
+  plan's "Things deliberately not in this plan" stance on extracting
+  mdap / seal / skills.
+- Workspace + per-crate counts refreshed via `cargo xtask
+  package-count` (32 crates, 18 direct extras subdirs).
+- `README.md`: framework crate table gains 5 rows (inference, mdap,
+  seal, skills, eval); agent row description rewritten.
+
+cargo check + lint-deps + scripts/publish.sh --preflight-only all
+clean. Phase 11 closes.
+
+#### `brainwires-inference` extracted from agent (the big one)
+
+The biggest piece of the Phase 11 agent decomposition. Every
+LLM-driven workhorse moves out of `brainwires-agent` into a new
+**`brainwires-inference`** crate. The principle: `brainwires-agent`
+is what holds agents together (locks, queues, message bus,
+coordination patterns); `brainwires-inference` is what makes them
+think (LLM loops, prompts, validators, planners, judges).
+
+Moves to `brainwires-inference/src/`:
+
+- `chat_agent.rs`, `task_agent/` — the two main streaming-completion
+  loops
+- `planner_agent.rs`, `judge_agent.rs`, `validator_agent.rs`,
+  `validation_agent.rs` — LLM-driven helper agents
+- `cycle_orchestrator.rs`, `plan_executor.rs` — Plan→Work→Judge driver
+  + plan execution
+- `validation_loop.rs` — quality-check loop
+- `summarization.rs` — history compaction via LLM
+- `system_prompts/` — agent prompt registry
+- `runtime.rs` — `AgentRuntime` + `run_agent_loop` (drives the
+  inference workhorses)
+- `context.rs` — `AgentContext` (owns the `AgentLifecycleHooks` trait
+  object)
+- `agent_hooks.rs` — `AgentLifecycleHooks` trait (references
+  `TaskAgentResult`)
+- `pool.rs` — `AgentPool` (TaskAgent pool, not generic)
+- `task_orchestrator.rs` — `TaskOrchestrator` (TaskAgent orchestration)
+
+`brainwires-agent` keeps coordination + patterns + schema only:
+- `communication`, `task_manager` / `task_queue`
+- locks: `file_locks`, `resource_locks`, `wait_queue`,
+  `access_control`, `operation_tracker`
+- `git_coordination`, `worktree`
+- `agent_manager`, `agent_tools`, `resource_checker`,
+  `execution_graph`, `otel`
+- patterns: `state_model`, `contract_net`, `saga`, `optimistic`,
+  `market_allocation`, `workflow`
+- schema: `roles`, `personas`
+
+New crate: `brainwires-inference` v0.11.0
+- deps: brainwires-core, brainwires-agent, brainwires-call-policy,
+  brainwires-tool-runtime + tokio + futures + serde + sha2 + hex +
+  regex + tracing
+- features: `native` (default), `wasm`, `otel`
+
+Tests + examples moved with the inference code:
+- `tests/`: validation, summarization, parallel_tools
+- `examples/`: agent_pool, validation_loop, cycle_orchestrator,
+  planner_judge_parsing
+
+Facade rewires:
+- New `brainwires::inference` module re-exporting `brainwires_inference::*`.
+- `brainwires::agents` continues to spread both crates so existing
+  `brainwires::agents::ChatAgent` / `TaskAgent` / etc. paths keep working.
+- New `inference` Cargo feature on `brainwires`. Added to `default`
+  features so the umbrella keeps working out-of-the-box.
+- `chat` feature now implies `inference` (chat needs ChatAgent).
+
+API breakage:
+- `Cargo.toml`: add `brainwires-inference` as a direct dep if you
+  reach for `ChatAgent` / `TaskAgent` / planner / judge / validator
+  / cycle / plan-executor / system_prompts / agent runtime. Or pull
+  the umbrella with `["inference"]` (default).
+- `use brainwires_agent::{chat_agent,task_agent,planner_agent,judge_agent,validator_agent,validation_agent,validation_loop,cycle_orchestrator,plan_executor,summarization,system_prompts,runtime,context,agent_hooks,pool,task_orchestrator}::*`
+  → `use brainwires_inference::*` (or per-module `brainwires_inference::<module>::*`).
+- `use brainwires_agent::{ChatAgent, TaskAgent, ...}` (bare types) →
+  `use brainwires_inference::*` (or via the facade
+  `brainwires::agents::*` / `brainwires::inference::*`).
+
+#### `brainwires-eval` resurrected from agent submodule
+
+The evaluation harness moves out of `brainwires-agent::eval` into its
+own crate **`brainwires-eval`** (~3.5k LOC). Step 4 of the Phase 11
+agent decomposition. Eval is the simplest split — completely
+self-contained, zero `brainwires-*` deps; previously was a separate
+crate before being merged.
+
+- `crates/brainwires-agent/src/eval/` → `crates/brainwires-eval/src/`
+  (mod.rs becomes lib.rs).
+- Eval-specific test fixtures move with the crate:
+  `tests/fixtures/` + `tests/fixtures_suite.rs` → `crates/brainwires-eval/tests/`.
+- New crate v0.11.0: deps async-trait, tokio (sync/rt/macros), serde,
+  serde_yml (fixture parsing), anyhow, thiserror, chrono, uuid, regex,
+  tracing. No internal brainwires-* deps.
+- agent Cargo.toml: drop the `eval` feature + `dep:thiserror` + the
+  always-on `serde_yml` dep (was eval-only after Phase 11c took skills'
+  copy with it).
+- agent src/lib.rs: drop `pub mod eval;`.
+- The umbrella `brainwires` facade gains `brainwires-eval` dep; the
+  `eval` feature now maps to `dep:brainwires-eval`.
+- `extras/brainwires-cli` adds `brainwires-eval` as a direct dep.
+- `extras/brainwires-autonomy`'s `eval-driven` feature swaps
+  `brainwires-agent/eval` for `dep:brainwires-eval`.
+
+API breakage:
+- `Cargo.toml`: drop `brainwires-agent/eval`; add `brainwires-eval`.
+- `use brainwires_agent::eval::*` → `use brainwires_eval::*`.
+- `use brainwires::eval::*` continues to work (facade re-export).
+
+No tombstone — `brainwires-eval` was never published as a separate
+crate (was internal-only before the merge).
+
+#### `brainwires-seal` resurrected from agent submodule
+
+The Self-Evolving Agentic Learning system moves out of
+`brainwires-agent::seal` into its own crate **`brainwires-seal`**
+(~6k LOC). Step 3 of the Phase 11 agent decomposition.
+
+- `crates/brainwires-agent/src/seal/` → `crates/brainwires-seal/src/`
+  (mod.rs becomes lib.rs; README pulled up).
+- New crate v0.11.0: deps `brainwires-core` (for `ResponseConfidence`
+  + graph traits — `ResponseConfidence` was moved to core in 11a),
+  `brainwires-tool-runtime` (learning loop's outcome categorization),
+  plus the LanceDB stack (`brainwires-storage` + `arrow-array` +
+  `arrow-schema` + `lancedb`) always-on for the pattern store, plus
+  futures, regex, async-trait, tokio.
+- Optional features (renamed from agent's `seal-*` to bare names):
+  - `knowledge` (was `seal-knowledge`) — pulls `brainwires-knowledge`
+  - `feedback` (was `seal-feedback`) — pulls `brainwires-permission`
+  - `mdap` (was `seal-mdap`) — pulls `brainwires-mdap`
+- agent Cargo.toml: drops `seal`, `seal-mdap`, `seal-feedback`,
+  `seal-knowledge` features; drops the deps that backed them
+  (`brainwires-knowledge`, `brainwires-permission`,
+  `brainwires-storage`, `arrow-array`, `arrow-schema`, `lancedb`,
+  `brainwires-mdap`).
+- The umbrella `brainwires` facade gains a `brainwires-seal` dep;
+  `seal` feature now maps to `dep:brainwires-seal`. The `learning`
+  preset rewrites to `brainwires-seal/knowledge` +
+  `brainwires-seal/feedback`. The `full` preset's
+  `brainwires-agent/seal-*` entries become `brainwires-seal/*`.
+- `extras/brainwires-cli` adds `brainwires-seal` as a direct dep
+  (was using `brainwires-agent::seal::pattern_store::*`); the CLI's
+  `crate::storage::mod.rs` re-export points at `brainwires_seal`.
+
+API breakage:
+- `Cargo.toml`: drop `brainwires-agent/seal*` features; add
+  `brainwires-seal` (with optional `knowledge` / `feedback` /
+  `mdap` features).
+- `use brainwires_agent::seal::*` → `use brainwires_seal::*`.
+- `use brainwires::seal::*` continues to work (facade re-export).
+- `brainwires-agent`'s `seal-feedback` / `seal-knowledge` /
+  `seal-mdap` features → `brainwires-seal/feedback` /
+  `brainwires-seal/knowledge` / `brainwires-seal/mdap`.
+
+The 0.4.x deprecation tombstone in `deprecated/brainwires-seal/` was
+removed; the name is reclaimed.
+
+Drive-by: cleaned up `brainwires-finetune`'s dead `local` feature.
+The local-PEFT code was extracted to `brainwires-finetune-local` in
+Phase 7b but the feature gate, stub `crate::local::*` imports in
+`manager.rs`, and orphaned burn / safetensors deps were left behind.
+Removed the feature, the dead imports, and the unused deps.
+`brainwires-finetune` is now cloud-only as advertised; consumers
+already wire `brainwires-finetune-local` directly for local training.
+
+#### `brainwires-skills` resurrected from agent submodule
+
+The SKILL.md skills system moves out of `brainwires-agent::skills`
+into its own crate **`brainwires-skills`** (~5k LOC). Step 2 of the
+Phase 11 agent decomposition.
+
+- `crates/brainwires-agent/src/skills/` → `crates/brainwires-skills/src/`
+  (mod.rs becomes lib.rs).
+- New crate v0.11.0: deps `brainwires-core` + `brainwires-tool-runtime`
+  (for `Tool` / `ToolContext` / `ToolExecutor`), plus serde_yml,
+  semver, regex, sha2, async-trait, tokio. Optional features:
+  `signing` (ed25519 manifest verification), `registry` (HTTP client).
+- agent's `skills-registry` and `skills-signing` features removed;
+  the deps that backed them (reqwest, ed25519-dalek, rand_core, semver)
+  moved with the crate.
+- The umbrella `brainwires` facade gains `brainwires-skills` dep; the
+  `skills` feature now maps to `brainwires-skills/registry` (was:
+  `brainwires-agent/skills-registry`).
+- `extras/brainwires-cli` adds `brainwires-skills = { features = ["registry"] }`
+  as a direct dep; drops the `skills-registry` feature from
+  `brainwires-agent`.
+
+API breakage:
+- `Cargo.toml`: drop `brainwires-agent/skills-registry`; add
+  `brainwires-skills = { features = ["registry"] }` (or
+  `["signing"]`).
+- `use brainwires_agent::skills::*` → `use brainwires_skills::*`.
+- `use brainwires::skills::*` continues to work (facade re-export).
+
+The 0.8.x deprecation tombstone in `deprecated/brainwires-skills/`
+was removed; the name is reclaimed.
+
+#### `brainwires-mdap` resurrected from agent submodule
+
+The Multi-Dimensional Adaptive Planning (MAKER voting) framework
+moves out of `brainwires-agent::mdap` into its own crate
+**`brainwires-mdap`**. The submodule had zero internal dependencies on
+other agent code — cleanest possible split. Step 1 of the Phase 11
+agent decomposition.
+
+- `crates/brainwires-agent/src/mdap/` → `crates/brainwires-mdap/src/`
+  (mod.rs becomes lib.rs).
+- The `voting_consensus` and `task_decomposition` examples move to
+  `crates/brainwires-mdap/examples/`.
+- `brainwires-agent`'s `mdap` feature is gone. The `seal-mdap` feature
+  now pulls `brainwires-mdap` as an optional dep instead of gating an
+  internal submodule.
+- The umbrella `brainwires` facade gains a `brainwires-mdap` dep; the
+  `mdap` feature now maps directly to it (was: `agents` + `brainwires-agent/mdap`).
+- `extras/brainwires-wasm` swaps `brainwires-agent/mdap` for a direct
+  `brainwires-mdap` dep + re-export.
+- `extras/brainwires-autonomy`'s `parallel` feature swaps the same way.
+- `extras/brainwires-cli` adds `brainwires-mdap` as a direct dep.
+
+API breakage:
+
+- `Cargo.toml`: `brainwires-agent = { features = ["mdap"] }` → drop
+  the feature; add `brainwires-mdap` as a separate dep.
+- `use brainwires_agent::mdap::*` → `use brainwires_mdap::*`.
+- `use brainwires::mdap::*` continues to work (facade re-export).
+
+The 0.4.x deprecation tombstone in `deprecated/brainwires-mdap/` was
+removed — the name is reclaimed for the new active crate.
+
+#### `ResponseConfidence` moved to `brainwires-core`
+
+Prep step for the Phase 11 agent decomposition. `ResponseConfidence`
++ `ConfidenceFactors` + `extract_confidence` + `quick_confidence_check`
+moved from `brainwires-agent` into `brainwires-core::confidence`. The
+type is the only cross-domain piece shared between agent runtime and
+the (about-to-be-extracted) `brainwires-seal` learning loop; promoting
+it to core lets seal extract cleanly without depending on agent.
+
+A `pub use brainwires_core::confidence::*;` shim in
+`brainwires-agent/src/lib.rs` keeps existing `brainwires_agent::ResponseConfidence`
+imports working through Phase 11. The shim is removed in Phase 11g
+(final cleanup).
+
+Migration:
+- New code: `use brainwires_core::confidence::ResponseConfidence;`
+- Existing code: continues to work via the shim until Phase 11g.
+
+#### Pre-release dead-code sweep
+
+Two orphan code paths uncovered by a `cargo check --workspace --all-targets`
+sweep against `--all-targets` were deleted before tagging, alongside a
+handful of stale `use` paths in test/example targets that pointed at modules
+which had been flattened or relocated in this cycle.
+
+- **`crates/brainwires-llama` deleted.** Introduced in `0cdb650` as a port
+  from the `rullama` prototype while debugging Q4_K WGPU drift in the
+  chat-PWA; the actual chat-PWA wasm crate that consumed it lives outside
+  this repo and now points at `rullama` directly. The in-framework copy was
+  `publish = false`, never published to crates.io, and had no workspace
+  reverse deps (`cargo tree -i` confirmed). Removing it (~7,300 LOC across
+  65 files) is invisible to any consumer.
+- **`brainwires-network` MCP-server scaffolding deleted** —
+  `src/{connection,handler,registry,server,mcp_error,mcp_transport}.rs`,
+  `src/middleware/`, plus `tests/{tool_registry,middleware_pipeline}.rs` and
+  `examples/{mcp_server,middleware_chain}.rs`. These ~2,000 LOC were
+  superseded by the standalone `brainwires-mcp-server` crate (split out in
+  `b133a4b`) and never re-declared in `brainwires-network/src/lib.rs`, so
+  the symbols (`McpServer`, `McpToolRegistry`, `AuthMiddleware`,
+  `RequestContext`, etc.) had no public API surface to begin with.
+- **Stale test/example imports fixed** in:
+  - `crates/brainwires-eval/src/{regression,fault_report,stability_tests,suite}.rs`
+    — drop the stale `eval::` prefix (`crate::eval::X` → `crate::X`) left
+    over from a flattened module structure.
+  - `crates/brainwires-seal/src/{learning,reflection,pattern_store}.rs` —
+    same `seal::` prefix flattening, plus `crate::storage::VectorDatabase`
+    → `brainwires_storage::databases::VectorDatabase` and
+    `crate::utils::entity_extraction::EntityType` →
+    `brainwires_core::graph::EntityType`.
+  - `crates/brainwires-inference/{tests,examples}` — agents
+    (`ChatAgent`, `PlannerAgent`, `JudgeAgent`, `JudgeVerdict`,
+    `CycleOrchestrator`, `AgentPool`, `TaskAgentConfig`, etc.) moved from
+    `brainwires-agent` into `brainwires-inference` in `f2eea0c`-era
+    refactors; the tests/examples still imported from the old crate.
+  - `crates/brainwires-inference/src/validation_agent.rs` — `ResourceLockManager`
+    is in `brainwires-agent::resource_locks`, not `brainwires-inference`.
+  - `crates/brainwires/tests/reexports.rs` — `TieredMemory` is re-exported
+    via `brainwires::memory` (not `brainwires::storage`) and is gated by
+    the `tiered` feature.
+  - `extras/brainwires-cli/examples/{plan_templates,message_store,lock_coordination}.rs`
+    — `PlanTemplate`, `TemplateStore`, `MessageStore`, `LockStore` moved
+    from `brainwires-storage` to `brainwires-stores`.
+- **`brainwires-skills` + `brainwires-inference` dev-deps:** add
+  `brainwires-tool-builtins` as a `[dev-dependencies]` entry on both. Their
+  test modules already used `BuiltinToolExecutor` but the crate wasn't
+  declared. Published surface unchanged (dev-only deps).
+
+After this sweep `cargo check --workspace --all-targets` is exit 0, with
+warnings only.
+
+### Added
+
+#### chat-pwa — Phase 5 perf path live end-to-end
+
+The user-visible Phase 5 path now runs in the chat-pwa:
+
+- **`Gemma4QuantizedTextOnly` pipeline** —
+  `crates/brainwires-provider/src/local_llm/quantized_gemma4_pipeline.rs`.
+  Wraps `quantized_gemma4::ModelWeights` + a `tokenizers::Tokenizer`
+  with a greedy decode loop: prefill the prompt → KvCache fills →
+  step-by-step token emit with `seqlen_offset = prompt_len + step`.
+  KvCache reset at the start of each generate.
+- **`init_local_multimodal_gguf_quantized` wasm entry** + new
+  `LocalQuantizedHandle` type. Loads via
+  `gguf_loader::load_quantized_gemma4_from_reader` (keeps weights
+  as `QTensor` end-to-end; QMatMul matmul calls hit PR #3379's
+  `q4_k.pwgsl` on WGPU and CPU dequant-on-fly elsewhere). Vision /
+  audio getters always return false.
+- **`local_chat_stream_quantized` wasm entry** — text streaming
+  over a `LocalQuantizedHandle`. Renders messages into the canonical
+  Gemma 4 chat-template prompt (`<|turn>{role}\n{text}<turn|>\n`)
+  and drives `Gemma4QuantizedTextOnly::generate_greedy_streaming`.
+  NDJSON `VisionWireChunk` framing matches the BF16 path so the
+  JS-side reader is unchanged.
+- **`local-worker.js` routing** — `handleChat` checks a new
+  `handleIsQuantized` flag and routes to `local_chat_stream_quantized`
+  when the loaded handle is quantized. Load path picks
+  `init_local_multimodal_gguf_quantized` over the BF16
+  dequant-at-load fallback when the wasm crate exposes it.
+  `handleVisionChat` fail-fasts with a clear error on quantized
+  handles (Ollama GGUF is text-only).
+- **`gemma4_diag --quantized`** — native CLI exercise of the
+  quantized path: load GGUF, encode prompt, run one forward,
+  argmax + decode, print predicted next token.
+
+End-to-end: open settings → download gemma4:e2b → load → chat. The
+forward pass runs on the `q4_k.pwgsl` quantized matmul kernel.
+Reference correctness against an actual Ollama-published gemma4:e2b
+GGUF is the remaining validation step before the path can be made
+the default route — tensor name conventions for AltUp / PLE /
+Laurel weights are llama.cpp-style guesses and may need adjustment.
+
+#### chat-pwa — quantized_gemma4 auxiliary towers (KV-share, Laurel, layer_scalar, sparsity, PLE, AltUp)
+
+The basic quantized_gemma4 decoder shipped earlier landed with the
+auxiliary towers gated off (output wouldn't bit-match the BF16 model).
+This round finishes the Gemma 4 / Gemma 3n auxiliary stack:
+
+- **KV-share** — receivers (layers 15..34 on E2B) skip their own
+  k_proj / v_proj / k_norm and read post-cache `(k, v)` from a
+  donor's entry in a per-step `SharedKvStore`. Donors stash after
+  their own KvCache append; donor selection follows
+  `Gemma4TextConfig::donor_layer_idx_for(layer_idx)` (last
+  same-`is_sliding` layer before `first_kv_shared_layer_idx`). Q
+  always rotates through THIS layer's RoPE table either way.
+- **LaurelBlock** — low-rank residual augmentation (linear_left →
+  linear_right → post_laurel_norm) merged into the attention output
+  via `(attn + laurel) * (1/√2)`. Construction is fault-tolerant:
+  publications without the laurel weights silently fall back.
+- **layer_scalar** — single `[1]` f32 tensor at
+  `blk.{i}.layer_scalar`, applied as `xs *= scalar` at the very end
+  of `DecoderLayer::forward`. Required on E2B; without it the
+  residual stream `abs_max` runs away.
+- **activation sparsity** in `MLP::forward` — Gaussian-topk threshold
+  (`mean + std * z` ReLU) on the gate before the activation. `z =
+  sqrt(2) * erfinv(2p-1)` computed once at construction via a
+  Winitzki erfinv approximation.
+- **PLE side-channel** — `PerLayerEmbedding` computes a
+  `[B, T, num_layers, hidden_per_layer]` table once per step from
+  `inputs_embeds` (and optionally `embed_tokens_per_layer`); each
+  `DecoderLayer` slices its layer index out and applies
+  `gate(h) → act → * per_layer_input → projection → norm → +residual`
+  between the MLP residual and the layer_scalar multiply.
+- **AltUp** (Alternating Updates) — multi-stream forward with
+  `altup_num_inputs` parallel hidden streams. Top-level
+  `altup_projections` build the stack from `inputs_embeds`; each
+  layer runs `predict → activate (attn+laurel+MLP on the active
+  stream) → correct over the full stack`; top-level
+  `altup_unembed_projections` collapse the stack back before the
+  final RmsNorm + lm_head. PLE delta in this mode is applied to
+  `corrected[i != active_idx]`. Falls back to the classic
+  single-stream path when the GGUF doesn't carry the AltUp tensors.
+
+The remaining validation step is reference correctness against an
+actual Ollama-published gemma4:e2b GGUF — tensor name conventions
+(especially for AltUp `blk.{i}.altup_*.weight` and PLE
+`blk.{i}.per_layer_*`) follow llama.cpp-style guesses that may need
+adjustment when the first real GGUF is loaded.
+
+`gemma4_diag --quantized --gguf-path <file> --tokenizer-file <file>`
+exercises the path end-to-end: builds the quantized model, encodes
+the prompt, runs one forward, prints the predicted next token.
+
+#### chat-pwa — quantized_gemma4 model + chunked GPU upload + AMD adapter preset
+
+Three coordinated upgrades that together unlock real Phase 5 perf
+on the Ollama-format path:
+
+- **`candle-transformers/src/models/quantized_gemma4.rs`** — basic
+  decoder ported with `Linear → QMatMul`. Reads weights directly via
+  `gguf_file::Content::tensor` so the entire matmul path stays
+  quantized; PR #3379's `q4_k.pwgsl` / `q5_k.pwgsl` / `q6_k.pwgsl` /
+  `q8_k.pwgsl` WGPU kernels (and CPU dequant-on-fly elsewhere) carry
+  the inference workload. Mirrors `quantized_gemma3.rs` structurally
+  with Gemma 4 specifics: GQA self-attention with q_norm/k_norm/
+  v_norm, p-RoPE (partial 25%) on full layers + standard RoPE on
+  sliding, SwiGLU MLP, KvCache (Normal for full / Rotating for
+  sliding), input + post-attention + pre-feedforward + post-feedforward
+  RmsNorms. **Auxiliary towers gated off** — PLE, AltUp, Laurel,
+  KV-share donor/receiver, layer_scalar, activation sparsity. Output
+  won't bit-match a canonical Gemma 4 forward pass with these off;
+  reference verification against an Ollama-published gemma4:e2b GGUF
+  is the remaining work to enable them.
+- **`brainwires_provider::local_llm::gguf_loader::load_quantized_gemma4_from_reader`** —
+  parallel path to the existing `load_gemma4_gguf_from_reader` (which
+  dequant-at-loads to BF16). The new path keeps weights as QTensor
+  end-to-end and constructs the new `quantized_gemma4::ModelWeights`.
+  This is the path that actually unlocks the projected ~3-4× decode
+  speedup on chat-pwa once a `quantized_gemma4` UI route lands.
+- **`wgpu_compute_layer::WgpuDevice::alloc_uninit_storage_eager` +
+  `write_to_storage_at`** — restores the chunked-upload pattern PR
+  #3379 dropped. The chat-pwa wasm `load_tensor_to_gpu` rewires to
+  these two APIs so a 805 MB `embed_tokens.weight` uploads in 64 MiB
+  chunks with bounded peak wasm linear memory, instead of needing
+  the entire tensor in linear memory at once.
+- **`WgpuDevice::is_amd_adapter` / `is_nvidia_adapter` /
+  `is_apple_adapter`** — adapter-info-based predicates over PCI
+  vendor id + adapter name (the WebGPU fallback). AMD adapters
+  default to `MatmulAlgorithm::Matmul64_64_8_8` (matches GCN/RDNA
+  wave-64 boundaries) instead of the auto-select `MatmulX`. NVIDIA
+  and Apple keep auto-select. First Phase 6 piece — without real AMD
+  hardware to profile against, the routing infrastructure is in place
+  but the actual best preset awaits real measurements.
+
+#### chat-pwa — Ollama-format end-to-end load (Phase 4 part 3)
+
+Wired the dequantize-at-load GGUF path through every layer:
+
+- `crates/brainwires-provider/src/local_llm/gguf_loader.rs` — native
+  + wasm GGUF reader. `gguf_to_hf_name()` translates GGUF tensor
+  names (`blk.0.attn_q.weight`) to the HF safetensors keys the
+  existing `Gemma4Model` consumer expects.
+  `build_gemma4_config_from_gguf()` reads the kv-store and falls back
+  to canonical Gemma 4 E2B values for missing optional keys (Ollama
+  GGUFs don't always carry the full HF schema). AltUp / Laurel /
+  per-layer-input-gate default-off until the Ollama publication's
+  metadata schema is verified. `load_gemma4_gguf_from_reader()` is
+  Read+Seek-generic so the wasm side wraps a `Cursor<Vec<u8>>` over
+  the OPFS blob and reuses the same code path.
+- `cargo run --example gemma4_diag -- --gguf-path <file>` exercises
+  the loader end-to-end on native — bypasses the HF safetensors
+  download entirely. Tokenizer still requires `--tokenizer-file`
+  until GGUF tokenizer extraction lands.
+- `init_local_multimodal_gguf(weights, tokenizer, model_id)` is the
+  new wasm entry point. Builds a `Gemma4MultiModal` pipeline with
+  vision + audio disabled (Ollama gemma4:e2b is text-only).
+- `local-worker.js` recognizes `KNOWN_OLLAMA_MODELS` ids and routes
+  them to the new entry point. `isDownloaded` and `getModelBytes`
+  delegate to `ollama-download.js`'s OPFS reader for ollama-source
+  models; HF-source flow unchanged.
+- `boot.js` orphan-prune skips the `model-downloads/ollama/` subtree
+  so the per-id scheme doesn't recursively wipe Ollama blobs.
+
+**Perf gain:** none yet. The GGUF Q4_K_M weights are dequantized to
+BF16 at load, so VRAM/RAM matches the safetensors path. The win is
+download size (~1.6 GB vs ~10 GB). Inference tok/s becomes a function
+of the BF16 path. Phase 5's `q4_k.pwgsl` kernel becomes reachable
+once we add a `quantized_gemma4` model that consumes `QTensor` /
+`QMatMul` directly — separate work.
+
+#### chat-pwa — candle rebase to v0.11-wgpu (Phase 1)
+
+Rebased the candle fork onto upstream PR #3379 (KimHenrikOtte's full
+WGPU backend) as a fresh `v0.11-wgpu` branch. PR #3379 ships a
+substantially more complete WGPU backend than our incremental
+`v0.10-wgpu`:
+
+- Multiple matmul variants tuned per shape: `matmul1x32_32b`,
+  `matmul1x64`, `matmul1x64_32b`, `matmul24x24`, `matmul24x48`,
+  `matmul32x32`, `matmul32x64`, `matmul64x64`, `matmul64x64_4x8`,
+  `matmul64x64_8x8`. M=1 specialization means decode-path
+  projections (q/k/v/o, gate/up/down) hit a kernel optimized for
+  one query token instead of the generic tile path.
+- `rms_norm.pwgsl` collapses 4-5 dispatches/norm into 1.
+- `q4_k.pwgsl`, `q5_k.pwgsl`, `q6_k.pwgsl`, `q8_k.pwgsl` quantized
+  matmul kernels — Phase 5's "WGPU Q4_K_M dequant matmul WGSL"
+  is shipped as part of PR #3379, not from-scratch work for us.
+- Full `QStorage::Wgpu` path including `quantize`, `quantize_onto`,
+  `dequantize`, and `quantize_imatrix` ops.
+- `flush_gpu_command` accumulates all dispatches in a single
+  `command_queue`, flushes once per token through one encoder /
+  one compute pass — Phase 3's "dispatch batching / encoder
+  reuse" is also shipped as part of PR #3379.
+
+What we ported forward on top of PR #3379:
+- The complete `candle-transformers/src/models/gemma4/` directory
+  (text.rs ~1850 LOC, config.rs ~550 LOC, plus mod / vision /
+  audio / multimodal_embedding) — PR #3379 predates Gemma 4 being
+  merged to candle main so the model code wasn't there.
+- `candle-nn/src/rotary_emb.rs` cos/sin `to_dtype(xs.dtype())`
+  coercion in `rope`, `rope_i`, `rope_thd` — required for Gemma 4
+  receiver attention where the RoPE table is f32 but receiver
+  hidden states are bf16.
+- `candle-core/src/cpu_backend/mod.rs` bf16 matmul via transient
+  f32 promotion — `gemm` 0.19 ships no bf16 specialization, so
+  mixed-device flows (wgpu wasm32 readback landing on CPU as bf16
+  at lm_head) trip the generic Map2 path every token.
+- `candle-transformers/src/models/gemma3.rs` `value_states.contiguous()`
+  before `KvCache::append`.
+
+Plus three small wgpu 28→29 API deltas to keep our Rust 1.91 MSRV
+(PR #3379 pinned wgpu 28.0.0 which requires Rust 1.92):
+- `Instance::new()` takes `InstanceDescriptor` by value
+- `PipelineLayoutDescriptor.bind_group_layouts: &[Option<&BGL>]`
+- `ShaderRuntimeChecks` gained `mesh_shader_primitive_indices_clamp`
+  and `task_shader_dispatch_tracking` fields
+
+Verified: `gemma4_diag --device cpu --target-layer 15 --load-ple-table`
+still produces `decoded="Hi"` with clean intra-self_attn checkpoints
+(zero NaN / zero Inf at every probe). Branch is at
+`Brainwires/candle@v0.11-wgpu`, framework pins
+`https://github.com/Brainwires/candle?rev=acda3dbf`.
+
+#### chat-pwa — SwiGLU gate/up fuse (Phase 7)
+
+Concatenate `gate_proj` and `up_proj` weights along the output axis
+at construction time, run one fused matmul, narrow the result halfway
+along the last dim into `(gate, up)`. Saves one matmul dispatch per
+FFN × 35 layers = 35 fewer dispatches per token. Compute work is
+unchanged — same total FMA count — but on chat-pwa where dispatch
+overhead dominates, the dispatch reduction is ~10%. Pattern from
+candle PR #3485. Sparsity (Gaussian-topk gating) still applies to
+the `gate` slice only — gating happens post-narrow so the fuse is
+transparent to the activation pipeline. Verified bit-identical on
+gemma4_diag CPU smoke (`next_id=10979`, `top5[0]=10979@0.848`
+unchanged).
+
+#### chat-pwa — Ollama-format model download (Phase 4 / part 1)
+
+First slice of the chat-pwa local-inference perf overhaul plan: pull
+pre-quantized Gemma 4 GGUF blobs (~1.6GB Q4_K_M) directly from
+`registry.ollama.ai` instead of fetching the BF16 safetensors variant
+from HuggingFace (~10GB). ~6× smaller download, same model.
+
+What landed:
+- `extras/brainwires-chat-pwa/web/src/ollama-fetch.js` — OCI Distribution
+  Spec client. `fetchManifest(name, tag)`, `fetchBlob(name, digest, opts)`,
+  `manifestToFiles(manifest)`. No auth required for the public registry.
+  Library namespace defaulted (`gemma4` → `library/gemma4`); user-published
+  models with explicit slashes pass through.
+- `extras/brainwires-chat-pwa/web/src/ollama-download.js` — single-path
+  downloader using OPFS `FileSystemSyncAccessHandle`. Resume via Range
+  header, SHA-256 verification per blob (Web Crypto), `.verified` markers
+  for resume short-circuiting, progress events on the same
+  `model_progress` channel as the HF path so the UI banner picks them
+  up unchanged. Kept separate from the existing 3-fallback HF download
+  orchestration so regressions there couldn't break the working chat-pwa
+  for everyone.
+- `extras/brainwires-chat-pwa/web/src/model-store.js` — adds
+  `KNOWN_OLLAMA_MODELS` registry with `gemma4:e2b` entry. `source: 'hf'`
+  / `source: 'ollama'` discriminator. New helpers: `getKnownModelAny`,
+  `listAllChatModels`. Re-exports the Ollama download API so callers
+  (UI, worker) have a single import point.
+
+Phase 4 follow-ups (separate commits):
+- wasm-side GGUF loader: parse via candle's existing
+  `quantized::gguf_file::Content` (already wasm32-compatible),
+  dequantize Q4_K_M → BF16 at load time, feed into the existing
+  `gemma4/text.rs` model. The candle-fork's WGPU backend currently
+  rejects quantized `from_data` (`quantized/mod.rs:128-130` —
+  "wgpu: quantized from_data not yet implemented"), so quantized
+  inference on WGPU has to wait for Phase 5 (Q4_K_M dequant matmul
+  WGSL kernel). Phase 4 alone wins download size, not tok/s.
+- chat-pwa UI: model dropdown lists both `gemma-4-e2b-it` (HF) and
+  `gemma4:e2b` (Ollama).
+- GGUF tokenizer + chat-template extraction (replace today's hardcoded
+  per-model template).
+- Native-only `~/.ollama/models` opportunistic read for the CLI / agent
+  paths (skips the network round-trip if Ollama is installed locally).
+
+### Fixed
+
+#### chat-pwa local Gemma 4 — receiver-attention divergence on AMD/Vulkan WebGPU
+
+The on-device Gemma 4 E2B IT path produced LaTeX-prefix gibberish on
+AMD GCN-4 + Linux/Vulkan WebGPU while the same model on Mac/Metal
+generated correct output. Root cause: `extras/brainwires-chat-pwa/wasm`
+hardcoded `num_kv_shared_layers: 10` (a Gemma 3n carry-over) when
+building the `Gemma4TextConfig` from the safetensors layout. Real
+Gemma 4 E2B is `20`. With `10`, `first_kv_shared_layer_idx` became
+`25` instead of `15`, so layers 15-24 silently took the **donor**
+branch in candle's gemma4 attention forward, ran their own `k_proj`
+against the (receiver-shape) placeholder weights left in the
+safetensors, and produced nonsense KV. The native `gemma4_diag`
+binary parsed `config.json` directly and got `20`, which is why the
+divergence reproduced only in the wasm path.
+
+Fix: derive `num_kv_shared_layers` from the inferred
+`num_hidden_layers`:
+- 35 layers (Gemma 4 E2B / E4B) → 20 shared (donors 0..14)
+- 30 layers (Gemma 3n E2B)      → 10 shared (donors 0..19)
+- other layouts                 → 0 (KV-share off)
+
+Bisected via new intra-`Attention::forward` `nan_scan` checkpoints
+(`q_after_proj_reshape`, `q_after_qnorm`, `k_full_from_donor` /
+`k_full_from_proj`, `q_after_rope`, `k/v_after_repeat_kv`,
+`attn_weights_pre_mask`, `attn_weights_post_mask`,
+`attn_weights_post_softmax`, `attn_after_v_matmul`) added to
+`Brainwires/candle@v0.10-wgpu` and gated on `target_intra_layer`.
+With the config fix in place, every sub-step at layer 15 now matches
+Mac/Metal bit-for-bit on chat-pwa, and the model produces the
+expected `"Hi! How can I help"` continuation.
+
+Two defensive cleanups landed alongside in the candle fork (kept
+because they harden the receiver path regardless of where the bug
+turned out to be):
+- `.contiguous()` on the donor's post-cache-append `(k_full, v_full)`
+  before publishing into `shared_kv_store` — `cache.append` can
+  return strided views; downstream `repeat_kv` / `matmul` produce
+  backend-specific results on strided sources where Metal happens to
+  tolerate them. Mirrors upstream candle PR #3475 / #3325 at the
+  shared-KV publication boundary.
+- `cos`/`sin` `to_dtype(xs.dtype())` coercion at the top of
+  `candle_nn::rotary_emb::{rope, rope_i, rope_thd}`. Mirrors upstream
+  PR #3488. Defensive against future configurations that store
+  position tables in F32 while the model dtype is BF16/F16.
+
+Affected commits:
+- `Brainwires/candle@596ba2ab` — intra-self_attn diag checkpoints
+- `Brainwires/candle@e17c22dd` — donor contiguify + RoPE dtype coerce
+- `brainwires-framework@dca60315` — chat-pwa wasm config fix
+
+## [0.11.0] — 2026-05-02
+
+The "rename and split" release. Closes the deprecated/ god-crate
+re-merge cycle: every plural crate name was singularized, the
+`brainwires-tools` god-crate was split into runtime + builtins, the
+`brainwires-knowledge` god-crate was split into knowledge + rag +
+prompting, the `brainwires-providers` god-crate had speech split out,
+and `brainwires-training` got renamed to `brainwires-finetune` because
+that's what it actually did. Two abstract names were rewritten to
+describe their content (`mcp` → `mcp-client`, `resilience` →
+`call-policy`).
+
+No re-export shims. Every retired name has a 0.10.1 deprecation
+tombstone published to crates.io as a migration marker. Workspace
+version bumped to 0.11.0.
+
+Pre-1.0 hygiene pass: remove backwards-compat shims, close feature-flag half-wires, fix documentation and publish-readiness gaps.
+
+### Refactored (BREAKING)
+
+#### Three-layer storage refactor: `brainwires-stores` (schema) + `brainwires-memory` (orchestration) + relocations
+
+The framework now has a clean three-layer storage architecture:
+
+- **`brainwires-storage`** — substrate (`StorageBackend` trait,
+  backends, embeddings, BM25, file-context, paths, image-types).
+  Unchanged.
+- **`brainwires-stores` (new)** — opinionated minimum **schema + CRUD**
+  set: `SessionStore`, `ConversationStore`, `TaskStore` /
+  `AgentStateStore`, `PlanStore`, `TemplateStore`, `LockStore`,
+  `ImageStore`, plus the five tier-schema stores (`MessageStore`,
+  `SummaryStore`, `FactStore`, `MentalModelStore`, `TierMetadataStore`)
+  and shared `tier_types` (`MemoryTier`, `MemoryAuthority`,
+  `TierMetadata`, `MessageSummary`, `KeyFact`, `FactType`). All built
+  on the `StorageBackend` trait. Default features: `session`, `task`,
+  `plan`, `conversation`. Opt-in: `memory`, `lock`, `image`, `sqlite`.
+- **`brainwires-memory`** — kept (revived after a brief Phase-10a
+  fold-in) as the orchestration layer. Owns `TieredMemory`
+  (multi-factor adaptive search across tiers + promotion / demotion),
+  `CanonicalWriteToken` (canonical-write capability gate),
+  `MultiFactorScore`, `TieredSearchResult`, and the offline `dream`
+  consolidation engine (summarisation, fact extraction, tier demotion)
+  behind the `dream` feature. Depends on `brainwires-stores` for the
+  schema types.
+
+The old `brainwires-session` is folded as the `session` feature of
+`brainwires-stores`. Neither it nor `brainwires-memory` was ever
+published — no tombstones.
+
+CLI-domain stores from `extras/brainwires-cli/src/storage/` were
+relocated:
+
+- **8 framework-clean stores** (`ConversationStore`, `TaskStore` /
+  `AgentStateStore`, `PlanStore`, `TemplateStore`, `LockStore`,
+  `ImageStore`) → `brainwires-stores`.
+- **`PatternStore` + `LanceDatabaseExt`** → `brainwires-agent::seal::pattern_store`
+  (couple to SEAL's `QueryPattern` / `QuestionType`; live next to their
+  types). The `seal` feature now pulls `brainwires-storage` +
+  `arrow-array` + `arrow-schema` + `lancedb` as gated deps.
+- **`PlanModeStore`** → `extras/brainwires-cli/src/plan_mode_store.rs`
+  (CLI-internal; couples to `crate::types::message::Message`,
+  `crate::types::plan_mode::PlanModeState`, `DisplayMessage`).
+- **`PersistentTaskManager`** → `extras/brainwires-cli/src/persistent_task_manager.rs`
+  (CLI-local helper wrapping `brainwires-agent::task_manager::TaskManager`
+  with `TaskStore` persistence; zero in-tree consumers).
+
+`extras/brainwires-cli/src/storage/mod.rs` is kept as a thin
+re-export aggregator so the 29 CLI files using
+`crate::storage::{...}` don't need import rewrites — that shim is a
+candidate for deletion in Phase 10c.
+
+- **`brainwires-stores` (new)** — opinionated minimum store set.
+  Default features: `session`, `task`, `plan`, `conversation`. Opt-in:
+  `memory`, `tiered`, `dream`, `lock`, `image`, `sqlite`. All built on
+  the `brainwires-storage` `StorageBackend` trait. Phase 10b will pull
+  the remaining task / plan / conversation / lock / image / template
+  stores up from `extras/brainwires-cli/`; Phase 10a is the
+  session + memory consolidation only.
+- **`brainwires-session` retired.** Folded as the `session` feature.
+  Never published to crates.io.
+API breakage:
+
+- `Cargo.toml`: `brainwires-session = "0.10"` → `brainwires-stores = { version = "0.11", features = ["session", "sqlite"] }` (`session` is default-on; only list it explicitly if `default-features = false`).
+- `Cargo.toml`: `brainwires-memory = { features = ["dream"] }` continues to work — the crate's API is preserved; `dream` is unchanged. The schema types it operates over now live in `brainwires-stores`, and `brainwires-memory` re-exports them so existing imports keep compiling.
+- `use brainwires_session::*` → `use brainwires_stores::*` (or the fully-qualified `brainwires_stores::session::*`).
+- `use brainwires_memory::{MessageStore, MessageMetadata, …}` continues to work via re-export, but new code should prefer `brainwires_stores::*` for the schema types and reserve `brainwires_memory::*` for orchestration (`TieredMemory`, `MultiFactorScore`, `dream`).
+- The umbrella `brainwires` facade gains `session`, `task`, `plan`, `conversation`, `lock`, `image`, `tiered` features. The existing `memory` feature now means "tier schema stores" (always-available); `tiered` adds `TieredMemory` orchestration; `dream` adds offline consolidation. The old `native` feature on `brainwires-memory` is gone — `arrow-schema` is always pulled when `memory` is enabled.
+
+There is no re-export shim.
+
+#### `brainwires-training` renamed to `brainwires-finetune`; new `brainwires-training` placeholder
+
+The crate previously named `brainwires-training` only ever did
+fine-tuning — cloud fine-tune APIs (OpenAI / Anthropic / Bedrock /
+Vertex AI / etc.) plus local LoRA/QLoRA/DoRA — never training-from-scratch.
+The name was technically incorrect. Renamed to match what the code
+actually does:
+
+- **`brainwires-finetune`** (renamed from `brainwires-training`) —
+  cloud fine-tune APIs + dataset pipelines.
+- **`brainwires-finetune-local`** — local PEFT (already separate as of
+  the previous entry below).
+- **`brainwires-training`** (new placeholder crate) — reserved for
+  actual training-from-scratch primitives. No code yet; the crate
+  exists to occupy the name on crates.io and document the split in
+  its README.
+
+API breakage:
+
+- `Cargo.toml`: `brainwires-training = "0.10"` → `brainwires-finetune = "0.10"`.
+- All `use brainwires_training::*` imports → `use brainwires_finetune::*`.
+- The umbrella `brainwires` crate's `training` / `training-cloud` /
+  `training-full` features now route to `brainwires-finetune` (feature
+  names unchanged).
+
+#### `brainwires-providers` split — speech (TTS / STT) extracted to `brainwires-provider-speech`
+
+`brainwires-providers` mixed two unrelated concerns: LLM chat clients
+(Anthropic, OpenAI, Google, Ollama, Bedrock, Vertex AI, local llama.cpp /
+Candle) and speech (Azure Speech, Cartesia, Deepgram, ElevenLabs, Fish,
+Google TTS, Murf, browser-native `web_speech`). Every consumer pulled
+both stacks even when it only wanted one.
+
+- **New `brainwires-provider-speech` crate** — all 8 speech providers
+  + browser-native `web_speech` (wasm32 + `web-speech` feature).
+  Independent — only depends on `brainwires-core`. The `RateLimiter`
+  type is duplicated here (146 lines, stdlib-only) rather than dragged
+  in from `brainwires-providers` to avoid cross-coupling.
+- **`brainwires-providers` keeps** the LLM chat clients only.
+  Description updated to reflect that.
+
+API breakage:
+
+- `brainwires_providers::azure_speech::*` → `brainwires_provider_speech::azure_speech::*`
+  (and analogously for cartesia / deepgram / elevenlabs / fish / google_tts / murf / web_speech).
+- `brainwires-providers/web-speech` feature is gone — use
+  `brainwires-provider-speech/web-speech` directly.
+- `brainwires-providers` no longer pulls `wasm-bindgen` /
+  `js-sys` / `web-sys` / `wasm-bindgen-futures` (they were
+  speech-only).
+
+Consumer updates landed in this commit: `brainwires-hardware`'s audio
+surface and `extras/brainwires-chat-pwa/wasm` switched to the new
+crate. The umbrella `brainwires` crate's `web-speech` feature now routes
+to `brainwires-provider-speech/web-speech`.
+
+#### `brainwires-tools` split into `brainwires-tool-runtime` + `brainwires-tool-builtins`, façade retired
+
+The old `brainwires-tools` crate had grown to 22 source files + 6 subdirs +
+32 features mixing two unrelated concerns: a tool-execution **framework**
+(executor / registry / dispatch / sandbox / orchestrator / sessions / oauth /
+openapi / validation / transactions) and 20+ concrete **builtin tools**
+(bash / file_ops / git / web / search / code_exec + interpreters / browser /
+email / calendar / system / semantic_search / `BuiltinToolExecutor`). Every
+consumer that wanted the framework had to compile every builtin's deps
+(lettre, async-imap, icalendar, mlua, boa_engine, notify, rhai, …).
+
+- **New `brainwires-tool-runtime` crate** — the framework half. `ToolExecutor`
+  trait, `ToolRegistry` (now without the hardcoded `with_builtins()`
+  constructor), error taxonomy, sanitization, smart router, tool_search,
+  transaction manager, validation, plus the optional orchestrator /
+  oauth / openapi / sandbox_executor / sessions / tool_embedding modules.
+- **New `brainwires-tool-builtins` crate** — the concrete tools.
+  `BuiltinToolExecutor` (which dispatches the builtins) and
+  `registry_with_builtins()` (the relocated convenience constructor) live
+  here.
+- **`brainwires-tools` retired.** A 0.10.1 deprecation marker is published
+  to occupy the name on crates.io; depending on it gets you nothing.
+  Migrate per [`deprecated/brainwires-tools/README.md`](deprecated/brainwires-tools/README.md).
+
+API breakage to migrate:
+
+- `Cargo.toml`: replace `brainwires-tools = "0.10"` with
+  `brainwires-tool-runtime = "0.11"` and/or `brainwires-tool-builtins = "0.11"`
+  (most consumers want the latter, which already pulls the runtime).
+- All `use brainwires_tools::*` imports → switch to whichever sub-crate
+  the symbol came from. The migration table in
+  `deprecated/brainwires-tools/README.md` lists every type.
+- `ToolRegistry::with_builtins()` is gone. Call
+  `brainwires_tool_builtins::registry_with_builtins()` instead.
+- `brainwires_tool_runtime::smart_router::get_smart_tools(messages)` and
+  `get_smart_tools_with_mcp(messages, mcp_tools)` now take a
+  `&ToolRegistry` argument so the runtime crate doesn't have to know
+  about the builtins.
+
+#### `brainwires-knowledge` split into knowledge + rag + prompting
+
+`brainwires-knowledge` was the heaviest god-crate, mixing knowledge graphs,
+adaptive prompting, codebase RAG, spectral math, and code analysis. Every
+consumer paid for lancedb + tantivy + tree-sitter (12 grammars) + git2 +
+rmcp + rayon even when they only wanted BrainClient.
+
+- **`brainwires-knowledge` keeps** the knowledge layer: BKS / PKS, brain
+  client, entity graph, thought storage. Default features now `["knowledge"]`.
+- **New `brainwires-rag` crate** — codebase indexing + hybrid retrieval
+  (vector + BM25), AST-aware chunking via tree-sitter (12 languages
+  always-on), Git history search. Carries `spectral` (log-det diversity
+  reranking) and `code_analysis` (AST symbol/definition/reference graphs)
+  as internal `pub mod` modules — they have no external consumers and
+  splitting them further would force a public API for no caller.
+- **New `brainwires-prompting` crate** — adaptive prompting (15-technique
+  library, K-means task clustering, BKS/PKS-aware generator, SEAL feedback
+  hook, temperature optimisation, optional SQLite cluster store).
+  Default features `["knowledge"]` because generator / learning /
+  temperature reference BKS/PKS unconditionally.
+
+API breakage:
+
+- `brainwires_knowledge::rag::*` → `brainwires_rag::*`
+- `brainwires_knowledge::spectral::*` → `brainwires_rag::*`
+  (re-exported at crate root)
+- `brainwires_knowledge::code_analysis::*` → `brainwires_rag::*`
+- `brainwires_knowledge::prompting::*` → `brainwires_prompting::*`
+- `brainwires-knowledge` features `rag`, `spectral`, `code-analysis`,
+  `tree-sitter-languages`, `documents`, `pdf-extract-feature`,
+  `lancedb-backend`, `qdrant-backend`, `prompting`, `prompting-storage`
+  are gone — opt into the new crate that owns them instead.
+
+Folded together (not split apart): the old `brainwires-knowledge::dream`
+module (offline memory consolidation — summarisation, fact extraction,
+hot/warm/cold tier transitions) merged into `brainwires-memory` under a
+`dream` feature. Dream is the consolidation engine that writes to the
+same tiers `brainwires-memory` already owned, so they belong together.
+
+`brainwires_knowledge::dream::*` → `brainwires_memory::dream::*`.
+
+#### `brainwires-storage` split into primitives + memory + CLI domain stores
+
+`brainwires-storage` was originally meant for generic storage primitives but
+accreted 11 app-specific stores plus tiered-memory orchestration. Cut along
+the natural seam:
+
+- **`brainwires-storage` keeps** the primitives only — `StorageBackend` /
+  `VectorDatabase` traits, all 9 database backends, `CachedEmbeddingProvider`,
+  `BM25Search`, file-context, paths, image-storage *types* (`ImageMetadata`,
+  `ImageStorage`, etc.), and the wasm32 HNSW index. Generic re-exports stay
+  at the same paths (`brainwires_storage::StorageBackend`,
+  `brainwires_storage::CachedEmbeddingProvider`, etc.).
+- **New `brainwires-memory` crate** owns the tiered hot/warm/cold memory
+  cluster: `MessageStore`, `SummaryStore`, `FactStore`, `MentalModelStore`,
+  `TierMetadataStore`, and `TieredMemory` orchestration with multi-factor
+  scoring. Re-exported under `brainwires::memory::*` behind the new
+  `memory` feature on the umbrella facade.
+- **`extras/brainwires-cli` `crate::storage`** absorbed the CLI-domain
+  stores: `ConversationStore`, `TaskStore`/`AgentStateStore`, `PlanStore`,
+  `TemplateStore`, `LockStore`, `ImageStore`, and `PersistentTaskManager`.
+  These were CLI-only consumers; moving them out of the framework cleans
+  the workspace's reverse-dependency story.
+- The tiered-memory examples (`tiered_memory.rs`) and CLI-store examples
+  (`lock_coordination.rs`, `message_store.rs`, `plan_templates.rs`) moved
+  with their stores.
+
+Migration:
+- `use brainwires_storage::{MessageStore, TieredMemory, …}` →
+  `use brainwires_memory::{MessageStore, TieredMemory, …}`.
+- `use brainwires::storage::TieredMemory` →
+  `use brainwires::memory::TieredMemory` (enable the `memory` feature).
+- `use brainwires_storage::{ConversationStore, PlanStore, …}` →
+  these stores live in `brainwires-cli` now; not part of the framework
+  surface anymore.
+
+#### `extras/brainwires-memory-service` renamed to `extras/brainwires-memory-server`
+
+The old name overlapped with the new lib crate (`brainwires-memory`) once
+the storage refactor landed. The mem0-compatible REST surface — backed by
+`brainwires-knowledge`'s LanceDB ThoughtStore, unchanged in behaviour — is
+now built from the `brainwires-memory-server` package and produces the
+`brainwires-memory-server` binary. The crate is unrelated to the new
+`brainwires-memory` lib (different layer, no dependency between them).
+
+Migration:
+- Cargo: `cargo run -p brainwires-memory-server` (was `-p brainwires-memory-service`).
+- Binary: `brainwires-memory-server` (was `brainwires-memory`).
+- Package metadata: package name, lib name, and bin name all updated.
+
+#### Singularization sweep + content-rename (`mcp` → `mcp-client`, `resilience` → `call-policy`)
+
+The framework's pluralization rule is **singular for capability domains**.
+Five plural crate names violated the rule and were renamed in one
+sweep, plus two crates whose abstract names did not describe their
+actual contents:
+
+| Old name | New name | Why |
+|---|---|---|
+| `brainwires-permissions` | `brainwires-permission` | Singular rule |
+| `brainwires-providers` | `brainwires-provider` | Singular rule |
+| `brainwires-tools` | (split into `tool-runtime` + `tool-builtins`) | Singular rule + split |
+| `brainwires-agents` | `brainwires-agent` | Singular rule |
+| `brainwires-mcp` | `brainwires-mcp-client` | Asymmetry with `brainwires-mcp-server` |
+| `brainwires-resilience` | `brainwires-call-policy` | "Resilience" was an abstract Polly/Resilience4j-borrowed name; the crate's actual content is policies on outbound provider calls (retry / circuit / budget / cache / classify) |
+
+API breakage: `Cargo.toml` deps and all `use brainwires_<old>::*`
+imports must rewrite to the new name. Each old name has a 0.10.1
+deprecation tombstone published to crates.io that depending on gets
+you nothing — see `deprecated/<old-name>/README.md` for per-crate
+migration tables.
+
+There is no re-export shim for any of these.
+
+### Removed (BREAKING)
+
+#### Compile-breaking feature deleted
+
+- **`wake-word-porcupine`** — feature and `PorcupineDetector` module deleted from `brainwires-hardware`, the `brainwires` facade, and `voice-assistant`. The Picovoice `pv_porcupine` dep was never on crates.io and the feature could not compile without manual git-dep injection. If Porcupine is needed, implement `WakeWordDetector` against it out-of-tree.
+- **`brainwires-tools/interpreters-python`** — feature, `PythonExecutor`, `Language::Python` variant, and `crates/brainwires-tools/src/interpreters/languages/python.rs` deleted. The feature advertised in-process Python execution but was a stub returning a runtime error: the only viable wiring (RustPython) hits a `liblzma-sys` ↔ `lzma-sys` C-link collision with `xz2` (transitive of `lancedb`/`datafusion`) that needs a separate workspace-level resolution. `code_exec`'s native dispatch and the `Language` enum now cover Rhai/Lua/JavaScript only. The Docker-backed and remote-sandbox interpreters still accept `"python"` as a language string — they shell out to a system `python3`, unaffected by this change. Re-add when a working in-process backend is selected.
+
+#### Feature-flag aliases removed
+
+- **`brainwires-storage/vector-db`** — backward-compat alias for `lance-backend`. Use `lance-backend` directly.
+- **`brainwires-knowledge/spectral-select`** — deprecated alias for `spectral`. Use `spectral` directly.
+- **Facade `brain` feature and `brainwires::brain` module** — consolidated into the canonical `knowledge` feature. Callers: `brainwires::brain::*` → `brainwires::knowledge::*`.
+- **`brainwires-agent/reasoning` feature** — removed. Depend on `brainwires-reasoning` directly.
+
+#### Type aliases removed
+
+- **`brainwires_storage::embeddings::EmbeddingProvider` type alias** — was a backward-compat alias for `CachedEmbeddingProvider`. Callers using it as a concrete type (`Arc<EmbeddingProvider>`, `EmbeddingProvider::new()`) must switch to `CachedEmbeddingProvider`. Callers using the trait should import `brainwires_core::EmbeddingProvider` (also re-exported as `brainwires_storage::embeddings::EmbeddingProvider` post-rename, since the name collision is gone).
+- **`brainwires_storage::EmbeddingProviderTrait` re-export** — removed. The trait is now re-exported as its canonical name `EmbeddingProvider`.
+- **`brainwires_providers::openai_responses::ResponseApiResponse` type alias** — removed. Use `ResponseObject`.
+- **`brainwires_agent::reasoning` re-export module** — removed. Use `brainwires_reasoning::*` directly (the facade exposes it as `brainwires::reasoning::*`).
+
+#### Other pre-1.0 cleanup
+
+- **`LegacyHashCache` + migration code** removed from `brainwires-knowledge::rag::cache`. Old RAG cache files on disk will fail to parse and be regenerated on next index run (acceptable pre-1.0; no data loss — only recomputed indices).
+- **`PksSseListener` renamed to `PksRestPoller`** in `brainwires-knowledge::knowledge::bks_pks::personal`. The old name lied — the type uses REST polling, not SSE. The SSE client is only the web frontend, unaffected.
+- **`stack-graphs` feature over-promise stripped**: `PrecisionLevel::High` no longer claims "~95% accuracy"; `code_analysis::stack_graphs` module is now labelled as a stub until the real `stack-graphs` crate integration lands. The feature flag and provider scaffolding remain in place so the real wire-up can slot in without another API change.
+
+### Added
+
+#### Publish / docs.rs readiness
+
+- **`[package.metadata.docs.rs]` stanza** added to all 16 published framework crates:
+  ```toml
+  [package.metadata.docs.rs]
+  all-features = true
+  rustdoc-args = ["--cfg", "docsrs"]
+  ```
+  so docs.rs renders the full feature surface (previously heavy feature-flag crates like `brainwires-hardware`, `brainwires-telemetry`, `brainwires-knowledge`, `brainwires-storage`, `brainwires-providers` rendered only the default-feature surface).
+- **`#![warn(missing_docs)]`** added to `brainwires-hardware` and `brainwires-telemetry` (previously the only two framework crates not enforcing it — the other 13 already did).
+- **`AgentCard`, `MeshTopology`, `TopologyType`** added to the `brainwires::prelude` under the `a2a` and `mesh` features.
+- **`brainwires::knowledge` facade module** — replaces the old `brainwires::brain` module, gated on the canonical `knowledge` feature.
+
+### Changed
+
+- **`brainwires::reasoning` module** now re-exports from `brainwires_reasoning` directly instead of going through `brainwires_agent::reasoning`. The `reasoning` feature in the facade activates `brainwires-reasoning` directly.
+- **Storage Arrow schema docs** — removed "for backward compatibility with `LanceDatabase`" mislabelling on `tasks_arrow_schema`, `agent_states_arrow_schema`, `facts_schema`, `summaries_schema`, `plans_schema`, `tier_metadata_schema`. These are current infrastructure, not legacy shims.
+- **`Filter::Raw` doc comment** (`brainwires-storage::databases::lance::arrow_convert`) — clarified as an explicit escape hatch, not a backward-compat concession. Dropped the runtime `tracing::warn!` on every call.
+- **`#[ignore]` markers** in `brainwires-storage::databases::nornicdb::tests` (33 occurrences) now carry the reason string `"requires running nornicdb instance"` so `cargo test -- --ignored` output is self-explanatory.
+- **`matter::verhoeff`** demoted from `pub mod` to `pub(crate) mod` (internal-only helper used by the commissioning-code parser).
+
+### Documentation
+
+- **`PUBLISHING.md`** — publish-order table rewritten against the real 16-crate DAG. The previous table listed 9 crates that don't exist (`brainwires-analytics`, `brainwires-code-interpreters`, `brainwires-skills`, `brainwires-system`, `brainwires-datasets`, `brainwires-cognition`, `brainwires-tool-system`, `brainwires-agent-network`, `brainwires-channels`) and omitted 7 that do (`brainwires-knowledge`, `brainwires-reasoning`, `brainwires-telemetry`, `brainwires-training`, `brainwires-hardware`, `brainwires-a2a`, `brainwires-mcp-server`). `scripts/publish.sh` is the source of truth.
+- **Top-level `README.md`** — crate-count claims fixed (16 framework crates + 25 extras including the 7-crate `brainclaw` set). Added missing extras entries: `brainwires-billing`, `brainwires-docs`, `voice-assistant`.
+- **Facade `crates/brainwires/README.md`** — feature table rewritten. Previously omitted 13 features that were already exposed in `Cargo.toml` (`chat`, `agent-network`, `mcp-server-framework`, `system`, `dream`, `telemetry`, `bedrock`, `vertex-ai`, `wasm`, `training-cloud`, `training-full`, `training-local`, `rag-full-languages`) and listed 3 that no longer exist (`relay`, `proxy`, `autonomy`). Convenience features table unchanged.
+- **`brainwires-storage/README.md`, `brainwires-mcp/README.md`** — license links converted from relative (`[LICENSE](../../LICENSE)`, which 404s on crates.io) to absolute GitHub URLs for both MIT and Apache-2.0 license files.
+- **`brainwires-hardware/README.md`, `FEATURES.md`** — all `wake-word-porcupine` / `PorcupineDetector` references removed in line with the code deletion.
+- **Workspace-wide markdown consistency sweep** — stale crate names repointed to current successors in: `crates/README.md` (full rewrite of the dependency tree), `FEATURES.md` (datasets, analytics, and extras sections), `extras/brainwires-brain-server/README.md`, `extras/brainwires-rag-server/README.md`, `extras/brainwires-wasm/README.md`, `extras/brainclaw/mcp-skill-registry/README.md`, `crates/brainwires-training/README.md`, `crates/brainwires-agent/README.md`, `docs/wishlist-crates/Distributed-Training.md`, `extras/brainwires-cli/docs/ARCHITECTURE.md`, `extras/brainwires-cli/docs/distributed-swarms/IPC_AND_REMOTE_CONTROL.md`, `extras/brainwires-cli/docs/adaptive-prompting/ADAPTIVE_PROMPTING_IMPLEMENTATION.md`, `CONTRIBUTING.md`. Historical CHANGELOG entries for prior releases were left intact — they document what shipped at the time.
+
+### Fixed (lint sweep)
+
+- **`cargo clippy --fix`** applied across the workspace — ~57 of 80 pre-existing non-docs warnings auto-fixed (`useless vec!`, collapsible `if`, `unwrap_err`-after-`is_err`, `RangeInclusive::contains`, `Default::default()` field assigns, redundant pattern-matching, etc.). 139 files touched. The remaining ~23 warnings (too-many-args, loop-index-as-var) need manual thought per-site and are deferred.
+
+### Deferred — still present, slated for follow-up work
+
+These remaining backwards-compat surfaces were scoped out of this pass because they change runtime behaviour (not just names) or touch many downstream consumers. Each will land as its own focused PR:
+
+- **`brainwires-mcp::types` rmcp compat aliases** (`McpTool`, `McpResource`, `McpPrompt`, `CallToolParams`, `ServerCapabilities`, `ClientCapabilities`) — touches 20+ files including the brainclaw channel servers.
+- **`brainwires-network::auth` session legacy path** — `api_key` field on `Session`/`SessionInfo` + `migrate_legacy_session` + file fallback. Removing breaks existing on-disk session files (acceptable pre-1.0, but needs a dedicated migration note).
+- **`brainwires-network::remote::protocol` `Option<Protocol>` fields** — wire-format change; requires protocol-version bump and coordinated client/server updates.
+- **`brainwires-network::ipc::socket` legacy plaintext `IpcReader` / `IpcWriter`** — need to audit whether the handshake still needs the plaintext path before deletion.
+- **`brainwires-agent` crate** still compiles with the old "reasoning feature" shape; clean up `[features]` to drop residual entries.
+
+### Follow-up plans (filed separately)
+
+1. **`stack-graphs` full wire-up** — add the real `stack-graphs` crate as an optional dep under the existing feature flag, implement `extract_definitions` / `extract_references` for Python / TypeScript / Java / Ruby, benchmark, restore accuracy claims.
+2. **Matter DAC/PAI/CD CSA-signing** — organizational, blocked on CSA membership (see `BRAINWIRES_MATTER_DAK_PATH`). Not a code change.
+3. **(Optional) Porcupine wake-word re-add** — if/when the `pv_porcupine` crate lands on crates.io or a real vendored path is agreed on.
+4. **Missing-docs cleanup** — 428 warnings in `brainwires-hardware` and 129 in `brainwires-telemetry` surfaced by the new `#![warn(missing_docs)]` stepping stone; close them before promoting to `#![deny]`.
 
 ## [0.10.0] - 2026-04-18
 
@@ -17,7 +1215,7 @@ The 0.9.0 `brainwires-reasoning` crate shipped as a 22-line re-export shell.
 The 0.8 → 0.9 refactor split the intended content across two other crates:
 the plan/output parsers stayed in `brainwires-core` behind a `planning`
 feature, and the 9 local-inference scorers were tucked into
-`brainwires-agents::reasoning` behind a feature. The original architectural
+`brainwires-agent::reasoning` behind a feature. The original architectural
 plan (PR 7 in the 0.9 refactor series) specified these move into
 `brainwires-reasoning`; the move did not happen.
 
@@ -26,10 +1224,10 @@ plan (PR 7 in the 0.9 refactor series) specified these move into
 - `plan_parser` and `output_parser` (moved from `brainwires-core`),
 - `complexity`, `entity_enhancer`, `relevance_scorer`,
   `retrieval_classifier`, `router`, `strategies`, `strategy_selector`,
-  `summarizer`, `validator` (moved from `brainwires-agents::reasoning`).
+  `summarizer`, `validator` (moved from `brainwires-agent::reasoning`).
 
-Backward-compatibility: `brainwires-agents` still exposes
-`brainwires_agents::reasoning::…` under its `reasoning` feature — it now
+Backward-compatibility: `brainwires-agent` still exposes
+`brainwires_agent::reasoning::…` under its `reasoning` feature — it now
 simply re-exports `brainwires_reasoning`. No changes needed for callers
 using that path.
 
@@ -157,8 +1355,8 @@ five new integration-test files:
 ### Documentation
 
 - **`TESTING.md`** — corrected every `brainwires-eval` reference. The
-  eval framework lives at `brainwires_agents::eval` (feature-gated
-  module on `brainwires-agents`), not a standalone
+  eval framework lives at `brainwires_agent::eval` (feature-gated
+  module on `brainwires-agent`), not a standalone
   `brainwires-eval` crate. §8 now notes the empirical-scoring suite
   targets `brainwires_reasoning::ComplexityScorer` after the 0.10
   restoration.
@@ -277,9 +1475,9 @@ five new integration-test files:
 - **`ContextBuilder` integration** — `call_provider()` now calls `ContextBuilder::build_full_context()` with `use_gating: false` so semantic retrieval fires on every call without requiring compaction markers. This matches the always-on behavior of the chat path (`ai_processing.rs`). Task agents now benefit from the same personal knowledge injection and semantic history retrieval as chat sessions.
 - **Message persistence** — Each agent turn is stored in `MessageStore` so long-running tasks accumulate retrievable history across iterations.
 
-#### Structured Agent Roles with Tool Restrictions (`brainwires-agents`)
+#### Structured Agent Roles with Tool Restrictions (`brainwires-agent`)
 
-- **`AgentRole` enum** — New `crates/brainwires-agents/src/roles.rs` with four variants:
+- **`AgentRole` enum** — New `crates/brainwires-agent/src/roles.rs` with four variants:
   - `Exploration` — read-only: `read_file`, `list_directory`, `search_code`, `glob`, `grep`, `fetch_url`, `web_search`, `context_recall`, `task_get`, `task_list`
   - `Planning` — task management + read access: `task_create`, `task_update`, `task_add_subtask`, `plan_task`, plus read tools
   - `Verification` — read + build/test: `execute_command`, `check_duplicates`, `verify_build`, `check_syntax`, plus read tools
@@ -306,9 +1504,9 @@ five new integration-test files:
 - **A2A streaming events** — `TaskStatusUpdateEvent` and `TaskArtifactUpdateEvent` gain `trace_id: Option<Uuid>` (serialized as `traceId`) and `sequence: Option<u64>`, both `skip_serializing_if = None` for wire compatibility.
 - **`MessageEnvelope`** — Gains `trace_id: Option<Uuid>` field. `reply()` inherits the sender's trace ID. New `with_trace(trace_id)` builder method.
 
-#### Framework-Level System Prompt Registry (`brainwires-agents`, `brainwires-cli`)
+#### Framework-Level System Prompt Registry (`brainwires-agent`, `brainwires-cli`)
 
-- **`AgentPromptKind` enum** — New `crates/brainwires-agents/src/system_prompts/mod.rs` is the authoritative inventory of every agent system prompt in the framework. Variants: `Reasoning`, `Planner`, `Judge`, `Simple`, `MdapMicroagent`. Adding a new agent type means adding a variant here first.
+- **`AgentPromptKind` enum** — New `crates/brainwires-agent/src/system_prompts/mod.rs` is the authoritative inventory of every agent system prompt in the framework. Variants: `Reasoning`, `Planner`, `Judge`, `Simple`, `MdapMicroagent`. Adding a new agent type means adding a variant here first.
 - **`build_agent_prompt(kind, role)` dispatcher** — Single function to build any agent system prompt. Automatically appends `AgentRole::system_prompt_suffix()` when a role is provided, removing the need for callers to handle role suffix injection manually. Replaces the manual `format!("{}{}", base, role.system_prompt_suffix())` pattern in `task_agent.rs`.
 - **`MdapMicroagent` prompt** — New `mdap_microagent_prompt()` for MDAP voting agents. Instructs each microagent to reason independently, notes the vote round and peer count, and explicitly discourages anchoring on what other agents might produce.
 - **Eliminated CLI duplicate** — `extras/brainwires-cli/src/agents/system_prompts.rs` was an exact copy of the framework module. Deleted; all callers now import from `brainwires::agents`.
@@ -322,7 +1520,7 @@ five new integration-test files:
 #### Architecture Refactoring — 22 → 16 Framework Crates
 
 - **Crate renames** — `brainwires-tool-system` → `brainwires-tools`, `brainwires-agent-network` → `brainwires-network`, `brainwires-cognition` → `brainwires-knowledge`. All public API paths updated accordingly.
-- **Crate absorptions** — `brainwires-channels` merged into `brainwires-network`, `brainwires-skills` merged into `brainwires-agents`, `brainwires-code-interpreters` merged into `brainwires-tools`, `brainwires-datasets` merged into `brainwires-training`.
+- **Crate absorptions** — `brainwires-channels` merged into `brainwires-network`, `brainwires-skills` merged into `brainwires-agent`, `brainwires-code-interpreters` merged into `brainwires-tools`, `brainwires-datasets` merged into `brainwires-training`.
 - **Moved to extras** — `brainwires-wasm` and `brainwires-autonomy` moved from `crates/` to `extras/` (no longer independently published framework crates).
 - **New crate** — `brainwires-reasoning` re-exports reasoning strategies from `brainwires-core`.
 - **`publish.sh` updated** — publish order reduced from 22 to 16 crates.
@@ -347,7 +1545,7 @@ five new integration-test files:
 
 ### Fixed
 
-- **Clippy warnings** resolved across `brainwires-cli`, `matter-tool`, `brainwires-network`, `brainwires-tools`, and `brainwires-agents`.
+- **Clippy warnings** resolved across `brainwires-cli`, `matter-tool`, `brainwires-network`, `brainwires-tools`, and `brainwires-agent`.
 - **CI errors from architecture refactor** — fixed broken imports, missing re-exports, and formatting issues introduced during crate consolidation.
 - **v0.9.0 release cleanup** — removed stale references, fixed security metadata, and corrected test assertions.
 - **A2A event initializers** — added missing `trace_id` and `sequence` fields to `TaskStatusUpdateEvent` and `TaskArtifactUpdateEvent` constructors.
@@ -395,7 +1593,7 @@ Existing `.fastembed_cache/` directories in project folders are stale and can be
 #### Claude 4.6 + Context Compaction
 
 - **Claude 4.6 model IDs** — Default models updated across the provider registry: Anthropic → `claude-sonnet-4-6`, Bedrock → `anthropic.claude-sonnet-4-6-v1:0`, VertexAI → `claude-sonnet-4-6`. OpenAI Responses API default updated to `gpt-5-mini`.
-- **Context compaction handling** (`brainwires-core`, `brainwires-providers`, `brainwires-agents`) — New `StreamChunk::ContextCompacted { summary, tokens_freed }` variant. The Anthropic provider emits it when a `context_window_management_event` arrives mid-stream. `ChatAgent` handles it by replacing conversation history with the system prompt + a synthetic assistant summary message, with a `tracing::info!` log. All other streaming consumers (`brainwires-providers/brainwires_http`, `agent-chat`, `brainwires-cli`) handle the variant as a no-op.
+- **Context compaction handling** (`brainwires-core`, `brainwires-providers`, `brainwires-agent`) — New `StreamChunk::ContextCompacted { summary, tokens_freed }` variant. The Anthropic provider emits it when a `context_window_management_event` arrives mid-stream. `ChatAgent` handles it by replacing conversation history with the system prompt + a synthetic assistant summary message, with a `tracing::info!` log. All other streaming consumers (`brainwires-providers/brainwires_http`, `agent-chat`, `brainwires-cli`) handle the variant as a no-op.
 
 #### EU AI Act Audit Logging (`brainwires-analytics`)
 
@@ -474,7 +1672,7 @@ Existing `.fastembed_cache/` directories in project folders are stale and can be
 - **`brainwires-channels`** — Universal messaging channel contract for adapter implementations. Provides `Channel` trait (7 async methods), `ChannelMessage`, `ChannelEvent` (8 variants), `ChannelCapabilities` (12 bitflags), `ChannelUser`, `ChannelSession`, `ConversationId`, and `ChannelHandshake` protocol. Bidirectional conversion between `ChannelMessage` and agent-network `MessageEnvelope`.
 - **`brainwires-mcp-server`** — MCP server framework extracted from `brainwires-agent-network`. Provides `McpServer`, `McpHandler` trait, `McpToolRegistry` (declarative tool registration + dispatch), `ServerTransport`/`StdioServerTransport`, and a composable middleware pipeline: `AuthMiddleware`, `LoggingMiddleware`, `RateLimitMiddleware`, `ToolFilterMiddleware`.
 
-#### Agents (`brainwires-agents`)
+#### Agents (`brainwires-agent`)
 
 - **`ChatAgent`** — Reusable streaming completion loop with per-user session management. Methods: `restore_messages()`, `compact_history()`.
 - **Session persistence** — `SessionStore` trait + `JsonFileStore` implementation for persisting conversation history across restarts. Wired into BrainClaw via `memory.persist_conversations` config.
@@ -521,7 +1719,7 @@ Existing `.fastembed_cache/` directories in project folders are stale and can be
 - **Evidence tracking** — `Thought` gains `confidence`, `evidence_chain`, `reinforcement_count`, and `contradiction_count` fields. New `check_corroboration()` and `check_contradiction()` functions (negation-heuristic). `BrainClient` gains `apply_evidence_check()` and `replace_thought()`.
 - **Mental models tier** — New `MentalModelStore`, `MentalModel`, and `ModelType` enum (`Behavioral`/`Structural`/`Causal`/`Procedural`). `MemoryTier::MentalModel` added at the lowest hierarchy level. `TieredMemory` gains `synthesize_mental_model()` (explicit only — never auto-populated) and `search_mental_models()`; results appended to `search_adaptive_multi_factor()`.
 
-#### Autonomy / Agents — Empirical Evaluation (`brainwires-autonomy`, `brainwires-agents`, `brainwires-cognition`)
+#### Autonomy / Agents — Empirical Evaluation (`brainwires-autonomy`, `brainwires-agent`, `brainwires-cognition`)
 
 - **Empirical eval harness** (feature `eval-driven`) — Zero-network, <1 ms deterministic evaluation cases. Eight cases: `EntityImportanceRankingCase`, `EntitySingleMentionCase`, `EntityTypeBonusCase`, `MultiFactorRankingCase`, `TierDemotionCase`, `TaskBidScoringCase` (0.4×capability + 0.3×availability + 0.3×speed), `ResourceBidScoringCase` (0.7×priority + 0.3×bid), `ComplexityHeuristicCase` (keyword-based task complexity scoring). Suites: `entity_importance_suite()`, `multi_factor_suite()`. New `ranking_metrics` module: `ndcg_at_k()`, `mrr()`, `precision_at_k()` with graded relevance support.
 
@@ -630,7 +1828,7 @@ Existing `.fastembed_cache/` directories in project folders are stale and can be
 - **BYO database guide** (`databases/README.md`): Step-by-step guide for implementing custom `StorageBackend` and `VectorDatabase` backends, with trait method documentation and integration patterns.
 
 #### Crate Merges (19 → 18 crates)
-- **`brainwires-mdap`** merged into `brainwires-agents` behind the `mdap` feature flag. The standalone `brainwires-mdap` crate is now deprecated; use `brainwires-agents = { version = "0.5", features = ["mdap"] }` instead.
+- **`brainwires-mdap`** merged into `brainwires-agent` behind the `mdap` feature flag. The standalone `brainwires-mdap` crate is now deprecated; use `brainwires-agent = { version = "0.5", features = ["mdap"] }` instead.
 
 #### Build & CI (`xtask`)
 - **`package-count` command**: `cargo xtask package-count [--dry-run]` counts workspace members (crates vs extras) and updates stale count references in `.md` files. Skips CHANGELOG.md, deprecated directories, code blocks, and historical arrow lines.
@@ -817,7 +2015,7 @@ Existing `.fastembed_cache/` directories in project folders are stale and can be
 | `brainwires-rag` | `brainwires-cognition` | `use brainwires_rag::*` → `use brainwires_cognition::rag::*` (feature `rag`) |
 | `brainwires-relay` | `brainwires-agent-network` | `use brainwires_relay::*` → `use brainwires_agent_network::*` (feature `server`) |
 | `brainwires-mesh` | `brainwires-agent-network` | `use brainwires_mesh::*` → `use brainwires_agent_network::mesh::*` (feature `mesh`) |
-| `brainwires-seal` | `brainwires-agents/seal/` | `use brainwires_seal::*` → `use brainwires_agents::seal::*` (feature `seal`) |
+| `brainwires-seal` | `brainwires-agent/seal/` | `use brainwires_seal::*` → `use brainwires_agent::seal::*` (feature `seal`) |
 
 #### Feature Flag Removals
 - Removed zero-dependency feature flags that added no conditional compilation value.
@@ -835,7 +2033,7 @@ Existing `.fastembed_cache/` directories in project folders are stale and can be
 - **Spectral methods on `RelationshipGraph`**: `spectral_clusters(k)` for semantic community detection within connected components, `spectral_central_nodes(limit)` for structural bridge-node identification, `connectivity()` for graph health monitoring via algebraic connectivity, and `sparsify(epsilon)` for pruning redundant edges while preserving spectral properties. All feature-gated under `spectral`.
 - Feature flags: `knowledge` (default), `prompting` (default), `rag`, `spectral`, `code-analysis`, `tree-sitter-languages`, `native` (everything), `wasm`.
 
-#### Agents (`brainwires-agents`)
+#### Agents (`brainwires-agent`)
 - **Planner-Worker-Judge cycle orchestration**: Plan→Work→Judge loop for scaling multi-agent coding tasks, inspired by Cursor's planner-worker pipeline pattern. Each cycle: a `PlannerAgent` explores the codebase and creates dynamic tasks, workers execute them via `TaskOrchestrator` with dependency-aware scheduling, and a `JudgeAgent` evaluates results with structured verdicts (Complete, Continue, FreshRestart, Abort).
   - `planner_agent`: LLM-powered dynamic task planner with JSON output parsing, sub-planner recursion, and cycle detection on the task graph.
   - `judge_agent`: LLM-powered cycle evaluator with structured verdict types.
@@ -843,7 +2041,7 @@ Existing `.fastembed_cache/` directories in project folders are stale and can be
   - New system prompts: `planner_agent_prompt()` and `judge_agent_prompt()`.
   - `spawn_agent_with_context()` on agent pool for per-worker custom `AgentContext`.
   - New communication messages: `CycleStarted`, `CycleCompleted`, `PlanCreated`, `WorkerBranchMerged`.
-- **SEAL integration**: Moved `brainwires-seal` into `brainwires-agents/seal/` as a feature-gated module.
+- **SEAL integration**: Moved `brainwires-seal` into `brainwires-agent/seal/` as a feature-gated module.
   - Feature flags: `seal`, `seal-mdap`, `seal-knowledge`, `seal-feedback`.
   - `SealKnowledgeCoordinator` now integrates with `brainwires-cognition` instead of `brainwires-brain`.
 - 4 standalone examples added for agent usage patterns.
@@ -946,7 +2144,7 @@ Existing `.fastembed_cache/` directories in project folders are stale and can be
 - `ProviderType::OpenAiResponses` with registry entry, factory integration, model listing support, and `base_url` passthrough.
 - Response ID tracking for automatic conversation chaining.
 
-#### Agents (`brainwires-agents`)
+#### Agents (`brainwires-agent`)
 - `AgentRuntime` with communication hub and file lock coordination
 - `TaskManager` and `TaskQueue` for agent task lifecycle
 - `ValidationConfig` with file existence, syntax, duplicate, and build checks
@@ -1100,7 +2298,7 @@ Existing `.fastembed_cache/` directories in project folders are stale and can be
 ### Refactored
 - Renamed `brainwires-model-tools` to `brainwires-tool-system` to better reflect the crate's scope (registry, execution, built-in implementations, error taxonomy, sanitization, orchestration, code execution, semantic search, OpenAPI generation, smart routing).
 
-#### Agents (`brainwires-agents`)
+#### Agents (`brainwires-agent`)
 - Replaced `panic!()`/`unwrap()` in eval suite with graceful `TrialResult::failure` conversions.
 - Implemented `TextMerge` (line-by-line dedup) and `JsonMerge` (recursive deep merge) optimistic concurrency strategies.
 - Replaced silent `let _ =` broadcast/send drops with `tracing::warn` logging across contract_net, task_orchestrator, and validator_agent.

@@ -6,7 +6,6 @@ use crate::agents::AgentManager;
 use crate::auth::SessionManager;
 use crate::config::{ConfigManager, ModelRegistry};
 use crate::providers::ProviderFactory;
-use crate::tools::ToolRegistry;
 use crate::types::agent::{AgentContext, PermissionMode};
 use crate::utils::logger::Logger;
 use crate::utils::rich_output::RichOutput;
@@ -58,7 +57,9 @@ pub async fn handle_task(
         working_directory: std::env::current_dir()?.to_string_lossy().to_string(),
         user_id,
         conversation_history: Vec::new(),
-        tools: ToolRegistry::with_builtins().get_all().to_vec(),
+        tools: brainwires_tool_builtins::registry_with_builtins()
+            .get_all()
+            .to_vec(),
         metadata: std::collections::HashMap::new(),
         working_set: crate::types::WorkingSet::new(),
         capabilities: brainwires::permissions::AgentCapabilities::full_access(),

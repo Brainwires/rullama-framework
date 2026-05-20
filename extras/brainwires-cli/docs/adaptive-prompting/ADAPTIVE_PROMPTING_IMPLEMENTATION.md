@@ -163,7 +163,7 @@ Database location: `~/.brainwires/adaptive_prompting.db`
 pub fn enable_adaptive_prompting(
     &mut self,
     generator: PromptGenerator,
-    embedding_provider: Arc<EmbeddingProvider>,
+    embedding_provider: Arc<CachedEmbeddingProvider>,
 )
 
 // Disable (falls back to static prompt)
@@ -182,11 +182,11 @@ pub fn last_generated_prompt(&self) -> Option<&GeneratedPrompt>
 ```rust
 use brainwires_cli::prompting::{TechniqueLibrary, TaskClusterManager, PromptGenerator};
 use brainwires_cli::prompting::storage::ClusterStorage;
-use brainwires_cli::storage::embeddings::EmbeddingProvider;
+use brainwires_cli::storage::embeddings::CachedEmbeddingProvider;
 use std::sync::Arc;
 
 // Initialize components
-let embedding_provider = Arc::new(EmbeddingProvider::new()?);
+let embedding_provider = Arc::new(CachedEmbeddingProvider::new()?);
 
 let library = TechniqueLibrary::new()
     .with_bks(bks_cache.clone());

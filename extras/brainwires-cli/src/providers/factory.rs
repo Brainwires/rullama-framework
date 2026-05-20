@@ -179,7 +179,7 @@ impl ProviderFactory {
 
     /// Attach the global analytics collector to a ProviderConfig.
     ///
-    /// brainwires-analytics is a direct dep of brainwires-cli and brainwires-providers
+    /// brainwires-analytics is a direct dep of brainwires-cli and brainwires-provider
     /// is built with the `analytics` feature via brainwires/full, so this is always available.
     fn attach_analytics(config: &mut ProviderConfig) {
         if let Some(collector) = crate::utils::logger::analytics_collector() {
@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn test_factory_default() {
-        let factory = ProviderFactory::default();
+        let factory = ProviderFactory;
         let _factory = factory;
     }
 

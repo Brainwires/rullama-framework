@@ -10,7 +10,6 @@ use crate::auth::SessionManager;
 use crate::cli::chat::streaming::process_chat_stream;
 use crate::config::ConfigManager;
 use crate::providers::ProviderFactory;
-use crate::tools::ToolRegistry;
 use crate::types::agent::AgentContext;
 use crate::types::message::{Message, MessageContent, Role};
 use crate::utils::logger::Logger;
@@ -26,6 +25,12 @@ pub async fn handle_prompt_mode(
     format: &str,
     backend_url_override: Option<String>,
 ) -> Result<()> {
+    // Reject empty/whitespace prompts client-side so users get a clean error
+    // instead of a leaky backend 4xx that mentions internal field names.
+    if prompt.trim().is_empty() {
+        return Err(anyhow::anyhow!("--prompt cannot be empty"));
+    }
+
     // Load configuration and session
     let config_manager = ConfigManager::new()?;
     let session = SessionManager::load()?;
@@ -39,20 +44,23 @@ pub async fn handle_prompt_mode(
         None => config.model.clone(),
     };
 
-    if !quiet {
+    if !quiet && format != "json" {
+        // Route progress to stderr so --format json / piped stdout stays clean for jq.
         if let Some(ref url) = backend_url_override {
-            Logger::info(format!(
-                "Processing prompt with {} via {} (dev backend: {})",
+            eprintln!(
+                "{} Processing prompt with {} via {} (dev backend: {})",
+                console::style("ℹ").blue(),
                 model_id,
                 active_provider.as_str(),
                 url
-            ));
+            );
         } else {
-            Logger::info(format!(
-                "Processing prompt with {} via {}",
+            eprintln!(
+                "{} Processing prompt with {} via {}",
+                console::style("ℹ").blue(),
                 model_id,
                 active_provider.as_str()
-            ));
+            );
         }
     }
 
@@ -69,7 +77,7 @@ pub async fn handle_prompt_mode(
 
     // Initialize agent context with core tools only to reduce token cost
     let user_id = session.as_ref().map(|s| s.user.user_id.clone());
-    let registry = ToolRegistry::with_builtins();
+    let registry = brainwires_tool_builtins::registry_with_builtins();
     let mut context = AgentContext {
         working_directory: std::env::current_dir()?.to_string_lossy().to_string(),
         user_id,
@@ -176,6 +184,11 @@ pub async fn handle_prompt_mode_mdap(
     use crate::agents::OrchestratorAgent;
     use crate::types::agent::PermissionMode;
 
+    // Reject empty/whitespace prompts client-side (same rationale as handle_prompt_mode).
+    if prompt.trim().is_empty() {
+        return Err(anyhow::anyhow!("--prompt cannot be empty"));
+    }
+
     // Load configuration and session
     let config_manager = ConfigManager::new()?;
     let session = SessionManager::load()?;
@@ -207,26 +220,30 @@ pub async fn handle_prompt_mode_mdap(
         }
     };
 
-    if !quiet {
+    if !quiet && format != "json" {
+        // Route progress to stderr so --format json / piped stdout stays clean for jq.
         if let Some(ref url) = backend_url_override {
-            Logger::info(format!(
-                "Processing prompt with {} via {} in MDAP mode (dev backend: {})",
+            eprintln!(
+                "{} Processing prompt with {} via {} in MDAP mode (dev backend: {})",
+                console::style("ℹ").blue(),
                 model_id,
                 active_provider.as_str(),
                 url
-            ));
+            );
         } else {
-            Logger::info(format!(
-                "Processing prompt with {} via {} in MDAP mode",
+            eprintln!(
+                "{} Processing prompt with {} via {} in MDAP mode",
+                console::style("ℹ").blue(),
                 model_id,
                 active_provider.as_str()
-            ));
+            );
         }
-        Logger::info(format!(
-            "MDAP config: k={}, target={}%",
+        eprintln!(
+            "{} MDAP config: k={}, target={}%",
+            console::style("ℹ").blue(),
             mdap_config.k,
             mdap_config.target_success_rate * 100.0
-        ));
+        );
     }
 
     // Create provider with optional backend URL override
@@ -242,7 +259,7 @@ pub async fn handle_prompt_mode_mdap(
 
     // Initialize agent context with core tools
     let user_id = session.as_ref().map(|s| s.user.user_id.clone());
-    let registry = ToolRegistry::with_builtins();
+    let registry = brainwires_tool_builtins::registry_with_builtins();
     let mut context = AgentContext {
         working_directory: std::env::current_dir()?.to_string_lossy().to_string(),
         user_id,

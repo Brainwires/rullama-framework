@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 
-use brainwires_providers::fish::{FishAsrRequest, FishClient};
+use brainwires_provider_speech::fish::{FishAsrRequest, FishClient};
 
 use crate::audio::error::{AudioError, AudioResult};
 use crate::audio::stt::SpeechToText;
@@ -12,7 +12,7 @@ use crate::audio::wav::encode_wav;
 
 /// Fish Audio speech-to-text (ASR) implementation.
 ///
-/// Wraps a [`FishClient`] from `brainwires-providers`.
+/// Wraps a [`FishClient`] from `brainwires-provider`.
 pub struct FishStt {
     client: Arc<FishClient>,
 }

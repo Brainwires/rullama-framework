@@ -238,11 +238,11 @@ impl ModelRegistry {
                     .find(|m| m.is_default)
                     .or_else(|| models.first())
                     .map(|m| m.id.clone())
-                    .unwrap_or_else(|| "gpt-5-mini".to_string())
+                    .unwrap_or_else(|| "claude-haiku-4-5-20251001".to_string())
             }
             Err(_) => {
-                // Fallback to gpt-5-mini
-                "gpt-5-mini".to_string()
+                // Fallback to a small, cheap model the backend actually lists.
+                "claude-haiku-4-5-20251001".to_string()
             }
         }
     }
@@ -251,7 +251,7 @@ impl ModelRegistry {
     /// This should only be used where async is not possible
     /// Note: This is only used as a last resort. The config file should have the default.
     pub fn default_model_sync() -> String {
-        "gpt-5-mini".to_string()
+        "claude-haiku-4-5-20251001".to_string()
     }
 
     /// Fetch models from backend API
@@ -305,7 +305,7 @@ mod tests {
     #[test]
     fn test_default_model_sync() {
         let model = ModelRegistry::default_model_sync();
-        assert_eq!(model, "gpt-5-mini");
+        assert_eq!(model, "claude-haiku-4-5-20251001");
     }
 
     #[test]

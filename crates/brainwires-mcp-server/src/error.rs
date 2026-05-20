@@ -1,4 +1,4 @@
-use brainwires_mcp::JsonRpcError;
+use brainwires_mcp_client::JsonRpcError;
 
 /// Errors that can occur in the agent network layer.
 #[derive(Debug, thiserror::Error)]

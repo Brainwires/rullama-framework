@@ -15,11 +15,15 @@ categories = ["development-tools"]
 
 [dependencies]
 brainwires-core.workspace = true
-brainwires-agents = { workspace = true, optional = true }
-brainwires-tools = { workspace = true, optional = true }
-brainwires-training = { workspace = true, optional = true }
+brainwires-agent = { workspace = true, optional = true }
+brainwires-mdap = { workspace = true, optional = true }
+brainwires-eval = { workspace = true, optional = true }
+brainwires-finetune = { workspace = true, optional = true }
 brainwires-knowledge = { workspace = true, optional = true }
+brainwires-rag = { workspace = true, optional = true }
 brainwires-storage = { workspace = true, optional = true }
+brainwires-memory = { workspace = true, optional = true }
+brainwires-reasoning = { workspace = true, optional = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -55,29 +59,35 @@ brainwires-hardware = { workspace = true, optional = true, features = ["gpio"] }
 brainwires-telemetry = { workspace = true, optional = true }
 
 
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
+
 [features]
 default = ["native"]
 native = ["dep:git2", "brainwires-core/native"]
 wasm = ["brainwires-core/wasm"]
 
 # Self-improvement (extracted from CLI)
-self-improve = ["dep:brainwires-agents", "dep:brainwires-tools", "dep:regex", "dep:walkdir"]
+self-improve = ["dep:brainwires-agent", "dep:regex", "dep:walkdir"]
 eval-driven = [
     "self-improve",
-    "dep:brainwires-agents", "brainwires-agents/eval", "brainwires-agents/reasoning",
+    "dep:brainwires-agent",
+    "dep:brainwires-eval",
+    "dep:brainwires-reasoning",
     "dep:brainwires-knowledge", "brainwires-knowledge/knowledge",
-    "dep:brainwires-storage",
+    "dep:brainwires-memory",
     "dep:futures",
 ]
 
 # Agent operations
-supervisor = ["dep:brainwires-agents"]
-attention = ["dep:brainwires-knowledge", "brainwires-knowledge/rag"]
-parallel = ["dep:brainwires-agents", "brainwires-agents/mdap"]
-training = ["dep:brainwires-training"]
+supervisor = ["dep:brainwires-agent"]
+attention = ["dep:brainwires-rag"]
+parallel = ["dep:brainwires-agent", "dep:brainwires-mdap"]
+training = ["dep:brainwires-finetune"]
 
 # Git workflow
-git-workflow = ["dep:brainwires-agents", "dep:brainwires-tools", "dep:reqwest", "dep:toml"]
+git-workflow = ["dep:brainwires-agent", "dep:reqwest", "dep:toml"]
 webhook = ["git-workflow", "dep:axum", "dep:hmac", "dep:sha1", "dep:subtle"]
 
 # Environment interaction

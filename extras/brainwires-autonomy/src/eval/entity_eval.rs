@@ -17,7 +17,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use brainwires_agents::eval::{EvaluationCase, TrialResult, ndcg_at_k};
+use brainwires_eval::{EvaluationCase, TrialResult, ndcg_at_k};
 use brainwires_knowledge::knowledge::entity::{Entity, EntityType};
 use brainwires_knowledge::knowledge::relationship_graph::RelationshipGraph;
 
@@ -61,7 +61,7 @@ impl EvaluationCase for EntityImportanceRankingCase {
     async fn run(&self, trial_id: usize) -> anyhow::Result<TrialResult> {
         let start = std::time::Instant::now();
 
-        let entities = vec![
+        let entities = [
             make_entity("hub", EntityType::Concept, 20, 10),
             make_entity("mid_a", EntityType::Concept, 5, 3),
             make_entity("mid_b", EntityType::Concept, 3, 2),
@@ -210,7 +210,7 @@ impl EvaluationCase for EntityTypeBonusCase {
 // ── Suite constructor ─────────────────────────────────────────────────────────
 
 /// Return all entity importance eval cases ready for use with
-/// [`brainwires_agents::eval::EvaluationSuite`] or
+/// [`brainwires_eval::EvaluationSuite`] or
 /// [`brainwires_autonomy::self_improve::AutonomousFeedbackLoop`].
 pub fn entity_importance_suite() -> Vec<Arc<dyn EvaluationCase>> {
     vec![

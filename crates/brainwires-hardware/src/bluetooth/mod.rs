@@ -22,8 +22,11 @@
 //! }
 //! ```
 
+/// Enumerate host BLE adapters.
 pub mod adapter;
+/// BLE advertisement scanning helpers.
 pub mod scanner;
+/// Typed adapter / device / kind enums.
 pub mod types;
 
 pub use adapter::list_adapters;

@@ -13,7 +13,7 @@ impl App {
         conversation_id: Option<String>,
     ) -> Result<()> {
         use crate::config::PlatformPaths;
-        use crate::storage::{EmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
+        use crate::storage::{CachedEmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
 
         // Initialize plan store
         let db_path = PlatformPaths::conversations_db_path()?;
@@ -25,7 +25,7 @@ impl App {
             )
             .await?,
         );
-        let embeddings = Arc::new(EmbeddingProvider::new()?);
+        let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
         client.initialize(embeddings.dimension()).await?;
         let plan_store = PlanStore::new(client, embeddings);
 
@@ -78,7 +78,7 @@ impl App {
     /// Handle show plan command
     pub(super) async fn handle_show_plan(&mut self, plan_id: String) -> Result<()> {
         use crate::config::PlatformPaths;
-        use crate::storage::{EmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
+        use crate::storage::{CachedEmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
 
         // Initialize plan store
         let db_path = PlatformPaths::conversations_db_path()?;
@@ -90,7 +90,7 @@ impl App {
             )
             .await?,
         );
-        let embeddings = Arc::new(EmbeddingProvider::new()?);
+        let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
         client.initialize(embeddings.dimension()).await?;
         let plan_store = PlanStore::new(client, embeddings);
 
@@ -141,7 +141,7 @@ impl App {
     /// Handle delete plan command
     pub(super) async fn handle_delete_plan(&mut self, plan_id: String) -> Result<()> {
         use crate::config::PlatformPaths;
-        use crate::storage::{EmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
+        use crate::storage::{CachedEmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
 
         // Initialize plan store
         let db_path = PlatformPaths::conversations_db_path()?;
@@ -153,7 +153,7 @@ impl App {
             )
             .await?,
         );
-        let embeddings = Arc::new(EmbeddingProvider::new()?);
+        let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
         client.initialize(embeddings.dimension()).await?;
         let plan_store = PlanStore::new(client, embeddings);
 

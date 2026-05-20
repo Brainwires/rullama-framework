@@ -9,33 +9,51 @@ use crate::schema;
 /// Cost breakdown by provider and model for a given date range.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CostByModelRow {
+    /// Date the costs were aggregated for, `YYYY-MM-DD`.
     pub date: String,
+    /// Provider name (e.g. `"anthropic"`, `"openai"`).
     pub provider: String,
+    /// Model identifier as reported by the provider.
     pub model: String,
+    /// Number of provider calls that day for this `(provider, model)`.
     pub call_count: i64,
+    /// Sum of prompt tokens across all calls.
     pub total_prompt_tokens: i64,
+    /// Sum of completion tokens across all calls.
     pub total_completion_tokens: i64,
+    /// Sum of USD charges across all calls.
     pub total_cost_usd: f64,
 }
 
 /// Tool call frequency for a given date range.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ToolFrequencyRow {
+    /// Date the counts were aggregated for, `YYYY-MM-DD`.
     pub date: String,
+    /// Tool identifier as seen by the agent runtime.
     pub tool_name: String,
+    /// Total calls that day.
     pub call_count: i64,
+    /// Subset of `call_count` that returned an error.
     pub error_count: i64,
 }
 
 /// Per-day agent run summary.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DailySummaryRow {
+    /// Date the summary covers, `YYYY-MM-DD`.
     pub date: String,
+    /// Total agent runs on this date.
     pub total_runs: i64,
+    /// Runs that reported success.
     pub success_count: i64,
+    /// Runs that reported failure.
     pub failure_count: i64,
+    /// Sum of USD spend across every run.
     pub total_cost_usd: f64,
+    /// Sum of prompt + completion tokens across every run.
     pub total_tokens: i64,
+    /// Mean `total_iterations` across runs this day.
     pub avg_iterations: f64,
 }
 
@@ -387,6 +405,8 @@ mod tests {
                 cost_usd: 0.05,
                 success: true,
                 timestamp: Utc::now(),
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 compliance: None,
             },
         )

@@ -27,6 +27,13 @@ pub async fn process_chat_stream(
 
     let mut full_text = String::new();
     let tool_executor = ToolExecutor::new(PermissionMode::Auto);
+    // Accumulate usage across the stream so we can record a single cost event
+    // at the end. Some providers emit multiple `Usage` chunks (e.g. continuation
+    // after tool calls); we sum them and then persist once to avoid hammering
+    // the cost tracker file.
+    let mut total_prompt_tokens: u32 = 0;
+    let mut total_completion_tokens: u32 = 0;
+    let mut got_usage = false;
 
     // Extract system prompt from conversation history
     let system_prompt = context
@@ -42,6 +49,7 @@ pub async fn process_chat_stream(
         stop: None,
         system: system_prompt,
         model: None,
+        cache_strategy: Default::default(),
     };
 
     let mut stream = provider.stream_chat(
@@ -155,8 +163,23 @@ pub async fn process_chat_stream(
                     eprintln!("⚠️  Ignoring tool from unknown server: {}\n", server);
                 }
             }
-            StreamChunk::Usage(_usage) => {
-                // Ignore usage for now
+            // The brainwires HTTP provider emits StreamChunk::Usage exactly once per
+            // SSE stream inside the "complete" event, with cumulative totals for that
+            // turn. Tool-use continuations open a new stream that emits its own cumulative
+            // Usage — hence saturating_add across chunks correctly sums turn totals.
+            // If counts ever look wrong, enable RUST_LOG=trace and compare per-turn
+            // totals against actual reply length before touching this math.
+            StreamChunk::Usage(usage) => {
+                // Accumulate so `brainwires cost` has data to show.
+                total_prompt_tokens = total_prompt_tokens.saturating_add(usage.prompt_tokens);
+                total_completion_tokens =
+                    total_completion_tokens.saturating_add(usage.completion_tokens);
+                tracing::debug!(
+                    prompt = total_prompt_tokens,
+                    completion = total_completion_tokens,
+                    "accumulated stream usage (cumulative across tool-continuations)"
+                );
+                got_usage = true;
             }
             StreamChunk::Done => {
                 break;
@@ -170,5 +193,40 @@ pub async fn process_chat_stream(
         }
     }
 
+    // Persist usage to the cost tracker so `brainwires cost` can report it.
+    // Best-effort: failures here should not fail the user's chat.
+    if got_usage {
+        let provider_name = provider.name().to_string();
+        let model_name = model.to_string();
+        if let Err(e) = record_usage_event(
+            &provider_name,
+            &model_name,
+            total_prompt_tokens,
+            total_completion_tokens,
+        )
+        .await
+        {
+            tracing::warn!("Failed to record usage to cost tracker: {}", e);
+        }
+    }
+
     Ok(full_text)
+}
+
+/// Load the persistent cost tracker, record a single usage event, and save.
+///
+/// This is the plumbing that makes `brainwires cost` non-empty after running
+/// `brainwires chat --prompt ...`. The data file lives alongside other
+/// Brainwires data (`~/.local/share/brainwires/cost_tracker.json` on Linux).
+async fn record_usage_event(
+    provider: &str,
+    model: &str,
+    input_tokens: u32,
+    output_tokens: u32,
+) -> anyhow::Result<()> {
+    use crate::utils::cost_tracker::CostTracker;
+    let mut tracker = CostTracker::load().await?;
+    tracker.track_usage(provider, model, input_tokens, output_tokens);
+    tracker.save().await?;
+    Ok(())
 }

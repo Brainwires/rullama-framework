@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 
-use brainwires_providers::deepgram::{DeepgramClient, DeepgramListenRequest};
+use brainwires_provider_speech::deepgram::{DeepgramClient, DeepgramListenRequest};
 
 use crate::audio::error::{AudioError, AudioResult};
 use crate::audio::stt::SpeechToText;
@@ -12,7 +12,7 @@ use crate::audio::wav::encode_wav;
 
 /// Deepgram Nova STT speech-to-text implementation.
 ///
-/// Wraps a [`DeepgramClient`] from `brainwires-providers` for the actual HTTP
+/// Wraps a [`DeepgramClient`] from `brainwires-provider` for the actual HTTP
 /// transport; this struct adds the `SpeechToText` trait and audio-domain logic.
 pub struct DeepgramStt {
     client: Arc<DeepgramClient>,

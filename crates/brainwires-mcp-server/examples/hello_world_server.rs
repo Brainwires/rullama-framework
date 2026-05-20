@@ -13,7 +13,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use brainwires_mcp::{CallToolResult, Content, ServerCapabilities, ServerInfo};
+use brainwires_mcp_client::{CallToolResult, Content, ServerCapabilities, ServerInfo};
 use brainwires_mcp_server::{
     LoggingMiddleware, McpHandler, McpServer, McpToolDef, McpToolRegistry, RequestContext,
     ToolHandler,

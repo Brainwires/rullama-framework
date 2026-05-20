@@ -15,7 +15,9 @@ use brainwires_telegram_channel::telegram::TelegramChannel;
 #[derive(Parser)]
 #[command(name = "brainwires-telegram")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "Telegram channel adapter for the Brainwires gateway — also serves as an MCP tool server")]
+#[command(
+    about = "Telegram channel adapter for the Brainwires gateway — also serves as an MCP tool server"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -155,7 +157,7 @@ async fn run_adapter(config: TelegramConfig, enable_mcp: bool) -> Result<()> {
     let filter_config = TelegramConfig {
         telegram_token: config.telegram_token,
         gateway_url: config.gateway_url,
-        gateway_token: None,  // already moved above; not used by dispatcher
+        gateway_token: None, // already moved above; not used by dispatcher
         group_mention_required: config.group_mention_required,
         bot_username: config.bot_username,
         mention_patterns: config.mention_patterns,
@@ -166,10 +168,7 @@ async fn run_adapter(config: TelegramConfig, enable_mcp: bool) -> Result<()> {
 }
 
 fn show_version_info() {
-    println!(
-        "brainwires-telegram v{}",
-        env!("CARGO_PKG_VERSION")
-    );
+    println!("brainwires-telegram v{}", env!("CARGO_PKG_VERSION"));
     println!();
     println!("System Information:");
     println!("  Build Date:      {}", env!("BUILD_TIMESTAMP"));

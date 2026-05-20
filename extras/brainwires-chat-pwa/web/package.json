@@ -1,0 +1,31 @@
+{
+  "name": "brainwires-chat-pwa-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "./build.sh",
+    "build:js": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "serve": "node build.mjs --serve",
+    "test": "node --test tests/unit.test.mjs",
+    "test:e2e": "node --test tests/e2e/e2e.test.mjs",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.4",
+    "@playwright/test": "^1.59.1",
+    "esbuild": "^0.24.0",
+    "eslint": "9.39.4",
+    "fake-indexeddb": "^6.2.5",
+    "globals": "15.15.0"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.1",
+    "highlight.js": "^11.11.1",
+    "katex": "^0.16.45",
+    "marked": "^12.0.2",
+    "pdfjs-dist": "^4.10.38"
+  }
+}

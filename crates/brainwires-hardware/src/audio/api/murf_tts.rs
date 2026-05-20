@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 
-use brainwires_providers::murf::{MurfClient, MurfGenerateRequest};
+use brainwires_provider_speech::murf::{MurfClient, MurfGenerateRequest};
 
 use crate::audio::error::{AudioError, AudioResult};
 use crate::audio::tts::TextToSpeech;
@@ -12,7 +12,7 @@ use crate::audio::wav::decode_wav;
 
 /// Murf AI text-to-speech implementation.
 ///
-/// Wraps a [`MurfClient`] from `brainwires-providers`.
+/// Wraps a [`MurfClient`] from `brainwires-provider`.
 pub struct MurfTts {
     client: Arc<MurfClient>,
 }

@@ -17,7 +17,7 @@ use crate::types::message::{ChatResponse, ContentBlock, Message, MessageContent,
 use crate::types::provider::ChatOptions;
 use crate::types::tool::{ToolContext, ToolContextExt, ToolUse};
 use crate::utils::entity_extraction::{EntityExtractor, EntityStore};
-use brainwires::seal::{DialogState, SealConfig, SealProcessingResult, SealProcessor};
+use brainwires_seal::{DialogState, SealConfig, SealProcessingResult, SealProcessor};
 
 use super::TaskManager;
 
@@ -33,14 +33,14 @@ pub struct OrchestratorAgent {
     entity_store: EntityStore,
     entity_extractor: EntityExtractor,
     // SEAL + Knowledge integration
-    knowledge_coordinator: Option<brainwires::seal::SealKnowledgeCoordinator>,
+    knowledge_coordinator: Option<brainwires_seal::SealKnowledgeCoordinator>,
     // Adaptive prompting (Phase 4 integration)
     prompt_generator: Option<brainwires::prompting::PromptGenerator>,
     use_adaptive_prompts: bool,
     // Track last prompt generation for learning
     last_generated_prompt: Option<brainwires::prompting::generator::GeneratedPrompt>,
     // Embedding provider for adaptive prompting (Phase 8)
-    embedding_provider: Option<Arc<crate::storage::embeddings::EmbeddingProvider>>,
+    embedding_provider: Option<Arc<crate::storage::embeddings::CachedEmbeddingProvider>>,
 }
 
 impl OrchestratorAgent {
@@ -122,7 +122,7 @@ impl OrchestratorAgent {
         provider: Arc<dyn Provider>,
         permission_mode: PermissionMode,
         seal_config: SealConfig,
-        knowledge_coordinator: brainwires::seal::SealKnowledgeCoordinator,
+        knowledge_coordinator: brainwires_seal::SealKnowledgeCoordinator,
     ) -> Self {
         let task_manager = Arc::new(RwLock::new(TaskManager::new()));
         let task_manager_tool = TaskManagerTool::new(task_manager.clone());
@@ -147,7 +147,7 @@ impl OrchestratorAgent {
     /// Enable knowledge integration
     pub fn enable_knowledge_integration(
         &mut self,
-        coordinator: brainwires::seal::SealKnowledgeCoordinator,
+        coordinator: brainwires_seal::SealKnowledgeCoordinator,
     ) {
         self.knowledge_coordinator = Some(coordinator);
     }
@@ -166,7 +166,7 @@ impl OrchestratorAgent {
     pub fn enable_adaptive_prompting(
         &mut self,
         generator: brainwires::prompting::PromptGenerator,
-        embedding_provider: Arc<crate::storage::embeddings::EmbeddingProvider>,
+        embedding_provider: Arc<crate::storage::embeddings::CachedEmbeddingProvider>,
     ) {
         self.prompt_generator = Some(generator);
         self.embedding_provider = Some(embedding_provider);
@@ -188,7 +188,7 @@ impl OrchestratorAgent {
     /// Set the embedding provider for adaptive prompting
     pub fn set_embedding_provider(
         &mut self,
-        provider: Arc<crate::storage::embeddings::EmbeddingProvider>,
+        provider: Arc<crate::storage::embeddings::CachedEmbeddingProvider>,
     ) {
         self.embedding_provider = Some(provider);
     }
@@ -512,6 +512,7 @@ impl OrchestratorAgent {
             stop: None,
             system: Some(system_prompt),
             model: None,
+            cache_strategy: Default::default(),
         };
 
         self.provider
@@ -1232,6 +1233,7 @@ impl MicroagentProvider for ProviderMicroagentAdapter {
             stop: None,
             system: Some(enhanced_system),
             model: None,
+            cache_strategy: Default::default(),
         };
 
         let start = std::time::Instant::now();

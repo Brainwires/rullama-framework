@@ -1,0 +1,9 @@
+# Pin to the "1.91" channel so rustup resolves to the latest 1.91.x patch
+# (currently 1.91.1). The workspace's `rust-version = "1.91"` matches this,
+# but parts of the AWS SDK dep tree (aws-smithy-types ≥ 1.4.6,
+# aws-smithy-runtime-api ≥ 1.11.6) bumped their MSRV to 1.91.1 — a stock
+# 1.91.0 install fails to build the `bedrock` feature without this.
+#
+# Matches CI (.github/workflows/ci.yml uses `toolchain: "1.91"`).
+[toolchain]
+channel = "1.91"

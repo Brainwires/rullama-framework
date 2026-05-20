@@ -4,7 +4,7 @@
 //! cargo run --example middleware_chain --features server
 //! ```
 
-use brainwires_mcp::JsonRpcRequest;
+use brainwires_mcp_client::JsonRpcRequest;
 use brainwires_mcp_server::{
     LoggingMiddleware, MiddlewareChain, RateLimitMiddleware, RequestContext, ToolFilterMiddleware,
 };

@@ -11,7 +11,7 @@ impl App {
     /// Handle search plans command
     pub(super) async fn handle_search_plans(&mut self, query: String) {
         use crate::config::PlatformPaths;
-        use crate::storage::{EmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
+        use crate::storage::{CachedEmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
 
         let content = match PlatformPaths::conversations_db_path() {
             Ok(db_path) => {
@@ -19,7 +19,7 @@ impl App {
                     match LanceDatabase::new(db_str).await {
                         Ok(client) => {
                             let client = Arc::new(client);
-                            let embeddings = match EmbeddingProvider::new() {
+                            let embeddings = match CachedEmbeddingProvider::new() {
                                 Ok(e) => Arc::new(e),
                                 Err(_e) => {
                                     return;
@@ -96,7 +96,7 @@ impl App {
         task_description: String,
     ) -> Result<()> {
         use crate::config::PlatformPaths;
-        use crate::storage::{EmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
+        use crate::storage::{CachedEmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
 
         // Clone active plan info upfront to avoid borrow issues
         let parent_info = self.active_plan.as_ref().map(|p| {
@@ -124,7 +124,7 @@ impl App {
                             match LanceDatabase::new(db_str).await {
                                 Ok(client) => {
                                     let client = Arc::new(client);
-                                    let embeddings = match EmbeddingProvider::new() {
+                                    let embeddings = match CachedEmbeddingProvider::new() {
                                         Ok(e) => Arc::new(e),
                                         Err(e) => {
                                             return Err(anyhow::anyhow!(
@@ -190,7 +190,7 @@ impl App {
     /// Handle merge plan command
     pub(super) async fn handle_merge_plan(&mut self, plan_id: Option<String>) -> Result<()> {
         use crate::config::PlatformPaths;
-        use crate::storage::{EmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
+        use crate::storage::{CachedEmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
 
         let content = match PlatformPaths::conversations_db_path() {
             Ok(db_path) => {
@@ -198,7 +198,7 @@ impl App {
                     match LanceDatabase::new(db_str).await {
                         Ok(client) => {
                             let client = Arc::new(client);
-                            let embeddings = match EmbeddingProvider::new() {
+                            let embeddings = match CachedEmbeddingProvider::new() {
                                 Ok(e) => Arc::new(e),
                                 Err(e) => {
                                     return Err(anyhow::anyhow!(
@@ -264,7 +264,7 @@ impl App {
     /// Handle plan tree command
     pub(super) async fn handle_plan_tree(&mut self, plan_id: Option<String>) {
         use crate::config::PlatformPaths;
-        use crate::storage::{EmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
+        use crate::storage::{CachedEmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
 
         let content = match PlatformPaths::conversations_db_path() {
             Ok(db_path) => {
@@ -272,7 +272,7 @@ impl App {
                     match LanceDatabase::new(db_str).await {
                         Ok(client) => {
                             let client = Arc::new(client);
-                            let embeddings = match EmbeddingProvider::new() {
+                            let embeddings = match CachedEmbeddingProvider::new() {
                                 Ok(e) => Arc::new(e),
                                 Err(_e) => {
                                     return;

@@ -6,7 +6,7 @@
 
 use crate::types::WorkingSet;
 use anyhow::Result;
-use brainwires::brain::bks_pks::matcher::{MatchedTruth, format_truths_for_prompt};
+use brainwires::knowledge::bks_pks::matcher::{MatchedTruth, format_truths_for_prompt};
 
 // ── Edit mode (full read/write access) ─────────────────────────────────────
 

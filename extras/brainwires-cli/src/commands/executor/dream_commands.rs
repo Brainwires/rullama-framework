@@ -1,7 +1,7 @@
 //! Dream (sleep) commands
 //!
 //! User-facing slash commands for the background consolidation engine
-//! defined in `brainwires_knowledge::dream`. The framework calls this
+//! defined in `brainwires_dream`. The framework calls this
 //! "dream" rather than "sleep"/"compaction" to signal it's an offline
 //! summarise-and-extract pass, not a destructive prefix truncation.
 

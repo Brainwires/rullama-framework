@@ -66,6 +66,12 @@ pub struct OutcomeMetrics {
     pub total_provider_duration_ms: u64,
     /// Sum of agent run durations in milliseconds.
     pub total_run_duration_ms: u64,
+
+    // ── Prompt cache (Anthropic today) ───────────────────────────────────────
+    /// Cumulative tokens served from the provider's prompt cache.
+    pub total_cache_read_tokens: u64,
+    /// Cumulative tokens charged to populate the provider's prompt cache.
+    pub total_cache_creation_tokens: u64,
 }
 
 impl OutcomeMetrics {
@@ -113,13 +119,28 @@ impl OutcomeMetrics {
             self.tool_error_count as f64 / self.total_tool_calls as f64
         }
     }
+
+    /// Prompt-cache hit rate: fraction of input tokens served from cache
+    /// across all tracked provider calls. `0.0` if no input tokens have been
+    /// seen. Useful for validating that a `CacheStrategy` upgrade actually
+    /// produced cache hits in production.
+    ///
+    /// (`CacheStrategy` is defined in `brainwires_core::provider`.)
+    pub fn cache_hit_rate(&self) -> f64 {
+        let denom = self.total_tokens_prompt + self.total_cache_read_tokens;
+        if denom == 0 {
+            0.0
+        } else {
+            self.total_cache_read_tokens as f64 / denom as f64
+        }
+    }
 }
 
 // ── MetricsRegistry ───────────────────────────────────────────────────────────
 
 /// Thread-safe registry of per-agent [`OutcomeMetrics`].
 ///
-/// Implements [`AnalyticsSink`] — register it with an [`AnalyticsCollector`]
+/// Implements [`AnalyticsSink`] — register it with an [`AnalyticsCollector`](crate::collector::AnalyticsCollector)
 /// and it will update counters automatically as events arrive.
 #[derive(Clone, Default)]
 pub struct MetricsRegistry {
@@ -365,6 +386,48 @@ impl MetricsRegistry {
             ));
         }
 
+        // ── brainwires_agent_cache_read_tokens_total ─────────────────────────
+        counter(
+            &mut out,
+            "brainwires_agent_cache_read_tokens_total",
+            "Prompt tokens served from the provider's cache",
+        );
+        for m in metrics.values() {
+            out.push_str(&metric_line(
+                "brainwires_agent_cache_read_tokens_total",
+                &m.agent_id,
+                m.total_cache_read_tokens,
+            ));
+        }
+
+        // ── brainwires_agent_cache_creation_tokens_total ─────────────────────
+        counter(
+            &mut out,
+            "brainwires_agent_cache_creation_tokens_total",
+            "Prompt tokens charged to populate the provider's cache",
+        );
+        for m in metrics.values() {
+            out.push_str(&metric_line(
+                "brainwires_agent_cache_creation_tokens_total",
+                &m.agent_id,
+                m.total_cache_creation_tokens,
+            ));
+        }
+
+        // ── brainwires_agent_cache_hit_rate ──────────────────────────────────
+        gauge(
+            &mut out,
+            "brainwires_agent_cache_hit_rate",
+            "Fraction of input tokens served from cache (0-1)",
+        );
+        for m in metrics.values() {
+            out.push_str(&metric_line_f(
+                "brainwires_agent_cache_hit_rate",
+                &m.agent_id,
+                m.cache_hit_rate(),
+            ));
+        }
+
         out
     }
 
@@ -413,6 +476,8 @@ impl MetricsRegistry {
                 completion_tokens,
                 duration_ms,
                 cost_usd,
+                cache_creation_input_tokens,
+                cache_read_input_tokens,
                 ..
             } => {
                 // ProviderCall doesn't carry an agent_id directly; use session_id
@@ -429,6 +494,8 @@ impl MetricsRegistry {
                 m.total_tokens_completion += *completion_tokens as u64;
                 m.total_provider_duration_ms += *duration_ms;
                 m.total_cost_usd += *cost_usd;
+                m.total_cache_creation_tokens += *cache_creation_input_tokens as u64;
+                m.total_cache_read_tokens += *cache_read_input_tokens as u64;
             }
 
             AnalyticsEvent::ToolCall {
@@ -560,6 +627,69 @@ mod tests {
         reg.record(agent_run("a1", true, 0.01)).await.unwrap();
         reg.reset("a1");
         assert!(reg.get("a1").is_none());
+    }
+
+    fn provider_call(
+        session: &str,
+        prompt: u32,
+        completion: u32,
+        cache_read: u32,
+        cache_creation: u32,
+    ) -> AnalyticsEvent {
+        AnalyticsEvent::ProviderCall {
+            session_id: Some(session.to_string()),
+            provider: "anthropic".into(),
+            model: "claude-sonnet-4-6".into(),
+            prompt_tokens: prompt,
+            completion_tokens: completion,
+            duration_ms: 100,
+            cost_usd: 0.001,
+            success: true,
+            timestamp: Utc::now(),
+            cache_creation_input_tokens: cache_creation,
+            cache_read_input_tokens: cache_read,
+            compliance: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn cache_metrics_accumulate_and_compute_hit_rate() {
+        let reg = MetricsRegistry::new();
+        // Call 1: 100 fresh prompt tokens, no cache.
+        reg.record(provider_call("s1", 100, 50, 0, 0))
+            .await
+            .unwrap();
+        // Call 2: 10 fresh + 90 from cache, 0 creation.
+        reg.record(provider_call("s1", 10, 50, 90, 0))
+            .await
+            .unwrap();
+        // Call 3: 5 fresh, 95 read, 200 written.
+        reg.record(provider_call("s1", 5, 50, 95, 200))
+            .await
+            .unwrap();
+
+        let m = reg.get("s1").expect("session tracked");
+        assert_eq!(m.total_tokens_prompt, 115);
+        assert_eq!(m.total_cache_read_tokens, 185);
+        assert_eq!(m.total_cache_creation_tokens, 200);
+
+        // hit_rate = cache_read / (prompt + cache_read) = 185 / 300
+        let expected = 185.0 / 300.0;
+        assert!((m.cache_hit_rate() - expected).abs() < 1e-9);
+
+        let text = reg.prometheus_text();
+        assert!(text.contains("brainwires_agent_cache_read_tokens_total{agent_id=\"s1\"} 185"));
+        assert!(text.contains("brainwires_agent_cache_creation_tokens_total{agent_id=\"s1\"} 200"));
+        assert!(text.contains("brainwires_agent_cache_hit_rate{agent_id=\"s1\"}"));
+    }
+
+    #[test]
+    fn cache_hit_rate_zero_when_no_tokens() {
+        let m = OutcomeMetrics {
+            agent_id: "x".into(),
+            ..Default::default()
+        };
+        assert_eq!(m.cache_hit_rate(), 0.0);
     }
 
     #[test]

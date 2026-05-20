@@ -138,6 +138,82 @@ jobs:
       - name: Fail if todo!/unimplemented!/FIXME stubs exist outside tests
         run: cargo xtask check-stubs crates/ extras/
 
+  test-features:
+    name: Test (${{ matrix.backend }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: postgres-backend
+            service: postgres
+          - backend: mysql-backend
+            service: mysql
+          - backend: qdrant-backend
+            service: qdrant
+          - backend: surrealdb-backend
+            service: surrealdb
+    services:
+      postgres:
+        image: ${{ matrix.service == 'postgres' && 'postgres:16' || '' }}
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      mysql:
+        image: ${{ matrix.service == 'mysql' && 'mysql:8' || '' }}
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -proot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      qdrant:
+        image: ${{ matrix.service == 'qdrant' && 'qdrant/qdrant:latest' || '' }}
+        ports: ['6333:6333', '6334:6334']
+      surrealdb:
+        image: ${{ matrix.service == 'surrealdb' && 'surrealdb/surrealdb:latest' || '' }}
+        ports: ['8000:8000']
+        options: >-
+          --entrypoint /surreal
+        # surrealdb needs the start command passed via args; keep minimal for now.
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo apt-get clean
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.91"
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libasound2-dev libssl-dev pkg-config libdbus-1-dev
+      - name: Test with ${{ matrix.backend }}
+        run: cargo test -p brainwires-storage --features ${{ matrix.backend }}
+
+  macos:
+    name: macOS check
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.91"
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
+        run: brew install protobuf pkg-config
+      - run: cargo check --workspace --exclude brainwires-hardware
+
   deno:
     name: Deno
     runs-on: ubuntu-latest

@@ -2,7 +2,7 @@ use anyhow::{Result, bail};
 use std::sync::Arc;
 
 use brainwires_core::Provider;
-use brainwires_providers::{ChatProviderFactory, ProviderConfig, ProviderType};
+use brainwires_provider::{ChatProviderFactory, ProviderConfig, ProviderType};
 
 use crate::auth;
 use crate::cli::Cli;

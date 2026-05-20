@@ -12,7 +12,7 @@ use crate::{AnalyticsCollector, AnalyticsEvent};
 ///
 /// | Span name       | Fields captured        | Event emitted                        |
 /// |-----------------|------------------------|--------------------------------------|
-/// | `provider.chat` | `provider`, `model`    | [`AnalyticsEvent::ProviderCall`] (partial — tokens/cost come from explicit emission in brainwires-providers) |
+/// | `provider.chat` | `provider`, `model`    | [`AnalyticsEvent::ProviderCall`] (partial — tokens/cost come from explicit emission in brainwires-provider) |
 ///
 /// All other spans pass through unmodified. This layer never alters span data.
 pub struct AnalyticsLayer {
@@ -20,6 +20,8 @@ pub struct AnalyticsLayer {
 }
 
 impl AnalyticsLayer {
+    /// Wrap a pre-built `AnalyticsCollector`. Install via
+    /// `tracing_subscriber::registry().with(AnalyticsLayer::new(collector))`.
     pub fn new(collector: AnalyticsCollector) -> Self {
         Self { collector }
     }
@@ -112,7 +114,7 @@ where
 
             // Note: prompt_tokens, completion_tokens, and cost_usd are 0 here.
             // Complete ProviderCall events with token/cost data are emitted
-            // explicitly by brainwires-providers after each chat() call (Phase 2).
+            // explicitly by brainwires-provider after each chat() call (Phase 2).
             // This layer captures provider + model + duration from the span.
             self.collector.record(AnalyticsEvent::ProviderCall {
                 session_id: None,
@@ -124,6 +126,8 @@ where
                 cost_usd: 0.0,
                 success: true,
                 timestamp: chrono::Utc::now(),
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 compliance: None,
             });
         }

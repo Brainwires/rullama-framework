@@ -19,6 +19,7 @@ fn test_file_operations_integration() {
         capabilities: None,
         idempotency_registry: None,
         staging_backend: None,
+        intended_writes: None,
     };
 
     // Test 1: Write a file
@@ -91,6 +92,7 @@ fn test_file_operations_error_cases() {
         capabilities: None,
         idempotency_registry: None,
         staging_backend: None,
+        intended_writes: None,
     };
 
     // Test reading nonexistent file
@@ -122,6 +124,7 @@ fn test_create_and_list_directory() {
         capabilities: None,
         idempotency_registry: None,
         staging_backend: None,
+        intended_writes: None,
     };
 
     // Create a directory

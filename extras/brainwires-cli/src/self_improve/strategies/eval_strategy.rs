@@ -9,8 +9,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use std::sync::Arc;
 
-use brainwires::eval::fault_report::analyze_suite_for_faults;
-use brainwires::eval::{EvaluationCase, EvaluationSuite, RegressionSuite, SuiteConfig};
+use brainwires_eval::fault_report::analyze_suite_for_faults;
+use brainwires_eval::{EvaluationCase, EvaluationSuite, RegressionSuite, SuiteConfig};
 
 use super::{ImprovementCategory, ImprovementStrategy, ImprovementTask};
 use crate::self_improve::config::StrategyConfig;
@@ -132,7 +132,7 @@ impl ImprovementStrategy for EvalStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use brainwires::eval::{AlwaysFailCase, AlwaysPassCase};
+    use brainwires_eval::{AlwaysFailCase, AlwaysPassCase};
 
     #[tokio::test]
     async fn test_generates_tasks_for_consistently_failing_cases() {

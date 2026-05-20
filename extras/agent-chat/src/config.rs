@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatConfig {
@@ -77,6 +77,28 @@ impl ChatConfig {
         fs::create_dir_all(&dir)?;
         let content = toml::to_string_pretty(self)?;
         fs::write(Self::config_path(), content)?;
+        Ok(())
+    }
+
+    /// Load a config from an explicit path. Returns `Ok(Default)` when the
+    /// file is missing. Unlike [`load`], this does NOT write anything to disk.
+    pub fn load_from(path: &Path) -> Result<Self> {
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+        let content = fs::read_to_string(path)
+            .with_context(|| format!("Failed to read config: {}", path.display()))?;
+        toml::from_str(&content).with_context(|| "Failed to parse config.toml")
+    }
+
+    /// Save this config to an explicit path, creating parent directories as
+    /// needed.
+    pub fn save_to(&self, path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let content = toml::to_string_pretty(self)?;
+        fs::write(path, content)?;
         Ok(())
     }
 

@@ -19,7 +19,7 @@
 //!
 //! ```rust,ignore
 //! use brainwires_billing_impl::{AgentWallet, SqliteLedger};
-//! use brainwires_agents::task_agent::TaskAgentConfig;
+//! use brainwires_inference::task_agent::TaskAgentConfig;
 //! use std::sync::Arc;
 //!
 //! let ledger = Arc::new(SqliteLedger::new_default()?);

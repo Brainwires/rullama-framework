@@ -3,14 +3,17 @@
 //! Creates a LanceDB database, stores conversation messages via `MessageStore`,
 //! then uses `RagClient` to index source files and perform semantic search.
 //!
-//! Run: cargo run -p brainwires --example storage_with_rag --features storage,rag
+//! Run: cargo run -p brainwires --example storage_with_rag --features memory,rag
 
 use anyhow::Result;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-// Storage types come from `brainwires::storage::*`
-use brainwires::storage::{EmbeddingProvider, LanceDatabase, MessageMetadata, MessageStore};
+// Storage primitives come from `brainwires::storage::*`; the per-domain
+// `MessageStore` lives under `brainwires::memory::*` (extracted in the
+// brainwires-memory split).
+use brainwires::memory::{MessageMetadata, MessageStore};
+use brainwires::storage::{CachedEmbeddingProvider, LanceDatabase};
 
 // RAG types come from `brainwires::rag::*`
 use brainwires::rag::{IndexRequest, QueryRequest, RagClient};
@@ -30,9 +33,9 @@ async fn main() -> Result<()> {
 
     // ── 2. Set up the embedding provider ────────────────────────────────
     //
-    // EmbeddingProvider (type alias for CachedEmbeddingProvider) wraps
-    // FastEmbedManager with an LRU cache for repeated queries.
-    let embeddings: Arc<EmbeddingProvider> = Arc::new(EmbeddingProvider::new()?);
+    // CachedEmbeddingProvider wraps FastEmbedManager with an LRU cache
+    // for repeated queries.
+    let embeddings: Arc<CachedEmbeddingProvider> = Arc::new(CachedEmbeddingProvider::new()?);
     println!("Embedding provider ready (dim={})", embeddings.dimension());
 
     // ── 3. Store conversation messages ──────────────────────────────────

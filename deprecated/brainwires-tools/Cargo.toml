@@ -1,0 +1,21 @@
+[package]
+name = "brainwires-tools"
+version = "0.10.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.91"
+description = "DEPRECATED: split into `brainwires-tool-runtime` (executor + registry + framework) and `brainwires-tool-builtins` (bash, file_ops, git, web, search, code_exec, browser, email, calendar, system) — see README"
+repository = "https://github.com/Brainwires/brainwires-framework"
+readme = "README.md"
+keywords = ["deprecated"]
+
+# This crate is intentionally empty — it occupies the `brainwires-tools`
+# name on crates.io as a deprecation marker. There is no re-export shim:
+# the previous façade was removed in the 0.11 layout refactor specifically
+# to force consumers to migrate to the new crates.
+
+[lib]
+path = "src/lib.rs"
+
+# Standalone — not part of the parent workspace.
+[workspace]

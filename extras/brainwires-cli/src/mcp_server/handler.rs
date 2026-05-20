@@ -6,7 +6,7 @@ use crate::agents::TaskManager;
 use crate::tools::ToolExecutor;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use brainwires_network::agent_manager::{AgentInfo, AgentManager, AgentResult, SpawnConfig};
+use brainwires_agent::agent_manager::{AgentInfo, AgentManager, AgentResult, SpawnConfig};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -77,7 +77,7 @@ impl McpServerHandler {
             .await
             .context("Failed to create provider")?;
 
-        let tool_registry = ToolRegistry::with_builtins();
+        let tool_registry = brainwires_tool_builtins::registry_with_builtins();
         let agent_tool_registry = Arc::new(RwLock::new(AgentToolRegistry::new()));
         let communication_hub = Arc::new(CommunicationHub::new());
         let file_lock_manager = Arc::new(FileLockManager::new());
@@ -108,7 +108,12 @@ impl McpServerHandler {
         crate::utils::logger::init_with_output(false);
 
         tracing::info!("MCP Server started - listening on stdin");
-        Logger::info("MCP Server started - listening on stdin");
+        // MCP stdio protocol: stdout is reserved for JSON-RPC frames only.
+        // Status messages must go to stderr.
+        eprintln!(
+            "{} MCP Server started - listening on stdin",
+            console::style("ℹ").blue()
+        );
 
         let stdin = std::io::stdin();
         let reader = BufReader::new(stdin.lock());
@@ -142,7 +147,8 @@ impl McpServerHandler {
             }
         }
 
-        Logger::info("MCP Server stopped");
+        // MCP stdio protocol: route status to stderr, not stdout.
+        eprintln!("{} MCP Server stopped", console::style("ℹ").blue());
         Ok(())
     }
 
@@ -997,7 +1003,7 @@ mod tests {
     /// Test is_mcp_allowed_tool function
     #[test]
     fn test_is_mcp_allowed_tool_agent_tools() {
-        let registry = ToolRegistry::with_builtins();
+        let registry = brainwires_tool_builtins::registry_with_builtins();
         let handler = TestableHandler {
             tool_registry: registry,
         };
@@ -1014,7 +1020,7 @@ mod tests {
 
     #[test]
     fn test_is_mcp_allowed_tool_task_tools() {
-        let registry = ToolRegistry::with_builtins();
+        let registry = brainwires_tool_builtins::registry_with_builtins();
         let handler = TestableHandler {
             tool_registry: registry,
         };
@@ -1030,7 +1036,7 @@ mod tests {
 
     #[test]
     fn test_is_mcp_allowed_tool_planning_tools() {
-        let registry = ToolRegistry::with_builtins();
+        let registry = brainwires_tool_builtins::registry_with_builtins();
         let handler = TestableHandler {
             tool_registry: registry,
         };
@@ -1043,7 +1049,7 @@ mod tests {
 
     #[test]
     fn test_is_mcp_allowed_tool_disallowed() {
-        let registry = ToolRegistry::with_builtins();
+        let registry = brainwires_tool_builtins::registry_with_builtins();
         let handler = TestableHandler {
             tool_registry: registry,
         };
@@ -1308,9 +1314,11 @@ mod tests {
     fn test_validation_config_building() {
         use crate::agents::ValidationConfig;
 
-        let mut config = ValidationConfig::default();
-        config.working_directory = "/test/path".to_string();
-        config = config.with_build("typescript");
+        let config = ValidationConfig {
+            working_directory: "/test/path".to_string(),
+            ..Default::default()
+        }
+        .with_build("typescript");
 
         assert_eq!(config.working_directory, "/test/path");
         // Verify build_type was set (internal field)

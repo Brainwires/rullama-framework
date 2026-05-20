@@ -982,10 +982,9 @@ impl App {
 
     /// Handle /tools (show current mode)
     fn handle_show_tool_mode(&mut self) {
-        use crate::tools::ToolRegistry;
         use crate::types::tool::ToolMode;
 
-        let registry = ToolRegistry::with_builtins();
+        let registry = brainwires_tool_builtins::registry_with_builtins();
         let builtin_count = registry.get_all().len();
         let mcp_count = self.mcp_tools.len();
         let total = builtin_count + mcp_count;
@@ -1035,10 +1034,9 @@ impl App {
 
     /// Handle /tools <mode> (set tool mode)
     fn handle_set_tool_mode(&mut self, mode: crate::types::tool::ToolMode) {
-        use crate::tools::ToolRegistry;
         use crate::types::tool::ToolMode;
 
-        let registry = ToolRegistry::with_builtins();
+        let registry = brainwires_tool_builtins::registry_with_builtins();
 
         self.tools = match &mode {
             ToolMode::Full => {
@@ -1082,12 +1080,12 @@ impl App {
 
     /// Handle /tools explicit (open tool picker)
     fn handle_open_tool_picker(&mut self) {
-        use crate::tools::{ToolCategory, ToolRegistry};
+        use crate::tools::ToolCategory;
         use crate::tui::app::state::ToolPickerState;
         use crate::types::tool::ToolMode;
         use std::collections::{HashMap, HashSet};
 
-        let registry = ToolRegistry::with_builtins();
+        let registry = brainwires_tool_builtins::registry_with_builtins();
 
         // Get currently selected tools (if already in explicit mode)
         let selected_names: HashSet<String> = match &self.tool_mode {
@@ -1175,7 +1173,6 @@ impl App {
 
     /// Confirm tool selection and apply explicit mode
     pub fn confirm_tool_selection(&mut self) {
-        use crate::tools::ToolRegistry;
         use crate::types::tool::ToolMode;
 
         if let Some(state) = &self.tool_picker_state {
@@ -1187,7 +1184,7 @@ impl App {
                 .map(|(name, _, _)| name.clone())
                 .collect();
 
-            let registry = ToolRegistry::with_builtins();
+            let registry = brainwires_tool_builtins::registry_with_builtins();
 
             // Get built-in tools
             let mut tools: Vec<_> = selected

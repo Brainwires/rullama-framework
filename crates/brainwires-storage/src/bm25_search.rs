@@ -379,7 +379,7 @@ pub struct BM25Stats {
 /// # Example
 ///
 /// ```rust,ignore
-/// use brainwires_storage::bm25_search::{SearchScorer, BM25Result};
+/// use crate::bm25_search::{SearchScorer, BM25Result};
 ///
 /// struct WeightedFusion { vector_weight: f32, keyword_weight: f32 }
 ///

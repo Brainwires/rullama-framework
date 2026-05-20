@@ -2,8 +2,8 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::NetworkError;
 use crate::identity::AgentIdentity;
-use crate::network::NetworkError;
 
 /// Supported mesh topology shapes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

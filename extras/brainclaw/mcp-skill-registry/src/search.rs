@@ -4,7 +4,7 @@
 //! skill names and descriptions.
 
 use anyhow::{Context, Result};
-use brainwires_agents::skills::{SkillManifest, SkillPackage};
+use brainwires_agent::skills::{SkillManifest, SkillPackage};
 use rusqlite::Connection;
 
 /// Ensure the FTS5 virtual table exists.
@@ -87,14 +87,15 @@ pub fn search_skills(
          LIMIT ?2"
     };
 
-    let mut stmt = conn.prepare(sql).context("Failed to prepare search query")?;
+    let mut stmt = conn
+        .prepare(sql)
+        .context("Failed to prepare search query")?;
 
     let rows: Vec<String> = if let Some(tags) = tags {
         let tags_json = serde_json::to_string(tags).unwrap_or_else(|_| "[]".to_string());
-        let mapped = stmt.query_map(
-            rusqlite::params![fts_query, tags_json, limit],
-            |row| row.get::<_, String>(0),
-        )?;
+        let mapped = stmt.query_map(rusqlite::params![fts_query, tags_json, limit], |row| {
+            row.get::<_, String>(0)
+        })?;
         mapped.filter_map(|r| r.ok()).collect()
     } else {
         let mapped = stmt.query_map(rusqlite::params![fts_query, limit], |row| {

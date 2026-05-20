@@ -97,7 +97,7 @@ $ cargo xtask bump-version 0.4.1 --crates brainwires-core
 
 Patch bump to 0.4.1:
   Direct:  brainwires-core
-  Cascade: brainwires-agents, brainwires-autonomy, brainwires-mcp, ...
+  Cascade: brainwires-agent, brainwires-autonomy, brainwires-mcp-client, ...
   Total:   14 crate(s)
 ```
 
@@ -130,24 +130,30 @@ Only leaf crates fully verify in dry-run mode (later layers can't resolve deps n
 ```
 
 The script handles:
-- **Dependency ordering** — 7 layers, 18 crates, leaves first, facade last
-- **Rate limiting** — burst 30 at once, then 1/min (18 crates fits in burst)
+- **Dependency ordering** — 8 layers, 32 crates, leaves first, facade last
+- **Rate limiting** — burst 30 at once, then 1/min (32 crates fits in burst)
 - **Idempotency** — already-published versions are skipped automatically
 - **Tagging** — creates and pushes `vX.Y.Z` git tag on success
 
 ### Publish order
 
+Source of truth: `scripts/publish.sh`. Reproduced here for reference.
+
 | Layer | Crates |
 |-------|--------|
-| 1 | brainwires-core, brainwires-a2a, brainwires-code-interpreters, brainwires-skills, brainwires-analytics, brainwires-system |
-| 2 | brainwires-mcp, brainwires-mcp-server, brainwires-permissions, brainwires-datasets, brainwires-providers, brainwires-storage |
-| 3 | brainwires-cognition |
-| 4 | brainwires-tool-system, brainwires-agent-network, brainwires-hardware, brainwires-training |
-| 5 | brainwires-agents, brainwires-wasm |
-| 6 | brainwires-autonomy, brainwires-proxy |
-| 7 | brainwires (facade) |
+| 0 — Contracts | `brainwires-core` |
+| 1a — Infrastructure (deps: core) | `brainwires-telemetry`, `brainwires-storage`, `brainwires-eval` |
+| 1b — Infrastructure (deps on 1a) | `brainwires-provider`, `brainwires-provider-speech`, `brainwires-hardware`, `brainwires-stores`, `brainwires-memory`, `brainwires-sandbox`, `brainwires-sandbox-proxy`, `brainwires-call-policy` |
+| 2 — Protocols (deps: core only) | `brainwires-mcp-client`, `brainwires-mcp-server`, `brainwires-a2a` |
+| 3 — Intelligence (storage-backed) | `brainwires-knowledge`, `brainwires-rag`, `brainwires-prompting` |
+| 4a — Tool runtime | `brainwires-tool-runtime`, `brainwires-permission` |
+| 4b — Reasoning (deps: tool-runtime) | `brainwires-reasoning` |
+| 4c — Tool builtins (deps: tool-runtime + optional rag) | `brainwires-tool-builtins` |
+| 5 — Agency | `brainwires-agent`, `brainwires-network`, `brainwires-skills`, `brainwires-mdap`, `brainwires-seal`, `brainwires-inference` |
+| 6 — Fine-tune | `brainwires-finetune` |
+| 7 — Facade | `brainwires` |
 
-**Excluded from publish:** `brainwires-channels` — optional `webrtc` feature uses a git-only fork (`Brainwires/webrtc-rs` at `0.20.0-alpha.1`). Needs the fork published to crates.io before this crate can be published.
+**Excluded from publish** (`publish = false` in their `Cargo.toml`): `brainwires-sandbox-proxy`, plus all `extras/*` crates (`brainwires-autonomy`, `brainwires-wasm`, etc.). The 0.11 cycle removed `brainwires-llama` (orphan rullama snapshot, never on crates.io) and `brainwires-finetune-local` / `brainwires-training` (moved to the sibling `rullama` workspace).
 
 ## 4. Post-publish
 

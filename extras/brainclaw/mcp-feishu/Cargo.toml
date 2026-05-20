@@ -1,0 +1,47 @@
+[package]
+name = "brainclaw-mcp-feishu"
+description = "Feishu / Lark channel adapter for BrainClaw"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+name = "brainwires_feishu_channel"
+path = "src/lib.rs"
+
+[[bin]]
+name = "brainclaw-mcp-feishu"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+brainwires-network.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+reqwest.workspace = true
+axum.workspace = true
+futures.workspace = true
+rmcp.workspace = true
+async-trait.workspace = true
+schemars.workspace = true
+sha2.workspace = true
+hmac.workspace = true
+hex.workspace = true
+tokio-tungstenite.workspace = true
+parking_lot.workspace = true
+base64.workspace = true
+urlencoding.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

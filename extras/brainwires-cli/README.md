@@ -21,7 +21,7 @@ An AI-powered agentic CLI tool for autonomous coding assistance, built in Rust.
 - 🌐 **Remote Control**: Control CLI agents from the web interface via secure bridge
 - 🌳 **Collapsible Journal Tree**: TUI Journal view renders conversation as a navigable, collapsible tree (Turn → Message → ToolCall → SubAgentSpawn) with vim-style `j/k/h/l` navigation
 - 🔭 **Sub-Agent Viewer** (`Ctrl+B`): Live split-pane view of running sub-agents with status icons, activity detail, and direct IPC messaging
-- 🧪 **Local LLM Inference** *(optional)*: Run models locally via the framework's `brainwires-providers` crate (`--features llama-cpp-2`)
+- 🧪 **Local LLM Inference** *(optional)*: Run models locally via the framework's `brainwires-provider` crate (`--features llama-cpp-2`)
 
 ## Installation
 
@@ -542,7 +542,7 @@ Configuration is stored in `~/.brainwires/config.json`:
 
 ## Supported Providers
 
-Provider integrations are supplied by the framework's `brainwires-providers` crate:
+Provider integrations are supplied by the framework's `brainwires-provider` crate:
 
 - **Anthropic** (Claude models)
 - **OpenAI** (GPT models, o1)
@@ -582,7 +582,7 @@ cargo run -- chat
 
 ## Architecture
 
-Brainwires CLI is built on the **Brainwires Framework**, a submodule of 22 crates exposed through a feature-gated facade.
+Brainwires CLI is built on the **Brainwires Framework**, a submodule of 32 crates exposed through a feature-gated facade.
 
 ### Brainwires Framework (`crates/brainwires-framework/`)
 
@@ -596,12 +596,12 @@ The framework crates, grouped by function:
 
 | Group | Crates |
 |-------|--------|
-| **Core** | `brainwires-core`, `brainwires-tools`, `brainwires-agents` |
-| **Intelligence** | `brainwires-providers`, `brainwires-knowledge` (knowledge, prompting, RAG), `brainwires-storage` |
-| **Integration** | `brainwires-mcp`, `brainwires-mcp-server`, `brainwires-network` |
-| **Security** | `brainwires-permissions` |
+| **Core** | `brainwires-core`, `brainwires-tool-runtime`, `brainwires-tool-builtins`, `brainwires-agent`, `brainwires-inference` |
+| **Intelligence** | `brainwires-provider`, `brainwires-knowledge`, `brainwires-prompting`, `brainwires-rag`, `brainwires-storage`, `brainwires-stores`, `brainwires-memory` |
+| **Integration** | `brainwires-mcp-client`, `brainwires-mcp-server`, `brainwires-network` |
+| **Security** | `brainwires-permission` |
 | **Execution** | `brainwires-wasm`, `brainwires-autonomy` |
-| **Hardware & Training** | `brainwires-hardware`, `brainwires-training`, `brainwires-a2a` |
+| **Hardware & Training** | `brainwires-hardware`, `brainwires-finetune`, `brainwires-a2a` |
 
 ### CLI Layer
 

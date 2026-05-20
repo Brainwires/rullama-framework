@@ -1,21 +1,21 @@
 //! Embeddings Manager
 //!
-//! Provides a simple async wrapper around the storage::embeddings::EmbeddingProvider.
+//! Provides a simple async wrapper around the storage::embeddings::CachedEmbeddingProvider.
 //! This module exists for API compatibility with code that expects an async interface.
 //!
-//! For direct synchronous access, use `crate::storage::embeddings::EmbeddingProvider`.
+//! For direct synchronous access, use `crate::storage::embeddings::CachedEmbeddingProvider`.
 
 use anyhow::Result;
 use std::sync::Arc;
 
-use crate::storage::embeddings::EmbeddingProvider;
+use crate::storage::embeddings::CachedEmbeddingProvider;
 
-/// Async embeddings manager that wraps the synchronous EmbeddingProvider
+/// Async embeddings manager that wraps the synchronous CachedEmbeddingProvider
 ///
 /// This provides an async API for contexts that need it, while delegating
 /// to the underlying FastEmbed-based implementation with LRU caching.
 pub struct EmbeddingsManager {
-    provider: Arc<EmbeddingProvider>,
+    provider: Arc<CachedEmbeddingProvider>,
 }
 
 impl EmbeddingsManager {
@@ -24,14 +24,14 @@ impl EmbeddingsManager {
     /// Initializes the FastEmbed model (all-MiniLM-L6-v2, 384 dimensions).
     /// Returns an error if the model fails to load.
     pub fn new() -> Result<Self> {
-        let provider = EmbeddingProvider::new()?;
+        let provider = CachedEmbeddingProvider::new()?;
         Ok(Self {
             provider: Arc::new(provider),
         })
     }
 
     /// Create an embeddings manager from an existing provider
-    pub fn from_provider(provider: Arc<EmbeddingProvider>) -> Self {
+    pub fn from_provider(provider: Arc<CachedEmbeddingProvider>) -> Self {
         Self { provider }
     }
 
@@ -65,7 +65,7 @@ impl EmbeddingsManager {
     }
 
     /// Get the underlying provider for direct access
-    pub fn provider(&self) -> &Arc<EmbeddingProvider> {
+    pub fn provider(&self) -> &Arc<CachedEmbeddingProvider> {
         &self.provider
     }
 }

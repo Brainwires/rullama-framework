@@ -58,6 +58,7 @@ mod tests {
             gateway_url: "ws://localhost:9999/ws".to_string(),
             gateway_token: Some("gw-secret".to_string()),
             bot_prefix: Some("!".to_string()),
+            ..Default::default()
         };
         let json = serde_json::to_string(&config).unwrap();
         let parsed: DiscordConfig = serde_json::from_str(&json).unwrap();

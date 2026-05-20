@@ -1,6 +1,7 @@
 //! Tests for [`NornicDatabase`].
 
 #[cfg(test)]
+#[allow(clippy::module_inception)] // file already named tests.rs, inner `mod tests` mirrors convention
 mod tests {
     use std::sync::Arc;
     use std::sync::Mutex;
@@ -8,7 +9,7 @@ mod tests {
     use anyhow::Result;
     use serde_json::{Value, json};
 
-    use brainwires_core::{ChunkMetadata, SearchResult};
+    use brainwires_core::ChunkMetadata;
 
     use super::super::database::NornicDatabase;
     use super::super::helpers::{build_filters, extract_host, map_to_search_result};
@@ -57,6 +58,7 @@ mod tests {
             }
         }
 
+        #[allow(dead_code)] // kept as a debugging hook for future tests that want to inspect the query log
         fn recorded_queries(&self) -> Vec<String> {
             self.queries.lock().unwrap().clone()
         }
@@ -284,9 +286,9 @@ mod tests {
         let db = mock_db(transport);
         db.initialize(384).await.unwrap();
 
-        let queries = db.transport.execute_cypher("", json!({})).await.ok(); // dummy — we check via the mock's recorded queries
+        let _queries = db.transport.execute_cypher("", json!({})).await.ok(); // dummy — we check via the mock's recorded queries
         // Actually, re-derive the queries from the MockTransport directly:
-        let mock = db.transport.as_ref() as *const dyn NornicTransport;
+        let _mock = db.transport.as_ref() as *const dyn NornicTransport;
         // We can't downcast easily; instead verify through the initialize call above.
         // The mock's query list was populated by initialize().
         // We'll use a different approach: just test the string format directly.
@@ -397,7 +399,7 @@ mod tests {
 
     #[test]
     fn test_build_find_related_with_type_filter() {
-        let types = vec!["CALLS".to_string(), "IMPORTS".to_string()];
+        let types = ["CALLS".to_string(), "IMPORTS".to_string()];
         let rel_pattern = format!(":{}", types.join("|"));
         assert_eq!(rel_pattern, ":CALLS|IMPORTS");
 
@@ -705,7 +707,7 @@ mod tests {
         assert_eq!(count, 1);
 
         // Verify what was stored via the mock.
-        let mock_ref = db.transport.as_ref();
+        let _mock_ref = db.transport.as_ref();
         // We need to downcast — but with our mock we recorded calls.
         // Since we can't downcast trait objects easily, we verify via the
         // return count from store_nodes.
@@ -1392,7 +1394,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_initialize_creates_index() {
         if skip_if_no_server().await {
             return;
@@ -1406,7 +1408,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_clear_removes_all() {
         if skip_if_no_server().await {
             return;
@@ -1426,7 +1428,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_store_single() {
         if skip_if_no_server().await {
             return;
@@ -1445,7 +1447,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_store_multiple() {
         if skip_if_no_server().await {
             return;
@@ -1476,7 +1478,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_store_idempotent_upsert() {
         if skip_if_no_server().await {
             return;
@@ -1506,7 +1508,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_store_large_batch() {
         if skip_if_no_server().await {
             return;
@@ -1527,7 +1529,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_store_metadata_roundtrip() {
         if skip_if_no_server().await {
             return;
@@ -1558,7 +1560,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_search_vector() {
         if skip_if_no_server().await {
             return;
@@ -1581,7 +1583,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_search_hybrid() {
         if skip_if_no_server().await {
             return;
@@ -1614,7 +1616,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_search_min_score() {
         if skip_if_no_server().await {
             return;
@@ -1639,7 +1641,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_search_limit() {
         if skip_if_no_server().await {
             return;
@@ -1664,7 +1666,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_search_project_filter() {
         if skip_if_no_server().await {
             return;
@@ -1696,7 +1698,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_search_empty_db() {
         if skip_if_no_server().await {
             return;
@@ -1710,7 +1712,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_search_filtered_extension() {
         if skip_if_no_server().await {
             return;
@@ -1745,7 +1747,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_search_filtered_language() {
         if skip_if_no_server().await {
             return;
@@ -1779,7 +1781,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_search_filtered_combined() {
         if skip_if_no_server().await {
             return;
@@ -1814,7 +1816,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_delete_existing() {
         if skip_if_no_server().await {
             return;
@@ -1835,7 +1837,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_delete_nonexistent() {
         if skip_if_no_server().await {
             return;
@@ -1846,7 +1848,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_statistics_empty() {
         if skip_if_no_server().await {
             return;
@@ -1857,7 +1859,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_statistics_with_data() {
         if skip_if_no_server().await {
             return;
@@ -1877,7 +1879,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_count_by_root_path() {
         if skip_if_no_server().await {
             return;
@@ -1897,7 +1899,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_rest_get_indexed_files() {
         if skip_if_no_server().await {
             return;
@@ -1929,7 +1931,7 @@ mod tests {
 
     #[cfg(feature = "nornicdb-bolt")]
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_bolt_store_and_search() {
         let db = match NornicDatabase::with_bolt("http://localhost:7474", "neo4j", "password").await
         {
@@ -1957,7 +1959,7 @@ mod tests {
 
     #[cfg(feature = "nornicdb-bolt")]
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_bolt_delete_by_file() {
         let db = match NornicDatabase::with_bolt("http://localhost:7474", "neo4j", "password").await
         {
@@ -1982,7 +1984,7 @@ mod tests {
 
     #[cfg(feature = "nornicdb-bolt")]
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_bolt_statistics() {
         let db = match NornicDatabase::with_bolt("http://localhost:7474", "neo4j", "password").await
         {
@@ -2000,7 +2002,7 @@ mod tests {
 
     #[cfg(feature = "nornicdb-grpc")]
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_grpc_store_and_search() {
         let db = match NornicDatabase::with_grpc("http://localhost:6334").await {
             Ok(db) => db,
@@ -2027,7 +2029,7 @@ mod tests {
 
     #[cfg(feature = "nornicdb-grpc")]
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_grpc_cypher_returns_error() {
         let db = match NornicDatabase::with_grpc("http://localhost:6334").await {
             Ok(db) => db,
@@ -2041,7 +2043,7 @@ mod tests {
     // ── Extension integration tests ─────────────────────────────────────
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_create_relationship() {
         if skip_if_no_server().await {
             return;
@@ -2076,7 +2078,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_find_related_depth_1() {
         if skip_if_no_server().await {
             return;
@@ -2104,7 +2106,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_find_related_depth_2() {
         if skip_if_no_server().await {
             return;
@@ -2141,7 +2143,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_store_episodic_tier() {
         if skip_if_no_server().await {
             return;
@@ -2159,7 +2161,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_store_semantic_tier() {
         if skip_if_no_server().await {
             return;
@@ -2177,7 +2179,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "requires running nornicdb instance"]
     async fn test_search_by_tier_isolated() {
         if skip_if_no_server().await {
             return;

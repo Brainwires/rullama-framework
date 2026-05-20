@@ -111,6 +111,7 @@ mod tests {
             gateway_url: "ws://gw:18789/ws".to_string(),
             gateway_token: Some("gw-token".to_string()),
             api_url: "https://github.example.com/api/v3".to_string(),
+            ..Default::default()
         };
         let json = serde_json::to_string(&cfg).unwrap();
         let parsed: GitHubConfig = serde_json::from_str(&json).unwrap();

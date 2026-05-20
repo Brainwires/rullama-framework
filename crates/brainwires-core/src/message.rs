@@ -195,15 +195,50 @@ pub struct Usage {
     pub completion_tokens: u32,
     /// Total number of tokens
     pub total_tokens: u32,
+    /// Tokens the provider charged to populate its prompt cache on this turn.
+    ///
+    /// Only meaningful for providers that support explicit caching (Anthropic
+    /// Messages API). Zero for providers without prompt caching or when the
+    /// cache is not in use.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub cache_creation_input_tokens: u32,
+    /// Tokens read from the provider's prompt cache on this turn — these are
+    /// billed at a reduced rate and are the primary cost-savings signal.
+    ///
+    /// Zero when no cached bytes were hit.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub cache_read_input_tokens: u32,
+}
+
+fn is_zero_u32(v: &u32) -> bool {
+    *v == 0
 }
 
 impl Usage {
-    /// Create a new usage statistics
+    /// Create a new usage statistics (no cache activity).
     pub fn new(prompt_tokens: u32, completion_tokens: u32) -> Self {
         Self {
             prompt_tokens,
             completion_tokens,
             total_tokens: prompt_tokens + completion_tokens,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+        }
+    }
+
+    /// Create a new usage statistics including cache accounting.
+    pub fn with_cache(
+        prompt_tokens: u32,
+        completion_tokens: u32,
+        cache_creation_input_tokens: u32,
+        cache_read_input_tokens: u32,
+    ) -> Self {
+        Self {
+            prompt_tokens,
+            completion_tokens,
+            total_tokens: prompt_tokens + completion_tokens,
+            cache_creation_input_tokens,
+            cache_read_input_tokens,
         }
     }
 }

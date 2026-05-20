@@ -1,0 +1,125 @@
+[package]
+name = "brainwires-agent"
+description = "Agent coordination primitives + multi-agent patterns for the Brainwires Agent Framework — communication hub, file/resource locks, task manager/queue, git coordination, contract net, saga, optimistic concurrency, market allocation, workflow graph, three-state model. LLM-driven workhorses live in `brainwires-inference`."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/brainwires-agent"
+keywords = ["ai-agents", "multi-agent", "task-orchestration", "llm", "autonomous"]
+categories = ["development-tools"]
+
+[dependencies]
+# Internal crates
+brainwires-core.workspace = true
+brainwires-call-policy.workspace = true
+brainwires-tool-runtime = { workspace = true }
+brainwires-tool-builtins = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true, features = ["sync", "time", "rt", "macros"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow.workspace = true
+
+# Identifiers & time
+uuid.workspace = true
+chrono.workspace = true
+
+# Hashing (for prompt hash snapshotting)
+sha2.workspace = true
+hex.workspace = true
+
+# Git (for worktree management, native only)
+git2 = { workspace = true, optional = true }
+
+# Graph algorithms (for state model dependency analysis)
+petgraph = "0.7"
+
+# Process liveness checking (Unix, native only)
+libc = { version = "0.2", optional = true }
+
+# Async traits
+async-trait.workspace = true
+
+# Regex — required for skills template parsing; also used by reasoning/mdap/seal
+regex = { workspace = true }
+
+# Async streams (needed by ChatAgent for StreamExt)
+futures.workspace = true
+
+# thiserror removed — was eval-only; eval extracted to brainwires-eval in Phase 11e.
+
+# SEAL deps moved with the crate in Phase 11d (extracted to brainwires-seal).
+# brainwires-knowledge / brainwires-permission / brainwires-storage / arrow /
+# lancedb / brainwires-mdap are no longer agent-side concerns.
+
+# OpenTelemetry (optional, for otel feature)
+opentelemetry = { version = "0.28", optional = true }
+
+# Telemetry — analytics events + billing hooks (optional)
+brainwires-telemetry = { workspace = true, optional = true }
+
+# Logging
+tracing.workspace = true
+
+# Skills deps removed in Phase 11c (extracted to brainwires-skills).
+# Eval deps (serde_yml + thiserror gated by `eval`) removed in Phase 11e.
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+futures.workspace = true
+tempfile.workspace = true
+tracing-subscriber = "0.3"
+brainwires-knowledge = { workspace = true, features = ["knowledge"] }
+brainwires-prompting = { workspace = true, features = ["knowledge"] }
+brainwires-permission = { workspace = true }
+
+[features]
+default = ["native"]
+native = ["dep:git2", "dep:libc", "brainwires-core/native", "brainwires-call-policy/native"]
+wasm = ["brainwires-core/wasm", "brainwires-call-policy/wasm"]
+# Eval — extracted to its own brainwires-eval crate in Phase 11e.
+# (kept as a tracking comment so consumers know where the feature went.)
+# OpenTelemetry span export for agent execution traces
+otel = ["dep:opentelemetry"]
+# Analytics events + billing hooks
+telemetry = ["dep:brainwires-telemetry", "brainwires-telemetry/native"]
+# MDAP — extracted to its own brainwires-mdap crate in Phase 11b.
+# (kept as a tracking comment so consumers know where the feature went.)
+# SEAL — extracted to its own brainwires-seal crate in Phase 11d.
+# (kept as a tracking comment so consumers know where the features went.)
+# Skills — extracted to its own brainwires-skills crate in Phase 11c.
+# (kept as a tracking comment so consumers know where the features went.)
+
+[[example]]
+name = "optimistic_concurrency"
+
+[[example]]
+name = "three_state_model"
+
+[[example]]
+name = "contract_net"
+
+[[example]]
+name = "saga_compensation"
+
+[[example]]
+name = "task_queue_scheduling"
+
+# Inference-related examples moved to crates/brainwires-inference/examples/
+# in Phase 11f: agent_pool, validation_loop, cycle_orchestrator,
+# planner_judge_parsing.
+# mdap examples moved to crates/brainwires-mdap/examples/ in Phase 11b.
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

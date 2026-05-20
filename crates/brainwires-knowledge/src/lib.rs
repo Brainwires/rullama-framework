@@ -39,40 +39,18 @@
 // Re-export core types
 pub use brainwires_core;
 
-// ── Dream (from brainwires-autonomy) ───────────────────────────────────────
-
-/// Offline memory consolidation — summarization, fact extraction, hot/warm/cold tier transitions.
-#[cfg(feature = "dream")]
-pub mod dream;
-
 // ── Knowledge (from brainwires-brain) ──────────────────────────────────────
 
 /// Knowledge graph, entities, thoughts, BKS/PKS, brain client.
 #[cfg(feature = "knowledge")]
 pub mod knowledge;
 
-// ── Prompting (from brainwires-prompting) ──────────────────────────────────
+// Prompting lives in `brainwires-prompting` — depend on that directly.
 
-/// Adaptive prompting techniques, clustering, temperature optimization.
-pub mod prompting;
-
-// ── RAG (from brainwires-rag) ──────────────────────────────────────────────
-
-/// RAG error types.
-#[cfg(feature = "rag")]
-pub mod rag;
-
-// ── Spectral math ──────────────────────────────────────────────────────────
-
-/// Spectral graph methods: diverse retrieval, clustering, centrality, sparsification.
-#[cfg(feature = "spectral")]
-pub mod spectral;
-
-// ── Code analysis ──────────────────────────────────────────────────────────
-
-/// Code relationship extraction (definitions, references, call graphs).
-#[cfg(feature = "code-analysis")]
-pub mod code_analysis;
+// ── RAG, spectral, code_analysis ──────────────────────────────────────────
+// All three live in `brainwires-rag`. Spectral and code_analysis travel
+// with RAG (no external consumers, only used by `rag::client::*`).
+// Depend on `brainwires-rag` directly.
 
 // ── Re-exports (knowledge) ─────────────────────────────────────────────────
 
@@ -99,58 +77,8 @@ pub use knowledge::types::{
     SearchMemoryRequest, SearchMemoryResponse,
 };
 
-// ── Re-exports (prompting) ─────────────────────────────────────────────────
-
-#[cfg(feature = "prompting")]
-pub use prompting::clustering::{TaskCluster, TaskClusterManager, cosine_similarity};
-#[cfg(all(feature = "knowledge", feature = "prompting"))]
-pub use prompting::generator::{GeneratedPrompt, PromptGenerator};
-#[cfg(feature = "knowledge")]
-pub use prompting::learning::{ClusterSummary, PromptingLearningCoordinator, TechniqueStats};
-#[cfg(feature = "knowledge")]
-pub use prompting::library::TechniqueLibrary;
-pub use prompting::seal::SealProcessingResult;
-#[cfg(feature = "prompting-storage")]
-pub use prompting::storage::{ClusterStorage, StorageStats};
-pub use prompting::techniques::{
-    ComplexityLevel, PromptingTechnique, TaskCharacteristic, TechniqueCategory, TechniqueMetadata,
-};
-#[cfg(all(feature = "knowledge", feature = "prompting"))]
-pub use prompting::temperature::{TemperatureOptimizer, TemperaturePerformance};
-
-// ── Re-exports (RAG) ──────────────────────────────────────────────────────
-
-#[cfg(feature = "rag")]
-pub use rag::client::RagClient;
-#[cfg(feature = "rag")]
-pub use rag::config::Config;
-#[cfg(feature = "rag")]
-pub use rag::error::RagError;
-#[cfg(feature = "rag")]
-pub use rag::types::{
-    AdvancedSearchRequest, ClearRequest, ClearResponse, EnsembleRequest, EnsembleResponse,
-    FindDefinitionRequest, FindReferencesRequest, GetCallGraphRequest, GitSearchResult,
-    IndexRequest, IndexResponse, IndexingMode, LanguageStats, QueryRequest, QueryResponse,
-    SearchGitHistoryRequest, SearchGitHistoryResponse, SearchStrategy, StatisticsRequest,
-    StatisticsResponse,
-};
-#[cfg(all(feature = "rag", feature = "code-analysis"))]
-pub use rag::types::{FindDefinitionResponse, FindReferencesResponse, GetCallGraphResponse};
-
-// ── Re-exports (spectral) ─────────────────────────────────────────────────
-
-#[cfg(feature = "spectral")]
-pub use spectral::{
-    CrossEncoderConfig, CrossEncoderReranker, DiversityReranker, RerankerKind, SpectralReranker,
-    SpectralSelectConfig,
-};
-
-// ── Re-exports (code analysis) ────────────────────────────────────────────
-
-#[cfg(feature = "code-analysis")]
-pub use code_analysis::types::{
-    CallEdge, CallGraphNode, Definition, Reference, ReferenceKind, SymbolId, SymbolKind, Visibility,
-};
+// Prompting / RAG / spectral / code-analysis live in `brainwires-prompting`
+// and `brainwires-rag` — there are no re-exports here.
 
 /// Prelude for convenient imports.
 pub mod prelude {
@@ -160,16 +88,4 @@ pub mod prelude {
     pub use super::knowledge::entity::{Entity, EntityStore, EntityType};
     #[cfg(feature = "knowledge")]
     pub use super::knowledge::thought::{Thought, ThoughtCategory};
-
-    #[cfg(all(feature = "knowledge", feature = "prompting"))]
-    pub use super::prompting::generator::PromptGenerator;
-    pub use super::prompting::techniques::{PromptingTechnique, TechniqueCategory};
-
-    #[cfg(feature = "rag")]
-    pub use super::rag::client::RagClient;
-    #[cfg(feature = "rag")]
-    pub use super::rag::types::{IndexRequest, QueryRequest};
-
-    #[cfg(feature = "spectral")]
-    pub use super::spectral::SpectralReranker;
 }

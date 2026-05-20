@@ -1,3 +1,5 @@
+#![deny(missing_docs)]
+
 //! # brainwires-hardware
 //!
 //! Hardware I/O for the Brainwires Agent Framework.
@@ -9,18 +11,19 @@
 //! | [`audio`] | `audio` | Audio capture/playback, STT, TTS (16 cloud providers + local Whisper) |
 //! | [`gpio`] | `gpio` | GPIO pin management with safety allow-lists and PWM (Linux) |
 //! | [`bluetooth`] | `bluetooth` | BLE advertisement scanning and adapter enumeration |
-//! | [`network`] | `network` | NIC enumeration, IP config, ARP discovery, port scanning |
 //! | [`camera`] | `camera` | Webcam/camera frame capture (V4L2/AVFoundation/MSMF) |
 //! | [`usb`] | `usb` | Raw USB device enumeration and bulk/control/interrupt transfers |
-//! | [`homeauto`] | `homeauto` | Home automation: Zigbee (EZSP+ZNP), Z-Wave, Thread (OTBR), Matter |
+//!
+//! Home automation protocols (Matter, Zigbee, Z-Wave, Thread) live in the
+//! standalone `future/home-automation/brainwires-homeauto` workspace.
 //!
 //! ## Feature flags
 //!
 //! ```toml
 //! [dependencies]
-//! brainwires-hardware = { version = "0.10", features = ["audio", "gpio", "bluetooth", "network"] }
+//! brainwires-hardware = { version = "0.11", features = ["audio", "gpio", "bluetooth", "camera"] }
 //! # or enable everything:
-//! brainwires-hardware = { version = "0.10", features = ["full"] }
+//! brainwires-hardware = { version = "0.11", features = ["full"] }
 //! ```
 //!
 //! ### Audio
@@ -35,10 +38,6 @@
 //! ### Bluetooth
 //! The `bluetooth` feature uses [`btleplug`](https://crates.io/crates/btleplug)
 //! for cross-platform BLE scanning (Linux/BlueZ, macOS CoreBluetooth, Windows WinRT).
-//!
-//! ### Network
-//! The `network` feature provides interface enumeration, IP configuration
-//! parsing, ARP-based host discovery, and async TCP port scanning.
 //!
 //! ### Camera
 //! The `camera` feature enables video frame capture using [`nokhwa`](https://crates.io/crates/nokhwa):
@@ -61,10 +60,6 @@ pub mod gpio;
 #[cfg(feature = "bluetooth")]
 pub mod bluetooth;
 
-/// Network interface enumeration, discovery, and port scanning.
-#[cfg(feature = "network")]
-pub mod network;
-
 /// Camera and webcam frame capture.
 #[cfg(feature = "camera")]
 pub mod camera;
@@ -72,17 +67,6 @@ pub mod camera;
 /// Raw USB device access and transfers.
 #[cfg(feature = "usb")]
 pub mod usb;
-
-/// Home automation protocols: Zigbee (EZSP + ZNP), Z-Wave (Serial API), Thread (OTBR), Matter.
-#[cfg(any(
-    feature = "homeauto",
-    feature = "zigbee",
-    feature = "zwave",
-    feature = "thread",
-    feature = "matter",
-    feature = "matter-ble",
-))]
-pub mod homeauto;
 
 // ── Convenience re-exports: mirrors the old brainwires-audio public API ──────
 
@@ -130,30 +114,6 @@ pub use camera::{
 #[cfg(feature = "usb")]
 pub use usb::{UsbClass, UsbDevice, UsbError, UsbHandle, UsbSpeed};
 
-// ── Home automation re-exports ────────────────────────────────────────────────
-
-#[cfg(any(
-    feature = "homeauto",
-    feature = "zigbee",
-    feature = "zwave",
-    feature = "thread",
-    feature = "matter",
-    feature = "matter-ble",
-))]
-pub use homeauto::{HomeAutoError, HomeAutoEvent, HomeAutoResult, HomeDevice, Protocol};
-
-#[cfg(feature = "zigbee")]
-pub use homeauto::{EzspCoordinator, ZigbeeAddr, ZigbeeCoordinator, ZigbeeDevice, ZnpCoordinator};
-
-#[cfg(feature = "zwave")]
-pub use homeauto::{CommandClass, NodeId, ZWaveController, ZWaveNode, ZWaveSerialController};
-
-#[cfg(feature = "thread")]
-pub use homeauto::{ThreadBorderRouter, ThreadNeighbor, ThreadNodeInfo};
-
-#[cfg(feature = "matter")]
-pub use homeauto::{MatterController, MatterDevice, MatterDeviceConfig, MatterDeviceServer};
-
 // ── VAD re-exports ────────────────────────────────────────────────────────────
 
 #[cfg(feature = "audio")]
@@ -163,15 +123,9 @@ pub use audio::{VadMode, WebRtcVad};
 
 // ── Wake word re-exports ──────────────────────────────────────────────────────
 
-#[cfg(feature = "wake-word-porcupine")]
-pub use audio::PorcupineDetector;
 #[cfg(feature = "wake-word-rustpotter")]
 pub use audio::RustpotterDetector;
-#[cfg(any(
-    feature = "wake-word",
-    feature = "wake-word-rustpotter",
-    feature = "wake-word-porcupine"
-))]
+#[cfg(any(feature = "wake-word", feature = "wake-word-rustpotter"))]
 pub use audio::{EnergyTriggerDetector, WakeWordDetection, WakeWordDetector};
 
 // ── Voice assistant re-exports ────────────────────────────────────────────────

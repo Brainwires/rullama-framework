@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 #[ignore] // Requires MCP server infrastructure - run manually
 fn test_mcp_server_initialize() -> Result<()> {
     let mut child = Command::new("cargo")
-        .args(&["run", "--", "chat", "--mcp-server"])
+        .args(["run", "--", "chat", "--mcp-server"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -34,7 +34,7 @@ fn test_mcp_server_initialize() -> Result<()> {
         }
     });
 
-    writeln!(stdin, "{}", init_request.to_string())?;
+    writeln!(stdin, "{}", init_request)?;
     stdin.flush()?;
 
     // Read response
@@ -74,7 +74,7 @@ fn test_mcp_server_initialize() -> Result<()> {
 #[ignore] // Requires MCP server infrastructure - run manually
 fn test_mcp_server_list_tools() -> Result<()> {
     let mut child = Command::new("cargo")
-        .args(&["run", "--", "chat", "--mcp-server"])
+        .args(["run", "--", "chat", "--mcp-server"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -94,7 +94,7 @@ fn test_mcp_server_list_tools() -> Result<()> {
             "clientInfo": {"name": "test", "version": "1.0"}
         }
     });
-    writeln!(stdin, "{}", init_request.to_string())?;
+    writeln!(stdin, "{}", init_request)?;
 
     // Send tools/list request
     let list_request = json!({
@@ -103,7 +103,7 @@ fn test_mcp_server_list_tools() -> Result<()> {
         "method": "tools/list",
         "params": {}
     });
-    writeln!(stdin, "{}", list_request.to_string())?;
+    writeln!(stdin, "{}", list_request)?;
     stdin.flush()?;
 
     // Read responses
@@ -112,12 +112,13 @@ fn test_mcp_server_list_tools() -> Result<()> {
 
     for line in reader.lines() {
         let line = line?;
-        if line.starts_with('{') && line.contains("\"jsonrpc\"") {
-            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
-                json_responses.push(value);
-                if json_responses.len() >= 2 {
-                    break;
-                }
+        if line.starts_with('{')
+            && line.contains("\"jsonrpc\"")
+            && let Ok(value) = serde_json::from_str::<serde_json::Value>(&line)
+        {
+            json_responses.push(value);
+            if json_responses.len() >= 2 {
+                break;
             }
         }
     }
@@ -170,7 +171,7 @@ fn test_mcp_server_list_tools() -> Result<()> {
 #[ignore] // Requires MCP server infrastructure - run manually
 fn test_mcp_server_invalid_method() -> Result<()> {
     let mut child = Command::new("cargo")
-        .args(&["run", "--", "chat", "--mcp-server"])
+        .args(["run", "--", "chat", "--mcp-server"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -186,7 +187,7 @@ fn test_mcp_server_invalid_method() -> Result<()> {
         "method": "invalid/method",
         "params": {}
     });
-    writeln!(stdin, "{}", invalid_request.to_string())?;
+    writeln!(stdin, "{}", invalid_request)?;
     stdin.flush()?;
 
     // Read response
@@ -222,7 +223,7 @@ fn test_mcp_server_invalid_method() -> Result<()> {
 #[ignore] // Requires MCP server infrastructure - run manually
 fn test_agent_tool_schemas() -> Result<()> {
     let mut child = Command::new("cargo")
-        .args(&["run", "--", "chat", "--mcp-server"])
+        .args(["run", "--", "chat", "--mcp-server"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -233,10 +234,10 @@ fn test_agent_tool_schemas() -> Result<()> {
 
     // Initialize and list tools
     let init = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}});
-    writeln!(stdin, "{}", init.to_string())?;
+    writeln!(stdin, "{}", init)?;
 
     let list = json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}});
-    writeln!(stdin, "{}", list.to_string())?;
+    writeln!(stdin, "{}", list)?;
     stdin.flush()?;
 
     // Read responses
@@ -245,12 +246,13 @@ fn test_agent_tool_schemas() -> Result<()> {
 
     for line in reader.lines() {
         let line = line?;
-        if line.starts_with('{') && line.contains("\"jsonrpc\"") {
-            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
-                json_responses.push(value);
-                if json_responses.len() >= 2 {
-                    break;
-                }
+        if line.starts_with('{')
+            && line.contains("\"jsonrpc\"")
+            && let Ok(value) = serde_json::from_str::<serde_json::Value>(&line)
+        {
+            json_responses.push(value);
+            if json_responses.len() >= 2 {
+                break;
             }
         }
     }
@@ -277,16 +279,16 @@ fn test_agent_tool_schemas() -> Result<()> {
     );
     assert!(agent_spawn["inputSchema"].is_object());
     assert_eq!(agent_spawn["inputSchema"]["type"], "object");
-    assert!(agent_spawn["inputSchema"]["properties"]["task"].is_object());
+    assert!(agent_spawn["inputSchema"]["properties"]["description"].is_object());
     assert_eq!(
-        agent_spawn["inputSchema"]["properties"]["task"]["type"],
+        agent_spawn["inputSchema"]["properties"]["description"]["type"],
         "string"
     );
     assert!(
         agent_spawn["inputSchema"]["required"]
             .as_array()
             .unwrap()
-            .contains(&json!("task"))
+            .contains(&json!("description"))
     );
 
     // Find agent_status and verify its schema

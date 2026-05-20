@@ -530,6 +530,14 @@ pub struct MockKnowledgeApiClient {
 
 #[cfg(test)]
 #[allow(missing_docs)]
+impl Default for MockKnowledgeApiClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+#[allow(missing_docs)]
 impl MockKnowledgeApiClient {
     pub fn new() -> Self {
         Self {

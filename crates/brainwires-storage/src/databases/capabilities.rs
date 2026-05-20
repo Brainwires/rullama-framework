@@ -5,9 +5,9 @@
 
 /// Describes the capabilities of a database backend.
 ///
-/// Backends that implement [`StorageBackend`](super::traits::StorageBackend)
-/// can override the default [`StorageBackend::capabilities`] method to
-/// advertise what they support.
+/// Backends that implement
+/// [`StorageBackend`](super::traits::StorageBackend) can override the default
+/// `capabilities` method to advertise what they support.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BackendCapabilities {
     /// Whether the backend supports vector similarity search.

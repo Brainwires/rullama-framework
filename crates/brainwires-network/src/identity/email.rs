@@ -342,7 +342,7 @@ impl HttpEmailProvider {
 
         let status = resp.status().as_u16();
         let body = resp.text().await.unwrap_or_default();
-        if status < 200 || status >= 300 {
+        if !(200..300).contains(&status) {
             return Err(EmailError::Api { status, body });
         }
 
@@ -386,7 +386,7 @@ impl HttpEmailProvider {
 
         let status = resp.status().as_u16();
         let text = resp.text().await.unwrap_or_default();
-        if status < 200 || status >= 300 {
+        if !(200..300).contains(&status) {
             return Err(EmailError::Api { status, body: text });
         }
 
@@ -425,7 +425,7 @@ impl HttpEmailProvider {
 
         let status = resp.status().as_u16();
         let text = resp.text().await.unwrap_or_default();
-        if status < 200 || status >= 300 {
+        if !(200..300).contains(&status) {
             return Err(EmailError::Api { status, body: text });
         }
 
@@ -450,7 +450,7 @@ impl HttpEmailProvider {
 
         let status = resp.status().as_u16();
         let text = resp.text().await.unwrap_or_default();
-        if status < 200 || status >= 300 {
+        if !(200..300).contains(&status) {
             return Err(EmailError::Api { status, body: text });
         }
 
@@ -497,7 +497,7 @@ impl EmailProvider for HttpEmailProvider {
 
         let status = resp.status().as_u16();
         let text = resp.text().await.unwrap_or_default();
-        if status < 200 || status >= 300 {
+        if !(200..300).contains(&status) {
             return Err(EmailError::Api { status, body: text });
         }
 
@@ -522,7 +522,7 @@ impl EmailProvider for HttpEmailProvider {
             .map_err(|e| EmailError::Http(e.to_string()))?;
 
         let status = resp.status().as_u16();
-        if status < 200 || status >= 300 {
+        if !(200..300).contains(&status) {
             let body = resp.text().await.unwrap_or_default();
             return Err(EmailError::Api { status, body });
         }

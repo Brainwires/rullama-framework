@@ -24,8 +24,8 @@ use std::time::Duration;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use brainwires_network::channels::{ChannelMessage, ConversationId, MessageContent, MessageId};
 use brainwires_core::{ToolContext, ToolUse};
+use brainwires_network::channels::{ChannelMessage, ConversationId, MessageContent, MessageId};
 use brainwires_tools::{PreHookDecision, ToolPreHook};
 use chrono::Utc;
 use dashmap::DashMap;
@@ -65,8 +65,9 @@ impl ApprovalRegistry {
     /// Called by `handle_message()` when it detects a yes/no response.
     /// Returns `true` if there was a pending approval, `false` if none.
     pub fn resolve(&self, platform: &str, user_id: &str, approved: bool) -> bool {
-        if let Some((_, tx)) =
-            self.pending.remove(&(platform.to_string(), user_id.to_string()))
+        if let Some((_, tx)) = self
+            .pending
+            .remove(&(platform.to_string(), user_id.to_string()))
         {
             let _ = tx.send(approved);
             true
@@ -170,11 +171,7 @@ impl ToolPreHook for ChatApprovalHook {
             }
         };
 
-        let channel_id = self
-            .current_channel_id
-            .read()
-            .await
-            .unwrap_or(Uuid::nil());
+        let channel_id = self.current_channel_id.read().await.unwrap_or(Uuid::nil());
 
         // Format the approval prompt
         let input_preview = {
@@ -214,7 +211,9 @@ impl ToolPreHook for ChatApprovalHook {
         let json = serde_json::to_string(&event)?;
 
         // Register the pending approval before sending (avoid race)
-        let rx = self.registry.register(self.platform.clone(), self.user_id.clone());
+        let rx = self
+            .registry
+            .register(self.platform.clone(), self.user_id.clone());
 
         if let Err(e) = sender.send(json).await {
             tracing::error!(channel_id = %channel_id, error = %e, "Failed to send approval request");
@@ -238,9 +237,13 @@ impl ToolPreHook for ChatApprovalHook {
             }
             Ok(Ok(false)) => {
                 tracing::info!(tool = %tool_use.name, "Tool call rejected by user");
-                Ok(PreHookDecision::Reject("Tool call rejected by user".to_string()))
+                Ok(PreHookDecision::Reject(
+                    "Tool call rejected by user".to_string(),
+                ))
             }
-            Ok(Err(_)) => Ok(PreHookDecision::Reject("Approval channel closed".to_string())),
+            Ok(Err(_)) => Ok(PreHookDecision::Reject(
+                "Approval channel closed".to_string(),
+            )),
             Err(_) => {
                 // Timeout — clean up stale entry
                 self.registry.resolve(&self.platform, &self.user_id, false);

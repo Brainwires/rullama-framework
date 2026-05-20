@@ -189,10 +189,11 @@ impl WeaviateDatabase {
             serde_json::from_str(&text).context("Failed to parse Weaviate GraphQL response")?;
 
         // Surface GraphQL-level errors.
-        if let Some(errors) = parsed.get("errors") {
-            if errors.is_array() && !errors.as_array().unwrap().is_empty() {
-                tracing::warn!("Weaviate GraphQL errors: {}", errors);
-            }
+        if let Some(errors) = parsed.get("errors")
+            && errors.is_array()
+            && !errors.as_array().unwrap().is_empty()
+        {
+            tracing::warn!("Weaviate GraphQL errors: {}", errors);
         }
 
         Ok(parsed)

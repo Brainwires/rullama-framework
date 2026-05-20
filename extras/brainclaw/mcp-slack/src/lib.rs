@@ -9,11 +9,11 @@
 
 /// Configuration types for the Slack adapter.
 pub mod config;
-/// Slack bot implementation of the `Channel` trait.
-pub mod slack;
 /// Socket Mode event handler that converts Slack events to `ChannelEvent`.
 pub mod event_handler;
 /// WebSocket client for connecting to the brainwires-gateway.
 pub mod gateway_client;
 /// MCP server exposing Slack operations as tools.
 pub mod mcp_server;
+/// Slack bot implementation of the `Channel` trait.
+pub mod slack;

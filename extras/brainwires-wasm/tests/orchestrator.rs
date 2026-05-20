@@ -5,7 +5,7 @@
 //!
 //! Run with: `cargo test -p brainwires-wasm --features orchestrator`
 
-#![cfg(feature = "orchestrator")]
+#![cfg(all(feature = "orchestrator", target_arch = "wasm32"))]
 
 use brainwires_wasm::wasm_orchestrator::ExecutionLimits;
 

@@ -32,6 +32,13 @@ Signal ───┘
 | `mcp-mattermost` | `mcp-mattermost` | Mattermost adapter |
 | `mcp-signal` | `mcp-signal` | Signal adapter (signal-cli REST API) |
 | `mcp-github` | `mcp-github` | GitHub webhooks + operations adapter |
+| `mcp-google-chat` | `brainclaw-mcp-google-chat` | Google Chat bot adapter (HTTPS webhook + Chat REST API) |
+| `mcp-teams` | `brainclaw-mcp-teams` | Microsoft Teams adapter (Bot Framework ingress/egress) |
+| `mcp-irc` | `brainclaw-mcp-irc` | IRC adapter (persistent TCP, TLS/SASL) |
+| `mcp-imessage` | `brainclaw-mcp-imessage` | iMessage adapter via the BlueBubbles REST bridge |
+| `mcp-nextcloud-talk` | `brainclaw-mcp-nextcloud-talk` | Nextcloud Talk (Spreed) adapter |
+| `mcp-line` | `brainclaw-mcp-line` | LINE Messaging API adapter (HMAC webhook + REST egress) |
+| `mcp-feishu` | `brainclaw-mcp-feishu` | Feishu / Lark adapter (signed webhook + tenant-token egress) |
 | `mcp-skill-registry` | `mcp-skill-registry` | Skill marketplace — stores, searches, and serves distributable skill packages |
 
 ## Quick start

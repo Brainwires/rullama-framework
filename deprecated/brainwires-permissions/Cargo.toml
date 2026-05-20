@@ -1,0 +1,15 @@
+[package]
+name = "brainwires-permissions"
+version = "0.10.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.91"
+description = "DEPRECATED: renamed to `brainwires-permission` (singular) — see README"
+repository = "https://github.com/Brainwires/brainwires-framework"
+readme = "README.md"
+keywords = ["deprecated"]
+
+[lib]
+path = "src/lib.rs"
+
+[workspace]

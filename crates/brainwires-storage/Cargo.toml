@@ -31,6 +31,7 @@ serde_json = { workspace = true }
 
 # Error handling
 anyhow.workspace = true
+thiserror.workspace = true
 
 # Identifiers & time
 uuid.workspace = true
@@ -45,24 +46,18 @@ lru = { workspace = true, optional = true }
 # Hashing (file content hashing)
 sha2 = { workspace = true, optional = true }
 
-# SQLite (for lock store, native only)
-rusqlite = { workspace = true, optional = true }
-
 # Regex (for template matching)
 regex.workspace = true
 
 # File format processing (native only)
 base64 = { version = "0.22", optional = true }
 
-# System info (for lock store, native only)
-gethostname = { version = "1", optional = true }
-dirs = { version = "6", optional = true }
-libc = { version = "0.2", optional = true }
+# Filesystem paths — `paths.rs` moved to brainwires-core in Phase 9, so dirs is gone.
 
 # Async traits (required for StorageBackend/VectorDatabase traits + LockPersistence)
 async-trait.workspace = true
 
-# Vector DB deps (from brainwires-rag)
+# bm25_search + glob_utils backing deps (used by lance backend internals)
 tantivy = { version = "0.22", optional = true }
 globset = { version = "0.4", optional = true }
 qdrant-client = { version = "1.15", optional = true }
@@ -85,12 +80,18 @@ surrealdb = { version = "2", optional = true, features = ["protocol-ws", "kv-mem
 # Logging
 tracing.workspace = true
 
+# In-browser HNSW deleted in Phase 9 — hnsw_wasm.rs had zero consumers
+# anywhere in the workspace; instant-distance + bincode removed with it.
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
 [features]
 default = ["native"]
 native = [
     "lance-backend",
-    "dep:fastembed", "dep:lru", "dep:rusqlite",
-    "dep:base64", "dep:gethostname", "dep:dirs", "dep:libc",
+    "dep:fastembed", "dep:lru",
+    "dep:base64",
     "tokio/rt", "tokio/macros",
     "brainwires-core/native",
 ]
@@ -118,28 +119,15 @@ nornicdb-grpc = ["nornicdb-backend", "dep:qdrant-client"]
 # NornicDB: all transports
 nornicdb-full = ["nornicdb-bolt", "nornicdb-grpc"]
 
-# Backward-compat alias
-vector-db = ["lance-backend"]
-
 alt-folder-name = []
 wasm = ["brainwires-core/wasm"]
+# `hnsw-wasm` feature removed in Phase 9 (the module had zero consumers).
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile.workspace = true
 
-[[example]]
-name = "message_store"
-required-features = ["native"]
 
-[[example]]
-name = "tiered_memory"
-required-features = ["native"]
-
-[[example]]
-name = "plan_templates"
-required-features = ["native"]
-
-[[example]]
-name = "lock_coordination"
-required-features = ["native"]
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

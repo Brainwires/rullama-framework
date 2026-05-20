@@ -12,7 +12,6 @@ mod inner {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
-    use anyhow::{Context, Result};
     use brainwires_hardware::{TextToSpeech, TtsOptions};
     use uuid::Uuid;
 

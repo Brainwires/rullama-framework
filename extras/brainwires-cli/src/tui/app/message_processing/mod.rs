@@ -248,7 +248,10 @@ impl App {
         let tools = match &self.tool_mode {
             crate::types::tool::ToolMode::Smart => {
                 // Smart routing: analyze messages to determine needed tools
-                crate::tools::get_smart_tools(&conversation_clone)
+                crate::tools::get_smart_tools(
+                    &conversation_clone,
+                    &brainwires_tool_builtins::registry_with_builtins(),
+                )
             }
             _ => self.tools.clone(),
         };
@@ -1745,7 +1748,7 @@ mod tests {
     #[test]
     fn test_update_config_model() {
         // Test that update_config_model updates and saves the config
-        let test_model = "openai-gpt-5.2";
+        let test_model = "claude-haiku-4-5-20251001";
 
         // This will create/update the config file
         let result = App::update_config_model(test_model);

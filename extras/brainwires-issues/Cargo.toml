@@ -21,11 +21,17 @@ doc = false
 [dev-dependencies]
 async-trait = { workspace = true }
 tokio = { workspace = true, features = ["full", "test-util"] }
+tempfile = { workspace = true }
+rmcp = { workspace = true, features = ["client", "server", "transport-io", "macros"] }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
 
 [build-dependencies]
 chrono = "0.4"
 
 [dependencies]
+brainwires-core = { workspace = true }
 brainwires-storage = { workspace = true, features = ["native"] }
 rmcp = { workspace = true, features = ["server", "transport-io", "macros"] }
 schemars.workspace = true

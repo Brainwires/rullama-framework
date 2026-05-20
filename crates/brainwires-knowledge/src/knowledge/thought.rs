@@ -36,6 +36,13 @@ pub struct Thought {
     pub reinforcement_count: u32,
     /// How many times this thought has been contradicted by new evidence.
     pub contradiction_count: u32,
+    /// Optional per-tenant owner ID for scoping thoughts to a specific user.
+    ///
+    /// When `None`, the thought is unscoped (single-tenant mode, preserving
+    /// pre-tenant-scoping behavior). When `Some(owner)`, the thought is only
+    /// visible to queries scoped to that owner.
+    #[serde(default)]
+    pub owner_id: Option<String>,
 }
 
 impl Thought {
@@ -56,7 +63,14 @@ impl Thought {
             evidence_chain: Vec::new(),
             reinforcement_count: 0,
             contradiction_count: 0,
+            owner_id: None,
         }
+    }
+
+    /// Builder: set owner_id for tenant scoping.
+    pub fn with_owner_id(mut self, owner_id: Option<String>) -> Self {
+        self.owner_id = owner_id;
+        self
     }
 
     /// Builder: set category.

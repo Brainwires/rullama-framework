@@ -106,7 +106,7 @@ impl ToolExecutor {
     pub fn new(permission_mode: PermissionMode) -> Self {
         Self {
             registry: {
-                let mut r = ToolRegistry::with_builtins();
+                let mut r = brainwires_tool_builtins::registry_with_builtins();
                 r.register_tools(MonitorTool::get_tools());
                 r.register_tools(MemoryTool::get_tools());
                 r.register_tools(AskUserQuestionTool::get_tools());
@@ -142,7 +142,7 @@ impl ToolExecutor {
     pub fn with_provider(permission_mode: PermissionMode, provider: Arc<dyn Provider>) -> Self {
         Self {
             registry: {
-                let mut r = ToolRegistry::with_builtins();
+                let mut r = brainwires_tool_builtins::registry_with_builtins();
                 r.register_tools(MonitorTool::get_tools());
                 r.register_tools(MemoryTool::get_tools());
                 r.register_tools(AskUserQuestionTool::get_tools());
@@ -689,6 +689,20 @@ impl ToolExecutor {
                     .ok_or_else(|| "write_file requires 'content' parameter".to_string())?;
                 std::fs::write(path, content)
                     .map_err(|e| format!("Failed to write file '{}': {}", path, e))?;
+                // Read-back verification to detect concurrent clobber — see
+                // FileOpsTool::write_file for the full rationale.
+                let readback = std::fs::read(path)
+                    .map_err(|e| format!("post-write readback failed for '{}': {}", path, e))?;
+                if readback.as_slice() != content.as_bytes() {
+                    return Err(format!(
+                        "Write to {} succeeded but immediate read-back returned {} bytes \
+                         (wrote {} bytes). This indicates concurrent modification by another \
+                         process. Use a unique filename or coordinate with the other writer.",
+                        path,
+                        readback.len(),
+                        content.len()
+                    ));
+                }
                 Ok(format!(
                     "Successfully wrote {} bytes to {}",
                     content.len(),
@@ -2370,7 +2384,7 @@ impl ToolExecutor {
 impl Default for ToolExecutor {
     fn default() -> Self {
         Self {
-            registry: ToolRegistry::with_builtins(),
+            registry: brainwires_tool_builtins::registry_with_builtins(),
             permission_mode: PermissionMode::Auto,
             provider: None,
             orchestrator: OrchestratorTool::new(),
@@ -2398,6 +2412,26 @@ impl Default for ToolExecutor {
     }
 }
 
+// ── Framework trait implementation ──────────────────────────────────────────
+
+/// Implement the framework's `ToolExecutor` trait so that the CLI's concrete
+/// executor can be used with `brainwires-agent`' `TaskAgent` and `AgentPool`.
+#[async_trait::async_trait]
+impl brainwires::tools::ToolExecutor for ToolExecutor {
+    async fn execute(
+        &self,
+        tool_use: &crate::types::tool::ToolUse,
+        context: &crate::types::tool::ToolContext,
+    ) -> anyhow::Result<crate::types::tool::ToolResult> {
+        // Delegate to the existing concrete implementation.
+        ToolExecutor::execute(self, tool_use, context).await
+    }
+
+    fn available_tools(&self) -> Vec<crate::types::tool::Tool> {
+        self.registry.get_all().to_vec()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2408,7 +2442,7 @@ mod tests {
         let tools = executor.get_tools();
 
         // Should have tools registered
-        assert!(tools.len() > 0);
+        assert!(!tools.is_empty());
 
         // Check for specific tools
         assert!(tools.iter().any(|t| t.name == "read_file"));
@@ -2969,25 +3003,5 @@ mod tests {
 
         assert_eq!(response, ApprovalResponse::Deny);
         handle.await.unwrap();
-    }
-}
-
-// ── Framework trait implementation ──────────────────────────────────────────
-
-/// Implement the framework's `ToolExecutor` trait so that the CLI's concrete
-/// executor can be used with `brainwires-agents`' `TaskAgent` and `AgentPool`.
-#[async_trait::async_trait]
-impl brainwires::tools::ToolExecutor for ToolExecutor {
-    async fn execute(
-        &self,
-        tool_use: &crate::types::tool::ToolUse,
-        context: &crate::types::tool::ToolContext,
-    ) -> anyhow::Result<crate::types::tool::ToolResult> {
-        // Delegate to the existing concrete implementation.
-        ToolExecutor::execute(self, tool_use, context).await
-    }
-
-    fn available_tools(&self) -> Vec<crate::types::tool::Tool> {
-        self.registry.get_all().to_vec()
     }
 }

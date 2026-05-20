@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use anyhow::Result;
-use brainwires_agents::skills::{RegistryClient, SkillRegistry, SkillSource};
+use brainwires_agent::skills::{RegistryClient, SkillRegistry, SkillSource};
 use semver::VersionReq;
 
 /// Handles skill-based /commands from user messages.
@@ -141,10 +141,7 @@ impl SkillHandler {
 
     /// Return the number of loaded skills.
     pub fn skill_count(&self) -> usize {
-        self.registry
-            .lock()
-            .map(|r| r.len())
-            .unwrap_or(0)
+        self.registry.lock().map(|r| r.len()).unwrap_or(0)
     }
 }
 

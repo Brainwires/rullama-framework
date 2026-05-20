@@ -109,7 +109,7 @@ impl BrainMcpServer {
     ) -> Result<String, String> {
         let client = self.client.lock().await;
         let response = client
-            .get_thought(&req.id)
+            .get_thought(&req.id, req.owner_id.as_deref())
             .await
             .map_err(|e| format!("{:#}", e))?;
         match response {
@@ -157,7 +157,7 @@ impl BrainMcpServer {
     ) -> Result<String, String> {
         let client = self.client.lock().await;
         let response = client
-            .delete_thought(&req.id)
+            .delete_thought(&req.id, req.owner_id.as_deref())
             .await
             .map_err(|e| format!("{:#}", e))?;
         serde_json::to_string_pretty(&response).map_err(|e| format!("Serialization failed: {}", e))

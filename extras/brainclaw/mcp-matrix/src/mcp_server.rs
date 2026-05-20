@@ -4,16 +4,15 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use rmcp::{
-    ServerHandler, ServiceExt,
-    handler::server::tool::ToolRouter,
-    handler::server::wrapper::Parameters,
-    model::*,
-    tool, tool_handler, tool_router,
+    ServerHandler, ServiceExt, handler::server::tool::ToolRouter,
+    handler::server::wrapper::Parameters, model::*, tool, tool_handler, tool_router,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use brainwires_network::channels::{Channel, ChannelMessage, ConversationId, MessageContent, MessageId};
+use brainwires_network::channels::{
+    Channel, ChannelMessage, ConversationId, MessageContent, MessageId,
+};
 
 use crate::matrix::MatrixChannel;
 
@@ -97,7 +96,9 @@ pub struct GetHistoryRequest {
 
 #[tool_router(router = tool_router)]
 impl MatrixMcpServer {
-    #[tool(description = "Send a text message to a Matrix room. Returns the event ID of the sent message.")]
+    #[tool(
+        description = "Send a text message to a Matrix room. Returns the event ID of the sent message."
+    )]
     async fn send_message(
         &self,
         Parameters(req): Parameters<SendMessageRequest>,
@@ -234,9 +235,8 @@ impl ServerHandler for MatrixMcpServer {
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
-        info.server_info =
-            Implementation::new("brainwires-matrix", env!("CARGO_PKG_VERSION"))
-                .with_title("Brainwires Matrix Channel — MCP Tool Server");
+        info.server_info = Implementation::new("brainwires-matrix", env!("CARGO_PKG_VERSION"))
+            .with_title("Brainwires Matrix Channel — MCP Tool Server");
         info.instructions = Some(
             "Matrix channel adapter MCP server. \
              Use send_message to send messages to rooms, edit_message to edit, \

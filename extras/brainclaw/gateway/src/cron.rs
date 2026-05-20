@@ -112,8 +112,7 @@ impl CronStore {
     /// Add or replace a job and persist it to disk.
     pub async fn upsert(&self, job: CronJob) -> Result<()> {
         let path = self.job_path(job.id);
-        let json = serde_json::to_string_pretty(&job)
-            .context("Failed to serialize cron job")?;
+        let json = serde_json::to_string_pretty(&job).context("Failed to serialize cron job")?;
         std::fs::write(&path, json)
             .with_context(|| format!("Failed to write cron job: {}", path.display()))?;
         self.jobs.write().await.insert(job.id, job);
@@ -126,8 +125,9 @@ impl CronStore {
         if removed {
             let path = self.job_path(id);
             if path.exists() {
-                std::fs::remove_file(&path)
-                    .with_context(|| format!("Failed to delete cron job file: {}", path.display()))?;
+                std::fs::remove_file(&path).with_context(|| {
+                    format!("Failed to delete cron job file: {}", path.display())
+                })?;
             }
         }
         Ok(removed)
@@ -138,8 +138,7 @@ impl CronStore {
         if let Some(job) = self.jobs.write().await.get_mut(&id) {
             job.last_run = Some(at);
             let path = self.job_path(id);
-            let json = serde_json::to_string_pretty(job)
-                .context("Failed to serialize cron job")?;
+            let json = serde_json::to_string_pretty(job).context("Failed to serialize cron job")?;
             std::fs::write(&path, json)
                 .with_context(|| format!("Failed to write cron job: {}", path.display()))?;
         }

@@ -716,7 +716,7 @@ mod tests {
             let rows = tables.get(table_name).cloned().unwrap_or_default();
             let filtered: Vec<Record> = rows
                 .into_iter()
-                .filter(|r| filter.map_or(true, |f| record_matches(r, f)))
+                .filter(|r| filter.is_none_or(|f| record_matches(r, f)))
                 .collect();
             Ok(match limit {
                 Some(n) => filtered.into_iter().take(n).collect(),

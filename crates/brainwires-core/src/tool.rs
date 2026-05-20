@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// Specifies which contexts can invoke a tool.
@@ -41,6 +41,19 @@ pub struct Tool {
     /// Example inputs that teach the AI proper parameter usage.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub input_examples: Vec<Value>,
+    /// When `true`, the agent loop MUST execute this tool sequentially — never
+    /// concurrently with other tools in the same round.
+    ///
+    /// Use for tools that mutate shared state (file writes, git operations,
+    /// registry updates) where concurrent execution could corrupt data or
+    /// interleave side effects. Read-only tools (read_file, search, web_fetch)
+    /// should leave this `false`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub serialize: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// JSON Schema for tool input
@@ -237,6 +250,63 @@ pub trait StagingBackend: std::fmt::Debug + Send + Sync {
     fn pending_count(&self) -> usize;
 }
 
+// ── Intended-write hash registry ─────────────────────────────────────────────
+
+/// Shared map of `path -> SHA-256 of most recently written content`.
+///
+/// Populated by `write_file` (in `brainwires-tools`) after its post-write
+/// read-back succeeds, and read by the validation loop (in `brainwires-agent`)
+/// to detect *post-validation* clobber by a concurrent writer.
+///
+/// Why this exists (in addition to the tool-level read-back check):
+///   - The read-back check catches interleaved writes within a single
+///     `write_file` call.
+///   - It does NOT catch: agent A writes, agent A's validation passes,
+///     agent B writes, agent A finalises `Success: true` — at which point
+///     the content A claims to have written is no longer on disk.
+///
+/// By recording the intended hash and re-reading at agent-finalisation time,
+/// A sees the mismatch and its retry/failure machinery kicks in — so at most
+/// one of two racing agents can legitimately report success.
+#[derive(Debug, Clone, Default)]
+pub struct IntendedWrites(Arc<Mutex<HashMap<PathBuf, [u8; 32]>>>);
+
+impl IntendedWrites {
+    /// Create a new, empty registry.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Record the SHA-256 of content written to `path`.  The most recent
+    /// write wins (overwrite semantics — consistent with filesystem reality).
+    pub fn record(&self, path: PathBuf, hash: [u8; 32]) {
+        let mut map = self.0.lock().expect("intended writes lock poisoned");
+        map.insert(path, hash);
+    }
+
+    /// Return the hash recorded for `path`, or `None` if none.
+    pub fn get(&self, path: &Path) -> Option<[u8; 32]> {
+        let map = self.0.lock().expect("intended writes lock poisoned");
+        map.get(path).copied()
+    }
+
+    /// Snapshot all `(path, hash)` pairs currently recorded.
+    pub fn snapshot(&self) -> Vec<(PathBuf, [u8; 32])> {
+        let map = self.0.lock().expect("intended writes lock poisoned");
+        map.iter().map(|(p, h)| (p.clone(), *h)).collect()
+    }
+
+    /// Number of recorded paths.
+    pub fn len(&self) -> usize {
+        self.0.lock().expect("intended writes lock poisoned").len()
+    }
+
+    /// Returns `true` if no writes have been recorded yet.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
 // ── ToolContext ───────────────────────────────────────────────────────────────
 
 /// Execution context for a tool.
@@ -275,6 +345,17 @@ pub struct ToolContext {
     /// operation key is already cached, the cached result is returned without
     /// staging again.
     pub staging_backend: Option<Arc<dyn StagingBackend>>,
+    /// Optional shared registry that tracks `(path -> SHA-256)` for every
+    /// successful `write_file` in this run.
+    ///
+    /// When `Some`, `write_file` records the hash of its content after the
+    /// post-write read-back succeeds.  The agent's validation loop then
+    /// re-reads each tracked file at finalisation and compares to detect
+    /// post-validation clobber by a concurrent writer.
+    ///
+    /// `None` disables hash tracking (CLI-driven tool invocations outside an
+    /// agent).  The cost of tracking is a `HashMap` insert per write.
+    pub intended_writes: Option<IntendedWrites>,
 }
 
 impl ToolContext {
@@ -288,6 +369,28 @@ impl ToolContext {
     pub fn with_staging_backend(mut self, backend: Arc<dyn StagingBackend>) -> Self {
         self.staging_backend = Some(backend);
         self
+    }
+
+    /// Attach a fresh intended-writes registry (builder pattern).
+    pub fn with_intended_writes(mut self) -> Self {
+        self.intended_writes = Some(IntendedWrites::new());
+        self
+    }
+
+    /// Attach an existing intended-writes registry — useful when the agent
+    /// owns the registry and wants tool calls to share it (builder pattern).
+    pub fn with_intended_writes_registry(mut self, registry: IntendedWrites) -> Self {
+        self.intended_writes = Some(registry);
+        self
+    }
+
+    /// Record the SHA-256 of content written to `path` in the attached
+    /// intended-writes registry.  No-op when no registry is attached
+    /// (e.g., CLI-driven tool invocations outside an agent).
+    pub fn record_write(&self, path: PathBuf, hash: [u8; 32]) {
+        if let Some(ref reg) = self.intended_writes {
+            reg.record(path, hash);
+        }
     }
 }
 
@@ -303,6 +406,7 @@ impl Default for ToolContext {
             capabilities: None,
             idempotency_registry: None,
             staging_backend: None,
+            intended_writes: None,
         }
     }
 }

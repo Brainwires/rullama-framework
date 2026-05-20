@@ -1,12 +1,11 @@
-mod config;
-mod handler;
-
 use std::path::PathBuf;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
 
+use brainwires_agent::personas::StaticPersonaProvider;
+use brainwires_call_policy::{BudgetConfig, BudgetGuard};
 use brainwires_hardware::audio::{
     api::{OpenAiStt, OpenAiTts},
     assistant::{VoiceAssistant, VoiceAssistantConfig},
@@ -16,13 +15,14 @@ use brainwires_hardware::audio::{
     playback::AudioPlayback,
     types::{TtsOptions, Voice},
 };
-use brainwires_providers::openai_chat::OpenAiClient;
+use brainwires_provider::{OpenAiChatProvider, OpenAiClient};
+use brainwires_stores::{ArcSessionStore, InMemorySessionStore, SessionId, SqliteSessionStore};
 use clap::Parser;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-use config::VaConfig;
-use handler::LlmHandler;
+use voice_assistant::config::VaConfig;
+use voice_assistant::handler::LlmHandler;
 
 /// Brainwires Personal Voice Assistant
 #[derive(Parser, Debug)]
@@ -89,7 +89,14 @@ async fn main() -> anyhow::Result<()> {
     let api_key = cfg.resolve_api_key()?;
 
     // ── Build components ──────────────────────────────────────────────────────
-    let openai = Arc::new(OpenAiClient::new(api_key.clone(), cfg.llm_model.clone()));
+    // Chat provider wired through the harness. OpenAI-compatible
+    // Chat Completions by default — swap for any `brainwires_core::Provider`
+    // impl to talk to a different backend.
+    let openai_client = Arc::new(OpenAiClient::new(api_key.clone(), cfg.llm_model.clone()));
+    let llm_provider: Arc<dyn brainwires_core::Provider> = Arc::new(OpenAiChatProvider::new(
+        openai_client,
+        cfg.llm_model.clone(),
+    ));
 
     let capture: Arc<CpalCapture> = Arc::new(CpalCapture);
     let playback: Arc<CpalPlayback> = Arc::new(CpalPlayback);
@@ -168,9 +175,36 @@ async fn main() -> anyhow::Result<()> {
         sf.store(true, Ordering::Relaxed);
     })?;
 
+    // ── Harness wiring ────────────────────────────────────────────────────────
+    let persona = Arc::new(StaticPersonaProvider::new(cfg.system_prompt.clone()));
+
+    let budget = if cfg.max_usd_cents.is_some() || cfg.max_tokens.is_some() {
+        Some(BudgetGuard::new(BudgetConfig {
+            max_tokens: cfg.max_tokens,
+            max_usd_cents: cfg.max_usd_cents,
+            max_rounds: None,
+        }))
+    } else {
+        None
+    };
+
+    let session_store: ArcSessionStore = match cfg.session_db.as_ref() {
+        Some(path) => {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+            Arc::new(SqliteSessionStore::open(path)?)
+        }
+        None => Arc::new(InMemorySessionStore::new()),
+    };
+
+    let mut handler = LlmHandler::new(llm_provider, persona, budget).await?;
+    handler = handler
+        .with_session_store(session_store, SessionId::new(&cfg.session_id))
+        .await?;
+
     // ── Run ───────────────────────────────────────────────────────────────────
     info!("Voice assistant ready. Press Ctrl-C to exit.");
-    let handler = LlmHandler::new(openai, cfg.llm_model.clone(), cfg.system_prompt.clone());
 
     tokio::select! {
         result = assistant.run(&handler) => result?,

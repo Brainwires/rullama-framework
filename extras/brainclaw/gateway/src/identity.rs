@@ -125,10 +125,7 @@ impl UserIdentityStore {
         }
         let pid = PlatformIdentity::new(platform, user_id);
         data.identity_map.insert(key, new_id);
-        data.linked_identities
-            .entry(new_id)
-            .or_default()
-            .push(pid);
+        data.linked_identities.entry(new_id).or_default().push(pid);
 
         if let Err(e) = self.persist_locked(&data) {
             tracing::warn!(error = %e, "Failed to persist new identity entry");
@@ -144,7 +141,11 @@ impl UserIdentityStore {
     /// any sessions previously attached to `secondary` are merged under it.
     ///
     /// Returns the canonical UUID both identities now map to.
-    pub async fn link(&self, primary: &PlatformIdentity, secondary: &PlatformIdentity) -> Result<Uuid> {
+    pub async fn link(
+        &self,
+        primary: &PlatformIdentity,
+        secondary: &PlatformIdentity,
+    ) -> Result<Uuid> {
         let primary_key = IdentityData::key(&primary.platform, &primary.user_id);
         let secondary_key = IdentityData::key(&secondary.platform, &secondary.user_id);
 
@@ -251,8 +252,8 @@ impl UserIdentityStore {
     }
 
     fn persist_locked(&self, data: &IdentityData) -> Result<()> {
-        let json = serde_json::to_string_pretty(data)
-            .context("Failed to serialize identity data")?;
+        let json =
+            serde_json::to_string_pretty(data).context("Failed to serialize identity data")?;
         std::fs::write(&self.path, json)
             .with_context(|| format!("Failed to write identity store: {}", self.path.display()))?;
         Ok(())

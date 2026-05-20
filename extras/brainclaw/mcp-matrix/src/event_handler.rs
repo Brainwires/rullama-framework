@@ -13,7 +13,9 @@ use matrix_sdk::{
 };
 use tokio::sync::mpsc;
 
-use brainwires_network::channels::{ChannelEvent, ChannelMessage, ConversationId, MessageContent, MessageId};
+use brainwires_network::channels::{
+    ChannelEvent, ChannelMessage, ConversationId, MessageContent, MessageId,
+};
 
 /// Register all Matrix event handlers on the client.
 ///

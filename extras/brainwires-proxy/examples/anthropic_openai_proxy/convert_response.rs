@@ -17,10 +17,10 @@ pub fn convert_response(
     let mut content: Vec<ResponseContentBlock> = Vec::new();
 
     // Text content
-    if let Some(ref text) = choice.message.content {
-        if !text.is_empty() {
-            content.push(ResponseContentBlock::Text { text: text.clone() });
-        }
+    if let Some(ref text) = choice.message.content
+        && !text.is_empty()
+    {
+        content.push(ResponseContentBlock::Text { text: text.clone() });
     }
 
     // Tool calls → tool_use blocks

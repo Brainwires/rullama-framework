@@ -2,25 +2,40 @@
 members = [
     "crates/brainwires-core",
     "crates/brainwires",
-    "crates/brainwires-tools",
-    "crates/brainwires-agents",
+    "crates/brainwires-tool-runtime",
+    "crates/brainwires-tool-builtins",
+    "crates/brainwires-agent",
     "crates/brainwires-storage",
-    "crates/brainwires-mcp",
-    "crates/brainwires-permissions",
+    "crates/brainwires-stores",
+    "crates/brainwires-memory",
+    "crates/brainwires-mdap",
+    "crates/brainwires-skills",
+    "crates/brainwires-seal",
+    "crates/brainwires-eval",
+    "crates/brainwires-inference",
+    "crates/brainwires-mcp-client",
+    "crates/brainwires-permission",
+    "crates/brainwires-sandbox",
+    "crates/brainwires-sandbox-proxy",
     "crates/brainwires-network",
     "crates/brainwires-mcp-server",
     "crates/brainwires-a2a",
-    "crates/brainwires-providers",
+    "crates/brainwires-provider",
+    "crates/brainwires-provider-speech",
+    "crates/brainwires-call-policy",
     "crates/brainwires-hardware",
-    "crates/brainwires-training",
+    "crates/brainwires-finetune",
     "extras/brainwires-autonomy",
+    "extras/brainwires-chat-pwa/home",
     "extras/brainwires-wasm",
     "crates/brainwires-knowledge",
+    "crates/brainwires-prompting",
+    "crates/brainwires-rag",
     "crates/brainwires-reasoning",
 
     "crates/brainwires-telemetry",
     "extras/brainwires-billing",
-    "extras/brainwires-memory-service",
+    "extras/brainwires-memory-server",
     "extras/brainwires-scheduler",
     "extras/brainwires-proxy",
     "extras/brainwires-brain-server",
@@ -30,8 +45,8 @@ members = [
     "extras/agent-chat",
     "extras/brainwires-cli",
     "extras/audio-demo-ffi",
+    "extras/brainwires-chat-native/bridge",
     "extras/voice-assistant",
-    "extras/matter-tool",
     "extras/claude-brain",
     "xtask",
 ]
@@ -47,18 +62,21 @@ exclude = [
     "deprecated/brainwires-code-interpreters",
     "deprecated/brainwires-wasm",
     "deprecated/brainwires-relay",
-    "deprecated/brainwires-seal",
-    "deprecated/brainwires-mdap",
     "deprecated/brainwires-tool-system",
+    "deprecated/brainwires-tools",
+    "deprecated/brainwires-permissions",
+    "deprecated/brainwires-providers",
+    "deprecated/brainwires-mcp",
     "deprecated/brainwires-agent-network",
-    "deprecated/brainwires-skills",
+    "deprecated/brainwires-agents",
     "deprecated/brainwires-datasets",
     "extras/brainclaw",
+    "future",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.10.0"
+version = "0.11.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.91"
@@ -72,36 +90,50 @@ documentation = "https://docs.rs/brainwires"
 
 [workspace.dependencies]
 # Internal crates
-brainwires-core = { path = "crates/brainwires-core", version = "0.10.0" }
-brainwires-tools = { path = "crates/brainwires-tools", version = "0.10.0" }
-brainwires-agents = { path = "crates/brainwires-agents", version = "0.10.0" }
-brainwires-storage = { path = "crates/brainwires-storage", version = "0.10.0", default-features = false }
-brainwires-mcp = { path = "crates/brainwires-mcp", version = "0.10.0" }
-brainwires-permissions = { path = "crates/brainwires-permissions", version = "0.10.0" }
-brainwires-network = { path = "crates/brainwires-network", version = "0.10.0" }
-brainwires-mcp-server = { path = "crates/brainwires-mcp-server", version = "0.10.0" }
-brainwires-a2a = { path = "crates/brainwires-a2a", version = "0.10.0", default-features = false }
-brainwires-providers = { path = "crates/brainwires-providers", version = "0.10.0" }
-brainwires-hardware = { path = "crates/brainwires-hardware", version = "0.10.0" }
-brainwires-training = { path = "crates/brainwires-training", version = "0.10.0" }
-brainwires-autonomy = { path = "extras/brainwires-autonomy", version = "0.10.0", default-features = false }
-brainwires-knowledge = { path = "crates/brainwires-knowledge", version = "0.10.0", default-features = false }
-brainwires-reasoning = { path = "crates/brainwires-reasoning", version = "0.10.0" }
-brainwires-telemetry  = { path = "crates/brainwires-telemetry",  version = "0.10.0", default-features = false }
-brainwires-proxy = { path = "extras/brainwires-proxy", version = "0.10.0" }
+brainwires-core = { path = "crates/brainwires-core", version = "0.11.0", default-features = false }
+brainwires-tool-runtime = { path = "crates/brainwires-tool-runtime", version = "0.11.0", default-features = false }
+brainwires-tool-builtins = { path = "crates/brainwires-tool-builtins", version = "0.11.0", default-features = false }
+brainwires-agent = { path = "crates/brainwires-agent", version = "0.11.0", default-features = false }
+brainwires-storage = { path = "crates/brainwires-storage", version = "0.11.0", default-features = false }
+brainwires-stores = { path = "crates/brainwires-stores", version = "0.11.0", default-features = false }
+brainwires-memory = { path = "crates/brainwires-memory", version = "0.11.0" }
+brainwires-mdap = { path = "crates/brainwires-mdap", version = "0.11.0" }
+brainwires-skills = { path = "crates/brainwires-skills", version = "0.11.0" }
+brainwires-seal = { path = "crates/brainwires-seal", version = "0.11.0", default-features = false }
+brainwires-eval = { path = "crates/brainwires-eval", version = "0.11.0" }
+brainwires-inference = { path = "crates/brainwires-inference", version = "0.11.0", default-features = false }
+brainwires-mcp-client = { path = "crates/brainwires-mcp-client", version = "0.11.0" }
+brainwires-permission = { path = "crates/brainwires-permission", version = "0.11.0" }
+brainwires-sandbox = { path = "crates/brainwires-sandbox", version = "0.11.0", default-features = false }
+brainwires-network = { path = "crates/brainwires-network", version = "0.11.0" }
+brainwires-mcp-server = { path = "crates/brainwires-mcp-server", version = "0.11.0" }
+brainwires-a2a = { path = "crates/brainwires-a2a", version = "0.11.0", default-features = false }
+brainwires-provider = { path = "crates/brainwires-provider", version = "0.11.0", default-features = false, features = ["native"] }
+brainwires-provider-speech = { path = "crates/brainwires-provider-speech", version = "0.11.0", default-features = false }
+brainwires-call-policy = { path = "crates/brainwires-call-policy", version = "0.11.0", default-features = false }
+brainwires-hardware = { path = "crates/brainwires-hardware", version = "0.11.0" }
+brainwires-finetune = { path = "crates/brainwires-finetune", version = "0.11.0" }
+# `brainwires-finetune-local` and `brainwires-training` were moved out of this
+# framework into the `rullama` workspace (LoRA/QLoRA/DoRA + future
+# training-from-scratch live there now). See CHANGELOG [Unreleased].
+brainwires-knowledge = { path = "crates/brainwires-knowledge", version = "0.11.0", default-features = false }
+brainwires-rag = { path = "crates/brainwires-rag", version = "0.11.0", default-features = false }
+brainwires-prompting = { path = "crates/brainwires-prompting", version = "0.11.0", default-features = false }
+brainwires-reasoning = { path = "crates/brainwires-reasoning", version = "0.11.0" }
+brainwires-telemetry  = { path = "crates/brainwires-telemetry",  version = "0.11.0", default-features = false }
+# `brainwires-autonomy` and `brainwires-proxy` live in `extras/`. They are
+# workspace-only (publish = false) and no `crates/` member depends on them, so
+# they intentionally do NOT appear in [workspace.dependencies] — that table is
+# the API surface of the framework. See ADR-0004 (framework / extras boundary)
+# and `cargo xtask lint-deps`.
 
 # Tokenizer dependencies
 tokenizers = "0.22"
 tiktoken-rs = "0.9"
 
-# ML training framework — individual crates to avoid cubecl-cpu (links = "lzma" conflict
-# with xz2 from datafusion/lancedb). Using individual crates instead of umbrella `burn`.
-burn-core = { version = "0.20", default-features = false, features = ["std"] }
-burn-nn = { version = "0.20", default-features = false, features = ["std"] }
-burn-optim = { version = "0.20", default-features = false, features = ["std"] }
-burn-autodiff = { version = "0.20", default-features = false, features = ["std"] }
-burn-wgpu = { version = "0.20", default-features = false, features = ["std", "autotune"] }
-burn-ndarray = { version = "0.20", default-features = false, features = ["std"] }
+# `burn-*` was used by the deleted `brainwires-finetune-local`; the local
+# PEFT crate now lives in the `rullama` workspace, where Burn is pinned
+# directly. No framework crate depends on Burn anymore.
 
 # Home automation serial protocols
 tokio-serial = "5.4"
@@ -111,7 +143,7 @@ crc = "3"
 mdns-sd = "0.12"
 
 # Async runtime & utilities
-tokio = { version = "1.43", features = ["full"] }
+tokio = { version = "1.43" }
 futures = "0.3"
 async-trait = "0.1"
 async-stream = "0.3"
@@ -275,9 +307,6 @@ encoding_rs = "0.8"
 # Async stream adapters
 tokio-stream = "0.1"
 
-# SafeTensors model weight loading
-safetensors = "0.7"
-
 # Postgres + pgvector (using tokio-postgres to avoid sqlx's libsqlite3-sys conflict)
 tokio-postgres = "0.7"
 deadpool-postgres = "0.14"
@@ -304,4 +333,36 @@ debug = "line-tables-only"
 
 [profile.test]
 debug = "line-tables-only"
+
+# Release profile tuned for FAST compile during functional iteration.
+# Keeps the bits that matter for correctness on wasm (overflow-checks
+# off, debug-assertions off — both are what make candle's u32 bit
+# math NOT trap as `unreachable`). Drops the bits that cost compile
+# time but only buy runtime perf:
+#   - opt-level = 1 → basic inlining, register alloc; skips LLVM's
+#     expensive vectorization / inlining passes
+#   - lto = false → no whole-program optimization
+#   - codegen-units = 256 → parallel codegen across all CPU cores
+# Net effect: ~5× faster cargo/wasm-pack rebuilds; runtime is slower
+# (matmuls won't auto-vectorize), but the chat-pwa is currently
+# bound by GPU work + GPU→CPU readback, not Rust hot loops, so the
+# user-visible perf hit on the WGPU path is small. Crank back to
+# `opt-level = 3 + lto = "fat"` once we ship to production.
+[profile.release]
+opt-level = 1
+lto = false
+codegen-units = 256
+debug = "line-tables-only"
+
+# ── Patches ─────────────────────────────────────────────────────────────────
+#
+# `rustpotter` patch survives the candle removal because
+# `brainwires-hardware` pins `version = "3.0.3-candle-0.10"`, a prerelease
+# that only exists in the Brainwires fork. The patch redirects to that
+# fork. The fork still uses upstream `candle 0.10.x` internally, but no
+# workspace crate consumes those candle symbols directly anymore, so the
+# candle-core / candle-nn / candle-transformers patches that previously
+# lived here are gone.
+[patch.crates-io]
+rustpotter = { git = "https://github.com/Brainwires/rustpotter", rev = "4dbd6fd55a7c198cedb7c5e2574497343fd620a7" }
 

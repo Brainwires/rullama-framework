@@ -18,6 +18,7 @@ fn test_bash_command_execution() {
         capabilities: None,
         idempotency_registry: None,
         staging_backend: None,
+        intended_writes: None,
     };
 
     // Test simple echo command
@@ -42,6 +43,7 @@ fn test_bash_working_directory() {
         capabilities: None,
         idempotency_registry: None,
         staging_backend: None,
+        intended_writes: None,
     };
 
     // Test pwd command
@@ -69,6 +71,7 @@ fn test_bash_dangerous_commands_blocked() {
         capabilities: None,
         idempotency_registry: None,
         staging_backend: None,
+        intended_writes: None,
     };
 
     // Test dangerous command is blocked
@@ -97,6 +100,7 @@ fn test_bash_command_with_pipe() {
         capabilities: None,
         idempotency_registry: None,
         staging_backend: None,
+        intended_writes: None,
     };
 
     // Test command with pipe

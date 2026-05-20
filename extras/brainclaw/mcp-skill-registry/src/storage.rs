@@ -3,7 +3,7 @@
 //! Uses SQLite with FTS5 for full-text search over skill metadata.
 
 use anyhow::{Context, Result};
-use brainwires_agents::skills::{SkillManifest, SkillPackage};
+use brainwires_agent::skills::{SkillManifest, SkillPackage};
 use rusqlite::Connection;
 
 use super::search;
@@ -16,8 +16,8 @@ pub struct SkillStore {
 impl SkillStore {
     /// Open (or create) the database at `path` and initialize tables.
     pub fn open(path: &str) -> Result<Self> {
-        let conn = Connection::open(path)
-            .with_context(|| format!("Failed to open database: {}", path))?;
+        let conn =
+            Connection::open(path).with_context(|| format!("Failed to open database: {}", path))?;
         let store = Self { conn };
         store.init_db()?;
         Ok(store)
@@ -67,8 +67,8 @@ impl SkillStore {
 
     /// Insert a new skill version.
     pub fn insert_skill(&self, package: &SkillPackage) -> Result<()> {
-        let manifest_json = serde_json::to_string(&package.manifest)
-            .context("Failed to serialize manifest")?;
+        let manifest_json =
+            serde_json::to_string(&package.manifest).context("Failed to serialize manifest")?;
 
         self.conn.execute(
             "INSERT OR REPLACE INTO skills (name, version, description, author, license, manifest, content, checksum, created_at, updated_at)

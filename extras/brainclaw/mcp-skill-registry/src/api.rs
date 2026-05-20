@@ -3,14 +3,13 @@
 //! Provides the HTTP endpoints for the skill registry server.
 
 use axum::{
-    Json,
+    Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
-    Router,
 };
-use brainwires_agents::skills::SkillPackage;
+use brainwires_agent::skills::SkillPackage;
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -162,10 +161,7 @@ async fn download_package(
 ) -> impl IntoResponse {
     let store = store.lock().await;
     match store.get_package(&name, &version) {
-        Ok(Some(package)) => (
-            StatusCode::OK,
-            Json(serde_json::to_value(package).unwrap()),
-        ),
+        Ok(Some(package)) => (StatusCode::OK, Json(serde_json::to_value(package).unwrap())),
         Ok(None) => (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error": "Package not found"})),

@@ -7,14 +7,13 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use teloxide::prelude::*;
 use teloxide::types::{
-    ChatAction, ChatId, MessageId as TeloxideMessageId,
-    ReactionType as TeloxideReactionType,
+    ChatAction, ChatId, MessageId as TeloxideMessageId, ReactionType as TeloxideReactionType,
     ThreadId as TeloxideThreadId,
 };
 
 use brainwires_network::channels::{
-    Attachment, ChannelCapabilities, ChannelMessage, ConversationId,
-    MediaPayload, MediaType, MessageContent, MessageId, ThreadId,
+    Attachment, ChannelCapabilities, ChannelMessage, ConversationId, MediaPayload, MediaType,
+    MessageContent, MessageId, ThreadId,
 };
 
 /// Telegram channel adapter implementing the `Channel` trait.
@@ -69,10 +68,10 @@ impl brainwires_network::channels::Channel for TelegramChannel {
         let mut req = self.bot.send_message(ChatId(chat_id), &content);
 
         // Route to a forum topic / thread if thread_id is set.
-        if let Some(ref tid) = message.thread_id {
-            if let Ok(thread_msg_id) = tid.0.parse::<i32>() {
-                req = req.message_thread_id(TeloxideThreadId(TeloxideMessageId(thread_msg_id)));
-            }
+        if let Some(ref tid) = message.thread_id
+            && let Ok(thread_msg_id) = tid.0.parse::<i32>()
+        {
+            req = req.message_thread_id(TeloxideThreadId(TeloxideMessageId(thread_msg_id)));
         }
 
         let sent = req
@@ -88,10 +87,7 @@ impl brainwires_network::channels::Channel for TelegramChannel {
             .channel_id
             .parse::<i64>()
             .context("Invalid Telegram chat ID")?;
-        let message_id = id
-            .0
-            .parse::<i32>()
-            .context("Invalid Telegram message ID")?;
+        let message_id = id.0.parse::<i32>().context("Invalid Telegram message ID")?;
 
         let content = channel_message_to_telegram_text(message);
 
@@ -184,9 +180,7 @@ impl brainwires_network::channels::Channel for TelegramChannel {
 // -- Conversion helpers --
 
 /// Convert a teloxide `Message` to a `ChannelMessage`.
-pub fn telegram_message_to_channel_message(
-    msg: &teloxide::types::Message,
-) -> ChannelMessage {
+pub fn telegram_message_to_channel_message(msg: &teloxide::types::Message) -> ChannelMessage {
     let content = if let Some(text) = &msg.text() {
         MessageContent::Text(text.to_string())
     } else if let Some(caption) = msg.caption() {
@@ -267,16 +261,10 @@ pub fn telegram_message_to_channel_message(
     let author_name = msg
         .from
         .as_ref()
-        .map(|u| {
-            u.username
-                .clone()
-                .unwrap_or_else(|| u.first_name.clone())
-        })
+        .map(|u| u.username.clone().unwrap_or_else(|| u.first_name.clone()))
         .unwrap_or_else(|| "unknown".to_string());
 
-    let thread_id = msg
-        .thread_id
-        .map(|tid| ThreadId::new(tid.to_string()));
+    let thread_id = msg.thread_id.map(|tid| ThreadId::new(tid.to_string()));
 
     let reply_to = msg
         .reply_to_message()
@@ -321,15 +309,15 @@ fn collect_attachments(msg: &teloxide::types::Message) -> Vec<Attachment> {
         });
     }
 
-    if let Some(photo) = msg.photo() {
-        if let Some(largest) = photo.last() {
-            attachments.push(Attachment {
-                filename: "photo.jpg".to_string(),
-                content_type: "image/jpeg".to_string(),
-                url: largest.file.id.clone(),
-                size_bytes: Some(largest.file.size as u64),
-            });
-        }
+    if let Some(photo) = msg.photo()
+        && let Some(largest) = photo.last()
+    {
+        attachments.push(Attachment {
+            filename: "photo.jpg".to_string(),
+            content_type: "image/jpeg".to_string(),
+            url: largest.file.id.clone(),
+            size_bytes: Some(largest.file.size as u64),
+        });
     }
 
     attachments

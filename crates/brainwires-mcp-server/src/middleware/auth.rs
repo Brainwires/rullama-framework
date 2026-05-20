@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use brainwires_mcp::{JsonRpcError, JsonRpcRequest};
+use brainwires_mcp_client::{JsonRpcError, JsonRpcRequest};
 
 use super::{Middleware, MiddlewareResult};
 use crate::connection::RequestContext;

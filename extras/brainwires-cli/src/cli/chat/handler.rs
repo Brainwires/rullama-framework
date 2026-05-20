@@ -153,13 +153,19 @@ async fn handle_mcp_server(
 ) -> Result<()> {
     use crate::mcp_server::McpServerHandler;
 
+    // MCP stdio protocol requires stdout to contain ONLY JSON-RPC frames.
+    // Route status messages to stderr to avoid corrupting the protocol stream.
     if let Some(ref url) = backend_url_override {
-        Logger::info(format!(
-            "Starting MCP server mode (stdio) - using dev backend: {}",
+        eprintln!(
+            "{} Starting MCP server mode (stdio) - using dev backend: {}",
+            console::style("ℹ").blue(),
             url
-        ));
+        );
     } else {
-        Logger::info("Starting MCP server mode (stdio)");
+        eprintln!(
+            "{} Starting MCP server mode (stdio)",
+            console::style("ℹ").blue()
+        );
     }
 
     let handler = McpServerHandler::new(model, system, backend_url_override).await?;

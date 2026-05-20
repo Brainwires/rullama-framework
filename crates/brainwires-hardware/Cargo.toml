@@ -10,7 +10,7 @@ homepage.workspace = true
 authors.workspace = true
 readme = "README.md"
 documentation = "https://docs.rs/brainwires-hardware"
-keywords = ["hardware", "audio", "gpio", "bluetooth", "network"]
+keywords = ["hardware", "audio", "gpio", "bluetooth", "camera"]
 categories = ["hardware-support", "multimedia::audio"]
 
 [dependencies]
@@ -32,7 +32,8 @@ cpal = { version = "0.15", optional = true }
 tokio-stream = { workspace = true, optional = true }
 
 # Provider API clients (audio feature)
-brainwires-providers = { workspace = true, optional = true }
+brainwires-provider = { workspace = true, optional = true }
+brainwires-provider-speech = { workspace = true, optional = true }
 
 # Base64 decoding (needed for Google TTS response)
 base64 = { workspace = true, optional = true }
@@ -55,12 +56,6 @@ sysfs_gpio = { version = "0.6", optional = true }
 btleplug = { version = "0.11", optional = true }
 uuid = { workspace = true, optional = true }
 
-# Network hardware
-network-interface = { version = "2", optional = true }
-ipnetwork = { version = "0.21", optional = true, features = ["serde"] }
-pnet = { version = "0.35", optional = true }
-pnet_datalink = { version = "0.35", optional = true }
-
 # Camera capture (cross-platform: V4L2 / AVFoundation / Media Foundation)
 nokhwa = { version = "0.10", optional = true, features = ["input-native"] }
 # Frame encode/decode: MJPEG → RGB, save PNG/JPEG (gated on camera feature)
@@ -70,46 +65,17 @@ image = { version = "0.25", optional = true, default-features = false, features 
 nusb = { version = "0.1", optional = true }
 
 # Wake word detection — rustpotter (wake-word-rustpotter feature)
-# NOTE: rustpotter 3.0.x has a dependency conflict with candle-core 0.2.2 / rand_distr 0.4.x.
-# Enable this feature only once the upstream conflict is resolved.
-rustpotter = { version = "3.0", optional = true }
-
-# Wake word detection — Porcupine commercial (wake-word-porcupine feature)
-# pv_porcupine is not published to crates.io; add it manually as a git dep:
-#   pv_porcupine = { git = "https://github.com/Picovoice/porcupine", optional = true }
-# then un-comment the dep: prefix in the wake-word-porcupine feature below.
+# NOTE: workspace root patches `rustpotter` to the Brainwires fork at
+# https://github.com/Brainwires/rustpotter (branch `candle-0.10`), which
+# bumps `candle-core`/`candle-nn` to 0.10. The fork ships as the prerelease
+# `3.0.3-candle-0.10`; cargo only resolves prereleases when the version
+# requirement explicitly names that prerelease tag, hence the exact pin
+# below. If the patch is removed in the future, this requirement should be
+# bumped to whatever stable `3.x` (or newer) crates.io publishes.
+rustpotter = { version = "3.0.3-candle-0.10", optional = true }
 
 # Voice Activity Detection — WebRTC VAD (vad feature)
 webrtc-vad = { version = "0.4", optional = true }
-
-# Home automation serial transport (zigbee + zwave features)
-tokio-serial = { workspace = true, optional = true }
-# CRC-16-CCITT for Zigbee EZSP/ASH framing
-crc = { workspace = true, optional = true }
-# Byte buffer manipulation (zigbee + zwave framing)
-bytes = { workspace = true, optional = true }
-# HTTP client for Thread OTBR REST API (reuse workspace reqwest)
-reqwest = { workspace = true, optional = true }
-# mDNS service discovery — Matter device/controller discovery via DNS-SD
-mdns-sd = { workspace = true, optional = true }
-# Hostname lookup (used by Matter mDNS advertisement)
-gethostname = { workspace = true, optional = true }
-
-# Matter cryptographic stack
-p256   = { workspace = true, optional = true }
-ecdsa  = { workspace = true, optional = true }
-hmac   = { workspace = true, optional = true }
-hkdf   = { workspace = true, optional = true }
-pbkdf2 = { workspace = true, optional = true }
-aes    = { workspace = true, optional = true }
-ccm    = { workspace = true, optional = true }
-der    = { workspace = true, optional = true }
-pkcs8  = { workspace = true, optional = true }
-# Hashing, RNG, and encoding shared by the matter crypto stack
-sha2      = { workspace = true, optional = true }
-rand_core = { workspace = true, optional = true }
-zeroize   = { workspace = true, optional = true }
-hex       = { workspace = true, optional = true }
 
 [features]
 default = []
@@ -118,7 +84,8 @@ default = []
 audio = [
     "dep:cpal",
     "dep:tokio-stream",
-    "dep:brainwires-providers",
+    "dep:brainwires-provider",
+    "dep:brainwires-provider-speech", "brainwires-provider-speech/native",
     "dep:async-stream",
     "dep:base64",
     "flac",
@@ -133,9 +100,6 @@ gpio = ["dep:gpio-cdev", "dep:sysfs_gpio"]
 
 # Bluetooth discovery and scanning
 bluetooth = ["dep:btleplug", "dep:uuid"]
-
-# Network interface enumeration, discovery, port scanning
-network = ["dep:network-interface", "dep:ipnetwork", "dep:pnet", "dep:pnet_datalink"]
 
 # Camera / webcam capture via nokhwa (cross-platform)
 camera = ["dep:nokhwa", "dep:image"]
@@ -154,65 +118,11 @@ wake-word = ["audio"]
 # Enable when the upstream issue is resolved.
 wake-word-rustpotter = ["dep:rustpotter", "wake-word"]
 
-# Wake word detection via Porcupine (opt-in, requires Picovoice AccessKey + git dep)
-# See the pv_porcupine comment in [dependencies] above for setup instructions.
-wake-word-porcupine = ["wake-word"]
-
 # Full voice assistant pipeline (capture → wake word → VAD → STT → handler → TTS → playback)
 voice-assistant = ["audio", "vad", "wake-word"]
 
-# Zigbee: ZigbeeCoordinator trait + EZSP (Silicon Labs) + ZNP (TI Z-Stack) backends
-zigbee = [
-    "dep:tokio-serial",
-    "dep:crc",
-    "dep:bytes",
-    "dep:async-stream",
-    "dep:tokio-stream",
-]
-
-# Z-Wave: ZWaveController trait + full Z-Wave Serial API (ZAPI) over USB stick
-zwave = [
-    "dep:tokio-serial",
-    "dep:bytes",
-    "dep:async-stream",
-    "dep:tokio-stream",
-]
-
-# Thread: ThreadBorderRouter client for OpenThread Border Router REST API
-thread = ["dep:reqwest"]
-
-# Matter: MatterController (commission + control) + MatterDeviceServer (device side).
-# Implemented using our own Matter protocol stack (TLV, commissioning, UDP, mDNS)
-# to avoid embassy-time links conflict between rs-matter and the burn ML ecosystem.
-matter = [
-    "dep:mdns-sd",
-    "dep:gethostname",
-    "dep:tokio-stream",
-    "dep:async-stream",
-    "dep:p256",
-    "dep:ecdsa",
-    "dep:hmac",
-    "dep:hkdf",
-    "dep:pbkdf2",
-    "dep:aes",
-    "dep:ccm",
-    "dep:der",
-    "dep:pkcs8",
-    "dep:sha2",
-    "dep:rand_core",
-    "dep:zeroize",
-    "dep:hex",
-]
-
-# Matter over BLE (adds BLE transport layer)
-matter-ble = ["matter", "dep:btleplug", "dep:uuid"]
-
-# All home automation protocols + Matter BLE
-homeauto = ["zigbee", "zwave", "thread", "matter"]
-homeauto-full = ["homeauto", "matter-ble"]
-
-# Convenience: everything
-full = ["audio", "gpio", "bluetooth", "network", "camera", "usb", "vad", "wake-word", "voice-assistant", "homeauto-full"]
+# Convenience: everything in the published hardware surface
+full = ["audio", "gpio", "bluetooth", "camera", "usb", "vad", "wake-word", "voice-assistant"]
 
 [dev-dependencies]
 tokio = { workspace = true }
@@ -220,9 +130,6 @@ anyhow = { workspace = true }
 tracing-subscriber = { workspace = true }
 ctrlc = { version = "3", features = ["termination"] }
 wiremock = "0.6"
-# Used by matter integration tests (CASE handshake with real keys)
-p256      = { workspace = true }
-rand_core = { workspace = true }
 
 [[example]]
 name = "speech_to_text"
@@ -237,18 +144,6 @@ name = "bluetooth_scan"
 required-features = ["bluetooth"]
 
 [[example]]
-name = "network_interfaces"
-required-features = ["network"]
-
-[[example]]
-name = "port_scan"
-required-features = ["network"]
-
-[[example]]
-name = "host_discovery"
-required-features = ["network"]
-
-[[example]]
 name = "wake_word_demo"
 required-features = ["wake-word-rustpotter"]
 
@@ -257,26 +152,22 @@ name = "voice_assistant"
 required-features = ["voice-assistant"]
 
 [[example]]
-name = "zigbee_scan"
-required-features = ["zigbee"]
+name = "capture_audio"
+required-features = ["audio"]
 
 [[example]]
-name = "zwave_nodes"
-required-features = ["zwave"]
+name = "play_audio"
+required-features = ["audio"]
 
 [[example]]
-name = "thread_info"
-required-features = ["thread"]
+name = "camera_capture"
+required-features = ["camera"]
 
 [[example]]
-name = "matter_on_off"
-required-features = ["matter"]
+name = "usb_devices"
+required-features = ["usb"]
 
-[[example]]
-name = "matter_server"
-required-features = ["matter"]
-
-[[test]]
-name = "matter_integration"
-required-features = ["matter"]
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 

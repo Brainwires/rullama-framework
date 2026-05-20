@@ -96,7 +96,7 @@ fn show_version_info() {
 
     // Configuration
     println!("Configuration:");
-    use brainwires_storage::paths::PlatformPaths;
+    use brainwires_core::paths::PlatformPaths;
     let config_path = PlatformPaths::default_config_path();
     println!("  Config File:     {}", config_path.display());
     println!("  Config Priority: CLI args > Env vars > Config file > Defaults");

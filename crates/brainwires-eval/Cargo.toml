@@ -1,0 +1,36 @@
+[package]
+name = "brainwires-eval"
+description = "Evaluation harness for the Brainwires Agent Framework — fixtures, regression suites, stability tests, adversarial cases, ranking metrics (NDCG / MRR / precision@k), recorder."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/brainwires-eval"
+keywords = ["evaluation", "agent-framework", "fixtures", "regression-tests", "metrics"]
+categories = ["development-tools::testing"]
+
+[dependencies]
+# Self-contained — no internal brainwires-* deps
+async-trait = { workspace = true }
+tokio = { version = "1.43", features = ["sync", "rt", "macros"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yml = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+regex = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+tempfile = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

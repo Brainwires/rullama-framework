@@ -4,9 +4,9 @@
 //! cargo run -p brainwires-autonomy --example gpio_pins --features gpio
 //! ```
 
-use brainwires_autonomy::config::GpioConfig;
 use brainwires_autonomy::gpio::{
     GpioPinManager, GpioSafetyPolicy,
+    config::GpioConfig,
     device::{GpioDirection, discover_chips},
     pwm::PwmConfig,
 };

@@ -4,9 +4,9 @@
 
 use brainwires_network::discovery::{Discovery, DiscoveryProtocol, ManualDiscovery};
 use brainwires_network::identity::{AgentCard, AgentIdentity, SigningKey, VerifyingKey};
-use brainwires_network::network::{NetworkEvent, NetworkManagerBuilder};
 use brainwires_network::routing::PeerTable;
 use brainwires_network::transport::TransportAddress;
+use brainwires_network::{NetworkEvent, NetworkManagerBuilder};
 
 /// Test that agents discovered via ManualDiscovery can be looked up
 /// and have their capabilities inspected.

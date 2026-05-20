@@ -15,11 +15,14 @@ pub struct CameraDevice {
 /// Frame resolution in pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Resolution {
+    /// Horizontal pixel count.
     pub width: u32,
+    /// Vertical pixel count.
     pub height: u32,
 }
 
 impl Resolution {
+    /// Create a resolution from explicit `width` × `height` in pixels.
     pub fn new(width: u32, height: u32) -> Self {
         Self { width, height }
     }
@@ -34,11 +37,14 @@ impl std::fmt::Display for Resolution {
 /// Frame rate expressed as a fraction (e.g. 30/1 = 30 fps).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FrameRate {
+    /// Frames numerator (e.g. `30` for `30/1` = 30 fps).
     pub numerator: u32,
+    /// Frames denominator (e.g. `1` for integer fps; `1001` for NTSC 29.97).
     pub denominator: u32,
 }
 
 impl FrameRate {
+    /// Build an integer frame rate (e.g. `FrameRate::fps(30)`).
     pub fn fps(fps: u32) -> Self {
         Self {
             numerator: fps,
@@ -78,12 +84,16 @@ pub enum PixelFormat {
 /// Capture format: resolution + frame rate + pixel encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CameraFormat {
+    /// Width × height requested from the device.
     pub resolution: Resolution,
+    /// Frame rate requested from the device.
     pub frame_rate: FrameRate,
+    /// Pixel encoding that frames will be delivered in.
     pub pixel_format: PixelFormat,
 }
 
 impl CameraFormat {
+    /// Bundle an explicit resolution, frame rate, and pixel format.
     pub fn new(resolution: Resolution, frame_rate: FrameRate, pixel_format: PixelFormat) -> Self {
         Self {
             resolution,
@@ -150,14 +160,24 @@ impl CameraFrame {
 /// Errors that can occur during camera operations.
 #[derive(Debug, Error)]
 pub enum CameraError {
+    /// No camera exists at the requested device index.
     #[error("no camera found at index {0}")]
     NotFound(u32),
+    /// The camera was discoverable but could not be opened.
     #[error("failed to open camera {index}: {reason}")]
-    OpenFailed { index: u32, reason: String },
+    OpenFailed {
+        /// Device index that failed to open.
+        index: u32,
+        /// OS-level failure reason.
+        reason: String,
+    },
+    /// Opening succeeded but capturing a frame failed.
     #[error("failed to capture frame: {0}")]
     CaptureFailed(String),
+    /// The requested `CameraFormat` is not offered by this device.
     #[error("format not supported: {0:?}")]
     FormatNotSupported(CameraFormat),
+    /// Catch-all for platform-specific failures.
     #[error("camera error: {0}")]
     Other(String),
 }

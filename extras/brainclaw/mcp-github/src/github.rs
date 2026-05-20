@@ -66,10 +66,7 @@ impl GitHubChannel {
         }
         let repo_parts: Vec<&str> = parts[0].splitn(2, '/').collect();
         if repo_parts.len() != 2 {
-            return Err(anyhow!(
-                "expected repo = 'owner/repo', got '{}'",
-                parts[0]
-            ));
+            return Err(anyhow!("expected repo = 'owner/repo', got '{}'", parts[0]));
         }
         let num: u64 = parts[1]
             .parse()
@@ -93,7 +90,11 @@ impl GitHubChannel {
         if repo_parts.len() < 2 {
             return Err(anyhow!("cannot extract owner/repo from MessageId: {s}"));
         }
-        Ok((repo_parts[0].to_string(), repo_parts[1].to_string(), comment_id))
+        Ok((
+            repo_parts[0].to_string(),
+            repo_parts[1].to_string(),
+            comment_id,
+        ))
     }
 }
 

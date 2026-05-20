@@ -1,4 +1,7 @@
 {
+  "tasks": {
+    "parity": "deno run --allow-read scripts/parity.ts"
+  },
   "workspace": [
     "./packages/core",
     "./packages/permissions",
@@ -10,7 +13,11 @@
     "./packages/network",
     "./packages/agents",
     "./packages/a2a",
-    "./examples"
+    "./packages/session",
+    "./packages/resilience",
+    "./packages/telemetry",
+    "./packages/reasoning",
+    "./packages/training"
   ],
   "imports": {
     "@std/assert": "jsr:@std/assert@^1.0.0",
@@ -20,6 +27,22 @@
     "@std/yaml/parse": "jsr:@std/yaml@^1.0.0/parse",
     "pg": "npm:pg@8",
     "mysql2/promise": "npm:mysql2@3/promise",
-    "surrealdb": "npm:surrealdb@1"
+    "surrealdb": "npm:surrealdb@1",
+
+    "@brainwires/core": "jsr:@brainwires/core@^0.10.1",
+    "@brainwires/providers": "jsr:@brainwires/providers@^0.10.1",
+    "@brainwires/agents": "jsr:@brainwires/agents@^0.10.1",
+    "@brainwires/mcp": "jsr:@brainwires/mcp@^0.10.1",
+    "@brainwires/a2a": "jsr:@brainwires/a2a@^0.10.1",
+    "@brainwires/storage": "jsr:@brainwires/storage@^0.10.1",
+    "@brainwires/permissions": "jsr:@brainwires/permissions@^0.10.1",
+    "@brainwires/tools": "jsr:@brainwires/tools@^0.10.1",
+    "@brainwires/knowledge": "jsr:@brainwires/knowledge@^0.10.1",
+    "@brainwires/network": "jsr:@brainwires/network@^0.10.1",
+    "@brainwires/session": "jsr:@brainwires/session@^0.10.1",
+    "@brainwires/resilience": "jsr:@brainwires/resilience@^0.10.1",
+    "@brainwires/telemetry": "jsr:@brainwires/telemetry@^0.10.1",
+    "@brainwires/reasoning": "jsr:@brainwires/reasoning@^0.10.1",
+    "@brainwires/training": "jsr:@brainwires/training@^0.10.1"
   }
 }

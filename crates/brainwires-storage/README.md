@@ -4,11 +4,34 @@
 [![Documentation](https://img.shields.io/docsrs/brainwires-storage)](https://docs.rs/brainwires-storage)
 [![License](https://img.shields.io/crates/l/brainwires-storage.svg)](LICENSE)
 
-Backend-agnostic storage, tiered memory, and document management for the Brainwires Agent Framework.
+Backend-agnostic storage primitives — `StorageBackend` trait, embeddings,
+BM25 keyword search, file-context primitives, and image-storage types —
+for the Brainwires Agent Framework.
+
+> **Crate boundary (v0.11).** Domain-shaped stores moved out of this
+> crate so the surface stays focused on primitives:
+>
+> - **`brainwires-stores`** — schema + CRUD for the opinionated minimum
+>   store set: `MessageStore`, `SummaryStore`, `FactStore`,
+>   `MentalModelStore`, `TierMetadataStore`, `PlanStore`,
+>   `TemplateStore` / `PlanTemplate`, `LockStore` / `LockRecord` /
+>   `LockStats`, `ImageStore`, `ConversationStore`, `TaskStore`,
+>   `AgentStateStore`, `PersistentTaskManager`.
+> - **`brainwires-memory`** — tiered hot/warm/cold agent memory
+>   orchestration: `TieredMemory`, `TieredMemoryConfig`,
+>   `TieredMemoryStats`, `MultiFactorScore`, `CanonicalWriteToken`,
+>   `TieredSearchResult`, dream consolidation.
 
 ## Overview
 
-`brainwires-storage` is the persistent backend for the Brainwires Agent Framework's infinite context memory system. The crate provides conversation storage with semantic search, document ingestion with hybrid retrieval, three-tier memory hierarchy, image analysis storage, entity extraction with contradiction detection, cross-process lock coordination, and reusable plan templates — enabling agents to maintain unbounded context, coordinate safely, and retrieve relevant knowledge across sessions.
+`brainwires-storage` is the persistent-backend foundation: a generic
+trait-and-types layer that other crates build their domain stores on
+top of. It provides the `StorageBackend` and `VectorDatabase` traits
+plus their concrete backend impls (LanceDB, Postgres, MySQL, Surreal,
+Qdrant, Pinecone, Milvus, Weaviate, NornicDB), text embeddings via
+FastEmbed (LRU-cached), BM25 keyword search, file-context primitives,
+and image-storage types reused by the concrete `ImageStore` in
+`brainwires-cli`.
 
 **Design principles:**
 
@@ -50,22 +73,18 @@ Backend-agnostic storage, tiered memory, and document management for the Brainwi
   |  +------------------------------------------------------------------+  |
   |                                                                        |
   |  +--- Core Infrastructure -------------------------------------------+  |
-  |  |  EmbeddingProvider --- all-MiniLM-L6-v2 with LRU cache (1000)    |  |
+  |  |  CachedEmbeddingProvider -- all-MiniLM-L6-v2 w/ LRU cache (1000) |  |
   |  +------------------------------------------------------------------+  |
   |                                                                        |
-  |  +--- Domain Stores (stores/) --------------------------------------+  |
-  |  |  MessageStore --- vector search, TTL expiry, batch ops            |  |
-  |  |  ConversationStore --- metadata, listing by recency               |  |
-  |  |  TaskStore / AgentStateStore --- task & agent persistence          |  |
-  |  |  PlanStore --- execution plans with markdown export               |  |
-  |  +------------------------------------------------------------------+  |
-  |                                                                        |
-  |  +--- Tiered Memory System -----------------------------------------+  |
-  |  |  Hot --- full messages (MessageStore, session TTL)                |  |
-  |  |  Warm --- compressed summaries (SummaryStore)                     |  |
-  |  |  Cold --- extracted facts (FactStore)                             |  |
-  |  |  TierMetadataStore --- access tracking, importance scoring        |  |
-  |  |  TieredMemory --- adaptive search, demotion/promotion             |  |
+  |  +--- Domain Stores (moved out of this crate) ----------------------+  |
+  |  |  See `brainwires-stores`  --- MessageStore, SummaryStore,         |  |
+  |  |                                FactStore, MentalModelStore,       |  |
+  |  |                                TierMetadataStore, PlanStore,      |  |
+  |  |                                TemplateStore, LockStore,          |  |
+  |  |                                ImageStore, ConversationStore,     |  |
+  |  |                                TaskStore                          |  |
+  |  |  See `brainwires-memory`  --- TieredMemory orchestration,         |  |
+  |  |                                multi-factor search, dream cycles  |  |
   |  +------------------------------------------------------------------+  |
   |                                                                        |
   |  +--- Document Management ------------------------------------------+  |
@@ -74,16 +93,7 @@ Backend-agnostic storage, tiered memory, and document management for the Brainwi
   |  |  DocumentStore --- hybrid search (vector + BM25 via RRF)         |  |
   |  |  DocumentMetadataStore --- hash-based deduplication               |  |
   |  +------------------------------------------------------------------+  |
-  |                                                                        |
-  |  +--- Images -------------------------------------------------------+  |
-  |  |  ImageStore --- analyzed images with semantic search              |  |
-  |  +------------------------------------------------------------------+  |
   |  Note: EntityStore and RelationshipGraph moved to brainwires-knowledge |
-  |                                                                        |
-  |  +--- Coordination & Templates -------------------------------------+  |
-  |  |  LockStore --- SQLite WAL locks, stale detection, cleanup         |  |
-  |  |  TemplateStore --- reusable plans with {{variable}} substitution  |  |
-  |  +------------------------------------------------------------------+  |
   +------------------------------------------------------------------------+
 ```
 
@@ -93,20 +103,23 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-brainwires-storage = "0.10"
+brainwires-storage = "0.11"
+# Domain store types (MessageStore, LockStore, TemplateStore, …) live here:
+brainwires-stores = { version = "0.11", features = ["memory"] }
 ```
 
 Store and search conversation messages:
 
 ```rust
-use brainwires_storage::{LanceDatabase, EmbeddingProvider, MessageStore, MessageMetadata};
+use brainwires_storage::{LanceDatabase, CachedEmbeddingProvider};
+use brainwires_stores::{MessageStore, MessageMetadata};
 use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize storage — one struct, one connection
     let db = Arc::new(LanceDatabase::new("~/.brainwires/db").await?);
-    let embeddings = Arc::new(EmbeddingProvider::new()?);
+    let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
     db.initialize(embeddings.dimension()).await?;
 
     let store = MessageStore::new(db.clone(), embeddings.clone());
@@ -220,30 +233,29 @@ databases/
 | `nornicdb-bolt` | No | NornicDB with Neo4j Bolt transport |
 | `nornicdb-grpc` | No | NornicDB with Qdrant-compatible gRPC |
 | `nornicdb-full` | No | NornicDB with all transports |
-| `vector-db` | No | Backward-compat alias for `lance-backend` |
 | `wasm` | No | WASM-compatible compilation (pure types only) |
 
 ```toml
 # Default (LanceDB + full native functionality)
-brainwires-storage = "0.10"
+brainwires-storage = "0.11"
 
 # WASM-compatible (pure types and logic only)
-brainwires-storage = { version = "0.10", default-features = false, features = ["wasm"] }
+brainwires-storage = { version = "0.11", default-features = false, features = ["wasm"] }
 
 # With Qdrant backend (in addition to LanceDB)
-brainwires-storage = { version = "0.10", features = ["qdrant-backend"] }
+brainwires-storage = { version = "0.11", features = ["qdrant-backend"] }
 
 # PostgreSQL as primary backend
-brainwires-storage = { version = "0.10", features = ["postgres-backend"] }
+brainwires-storage = { version = "0.11", features = ["postgres-backend"] }
 
 # MySQL / MariaDB backend
-brainwires-storage = { version = "0.10", features = ["mysql-backend"] }
+brainwires-storage = { version = "0.11", features = ["mysql-backend"] }
 
 # SurrealDB backend (native vector search)
-brainwires-storage = { version = "0.10", features = ["surrealdb-backend"] }
+brainwires-storage = { version = "0.11", features = ["surrealdb-backend"] }
 
 # NornicDB with all transports
-brainwires-storage = { version = "0.10", features = ["nornicdb-full"] }
+brainwires-storage = { version = "0.11", features = ["nornicdb-full"] }
 ```
 
 **Module availability by feature:**
@@ -305,9 +317,9 @@ RAG-style embedding storage used by the codebase indexing subsystem.
 | `count_by_root_path(root)` | Count embeddings per project |
 | `get_indexed_files(root)` | List indexed file paths |
 
-### EmbeddingProvider
+### CachedEmbeddingProvider
 
-Text embedding with LRU caching, backed by FastEmbed (all-MiniLM-L6-v2, 384 dimensions).
+Text embedding with LRU caching, backed by FastEmbed (all-MiniLM-L6-v2, 384 dimensions). Implements the `brainwires_core::EmbeddingProvider` trait.
 
 | Method | Description |
 |--------|-------------|
@@ -456,13 +468,13 @@ JSON file-based reusable plan template storage with `{{variable}}` substitution.
 
 ```rust
 use brainwires_storage::{
-    LanceDatabase, EmbeddingProvider, MessageStore, ConversationStore,
+    LanceDatabase, CachedEmbeddingProvider, MessageStore, ConversationStore,
 };
 use brainwires_storage::databases::VectorDatabase;
 use std::sync::Arc;
 
 let db = Arc::new(LanceDatabase::new("~/.brainwires/db").await?);
-let embeddings = Arc::new(EmbeddingProvider::new()?);
+let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
 db.initialize(embeddings.dimension()).await?;
 
 // All stores share the same LanceDatabase connection
@@ -476,11 +488,11 @@ let conversations = ConversationStore::new(db.clone());
 ### Store and search conversation messages
 
 ```rust
-use brainwires_storage::{LanceDatabase, EmbeddingProvider, MessageStore, MessageMetadata};
+use brainwires_storage::{LanceDatabase, CachedEmbeddingProvider, MessageStore, MessageMetadata};
 use std::sync::Arc;
 
 let db = Arc::new(LanceDatabase::new("~/.brainwires/db").await?);
-let embeddings = Arc::new(EmbeddingProvider::new()?);
+let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
 db.initialize(embeddings.dimension()).await?;
 
 let store = MessageStore::new(db.clone(), embeddings.clone());
@@ -513,12 +525,12 @@ let results = store.search_conversation("conv-001", "indexing", 3, 0.6).await?;
 ```rust
 use brainwires_storage::{
     TieredMemory, TieredMemoryConfig, MessageStore, MessageMetadata,
-    MemoryTier, LanceDatabase, EmbeddingProvider,
+    MemoryTier, LanceDatabase, CachedEmbeddingProvider,
 };
 use std::sync::Arc;
 
 let db = Arc::new(LanceDatabase::new("~/.brainwires/db").await?);
-let embeddings = Arc::new(EmbeddingProvider::new()?);
+let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
 db.initialize(embeddings.dimension()).await?;
 
 let hot_store = Arc::new(MessageStore::new(db.clone(), embeddings.clone()));
@@ -558,13 +570,13 @@ for result in &results {
 ```rust
 use brainwires_storage::{
     DocumentStore, DocumentScope, DocumentSearchRequest, DocumentType,
-    LanceDatabase, EmbeddingProvider,
+    LanceDatabase, CachedEmbeddingProvider,
 };
 use std::sync::Arc;
 use std::path::Path;
 
 let db = Arc::new(LanceDatabase::new("~/.brainwires/db").await?);
-let embeddings = Arc::new(EmbeddingProvider::new()?);
+let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
 db.initialize(embeddings.dimension()).await?;
 
 let store = DocumentStore::new(db.clone(), embeddings.clone(), "~/.brainwires/bm25");
@@ -595,7 +607,7 @@ for result in &results {
 ### Coordinate multi-process access with locks
 
 ```rust
-use brainwires_storage::LockStore;
+use brainwires_stores::LockStore;
 use std::time::Duration;
 
 let locks = LockStore::new_default().await?;
@@ -625,11 +637,11 @@ Use via the `brainwires` facade crate with the `storage` feature, or depend on `
 ```toml
 # Via facade
 [dependencies]
-brainwires = { version = "0.10", features = ["storage"] }
+brainwires = { version = "0.11", features = ["storage"] }
 
 # Direct
 [dependencies]
-brainwires-storage = "0.10"
+brainwires-storage = "0.11"
 ```
 
 The crate re-exports all components at the top level:
@@ -650,7 +662,7 @@ use brainwires_storage::LanceDatabase;
 // Native-only stores
 #[cfg(feature = "native")]
 use brainwires_storage::{
-    EmbeddingProvider, CachedEmbeddingProvider, FastEmbedManager,
+    CachedEmbeddingProvider, FastEmbedManager,
     ConversationMetadata, ConversationStore,
     MessageMetadata, MessageStore,
     TaskMetadata, TaskStore, AgentStateMetadata, AgentStateStore,
@@ -675,4 +687,4 @@ use brainwires_storage::prelude::*;
 
 ## License
 
-Licensed under the MIT License. See [LICENSE](../../LICENSE) for details.
+Licensed under either MIT or Apache-2.0 at your option. See [LICENSE-MIT](https://github.com/Brainwires/brainwires-framework/blob/main/LICENSE-MIT) and [LICENSE-APACHE](https://github.com/Brainwires/brainwires-framework/blob/main/LICENSE-APACHE).

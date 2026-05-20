@@ -6,7 +6,8 @@ use brainwires_core::{
     ChatOptions, ContentBlock, Message, MessageContent, Provider, StreamChunk, Tool, ToolContext,
     ToolResult, ToolUse,
 };
-use brainwires_tools::{BuiltinToolExecutor, ToolRegistry};
+use brainwires_tool_builtins::BuiltinToolExecutor;
+use brainwires_tool_runtime::ToolRegistry;
 
 use crate::cli::Cli;
 use crate::config::ChatConfig;
@@ -63,6 +64,7 @@ impl ChatSession {
             capabilities: None,
             idempotency_registry: None,
             staging_backend: None,
+            intended_writes: None,
         };
         let executor = Arc::new(BuiltinToolExecutor::new(tools, context));
 

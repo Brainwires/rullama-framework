@@ -431,7 +431,7 @@ mod tests {
     fn test_get_relevant_facts() {
         let matcher = PersonalFactMatcher::default();
 
-        let facts = vec![
+        let facts = [
             create_test_fact(PersonalFactCategory::Identity, "name", "John"),
             create_test_fact(PersonalFactCategory::Preference, "language", "Rust"),
             create_test_fact(PersonalFactCategory::Context, "project", "brainwires"),
@@ -452,7 +452,7 @@ mod tests {
         let rust_fact = create_test_fact(PersonalFactCategory::Capability, "language", "Rust");
         let python_fact = create_test_fact(PersonalFactCategory::Capability, "language", "Python");
 
-        let facts = vec![rust_fact.clone(), python_fact.clone()];
+        let facts = [rust_fact.clone(), python_fact.clone()];
 
         let relevant: Vec<_> = matcher
             .get_relevant_facts(facts.iter(), Some("working with Rust"))
@@ -468,7 +468,7 @@ mod tests {
     fn test_format_for_context() {
         let matcher = PersonalFactMatcher::default();
 
-        let facts = vec![
+        let facts = [
             create_test_fact(PersonalFactCategory::Identity, "name", "John"),
             create_test_fact(PersonalFactCategory::Preference, "editor", "VSCode"),
         ];

@@ -2,7 +2,7 @@
 //!
 //! This module defines the `PermissionMode` enum for controlling tool execution
 //! permission levels. Capability types (AgentCapabilities, profiles, etc.) are
-//! defined in the `brainwires-permissions` crate.
+//! defined in the `brainwires-permission` crate.
 
 use serde::{Deserialize, Serialize};
 

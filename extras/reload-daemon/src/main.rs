@@ -17,16 +17,12 @@
 //! claude mcp add --transport http reload-daemon http://127.0.0.1:3100/mcp
 //! ```
 
-mod config;
-mod reload;
-mod server;
-
 use clap::Parser;
-use config::DaemonConfig;
+use reload_daemon::config::DaemonConfig;
+use reload_daemon::server::ReloadServer;
 use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
 };
-use server::ReloadServer;
 use std::sync::Arc;
 
 #[derive(Parser)]

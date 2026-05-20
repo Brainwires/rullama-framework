@@ -15,7 +15,6 @@ use crate::config::ConfigManager;
 use crate::mdap::MdapConfig;
 use crate::providers::ProviderFactory;
 use crate::storage::VectorDatabase;
-use crate::tools::ToolRegistry;
 use crate::types::agent::AgentContext;
 use crate::types::message::{Message, MessageContent, Role};
 use crate::utils::checkpoint::CheckpointManager;
@@ -23,7 +22,7 @@ use crate::utils::conversation::ConversationManager;
 use crate::utils::logger::Logger;
 use crate::utils::rich_output::RichOutput;
 use crate::utils::system_prompt::build_system_prompt;
-use brainwires::brain::bks_pks::personal::PksIntegration;
+use brainwires::knowledge::bks_pks::personal::PksIntegration;
 
 /// Handle chat with conversation management
 #[allow(clippy::too_many_arguments)]
@@ -80,7 +79,7 @@ pub async fn handle_chat_with_conversation(
     // Initialize agent context with core tools only to reduce token cost
     let user_id = session.as_ref().map(|s| s.user.user_id.clone());
 
-    let registry = ToolRegistry::with_builtins();
+    let registry = brainwires_tool_builtins::registry_with_builtins();
     let mut context = AgentContext {
         working_directory: std::env::current_dir()?.to_string_lossy().to_string(),
         user_id,
@@ -120,7 +119,8 @@ pub async fn handle_chat_with_conversation(
             .context("Failed to create LanceDB client")?,
     );
     let embeddings = Arc::new(
-        crate::storage::EmbeddingProvider::new().context("Failed to create embedding provider")?,
+        crate::storage::CachedEmbeddingProvider::new()
+            .context("Failed to create embedding provider")?,
     );
     lance_client
         .initialize(embeddings.dimension())

@@ -130,7 +130,10 @@ impl SignalChannel {
             anyhow::bail!("Signal receive error: {body}");
         }
 
-        let json: Value = resp.json().await.context("Failed to parse Signal receive response")?;
+        let json: Value = resp
+            .json()
+            .await
+            .context("Failed to parse Signal receive response")?;
         Ok(json.as_array().cloned().unwrap_or_default())
     }
 }
@@ -286,8 +289,8 @@ pub fn parse_envelope(
         server_id: None,
     };
 
-    let timestamp = chrono::DateTime::from_timestamp(ts_ms / 1000, 0)
-        .unwrap_or_else(chrono::Utc::now);
+    let timestamp =
+        chrono::DateTime::from_timestamp(ts_ms / 1000, 0).unwrap_or_else(chrono::Utc::now);
 
     Some(brainwires_network::channels::ChannelMessage {
         id: MessageId::new(msg_id),

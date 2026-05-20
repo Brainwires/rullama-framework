@@ -62,7 +62,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-brainwires-wasm = "0.10"
+brainwires-wasm = "0.11"
 ```
 
 Build with `wasm-pack`:
@@ -116,21 +116,21 @@ console.log(stateless); // → stateless protocol format
 | Feature | Default | Description |
 |---------|---------|-------------|
 | *(none)* | Yes | Core bindings: `version`, `validate_message`, `validate_tool`, `serialize_history` |
-| `interpreters` | No | Enables `brainwires-code-interpreters` re-export for WASM code execution |
+| `interpreters` | No | Enables `brainwires-tool-builtins/interpreters` re-export for WASM code execution |
 | `orchestrator` | No | Enables `WasmOrchestrator` and `ExecutionLimits` with Rhai script engine, `js-sys`, `web-sys`, and real-time timeout support |
 
 ```toml
 # Default (validation + serialization only)
-brainwires-wasm = "0.10"
+brainwires-wasm = "0.11"
 
 # With code interpreters
-brainwires-wasm = { version = "0.10", features = ["interpreters"] }
+brainwires-wasm = { version = "0.11", features = ["interpreters"] }
 
 # With tool orchestration
-brainwires-wasm = { version = "0.10", features = ["orchestrator"] }
+brainwires-wasm = { version = "0.11", features = ["orchestrator"] }
 
 # Everything enabled
-brainwires-wasm = { version = "0.10", features = ["interpreters", "orchestrator"] }
+brainwires-wasm = { version = "0.11", features = ["interpreters", "orchestrator"] }
 ```
 
 ## Architecture
@@ -150,7 +150,7 @@ All functions accept plain JSON strings and return JSON strings or descriptive e
 
 ### ExecutionLimits (requires `orchestrator` feature)
 
-WASM-compatible wrapper around `brainwires_tools::orchestrator::ExecutionLimits` with JavaScript getter/setter bindings.
+WASM-compatible wrapper around `brainwires_tool_runtime::orchestrator::ExecutionLimits` with JavaScript getter/setter bindings.
 
 | Constructor | Description |
 |-------------|-------------|
@@ -411,11 +411,11 @@ Use via the `brainwires` facade crate with the `wasm` feature, or depend on `bra
 ```toml
 # Via facade
 [dependencies]
-brainwires = { version = "0.10", features = ["wasm"] }
+brainwires = { version = "0.11", features = ["wasm"] }
 
 # Direct
 [dependencies]
-brainwires-wasm = "0.10"
+brainwires-wasm = "0.11"
 ```
 
 The crate re-exports all components at the top level:

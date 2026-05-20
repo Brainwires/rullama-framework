@@ -302,5 +302,30 @@
     "https://deno.land/std@0.224.0/path/windows/resolve.ts": "8dae1dadfed9d46ff46cc337c9525c0c7d959fb400a6308f34595c45bdca1972",
     "https://deno.land/std@0.224.0/path/windows/to_file_url.ts": "40e560ee4854fe5a3d4d12976cef2f4e8914125c81b11f1108e127934ced502e",
     "https://deno.land/std@0.224.0/path/windows/to_namespaced_path.ts": "4ffa4fb6fae321448d5fe810b3ca741d84df4d7897e61ee29be961a6aac89a4c"
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@brainwires/a2a@~0.10.1",
+      "jsr:@brainwires/agents@~0.10.1",
+      "jsr:@brainwires/core@~0.10.1",
+      "jsr:@brainwires/knowledge@~0.10.1",
+      "jsr:@brainwires/mcp@~0.10.1",
+      "jsr:@brainwires/network@~0.10.1",
+      "jsr:@brainwires/permissions@~0.10.1",
+      "jsr:@brainwires/providers@~0.10.1",
+      "jsr:@brainwires/reasoning@~0.10.1",
+      "jsr:@brainwires/resilience@~0.10.1",
+      "jsr:@brainwires/session@~0.10.1",
+      "jsr:@brainwires/storage@~0.10.1",
+      "jsr:@brainwires/telemetry@~0.10.1",
+      "jsr:@brainwires/tools@~0.10.1",
+      "jsr:@brainwires/training@~0.10.1",
+      "jsr:@std/assert@1",
+      "jsr:@std/path@1",
+      "jsr:@std/yaml@1",
+      "npm:mysql2@3",
+      "npm:pg@8",
+      "npm:surrealdb@1"
+    ]
   }
 }

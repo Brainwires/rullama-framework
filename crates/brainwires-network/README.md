@@ -51,7 +51,7 @@ Agent networking layer for the Brainwires Agent Framework.
 
 ```toml
 [dependencies]
-brainwires-network = "0.10"
+brainwires-network = "0.11"
 ```
 
 > **Building an MCP server?** Use [`brainwires-mcp-server`](../brainwires-mcp-server/README.md) directly — it provides McpServer, McpHandler, McpToolRegistry and the middleware pipeline without the full networking stack.
@@ -95,10 +95,10 @@ manager.send(peer_id, Payload::Text("hello".into())).await?;
 
 ```toml
 # With all transports and discovery
-brainwires-network = { version = "0.10", features = ["full"] }
+brainwires-network = { version = "0.11", features = ["full"] }
 
 # Just TCP and pub/sub
-brainwires-network = { version = "0.10", features = ["tcp-transport", "pubsub-transport"] }
+brainwires-network = { version = "0.11", features = ["tcp-transport", "pubsub-transport"] }
 ```
 
 ## Architecture
@@ -460,7 +460,7 @@ Use via the `brainwires` facade crate:
 
 ```toml
 [dependencies]
-brainwires = { version = "0.10", features = ["agent-network"] }
+brainwires = { version = "0.11", features = ["agent-network"] }
 ```
 
 Or use standalone — `brainwires-network` depends on `brainwires-core`, `brainwires-mcp`, and `brainwires-mcp-server`.

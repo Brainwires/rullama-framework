@@ -21,61 +21,105 @@ pub mod core {
     pub use brainwires_core::*;
 }
 
-/// Model tools — file ops, bash, git, search, validation, and web tools.
+/// Model tools — both halves at one path. Runtime types (`ToolExecutor`,
+/// `ToolRegistry`, error taxonomy, validation, transactions, smart router,
+/// plus optional orchestrator / OAuth / OpenAPI / sandbox / sessions /
+/// RAG-tool modules) and the concrete builtins (`BashTool`, `FileOpsTool`,
+/// `GitTool`, `WebTool`, `SearchTool`, `BuiltinToolExecutor`,
+/// `registry_with_builtins`, plus optional `code_exec` / `interpreters` /
+/// `semantic_search` / `browser` / `email` / `calendar` / `system`).
+///
+/// Underlying crates: [`brainwires-tool-runtime`](https://docs.rs/brainwires-tool-runtime)
+/// and [`brainwires-tool-builtins`](https://docs.rs/brainwires-tool-builtins).
+/// Depend on those directly if you don't want the whole umbrella.
 #[cfg(feature = "tools")]
 pub mod tools {
-    pub use brainwires_tools::*;
+    pub use brainwires_tool_builtins::*;
+    pub use brainwires_tool_runtime::*;
 }
 
 /// Agent runtime, communication hub, task management, and validation.
+///
+/// Spreads `brainwires-agent` (coordination + patterns + schema) and
+/// `brainwires-inference` (LLM-driven workhorses — `ChatAgent`,
+/// `TaskAgent`, planner/judge/validator helpers) under one module path
+/// for back-compat. New code can import either crate directly.
 #[cfg(feature = "agents")]
 pub mod agents {
-    pub use brainwires_agents::*;
+    pub use brainwires_agent::*;
+    #[cfg(feature = "inference")]
+    pub use brainwires_inference::*;
 }
 
-/// Persistent storage — LanceDB vector database, tiered memory, embeddings.
+/// LLM-driven workhorses — chat agent, task agent, planner / judge /
+/// validator helpers, cycle orchestrator, summarization, system prompts.
+#[cfg(feature = "inference")]
+pub mod inference {
+    pub use brainwires_inference::*;
+}
+
+/// Reasoning — planners, validators, routers, strategies, output parsers.
+#[cfg(feature = "reasoning")]
+pub mod reasoning {
+    pub use brainwires_reasoning::*;
+}
+
+/// Persistent storage primitives — `StorageBackend` trait, embeddings, BM25.
 #[cfg(feature = "storage")]
 pub mod storage {
     pub use brainwires_storage::*;
 }
 
+/// Tiered hot/warm/cold agent memory — message/summary/fact stores
+/// (schema, from `brainwires-stores`) plus the `TieredMemory` orchestration
+/// (from `brainwires-memory`, when the `tiered` feature is on).
+#[cfg(feature = "memory")]
+pub mod memory {
+    #[cfg(feature = "tiered")]
+    pub use brainwires_memory::{
+        CanonicalWriteToken, MultiFactorScore, TieredMemory, TieredMemoryConfig, TieredMemoryStats,
+        TieredSearchResult,
+    };
+    pub use brainwires_stores::*;
+}
+
 /// MCP client — connect to external MCP servers and use their tools.
 #[cfg(feature = "mcp")]
 pub mod mcp {
-    pub use brainwires_mcp::*;
+    pub use brainwires_mcp_client::*;
 }
 
 /// MDAP — Multi-Dimensional Adaptive Planning with MAKER voting.
 #[cfg(feature = "mdap")]
 pub mod mdap {
-    pub use brainwires_agents::mdap::*;
+    pub use brainwires_mdap::*;
 }
 
 /// Adaptive prompting — technique library, clustering, temperature optimization.
 #[cfg(feature = "prompting")]
 pub mod prompting {
-    pub use brainwires_knowledge::prompting::*;
+    pub use brainwires_prompting::*;
 }
 
 /// Permissions — capability profiles, policy engine, audit logging.
 #[cfg(feature = "permissions")]
 pub mod permissions {
-    pub use brainwires_permissions::*;
+    pub use brainwires_permission::*;
 }
 
 /// AI provider implementations — OpenAI, Anthropic, Google, Ollama, and more.
 #[cfg(feature = "providers")]
 pub mod providers {
-    pub use brainwires_providers::*;
+    pub use brainwires_provider::*;
 }
 
 /// Chat provider implementations (Provider trait wrappers over API clients).
 ///
-/// Re-exported from `brainwires_providers` — Groq, Together, Fireworks, and
+/// Re-exported from `brainwires_provider` — Groq, Together, Fireworks, and
 /// Anyscale are now served by `OpenAiChatProvider` with a custom provider name.
 #[cfg(feature = "chat")]
 pub mod chat {
-    pub use brainwires_providers::{
+    pub use brainwires_provider::{
         AnthropicChatProvider, ChatProviderFactory, GoogleChatProvider, OllamaChatProvider,
         OpenAiChatProvider, OpenAiResponsesProvider,
     };
@@ -84,21 +128,21 @@ pub mod chat {
 /// SEAL — Self-Evolving Adaptive Learning for coreference and knowledge.
 #[cfg(feature = "seal")]
 pub mod seal {
-    pub use brainwires_agents::seal::*;
+    pub use brainwires_seal::*;
 }
 
-// Orchestrator is re-exported via brainwires_tools::orchestrator when orchestrator feature is on
+// Orchestrator is re-exported via brainwires_tool_runtime::orchestrator when orchestrator feature is on
 
 /// RAG — codebase indexing, semantic search, and retrieval-augmented generation.
 #[cfg(feature = "rag")]
 pub mod rag {
-    pub use brainwires_knowledge::rag::*;
+    pub use brainwires_rag::rag::*;
 }
 
 /// Sandboxed code interpreters — Rhai, Lua, JavaScript (Boa), Python (RustPython).
 #[cfg(feature = "interpreters")]
 pub mod interpreters {
-    pub use brainwires_tools::interpreters::*;
+    pub use brainwires_tool_builtins::interpreters::*;
 }
 
 /// Agent network — IPC, remote bridge, mesh networking, routing, discovery.
@@ -116,13 +160,13 @@ pub mod mcp_server_framework {
 /// Skills — SKILL.md parsing, skill registry, and execution.
 #[cfg(feature = "skills")]
 pub mod skills {
-    pub use brainwires_agents::skills::*;
+    pub use brainwires_skills::*;
 }
 
 /// Evaluation framework — Monte Carlo runner, Wilson CI, adversarial tests.
 #[cfg(feature = "eval")]
 pub mod eval {
-    pub use brainwires_agents::eval::*;
+    pub use brainwires_eval::*;
 }
 
 // proxy module removed — brainwires-proxy is an extras app, use it directly
@@ -139,12 +183,11 @@ pub mod mesh {
     pub use brainwires_network::mesh::*;
 }
 
-/// Hardware I/O — audio, GPIO, Bluetooth, network, camera, USB, voice assistant.
+/// Hardware I/O — audio, GPIO, Bluetooth, camera, USB, voice assistant.
 #[cfg(any(
     feature = "audio",
     feature = "gpio",
     feature = "bluetooth",
-    feature = "network-hardware",
     feature = "camera",
     feature = "usb",
     feature = "vad",
@@ -153,6 +196,12 @@ pub mod mesh {
 ))]
 pub mod hardware {
     pub use brainwires_hardware::*;
+}
+
+/// LAN inspection tooling — moved from `brainwires-hardware::network` into `brainwires-network::lan`.
+#[cfg(feature = "lan-tools")]
+pub mod lan {
+    pub use brainwires_network::lan::*;
 }
 
 /// Audio — capture, playback, speech-to-text, text-to-speech.
@@ -180,7 +229,7 @@ pub mod vad {
 }
 
 /// Wake word detection.
-#[cfg(any(feature = "wake-word", feature = "wake-word-porcupine"))]
+#[cfg(feature = "wake-word")]
 pub mod wake_word {
     pub use brainwires_hardware::audio::wake_word::*;
 }
@@ -194,13 +243,13 @@ pub mod voice_assistant {
 /// Training data pipelines — JSONL, format conversion, tokenization, dedup.
 #[cfg(feature = "datasets")]
 pub mod datasets {
-    pub use brainwires_training::datasets::*;
+    pub use brainwires_finetune::datasets::*;
 }
 
 /// Model training — cloud fine-tuning, local Burn-based LoRA/QLoRA/DoRA.
 #[cfg(feature = "training")]
 pub mod training {
-    pub use brainwires_training::*;
+    pub use brainwires_finetune::*;
 }
 
 // autonomy module requires brainwires-autonomy (publish = false, workspace-only).
@@ -209,13 +258,13 @@ pub mod training {
 /// Generic OS-level primitives — filesystem event reactor, service management.
 #[cfg(feature = "system")]
 pub mod system {
-    pub use brainwires_tools::system::*;
+    pub use brainwires_tool_builtins::system::*;
 }
 
 /// Offline memory consolidation — summarization, fact extraction, hot/warm/cold tier transitions.
 #[cfg(feature = "dream")]
 pub mod dream {
-    pub use brainwires_knowledge::dream::*;
+    pub use brainwires_memory::dream::*;
 }
 
 /// Telemetry — analytics events, billing hooks, SQLite persistence, and cost/usage queries.
@@ -225,8 +274,8 @@ pub mod telemetry {
 }
 
 /// Central knowledge — BKS, PKS, entity graphs, thought processing.
-#[cfg(feature = "brain")]
-pub mod brain {
+#[cfg(feature = "knowledge")]
+pub mod knowledge {
     pub use brainwires_knowledge::knowledge::*;
 }
 
@@ -300,49 +349,50 @@ pub mod prelude {
 
     // Tools — available with "tools" feature
     #[cfg(feature = "tools")]
-    pub use brainwires_tools::{
-        BashTool, FileOpsTool, GitTool, RetryStrategy, SearchTool, ToolCategory, ToolErrorCategory,
-        ToolOutcome, ToolRegistry, ToolSearchTool, ValidationTool, WebTool, classify_error,
+    pub use brainwires_tool_builtins::{BashTool, FileOpsTool, GitTool, SearchTool, WebTool};
+    #[cfg(feature = "tools")]
+    pub use brainwires_tool_runtime::{
+        RetryStrategy, ToolCategory, ToolErrorCategory, ToolOutcome, ToolRegistry, ToolSearchTool,
+        ValidationTool, classify_error,
     };
 
-    // Agents — available with "agents" feature
+    // Agents — available with "agents" feature (coordination only)
     #[cfg(feature = "agents")]
-    pub use brainwires_agents::{
+    pub use brainwires_agent::{
         // Access control
         AccessControlManager,
-        AgentExecutionResult,
-        // Agent runtime
-        AgentRuntime,
         CommunicationHub,
         ContentionStrategy,
-        ExecutionApprovalMode,
         FileLockManager,
         // Git coordination
         GitCoordinator,
         LockPersistence,
-        PlanExecutionConfig,
-        PlanExecutionStatus,
-        // Plan execution
-        PlanExecutorAgent,
         TaskManager,
         TaskQueue,
-        ValidationCheck,
-        ValidationConfig,
-        ValidationSeverity,
-        run_agent_loop,
+    };
+
+    // Inference workhorses — available with "inference" feature
+    #[cfg(feature = "inference")]
+    pub use brainwires_inference::{
+        AgentExecutionResult, AgentRuntime, ExecutionApprovalMode, PlanExecutionConfig,
+        PlanExecutionStatus, PlanExecutorAgent, ValidationCheck, ValidationConfig,
+        ValidationSeverity, run_agent_loop,
     };
 
     // Storage — available with "storage" feature
     #[cfg(feature = "storage")]
-    pub use brainwires_storage::{EmbeddingProvider as StorageEmbeddingProvider, TieredMemory};
+    pub use brainwires_storage::CachedEmbeddingProvider;
+    // Tiered memory orchestration — available with "tiered" feature
+    #[cfg(feature = "tiered")]
+    pub use brainwires_memory::TieredMemory;
 
     // MCP — available with "mcp" feature
     #[cfg(feature = "mcp")]
-    pub use brainwires_mcp::{McpClient, McpConfigManager, McpServerConfig};
+    pub use brainwires_mcp_client::{McpClient, McpConfigManager, McpServerConfig};
 
     // MDAP — available with "mdap" feature
     #[cfg(feature = "mdap")]
-    pub use brainwires_agents::mdap::{
+    pub use brainwires_mdap::{
         Composer, FirstToAheadByKVoter, MdapError, MdapEstimate, MdapResult, MicroagentConfig,
         StandardRedFlagValidator,
     };
@@ -355,14 +405,14 @@ pub mod prelude {
 
     // Prompting — available with "prompting" feature
     #[cfg(feature = "prompting")]
-    pub use brainwires_knowledge::prompting::{
+    pub use brainwires_prompting::{
         GeneratedPrompt, PromptGenerator, PromptingTechnique, TaskClusterManager, TechniqueLibrary,
         TemperatureOptimizer,
     };
 
     // Permissions — available with "permissions" feature
     #[cfg(feature = "permissions")]
-    pub use brainwires_permissions::{
+    pub use brainwires_permission::{
         AgentCapabilities, ApprovalAction, ApprovalResponse, ApprovalSeverity, AuditLogger,
         CapabilityProfile, PermissionsConfig, PolicyEngine, TrustLevel, TrustManager,
     };
@@ -373,4 +423,12 @@ pub mod prelude {
         AudioBuffer, AudioCapture, AudioConfig, AudioDevice, AudioError, AudioPlayback,
         AudioResult, SpeechToText, SttOptions, TextToSpeech, Transcript, TtsOptions, Voice,
     };
+
+    // A2A protocol — available with "a2a" feature
+    #[cfg(feature = "a2a")]
+    pub use brainwires_a2a::AgentCard;
+
+    // Mesh networking — available with "mesh" feature
+    #[cfg(feature = "mesh")]
+    pub use brainwires_network::mesh::{MeshTopology, TopologyType};
 }

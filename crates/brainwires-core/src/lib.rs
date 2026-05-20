@@ -12,6 +12,9 @@
 //! - Chat options and provider configuration
 //! - Permission modes
 
+/// Response confidence extraction (CISC heuristics) — used by SEAL learning
+/// and validation policies to score model output quality.
+pub mod confidence;
 /// Content source types for tracking where content originates.
 pub mod content_source;
 /// Embedding provider trait for vector operations.
@@ -20,12 +23,20 @@ pub mod embedding;
 pub mod error;
 /// Unified event trait and `EventEnvelope<E>` with trace IDs and sequence numbers.
 pub mod event;
+/// File chunking + content extraction primitives — `FileContextManager`,
+/// `FileContent`, `FileChunk`. Moved from `brainwires-storage` in Phase 9.
+/// Native-only (uses `tokio::fs`).
+#[cfg(not(target_arch = "wasm32"))]
+pub mod file_context;
 /// Knowledge graph types: entities, edges, and trait interfaces.
 pub mod graph;
 /// Lifecycle hooks for intercepting framework events.
 pub mod lifecycle;
 /// Message, role, and streaming types for AI conversations.
 pub mod message;
+/// Platform-specific path helpers — `PlatformPaths`. Moved from
+/// `brainwires-storage` in Phase 9.
+pub mod paths;
 /// Permission mode definitions.
 pub mod permission;
 /// Plan metadata, steps, budgets, and serializable plans.
@@ -41,6 +52,10 @@ pub mod tool;
 /// Vector store trait for similarity search.
 pub mod vector_store;
 /// Persistent workflow state for crash-safe agent retry.
+///
+/// Native-only: the filesystem-backed checkpoint store uses `tokio::fs` and
+/// `dirs::home_dir`, neither of which are available on `wasm32-unknown-unknown`.
+#[cfg(not(target_arch = "wasm32"))]
 pub mod workflow_state;
 /// Working set for file context management with LRU eviction.
 pub mod working_set;

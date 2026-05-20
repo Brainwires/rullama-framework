@@ -15,14 +15,14 @@
 //! - Identifies domain concepts dynamically
 
 // Re-export entity types from framework (brainwires-knowledge::knowledge)
-pub use brainwires::brain::entity::{
+pub use brainwires::knowledge::entity::{
     Entity, EntityStore, EntityStoreStats, EntityType, ExtractionResult, Relationship,
 };
 
 use regex::Regex;
 use std::collections::HashSet;
 
-use brainwires::agents::reasoning::{EntityEnhancer, SemanticEntityType};
+use brainwires::reasoning::{EntityEnhancer, SemanticEntityType};
 
 /// Entity extractor with compiled regex patterns
 pub struct EntityExtractor {
@@ -368,10 +368,10 @@ fn convert_semantic_to_entity_type(semantic: &SemanticEntityType) -> Option<Enti
 
 /// Convert EnhancedRelationship to Relationship
 fn convert_enhanced_relationship(
-    enhanced: &brainwires::agents::reasoning::EnhancedRelationship,
+    enhanced: &brainwires::reasoning::EnhancedRelationship,
     message_id: &str,
 ) -> Relationship {
-    use brainwires::agents::reasoning::RelationType;
+    use brainwires::reasoning::RelationType;
 
     match &enhanced.relation_type {
         RelationType::Contains => Relationship::Contains {

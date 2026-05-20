@@ -5,7 +5,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::network::{MessageEnvelope, TransportType};
+use crate::{MessageEnvelope, TransportType};
 
 /// A network address that a transport can connect to.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

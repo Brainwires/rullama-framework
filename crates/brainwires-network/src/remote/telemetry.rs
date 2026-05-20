@@ -347,17 +347,17 @@ mod tests {
         let p95 = snapshot.latency_p95.unwrap();
         let p99 = snapshot.latency_p99.unwrap();
         assert!(
-            p50 >= 49 && p50 <= 51,
+            (49..=51).contains(&p50),
             "p50 should be around 50, got {}",
             p50
         );
         assert!(
-            p95 >= 94 && p95 <= 96,
+            (94..=96).contains(&p95),
             "p95 should be around 95, got {}",
             p95
         );
         assert!(
-            p99 >= 98 && p99 <= 100,
+            (98..=100).contains(&p99),
             "p99 should be around 99, got {}",
             p99
         );

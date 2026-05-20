@@ -3,18 +3,17 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use axum::extract::ws::WebSocketUpgrade;
+use axum::Router;
 use axum::extract::State;
+use axum::extract::ws::WebSocketUpgrade;
 use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
-use axum::Router;
 use chrono::Utc;
 use tokio::net::TcpListener;
 
 use crate::admin;
 use crate::audit::AuditLogger;
-use crate::openai_compat;
 use crate::channel_registry::ChannelRegistry;
 use crate::config::GatewayConfig;
 use crate::cron::CronStore;
@@ -22,6 +21,8 @@ use crate::identity::UserIdentityStore;
 use crate::metrics::MetricsCollector;
 use crate::middleware::rate_limit::RateLimiter;
 use crate::middleware::sanitizer::MessageSanitizer;
+use crate::openai_compat;
+use crate::pairing::PairingStore;
 use crate::router::{InboundHandler, MessageRouter};
 use crate::session::SessionManager;
 use crate::state::AppState;
@@ -48,6 +49,15 @@ pub struct Gateway {
     shared_metrics: Option<Arc<MetricsCollector>>,
     /// Optional cross-channel identity store.
     identity_store: Option<Arc<UserIdentityStore>>,
+    /// Optional pairing store exposed via the admin pairing endpoints.
+    pairing_store: Option<Arc<PairingStore>>,
+    /// Optional JWT verifier enabling `/webchat/ws`.
+    webchat_verifier: Option<crate::webchat::SharedVerifier>,
+    /// Optional history store for webchat sessions.
+    webchat_history: Option<Arc<crate::webchat::WebChatHistory>>,
+    /// Optional Gmail push registry.
+    #[cfg(feature = "email-push")]
+    gmail_push_registry: Option<Arc<crate::gmail_push::GmailPushRegistry>>,
 }
 
 impl Gateway {
@@ -65,6 +75,11 @@ impl Gateway {
             cron_store: None,
             shared_metrics: None,
             identity_store: None,
+            pairing_store: None,
+            webchat_verifier: None,
+            webchat_history: None,
+            #[cfg(feature = "email-push")]
+            gmail_push_registry: None,
         }
     }
 
@@ -83,7 +98,21 @@ impl Gateway {
             cron_store: None,
             shared_metrics: None,
             identity_store: None,
+            pairing_store: None,
+            webchat_verifier: None,
+            webchat_history: None,
+            #[cfg(feature = "email-push")]
+            gmail_push_registry: None,
         }
+    }
+
+    /// Attach a Gmail push registry so the gateway exposes
+    /// `POST /webhooks/gmail-push` and authenticates Pub/Sub pushes
+    /// against the per-account handlers inside the registry.
+    #[cfg(feature = "email-push")]
+    pub fn with_gmail_push(mut self, registry: Arc<crate::gmail_push::GmailPushRegistry>) -> Self {
+        self.gmail_push_registry = Some(registry);
+        self
     }
 
     /// Attach a cross-channel user identity store.
@@ -93,6 +122,34 @@ impl Gateway {
     /// carries the store so downstream consumers can access it.
     pub fn with_identity_store(mut self, store: Arc<UserIdentityStore>) -> Self {
         self.identity_store = Some(store);
+        self
+    }
+
+    /// Attach a JWT verifier for the browser-facing `/webchat/ws`
+    /// endpoint.
+    ///
+    /// When set, the gateway exposes the JWT-gated WebChat channel on
+    /// `/webchat/ws` and the history backfill endpoint on
+    /// `/webchat/history/:session_id` (the latter admin-token gated when
+    /// one is configured).  When unset, every upgrade attempt at
+    /// `/webchat/ws` is rejected with 401.
+    pub fn with_webchat_verifier(
+        mut self,
+        verifier: crate::webchat::SharedVerifier,
+        history: Arc<crate::webchat::WebChatHistory>,
+    ) -> Self {
+        self.webchat_verifier = Some(verifier);
+        self.webchat_history = Some(history);
+        self
+    }
+
+    /// Attach a pairing store.
+    ///
+    /// When set and `admin_enabled` is true, the gateway exposes the
+    /// `/admin/pairing/*` endpoints for approving, rejecting, and
+    /// revoking peer pairings.
+    pub fn with_pairing_store(mut self, store: Arc<PairingStore>) -> Self {
+        self.pairing_store = Some(store);
         self
     }
 
@@ -127,10 +184,7 @@ impl Gateway {
     ///
     /// When set, the gateway exposes `/v1/chat/completions`, `/v1/models`,
     /// and `/v1/embeddings` endpoints that proxy requests to this provider.
-    pub fn with_openai_provider(
-        mut self,
-        provider: Arc<dyn brainwires_core::Provider>,
-    ) -> Self {
+    pub fn with_openai_provider(mut self, provider: Arc<dyn brainwires_core::Provider>) -> Self {
         self.openai_provider = Some(provider);
         self
     }
@@ -189,7 +243,8 @@ impl Gateway {
                 use brainwires_telemetry::{AnalyticsCollector, SqliteAnalyticsSink};
                 match SqliteAnalyticsSink::new_default() {
                     Ok(sink) => {
-                        let collector = std::sync::Arc::new(AnalyticsCollector::new(vec![Box::new(sink)]));
+                        let collector =
+                            std::sync::Arc::new(AnalyticsCollector::new(vec![Box::new(sink)]));
                         m.with_analytics(collector)
                     }
                     Err(e) => {
@@ -215,6 +270,11 @@ impl Gateway {
             audio_dir: self.audio_dir.clone(),
             cron_store: self.cron_store.clone(),
             identity_store: self.identity_store.clone(),
+            pairing_store: self.pairing_store.clone(),
+            webchat_verifier: self.webchat_verifier.clone(),
+            webchat_history: self.webchat_history.clone(),
+            #[cfg(feature = "email-push")]
+            gmail_push_registry: self.gmail_push_registry.clone(),
         };
 
         let app = build_router(state.clone());
@@ -243,11 +303,29 @@ fn build_router(state: AppState) -> Router {
         app = app.route(&webhook_path, post(webhook::handle_webhook));
     }
 
+    // Gmail push webhook — always mounted when a registry is configured,
+    // independent of `webhook_enabled` (which gates the HMAC webhook).
+    #[cfg(feature = "email-push")]
+    if state.gmail_push_registry.is_some() {
+        app = app.route(
+            "/webhooks/gmail-push",
+            post(crate::gmail_push::handle_gmail_push),
+        );
+        tracing::debug!("Gmail push webhook enabled at /webhooks/gmail-push");
+    }
+
     // WebChat endpoints (conditionally enabled)
     if state.config.webchat_enabled {
         app = app
             .route("/chat", get(webchat::serve_webchat_page))
-            .route("/chat/ws", get(webchat::webchat_ws_handler));
+            // Legacy unauthenticated WebSocket for the built-in /chat HTML
+            // page. Retained for continuity; new clients should use the
+            // JWT-gated `/webchat/ws` endpoint below instead.
+            .route("/chat/ws", get(webchat::legacy_chat_ws_handler))
+            // JWT-gated WebSocket endpoint used by the external Next.js app
+            // (extras/brainwires-webchat).
+            .route("/webchat/ws", get(webchat::webchat_ws_handler))
+            .route("/webchat/history/{session_id}", post(webchat_history_route));
     }
 
     // Admin endpoints (conditionally enabled)
@@ -277,6 +355,10 @@ fn build_router(state: AppState) -> Router {
             .route(
                 &format!("{}/metrics", admin_prefix),
                 get(admin::get_metrics),
+            )
+            .route(
+                &format!("{}/slash/commands", admin_prefix),
+                get(admin::list_slash_commands),
             );
 
         // Cron admin API (only when a cron store is wired in)
@@ -310,13 +392,41 @@ fn build_router(state: AppState) -> Router {
                     axum::routing::delete(admin::unlink_identity),
                 );
         }
+
+        // Pairing admin API (only when a pairing store is wired in)
+        if state.pairing_store.is_some() {
+            app = app
+                .route(
+                    &format!("{}/pairing/pending", admin_prefix),
+                    get(admin::list_pending_pairing),
+                )
+                .route(
+                    &format!("{}/pairing/approved", admin_prefix),
+                    get(admin::list_approved_pairing),
+                )
+                .route(
+                    &format!("{}/pairing/approve", admin_prefix),
+                    post(admin::approve_pairing),
+                )
+                .route(
+                    &format!("{}/pairing/reject", admin_prefix),
+                    post(admin::reject_pairing),
+                )
+                .route(
+                    &format!("{}/pairing/revoke", admin_prefix),
+                    post(admin::revoke_pairing),
+                );
+        }
     }
 
     // OpenAI-compatible API endpoint (always enabled when provider is configured)
     if state.openai_provider.is_some() {
         app = app
             .route("/v1/models", get(openai_compat::list_models))
-            .route("/v1/chat/completions", post(openai_compat::chat_completions))
+            .route(
+                "/v1/chat/completions",
+                post(openai_compat::chat_completions),
+            )
             .route("/v1/embeddings", post(openai_compat::embeddings));
         tracing::debug!("OpenAI-compatible API endpoint enabled at /v1/");
     }
@@ -341,9 +451,7 @@ async fn ws_upgrade(
 ) -> impl IntoResponse {
     use crate::middleware::OriginValidator;
 
-    let origin = headers
-        .get("origin")
-        .and_then(|v| v.to_str().ok());
+    let origin = headers.get("origin").and_then(|v| v.to_str().ok());
 
     let validator = OriginValidator::new(state.config.allowed_origins.clone());
     if !validator.validate(origin) {
@@ -358,6 +466,24 @@ async fn ws_upgrade(
         .into_response()
 }
 
+/// Admin-authenticated wrapper around [`webchat::serve_history`].
+///
+/// Returns 401 when an admin token is configured and the request does
+/// not carry a matching `Authorization: Bearer <token>` header. When no
+/// admin token is configured the endpoint is open — matching the
+/// behaviour of the rest of the admin surface.
+async fn webchat_history_route(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    path: axum::extract::Path<String>,
+    body: Option<axum::Json<webchat::HistoryRequest>>,
+) -> axum::response::Response {
+    if let Err(code) = crate::admin::check_admin_auth(&headers, &state.config) {
+        return code.into_response();
+    }
+    webchat::serve_history(State(state), path, body).await
+}
+
 /// Serve TTS-generated audio files at `/audio/<filename>`.
 ///
 /// Reads the file from `state.audio_dir/<filename>`, guesses the MIME type
@@ -368,7 +494,7 @@ async fn serve_audio_file(
     axum::extract::Path(filename): axum::extract::Path<String>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    use axum::http::{header, StatusCode};
+    use axum::http::{StatusCode, header};
 
     // Reject any path that tries to escape the audio directory
     if filename.contains('/') || filename.contains("..") {
@@ -392,11 +518,7 @@ async fn serve_audio_file(
             } else {
                 "audio/wav"
             };
-            (
-                [(header::CONTENT_TYPE, mime)],
-                bytes,
-            )
-                .into_response()
+            ([(header::CONTENT_TYPE, mime)], bytes).into_response()
         }
         Err(_) => (StatusCode::NOT_FOUND, "Not found").into_response(),
     }

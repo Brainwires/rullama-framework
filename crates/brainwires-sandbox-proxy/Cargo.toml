@@ -1,0 +1,29 @@
+[package]
+name = "brainwires-sandbox-proxy"
+description = "Egress allowlist proxy used by DockerSandbox to enforce NetworkPolicy::Limited"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["sandbox", "proxy", "allowlist", "egress", "security"]
+categories = ["network-programming"]
+publish = false
+
+[[bin]]
+name = "brainwires-sandbox-proxy"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+bytes = { workspace = true }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true

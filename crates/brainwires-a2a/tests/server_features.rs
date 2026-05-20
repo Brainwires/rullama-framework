@@ -718,7 +718,7 @@ async fn test_jsonrpc_push_config_get_unsupported() {
     };
 
     let result = brainwires_a2a::server::jsonrpc_router::dispatch(&handler, &req).await;
-    assert!(matches!(result, Err(_)));
+    assert!(result.is_err());
 }
 
 #[tokio::test]
@@ -733,7 +733,7 @@ async fn test_jsonrpc_push_config_list_unsupported() {
     };
 
     let result = brainwires_a2a::server::jsonrpc_router::dispatch(&handler, &req).await;
-    assert!(matches!(result, Err(_)));
+    assert!(result.is_err());
 }
 
 #[tokio::test]
@@ -748,7 +748,7 @@ async fn test_jsonrpc_push_config_delete_unsupported() {
     };
 
     let result = brainwires_a2a::server::jsonrpc_router::dispatch(&handler, &req).await;
-    assert!(matches!(result, Err(_)));
+    assert!(result.is_err());
 }
 
 // ---- REST push notification ----

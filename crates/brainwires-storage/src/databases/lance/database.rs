@@ -101,7 +101,7 @@ impl LanceDatabase {
 
     /// Get default database path.
     pub fn default_lancedb_path() -> String {
-        crate::paths::PlatformPaths::default_lancedb_path()
+        brainwires_core::paths::PlatformPaths::default_lancedb_path()
             .to_string_lossy()
             .to_string()
     }

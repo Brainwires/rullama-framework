@@ -109,11 +109,11 @@ async fn handle_webhook(
     }
 
     // ── Normalise to ChannelMessage ───────────────────────────────────────────
-    if let Some(msg) = normalise(&event_type, &payload, &repo_full) {
-        if let Err(e) = state.event_tx.try_send(msg) {
-            tracing::error!("webhook event dropped: {e}");
-            return (StatusCode::SERVICE_UNAVAILABLE, "backpressure").into_response();
-        }
+    if let Some(msg) = normalise(&event_type, &payload, &repo_full)
+        && let Err(e) = state.event_tx.try_send(msg)
+    {
+        tracing::error!("webhook event dropped: {e}");
+        return (StatusCode::SERVICE_UNAVAILABLE, "backpressure").into_response();
     }
 
     (StatusCode::OK, "accepted").into_response()
@@ -125,8 +125,7 @@ fn verify_signature(secret: &[u8], body: &[u8], signature_header: &str) -> bool 
         .strip_prefix("sha256=")
         .unwrap_or(signature_header);
 
-    let mut mac =
-        HmacSha256::new_from_slice(secret).expect("HMAC can take key of any size");
+    let mut mac = HmacSha256::new_from_slice(secret).expect("HMAC can take key of any size");
     mac.update(body);
     let result = hex::encode(mac.finalize().into_bytes());
     // Constant-time comparison via hmac verify is ideal; hex compare is fine for server-side
@@ -137,11 +136,7 @@ fn verify_signature(secret: &[u8], body: &[u8], signature_header: &str) -> bool 
 ///
 /// Returns `None` for events that don't map to a user-visible message
 /// (e.g. label changes with no body).
-fn normalise(
-    event_type: &str,
-    payload: &serde_json::Value,
-    repo: &str,
-) -> Option<ChannelMessage> {
+fn normalise(event_type: &str, payload: &serde_json::Value, repo: &str) -> Option<ChannelMessage> {
     let (issue_number, body, author) = match event_type {
         "issue_comment" => {
             let action = payload["action"].as_str()?;
@@ -149,7 +144,10 @@ fn normalise(
                 return None; // deletions don't carry useful body
             }
             let n = payload["issue"]["number"].as_u64()?;
-            let b = payload["comment"]["body"].as_str().unwrap_or("").to_string();
+            let b = payload["comment"]["body"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
             let a = payload["comment"]["user"]["login"]
                 .as_str()
                 .unwrap_or("unknown")
@@ -187,7 +185,10 @@ fn normalise(
                 return None;
             }
             let n = payload["pull_request"]["number"].as_u64()?;
-            let b = payload["comment"]["body"].as_str().unwrap_or("").to_string();
+            let b = payload["comment"]["body"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
             let path = payload["comment"]["path"].as_str().unwrap_or("?");
             let a = payload["comment"]["user"]["login"]
                 .as_str()
@@ -257,10 +258,7 @@ mod tests {
         });
         let msg = normalise("issue_comment", &payload, "octocat/repo").unwrap();
         assert_eq!(msg.author, "alice");
-        assert_eq!(
-            msg.conversation.channel_id,
-            "octocat/repo#7"
-        );
+        assert_eq!(msg.conversation.channel_id, "octocat/repo#7");
         if let MessageContent::Text(t) = &msg.content {
             assert_eq!(t, "Looks good!");
         }

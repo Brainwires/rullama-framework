@@ -13,8 +13,7 @@ use std::sync::Arc;
 use crate::agents::{CommunicationHub, FileLockManager, TaskAgent, TaskAgentConfig};
 use crate::config::PlatformPaths;
 use crate::providers::Provider;
-use crate::storage::{EmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
-use crate::tools::ToolRegistry;
+use crate::storage::{CachedEmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
 use crate::types::agent::{AgentContext, PermissionMode, Task};
 use crate::types::plan::{PlanMetadata, PlanStatus};
 use crate::types::tool::{Tool, ToolInputSchema, ToolResult};
@@ -133,7 +132,9 @@ impl PlanTool {
         let working_dir = std::env::current_dir()?.to_string_lossy().to_string();
 
         // Get read-only tools for the planning agent
-        let all_tools = ToolRegistry::with_builtins().get_all().to_vec();
+        let all_tools = brainwires_tool_builtins::registry_with_builtins()
+            .get_all()
+            .to_vec();
         let read_only_tools: Vec<_> = all_tools
             .into_iter()
             .filter(|t| {
@@ -247,7 +248,7 @@ impl PlanTool {
             .await?,
         );
 
-        let embeddings = Arc::new(EmbeddingProvider::new()?);
+        let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
         client.initialize(embeddings.dimension()).await?;
 
         let plan_store = PlanStore::new(client, embeddings);

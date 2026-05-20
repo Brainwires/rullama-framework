@@ -8,7 +8,9 @@ use std::panic;
 #[derive(Parser)]
 #[command(name = "brainwires-gateway")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "Always-on WebSocket gateway that routes messages between channel MCP servers and agent sessions")]
+#[command(
+    about = "Always-on WebSocket gateway that routes messages between channel MCP servers and agent sessions"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -44,12 +46,18 @@ async fn main() -> Result<()> {
         Some(Commands::Version) => {
             show_version_info();
         }
-        Some(Commands::Serve { host, port, config: _config }) => {
+        Some(Commands::Serve {
+            host,
+            port,
+            config: _config,
+        }) => {
             setup_panic_handler();
 
-            let mut gateway_config = GatewayConfig::default();
-            gateway_config.host = host;
-            gateway_config.port = port;
+            let gateway_config = GatewayConfig {
+                host,
+                port,
+                ..Default::default()
+            };
 
             let gateway = Gateway::new(gateway_config);
             if let Err(e) = gateway.run().await {

@@ -1,6 +1,6 @@
 //! CLI-local helpers for the framework's `ProviderType`.
 //!
-//! `ProviderType` is defined in `brainwires-providers` and re-exported via
+//! `ProviderType` is defined in `brainwires-provider` and re-exported via
 //! `crate::providers`, so we cannot add methods to it. These free functions
 //! layer CLI-specific concerns on top: env-var discovery, UI summaries,
 //! and the chat-capable provider subset used by the picker.

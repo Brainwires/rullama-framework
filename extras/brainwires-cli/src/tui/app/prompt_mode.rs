@@ -73,7 +73,7 @@ impl App {
     /// invokes; the user still types `/<name>` to opt in.
     ///
     /// Uses the same keyword heuristic as
-    /// [`brainwires_agents::skills::SkillRouter::keyword_match`] but runs
+    /// [`brainwires_skills::SkillRouter::keyword_match`] but runs
     /// synchronously against the App's registry rather than reaching
     /// through the router's `Arc<RwLock>`.
     pub fn suggest_skill_for(&self, user_message: &str) -> Option<String> {
@@ -132,7 +132,7 @@ impl App {
     /// honor a skill's `allowed_tools` declaration.
     ///
     /// Matches exact tool names and MCP-style `server__tool` suffixes,
-    /// same as [`brainwires_agents::skills::SkillExecutor::filter_allowed_tools`].
+    /// same as [`brainwires_skills::SkillExecutor::filter_allowed_tools`].
     pub fn apply_and_clear_skill_tool_scope(&mut self, tools: Vec<Tool>) -> Vec<Tool> {
         let Some(allowed) = self.pending_skill_tool_scope.take() else {
             return tools;

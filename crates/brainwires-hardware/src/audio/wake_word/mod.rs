@@ -6,10 +6,6 @@
 //! - `RustpotterDetector` — pure-Rust, Apache 2.0, no native deps.
 //!   Uses DTW or ONNX neural models (`.rpw` files). Feature: `wake-word`.
 //!
-//! - `PorcupineDetector` — Picovoice Porcupine, maximum accuracy.
-//!   Requires a free AccessKey and the native Porcupine library.
-//!   Feature: `wake-word-porcupine`.
-//!
 //! ## Quick start
 //!
 //! ```rust,no_run,ignore
@@ -22,14 +18,11 @@
 
 /// Energy-burst wake trigger — zero-dependency fallback.
 pub mod energy_trigger;
-#[cfg(feature = "wake-word-porcupine")]
-pub mod porcupine;
+/// Rustpotter-backed wake word detector (pure Rust, `.rpw` models).
 #[cfg(feature = "wake-word-rustpotter")]
 pub mod rustpotter;
 
 pub use self::energy_trigger::EnergyTriggerDetector;
-#[cfg(feature = "wake-word-porcupine")]
-pub use self::porcupine::PorcupineDetector;
 #[cfg(feature = "wake-word-rustpotter")]
 pub use self::rustpotter::RustpotterDetector;
 

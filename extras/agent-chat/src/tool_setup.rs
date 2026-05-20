@@ -1,6 +1,5 @@
-use brainwires_tools::{
-    BashTool, FileOpsTool, GitTool, SearchTool, ToolRegistry, ValidationTool, WebTool,
-};
+use brainwires_tool_builtins::{BashTool, FileOpsTool, GitTool, SearchTool, WebTool};
+use brainwires_tool_runtime::{ToolRegistry, ValidationTool};
 
 pub fn build_registry() -> ToolRegistry {
     let mut registry = ToolRegistry::new();

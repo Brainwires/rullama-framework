@@ -20,7 +20,8 @@ doc = false
 
 [dependencies]
 # Core brainwires subsystems
-brainwires-knowledge = { workspace = true, features = ["knowledge", "dream"] }
+brainwires-knowledge = { workspace = true, features = ["knowledge"] }
+brainwires-memory = { workspace = true, features = ["dream"] }
 brainwires-core = { workspace = true }
 brainwires-storage = { workspace = true }
 
@@ -51,3 +52,6 @@ uuid.workspace = true
 
 [build-dependencies]
 # None — we skip build.rs for now; version info comes from CARGO_PKG_VERSION
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -1,6 +1,6 @@
 //! Agent System
 //!
-//! Re-exports core agent infrastructure from brainwires-agents framework crate,
+//! Re-exports core agent infrastructure from brainwires-agent framework crate,
 //! plus CLI-specific orchestration, management, and execution modules.
 #![allow(hidden_glob_reexports)]
 

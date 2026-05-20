@@ -624,4 +624,136 @@ mod tests {
         guard.record_success(10);
         assert!(guard.check_can_continue().is_err());
     }
+
+    // ── Approval policy tests ───────────────────────────────────────────
+
+    fn commit_op() -> AutonomousOperation {
+        AutonomousOperation::CommitChanges {
+            diff_lines: 42,
+            files: vec!["src/lib.rs".to_string()],
+        }
+    }
+
+    fn merge_op() -> AutonomousOperation {
+        AutonomousOperation::MergePullRequest {
+            pr_id: "PR-7".to_string(),
+            confidence: 0.92,
+        }
+    }
+
+    #[tokio::test]
+    async fn approval_required_blocks_without_approval() {
+        // Build a guard whose approval policy is "always reject" — the analogue
+        // of "require explicit approval". Any op should be blocked.
+        let config = SelfImprovementConfig::default();
+        let guard = SafetyGuard::new(&config).with_approval_policy(Arc::new(AlwaysReject));
+        let result = guard.check_approval(&commit_op()).await;
+        assert!(
+            result.is_err(),
+            "AlwaysReject should block an op without explicit approval"
+        );
+        match result.unwrap_err() {
+            SafetyStop::OperationRejected(msg) => {
+                assert!(
+                    msg.contains("Manual approval"),
+                    "rejection message should mention manual approval, got: {msg}"
+                );
+            }
+            other => panic!("expected OperationRejected, got {other:?}"),
+        }
+    }
+
+    /// An approval policy that grants exactly one pre-approved op (by display label)
+    /// and rejects everything else — exercises the "approve op A, try op B" case.
+    struct PreApprovedOnly {
+        approved_label: String,
+    }
+
+    #[async_trait]
+    impl ApprovalPolicy for PreApprovedOnly {
+        async fn check(&self, op: &AutonomousOperation) -> Result<(), SafetyStop> {
+            if op.to_string() == self.approved_label {
+                Ok(())
+            } else {
+                Err(SafetyStop::OperationRejected(format!(
+                    "not pre-approved: {op}"
+                )))
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn approval_denied_for_non_preapproved_op() {
+        let config = SelfImprovementConfig::default();
+        let pre_approved = commit_op();
+        let guard = SafetyGuard::new(&config).with_approval_policy(Arc::new(PreApprovedOnly {
+            approved_label: pre_approved.to_string(),
+        }));
+
+        // Pre-approved op passes.
+        assert!(
+            guard.check_approval(&pre_approved).await.is_ok(),
+            "pre-approved op should be allowed"
+        );
+        // Different op is rejected.
+        assert!(
+            guard.check_approval(&merge_op()).await.is_err(),
+            "non-preapproved op should be rejected"
+        );
+    }
+
+    #[tokio::test]
+    async fn automatic_policy_allows_safe_ops() {
+        // AlwaysApprove is the default "auto-approve safe" policy.
+        let config = SelfImprovementConfig::default();
+        let guard = SafetyGuard::new(&config);
+        assert!(
+            guard.check_approval(&commit_op()).await.is_ok(),
+            "AlwaysApprove should allow safe ops"
+        );
+        assert!(
+            guard.check_approval(&merge_op()).await.is_ok(),
+            "AlwaysApprove should allow all ops"
+        );
+    }
+
+    // ── Operation guard behavior ────────────────────────────────────────
+
+    #[test]
+    fn circuit_breaker_blocks_after_trip() {
+        // A tripped circuit breaker causes check_can_continue to fail until cooldown.
+        let config = SelfImprovementConfig {
+            max_cycles: 100,
+            circuit_breaker_threshold: 2,
+            ..Default::default()
+        };
+        let mut guard = SafetyGuard::new(&config);
+        guard.record_failure();
+        guard.record_failure();
+        assert_eq!(
+            guard.circuit_breaker_state(),
+            CircuitBreakerState::Open,
+            "breaker should trip after threshold failures"
+        );
+        assert!(matches!(
+            guard.check_can_continue(),
+            Err(SafetyStop::CircuitBreakerTripped(_))
+        ));
+    }
+
+    #[test]
+    fn diff_limit_blocks_once_exceeded() {
+        let config = SelfImprovementConfig {
+            max_cycles: 100,
+            max_total_diff: 50,
+            ..Default::default()
+        };
+        let mut guard = SafetyGuard::new(&config);
+        guard.record_success(60);
+        let result = guard.check_can_continue();
+        assert!(
+            matches!(result, Err(SafetyStop::DiffLimitExceeded(_))),
+            "expected DiffLimitExceeded, got {result:?}"
+        );
+    }
 }

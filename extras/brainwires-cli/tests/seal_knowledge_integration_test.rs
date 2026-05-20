@@ -3,9 +3,9 @@
 //! Tests the bidirectional learning between SEAL (entity-centric learning)
 //! and the Knowledge System (BKS + PKS).
 
-use brainwires::brain::EntityType;
-use brainwires::brain::bks_pks::{BehavioralKnowledgeCache, PersonalKnowledgeCache};
-use brainwires::seal::{
+use brainwires::knowledge::EntityType;
+use brainwires::knowledge::bks_pks::{BehavioralKnowledgeCache, PersonalKnowledgeCache};
+use brainwires_seal::{
     EntityResolutionStrategy, IntegrationConfig, ReferenceType, ResolvedReference, SalienceScore,
     SealKnowledgeCoordinator, SealProcessingResult, UnresolvedReference,
 };
@@ -250,8 +250,10 @@ async fn test_coordinator_creation() {
     assert!(coordinator.is_ok());
 
     // Should fail with invalid config
-    let mut invalid_config = IntegrationConfig::default();
-    invalid_config.seal_weight = 2.0; // Invalid weight sum
+    let invalid_config = IntegrationConfig {
+        seal_weight: 2.0, // Invalid weight sum
+        ..Default::default()
+    };
     let coordinator = SealKnowledgeCoordinator::new(bks_cache, pks_cache, invalid_config);
     assert!(coordinator.is_err());
 }

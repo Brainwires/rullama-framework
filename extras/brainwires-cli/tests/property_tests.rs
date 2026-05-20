@@ -80,7 +80,7 @@ mod message_serialization {
     }
 
     fn arb_text_content() -> impl Strategy<Value = MessageContent> {
-        ".*".prop_map(|s| MessageContent::Text(s))
+        ".*".prop_map(MessageContent::Text)
     }
 
     fn arb_message() -> impl Strategy<Value = Message> {

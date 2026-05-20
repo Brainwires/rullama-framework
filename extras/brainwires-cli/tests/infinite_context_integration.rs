@@ -1,6 +1,6 @@
 use anyhow::Result;
 use brainwires_cli::storage::{
-    EmbeddingProvider, LanceDatabase, MessageMetadata, MessageStore, VectorDatabase,
+    CachedEmbeddingProvider, LanceDatabase, MessageMetadata, MessageStore, VectorDatabase,
 };
 use chrono::Utc;
 use std::sync::Arc;
@@ -13,7 +13,7 @@ async fn test_message_storage_and_search() -> Result<()> {
     let db_path = test_db.path().join("test_conversations.lance");
 
     let client = Arc::new(LanceDatabase::new(db_path.to_str().unwrap()).await?);
-    let embeddings = Arc::new(EmbeddingProvider::new()?);
+    let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
 
     // Initialize database tables
     client.initialize(embeddings.dimension()).await?;
@@ -139,7 +139,7 @@ async fn test_message_storage_and_search() -> Result<()> {
 async fn test_embedding_cache() -> Result<()> {
     use std::time::Instant;
 
-    let embeddings = EmbeddingProvider::new()?;
+    let embeddings = CachedEmbeddingProvider::new()?;
 
     // Cold embedding (not cached)
     let query = "JWT authentication implementation";
@@ -178,7 +178,7 @@ async fn test_conversation_isolation() -> Result<()> {
     let db_path = test_db.path().join("test_conversations.lance");
 
     let client = Arc::new(LanceDatabase::new(db_path.to_str().unwrap()).await?);
-    let embeddings = Arc::new(EmbeddingProvider::new()?);
+    let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
     client.initialize(embeddings.dimension()).await?;
 
     let store = MessageStore::new(client, embeddings);
@@ -256,7 +256,7 @@ async fn test_relevance_thresholds() -> Result<()> {
     let db_path = test_db.path().join("test_conversations.lance");
 
     let client = Arc::new(LanceDatabase::new(db_path.to_str().unwrap()).await?);
-    let embeddings = Arc::new(EmbeddingProvider::new()?);
+    let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
     client.initialize(embeddings.dimension()).await?;
 
     let store = MessageStore::new(client, embeddings);
@@ -353,7 +353,7 @@ async fn bench_search_latency() -> Result<()> {
     let db_path = test_db.path().join("test_conversations.lance");
 
     let client = Arc::new(LanceDatabase::new(db_path.to_str().unwrap()).await?);
-    let embeddings = Arc::new(EmbeddingProvider::new()?);
+    let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
     client.initialize(embeddings.dimension()).await?;
 
     let store = MessageStore::new(client, embeddings);

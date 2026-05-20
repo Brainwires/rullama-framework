@@ -1,5 +1,5 @@
 use anyhow::Result;
-use brainwires_mcp::{InitializeParams, InitializeResult, JsonRpcRequest, JsonRpcResponse};
+use brainwires_mcp_client::{InitializeParams, InitializeResult, JsonRpcRequest, JsonRpcResponse};
 use serde_json::{Value, json};
 use tracing;
 
@@ -160,7 +160,7 @@ impl<H: McpHandler> McpServer<H> {
                 InitializeParams {
                     protocol_version: "2024-11-05".to_string(),
                     capabilities: Default::default(),
-                    client_info: brainwires_mcp::ClientInfo {
+                    client_info: brainwires_mcp_client::ClientInfo {
                         name: "unknown".to_string(),
                         version: "0.7.0".to_string(),
                     },

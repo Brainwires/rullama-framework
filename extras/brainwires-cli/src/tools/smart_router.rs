@@ -6,13 +6,13 @@
 
 // Re-export all framework smart_router functions
 #[allow(hidden_glob_reexports)]
-pub use brainwires_tools::smart_router::*;
+pub use brainwires_tool_runtime::smart_router::*;
 
 // ── CLI-specific: inference-integrated variants ───────────────────────────
 
 use crate::types::message::Message;
-use brainwires::agents::reasoning::LocalRouter;
-use brainwires_tools::{Tool, ToolCategory, ToolRegistry};
+use brainwires::reasoning::LocalRouter;
+use brainwires_tool_runtime::{Tool, ToolCategory};
 
 /// Analyze a query using local inference with keyword fallback
 ///
@@ -49,14 +49,14 @@ pub async fn get_smart_tools_with_local(
     local_router: Option<&LocalRouter>,
 ) -> Vec<Tool> {
     let categories = analyze_messages_with_local(messages, local_router).await;
-    let registry = ToolRegistry::with_builtins();
+    let registry = brainwires_tool_builtins::registry_with_builtins();
     get_tools_for_categories(&registry, &categories)
 }
 
 // ── CLI-specific: skill-integrated variants ───────────────────────────────
 
-use brainwires_agents::skills::metadata::SkillMatch;
-use brainwires_agents::skills::router::SkillRouter;
+use brainwires_skills::metadata::SkillMatch;
+use brainwires_skills::router::SkillRouter;
 
 /// Analyze query and return both tool categories and skill matches
 pub async fn analyze_with_skills(
@@ -87,7 +87,7 @@ pub async fn get_smart_tools_with_skills(
     skill_router: &SkillRouter,
 ) -> (Vec<Tool>, Vec<SkillMatch>) {
     let (categories, skill_matches) = analyze_with_skills(messages, skill_router).await;
-    let registry = ToolRegistry::with_builtins();
+    let registry = brainwires_tool_builtins::registry_with_builtins();
     let tools = get_tools_for_categories(&registry, &categories);
     (tools, skill_matches)
 }

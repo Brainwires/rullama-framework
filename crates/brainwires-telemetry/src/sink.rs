@@ -3,7 +3,7 @@ use async_trait::async_trait;
 
 /// Pluggable output for analytics events.
 ///
-/// Implementations receive events from the [`AnalyticsCollector`]'s background
+/// Implementations receive events from the [`AnalyticsCollector`](crate::collector::AnalyticsCollector)'s background
 /// drain task. Each call to `record` should be non-blocking from the caller's
 /// perspective; the drain task handles backpressure.
 #[async_trait]
@@ -13,7 +13,7 @@ pub trait AnalyticsSink: Send + Sync + 'static {
 
     /// Flush any buffered events to durable storage.
     ///
-    /// Called by [`AnalyticsCollector::flush`]. Default is a no-op.
+    /// Called by [`AnalyticsCollector::flush`](crate::collector::AnalyticsCollector::flush). Default is a no-op.
     async fn flush(&self) -> Result<(), AnalyticsError> {
         Ok(())
     }

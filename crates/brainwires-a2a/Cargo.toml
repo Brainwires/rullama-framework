@@ -73,3 +73,7 @@ required-features = ["full"]
 [[example]]
 name = "a2a_streaming"
 required-features = ["client", "server"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

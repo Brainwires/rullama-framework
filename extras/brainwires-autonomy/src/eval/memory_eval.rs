@@ -16,10 +16,8 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use brainwires_agents::eval::{EvaluationCase, TrialResult, ndcg_at_k};
-use brainwires_storage::tiered_memory::{
-    MemoryAuthority, MemoryTier, MultiFactorScore, TierMetadata,
-};
+use brainwires_eval::{EvaluationCase, TrialResult, ndcg_at_k};
+use brainwires_memory::{MemoryAuthority, MemoryTier, MultiFactorScore, TierMetadata};
 use chrono::Utc;
 
 // ── Scenario helpers ──────────────────────────────────────────────────────────
@@ -219,7 +217,7 @@ impl EvaluationCase for TierDemotionCase {
         let start = std::time::Instant::now();
 
         // Build entries with age expressed in seconds for precision.
-        let entries = vec![
+        let entries = [
             ("R1_keep", make_tier_metadata(0.90, 3_600, 10)), // ~1h
             ("R2_medium", make_tier_metadata(0.50, 86_400, 3)), // ~24h
             ("R3_demote", make_tier_metadata(0.20, 604_800, 1)), // ~168h
@@ -271,7 +269,7 @@ impl EvaluationCase for TierDemotionCase {
 // ── Suite constructor ─────────────────────────────────────────────────────────
 
 /// Return all memory eval cases ready for use with
-/// [`brainwires_agents::eval::EvaluationSuite`] or
+/// [`brainwires_eval::EvaluationSuite`] or
 /// [`brainwires_autonomy::self_improve::AutonomousFeedbackLoop`].
 pub fn multi_factor_suite() -> Vec<Arc<dyn EvaluationCase>> {
     vec![Arc::new(MultiFactorRankingCase), Arc::new(TierDemotionCase)]

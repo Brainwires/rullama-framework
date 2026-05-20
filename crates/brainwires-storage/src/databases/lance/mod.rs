@@ -12,10 +12,10 @@
 //!
 //! | Module | Contents |
 //! |--------|----------|
-//! | [`arrow_convert`] | Arrow ↔ domain-type conversions |
-//! | [`database`] | [`LanceDatabase`] struct and helper methods |
-//! | [`storage_backend`] | [`StorageBackend`] impl |
-//! | [`vector_database`] | [`VectorDatabase`] impl |
+//! | `arrow_convert` | Arrow ↔ domain-type conversions |
+//! | `database` | `LanceDatabase` struct and helper methods |
+//! | `storage_backend` | `StorageBackend` impl |
+//! | `vector_database` | `VectorDatabase` impl |
 
 pub mod arrow_convert;
 

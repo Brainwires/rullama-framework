@@ -349,12 +349,11 @@ fn extract_project_name(path: &str) -> Option<String> {
 // Background Sync for Personal Facts
 // ============================================================================
 
-/// Background syncer for personal facts using REST API polling
+/// Background syncer for personal facts using REST API polling.
 ///
 /// Periodically polls the server for updates and uploads local changes.
-/// Named `PksSseListener` for backward compatibility but uses REST polling
-/// instead of SSE (the web frontend uses SSE, CLI uses REST polling).
-pub struct PksSseListener {
+/// The web frontend uses SSE; this CLI-side integration uses REST polling.
+pub struct PksRestPoller {
     /// API client for server communication
     api_client: super::api::PersonalKnowledgeApiClient,
 
@@ -374,7 +373,7 @@ pub struct PksSseListener {
     last_sync: Option<String>,
 }
 
-impl PksSseListener {
+impl PksRestPoller {
     /// Create a new background syncer
     pub fn new(server_url: &str, fact_tx: mpsc::UnboundedSender<DetectedFact>) -> Self {
         let api_client = super::api::PersonalKnowledgeApiClient::new(server_url);
@@ -657,7 +656,7 @@ mod tests {
         }
 
         // Should have tracked usage
-        assert!(integration.tool_usage.usage.get("read_file").is_some());
+        assert!(integration.tool_usage.usage.contains_key("read_file"));
     }
 
     #[test]

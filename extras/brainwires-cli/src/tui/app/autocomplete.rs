@@ -184,12 +184,10 @@ impl AutocompleteOps for App {
         } else {
             // Provide some fallback models if cache is empty
             self.cached_model_ids = vec![
-                "claude-3-5-sonnet-20241022".to_string(),
-                "claude-3-opus-20240229".to_string(),
-                "claude-3-haiku-20240307".to_string(),
-                "openai-gpt-5.2".to_string(),
-                "openai-gpt-5.2-pro".to_string(),
-                "openai-gpt-5-mini".to_string(),
+                "claude-haiku-4-5-20251001".to_string(),
+                "claude-sonnet-4-5-20250929".to_string(),
+                "claude-opus-4-1-20250805".to_string(),
+                "gemini-2.5-pro".to_string(),
                 "llama-3.3-70b-versatile".to_string(),
             ];
         }

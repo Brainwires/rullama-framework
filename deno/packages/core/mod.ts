@@ -18,6 +18,22 @@ export { type EmbeddingProvider } from "./embedding.ts";
 // Framework errors
 export { FrameworkError, type FrameworkErrorKind } from "./error.ts";
 
+// Correlation / tracing envelope
+export { type Event, EventEnvelope, newTraceId } from "./event.ts";
+
+// Workflow checkpoint / crash-safe retry
+export {
+  defaultWorkflowStatePath,
+  FsWorkflowStateStore,
+  InMemoryWorkflowStateStore,
+  isCompleted,
+  newCheckpoint,
+  newSideEffectRecord,
+  type SideEffectRecord,
+  type WorkflowCheckpoint,
+  type WorkflowStateStore,
+} from "./workflow_state.ts";
+
 // Knowledge graph types
 export {
   edgeTypeWeight,

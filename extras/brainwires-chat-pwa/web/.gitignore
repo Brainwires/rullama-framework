@@ -1,0 +1,21 @@
+node_modules/
+pkg/
+app.js
+app.js.map
+/local-worker.js
+/local-worker.js.map
+/opfs-writer-worker.js
+/opfs-writer-worker.js.map
+sw.js
+sw.bundle.js
+build-info.js
+.run/
+# Generated CSS-as-JS modules (see build.mjs:generateHljsTheme + generateKatexAssets).
+src/_hljs-theme.js
+src/_katex-theme.js
+# Third-party assets copied from node_modules at build time.
+fonts/katex/
+vendor/
+# Leaked esbuild CSS artifacts from earlier build attempts.
+app.css
+app.css.map

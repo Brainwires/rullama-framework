@@ -15,7 +15,7 @@ use crate::commands::CommandExecutor;
 use crate::mdap::MdapConfig;
 use crate::providers::{Provider, ProviderFactory};
 use crate::storage::{LockStore, TaskStore, VectorDatabase};
-use crate::tools::{ToolExecutor, ToolRegistry};
+use crate::tools::ToolExecutor;
 use crate::types::agent::PermissionMode;
 use crate::types::message::{Message, MessageContent, Role};
 use crate::types::plan_mode::{PlanModeState, SavedMainContext};
@@ -24,7 +24,9 @@ use crate::utils::checkpoint::CheckpointManager;
 use crate::utils::paths::PlatformPaths;
 use crate::utils::system_prompt::build_system_prompt;
 use brainwires::agent_network::ipc::{AgentMessage, DisplayMessage};
-use brainwires::brain::bks_pks::{BehavioralKnowledgeCache, LearningCollector, detect_correction};
+use brainwires::knowledge::bks_pks::{
+    BehavioralKnowledgeCache, LearningCollector, detect_correction,
+};
 
 /// Core agent state that persists across viewer attach/detach cycles
 pub struct AgentState {
@@ -110,10 +112,10 @@ pub struct AgentState {
     pub has_pending_request: bool,
 
     /// SEAL processor for query enhancement
-    pub seal_processor: Option<brainwires::seal::SealProcessor>,
+    pub seal_processor: Option<brainwires_seal::SealProcessor>,
 
     /// Dialog state for SEAL
-    pub seal_dialog_state: brainwires::seal::DialogState,
+    pub seal_dialog_state: brainwires_seal::DialogState,
 
     /// Entity store for SEAL
     pub seal_entity_store: crate::utils::entity_extraction::EntityStore,
@@ -193,7 +195,7 @@ impl AgentState {
             .await
             .context("Failed to initialize LanceDB")?;
         let embeddings = std::sync::Arc::new(
-            crate::storage::embeddings::EmbeddingProvider::new()
+            crate::storage::embeddings::CachedEmbeddingProvider::new()
                 .context("Failed to create embedding provider")?,
         );
 
@@ -210,7 +212,7 @@ impl AgentState {
         );
 
         // Initialize tools with core tools only
-        let registry = ToolRegistry::with_builtins();
+        let registry = brainwires_tool_builtins::registry_with_builtins();
         let tools: Vec<_> = registry.get_core().into_iter().cloned().collect();
         let mut tool_executor = ToolExecutor::new(PermissionMode::Auto);
 
@@ -236,8 +238,8 @@ impl AgentState {
         // Build system prompt
         let system_prompt = {
             use crate::utils::paths::PlatformPaths;
-            use brainwires::brain::bks_pks::BehavioralKnowledgeCache;
-            use brainwires::brain::bks_pks::matcher::{MatchedTruth, format_truths_for_prompt};
+            use brainwires::knowledge::bks_pks::BehavioralKnowledgeCache;
+            use brainwires::knowledge::bks_pks::matcher::{MatchedTruth, format_truths_for_prompt};
 
             let truths_section = if let Ok(cache_path) = PlatformPaths::knowledge_db() {
                 if let Ok(cache) = BehavioralKnowledgeCache::new(&cache_path, 100) {
@@ -347,11 +349,11 @@ impl AgentState {
             exit_when_done: false,
             has_pending_request,
             seal_processor: if seal_settings.enabled {
-                Some(brainwires::seal::SealProcessor::with_defaults())
+                Some(brainwires_seal::SealProcessor::with_defaults())
             } else {
                 None
             },
-            seal_dialog_state: brainwires::seal::DialogState::new(),
+            seal_dialog_state: brainwires_seal::DialogState::new(),
             seal_entity_store: crate::utils::entity_extraction::EntityStore::new(),
             seal_entity_extractor: crate::utils::entity_extraction::EntityExtractor::new(),
             seal_enabled: seal_settings.enabled,

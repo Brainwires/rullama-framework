@@ -10,7 +10,6 @@ use crate::auth::SessionManager;
 use crate::cli::chat::streaming::process_chat_stream;
 use crate::config::ConfigManager;
 use crate::providers::ProviderFactory;
-use crate::tools::ToolRegistry;
 use crate::types::agent::AgentContext;
 use crate::types::message::{Message, MessageContent, Role};
 use crate::utils::logger::Logger;
@@ -83,7 +82,7 @@ pub async fn handle_batch_mode(
 
                 // Process each prompt independently
                 let user_id = session.as_ref().map(|s| s.user.user_id.clone());
-                let registry = ToolRegistry::with_builtins();
+                let registry = brainwires_tool_builtins::registry_with_builtins();
                 let mut context = AgentContext {
                     working_directory: std::env::current_dir()?.to_string_lossy().to_string(),
                     user_id,

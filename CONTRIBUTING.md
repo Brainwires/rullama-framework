@@ -28,7 +28,7 @@ The framework is a Cargo workspace organized around a facade pattern. For the fu
 cargo build
 
 # Single crate
-cargo build -p brainwires-agents
+cargo build -p brainwires-agent
 
 # With specific features
 cargo build --features "providers,storage,rag"
@@ -49,7 +49,7 @@ cargo test
 cargo test -p brainwires-core
 
 # Specific test
-cargo test -p brainwires-agents test_task_agent
+cargo test -p brainwires-agent test_task_agent
 
 # With output
 cargo test -- --nocapture
@@ -105,7 +105,7 @@ We follow [Keep a Changelog](https://keepachangelog.com/). If your change is use
 
 ```markdown
 ### Added
-#### Agents (`brainwires-agents`)
+#### Agents (`brainwires-agent`)
 - New retry strategy for task execution
 ```
 
@@ -123,11 +123,11 @@ This updates all version references across the workspace in one command:
 |---|---|
 | `[workspace.package].version` | `0.2.0` → `0.3.0` |
 | `[workspace.dependencies]` internal crate versions (19 entries) | `version = "0.2.0"` → `version = "0.3.0"` |
-| Member `Cargo.toml` direct path deps with version fields (brainwires-wasm) | `version = "0.10"` |
+| Member `Cargo.toml` direct path deps with version fields (brainwires-wasm) | `version = "0.11"` |
 | Hardcoded versions in `*.rs` source files | `"version": "0.2.0"` patterns |
 | Version examples in `*.md` READMEs (skips CHANGELOGs) | `version = "0.2"` → `version = "0.3"` |
 
-> **Why brainwires-wasm uses direct deps:** Cargo doesn't allow `default-features = false` on workspace dep overrides when the workspace dep has defaults enabled. So `brainwires-core`, `brainwires-code-interpreters`, and `brainwires-tool-system` in the wasm crate must stay as direct path deps. The bump script handles these too.
+> **Why brainwires-wasm uses direct deps:** Cargo doesn't allow `default-features = false` on workspace dep overrides when the workspace dep has defaults enabled. So `brainwires-core` (and any other wasm-specific dep variants) in the wasm crate must stay as direct path deps. The bump script handles these too.
 
 After bumping, review the diff and run `cargo check --workspace` before committing.
 

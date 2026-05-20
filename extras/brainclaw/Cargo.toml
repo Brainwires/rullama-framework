@@ -11,11 +11,18 @@ members = [
     "mcp-matrix",
     "mcp-mattermost",
     "mcp-signal",
+    "mcp-google-chat",
+    "mcp-teams",
+    "mcp-irc",
+    "mcp-imessage",
+    "mcp-nextcloud-talk",
+    "mcp-line",
+    "mcp-feishu",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.8.0"
+version = "0.11.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.91"
@@ -27,11 +34,11 @@ publish = false
 [workspace.dependencies]
 # Brainwires framework crates (path deps to monorepo)
 brainwires-core = { path = "../../crates/brainwires-core" }
-brainwires-agents = { path = "../../crates/brainwires-agents" }
-brainwires-providers = { path = "../../crates/brainwires-providers" }
-brainwires-tools = { path = "../../crates/brainwires-tools", version = "0.8.0" }
+brainwires-agent = { path = "../../crates/brainwires-agent", features = ["skills-registry"] }
+brainwires-providers = { path = "../../crates/brainwires-providers", default-features = false, features = ["native"] }
+brainwires-tools = { path = "../../crates/brainwires-tools", version = "0.10.0" }
 brainwires-network = { path = "../../crates/brainwires-network", features = ["channels"] }
-# skills now part of brainwires-agents
+# skills now part of brainwires-agent
 brainwires-hardware = { path = "../../crates/brainwires-hardware" }
 brainwires-gateway = { path = "gateway" }
 brainwires-telemetry = { path = "../../crates/brainwires-telemetry", default-features = false }
@@ -117,3 +124,22 @@ hex = "0.4"
 
 # Testing
 tempfile = "3"
+
+# Interactive CLI prompts (onboarding wizard)
+dialoguer = "0.11"
+
+# CSPRNG for admin-token generation
+rand = "0.9"
+
+# JWT verification & signing (Google Chat / Teams adapters)
+jsonwebtoken = "9.3"
+
+# Lock-free / read-optimised locks (JWKs cache)
+parking_lot = "0.12"
+
+# URL encoding (Google Chat API endpoints)
+urlencoding = "2.1"
+
+# IRC client (mcp-irc)
+irc = { version = "1.1", default-features = false, features = ["tls-native", "ctcp"] }
+irc-proto = { version = "1.1", default-features = false, features = ["tokio"] }

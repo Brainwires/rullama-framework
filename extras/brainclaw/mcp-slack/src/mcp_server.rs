@@ -4,16 +4,15 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use rmcp::{
-    ServerHandler, ServiceExt,
-    handler::server::tool::ToolRouter,
-    handler::server::wrapper::Parameters,
-    model::*,
-    tool, tool_handler, tool_router,
+    ServerHandler, ServiceExt, handler::server::tool::ToolRouter,
+    handler::server::wrapper::Parameters, model::*, tool, tool_handler, tool_router,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use brainwires_network::channels::{Channel, ChannelMessage, ConversationId, MessageContent, MessageId};
+use brainwires_network::channels::{
+    Channel, ChannelMessage, ConversationId, MessageContent, MessageId,
+};
 
 use crate::slack::SlackChannel;
 
@@ -123,7 +122,9 @@ impl SlackMcpServer {
             conversation: conversation.clone(),
             author: "bot".to_string(),
             content: MessageContent::Text(req.content),
-            thread_id: req.thread_ts.map(brainwires_network::channels::ThreadId::new),
+            thread_id: req
+                .thread_ts
+                .map(brainwires_network::channels::ThreadId::new),
             reply_to: None,
             timestamp: chrono::Utc::now(),
             attachments: vec![],
@@ -229,9 +230,8 @@ impl ServerHandler for SlackMcpServer {
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
-        info.server_info =
-            Implementation::new("brainwires-slack", env!("CARGO_PKG_VERSION"))
-                .with_title("Brainwires Slack Channel — MCP Tool Server");
+        info.server_info = Implementation::new("brainwires-slack", env!("CARGO_PKG_VERSION"))
+            .with_title("Brainwires Slack Channel — MCP Tool Server");
         info.instructions = Some(
             "Slack channel adapter MCP server. \
              Use send_message to send messages, edit_message to edit, \

@@ -3,8 +3,8 @@ use crate::config::PlatformPaths;
 #[allow(deprecated)]
 use crate::config::constants::COMPACTION_THRESHOLD_TOKENS;
 use crate::storage::{
-    ConversationStore, DocumentMetadata, DocumentScope, DocumentSearchRequest,
-    DocumentSearchResult, DocumentStore, EmbeddingProvider, FileContent, FileContextManager,
+    CachedEmbeddingProvider, ConversationStore, DocumentMetadata, DocumentScope,
+    DocumentSearchRequest, DocumentSearchResult, DocumentStore, FileContent, FileContextManager,
     ImageFormat, ImageMetadata, ImageSearchRequest, ImageSearchResult, ImageStorage, ImageStore,
     LanceDatabase, MessageMetadata, MessageStore, VectorDatabase,
 };
@@ -12,7 +12,7 @@ use crate::types::message::{Message, MessageContent, Role};
 use crate::utils::context_builder::{ContextBuilder, ContextBuilderConfig};
 use crate::utils::entity_extraction::{EntityExtractor, EntityStore};
 use anyhow::{Context, Result};
-use brainwires::brain::RelationshipGraph;
+use brainwires::knowledge::RelationshipGraph;
 use chrono::Utc;
 use std::path::Path;
 use std::sync::Arc;
@@ -137,7 +137,7 @@ impl ConversationManager {
 
         // Incrementally add to relationship graph
         for (name, entity_type) in &extraction.entities {
-            use brainwires::brain::relationship_graph::GraphNode;
+            use brainwires::knowledge::relationship_graph::GraphNode;
             self.relationship_graph.add_node(GraphNode {
                 entity_name: name.clone(),
                 entity_type: entity_type.clone(),
@@ -209,7 +209,7 @@ impl ConversationManager {
                 .context("Failed to create LanceDatabase")?,
         );
 
-        let embeddings = Arc::new(EmbeddingProvider::new()?);
+        let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
         client
             .initialize(embeddings.dimension())
             .await
@@ -224,7 +224,7 @@ impl ConversationManager {
         let bm25_path = db_path.parent().unwrap_or(&db_path).join("bm25_indices");
         let document_store = Arc::new(DocumentStore::new(
             Arc::new(client.connection().clone()),
-            Arc::clone(&embeddings) as Arc<dyn crate::storage::EmbeddingProviderTrait>,
+            Arc::clone(&embeddings) as Arc<dyn crate::storage::EmbeddingProvider>,
             bm25_path,
         ));
         let image_store = Arc::new(ImageStore::new(

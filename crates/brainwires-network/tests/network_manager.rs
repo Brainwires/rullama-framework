@@ -3,10 +3,10 @@
 
 use brainwires_network::discovery::{Discovery, ManualDiscovery};
 use brainwires_network::identity::AgentIdentity;
-use brainwires_network::network::{
+use brainwires_network::transport::TransportAddress;
+use brainwires_network::{
     ConnectionState, NetworkError, NetworkEvent, NetworkManagerBuilder, TransportType,
 };
-use brainwires_network::transport::TransportAddress;
 
 /// Test that NetworkManagerBuilder creates a properly configured manager.
 #[tokio::test]

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 
-use brainwires_providers::openai_chat::{OpenAiClient, TranscriptionRequest};
+use brainwires_provider::openai_chat::{OpenAiClient, TranscriptionRequest};
 
 use crate::audio::error::{AudioError, AudioResult};
 use crate::audio::stt::SpeechToText;
@@ -12,7 +12,7 @@ use crate::audio::wav::encode_wav;
 
 /// OpenAI Whisper API speech-to-text implementation.
 ///
-/// Wraps an [`OpenAiClient`] from `brainwires-providers`.
+/// Wraps an [`OpenAiClient`] from `brainwires-provider`.
 pub struct OpenAiStt {
     client: Arc<OpenAiClient>,
     model: String,

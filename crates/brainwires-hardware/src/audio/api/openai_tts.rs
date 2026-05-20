@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 
-use brainwires_providers::openai_chat::{CreateSpeechRequest, OpenAiClient};
+use brainwires_provider::openai_chat::{CreateSpeechRequest, OpenAiClient};
 
 use crate::audio::error::{AudioError, AudioResult};
 use crate::audio::tts::TextToSpeech;
@@ -12,7 +12,7 @@ use crate::audio::wav::decode_wav;
 
 /// OpenAI TTS API text-to-speech implementation.
 ///
-/// Wraps an [`OpenAiClient`] from `brainwires-providers` for the actual HTTP
+/// Wraps an [`OpenAiClient`] from `brainwires-provider` for the actual HTTP
 /// transport; this struct adds the `TextToSpeech` trait and audio-domain logic.
 pub struct OpenAiTts {
     client: Arc<OpenAiClient>,

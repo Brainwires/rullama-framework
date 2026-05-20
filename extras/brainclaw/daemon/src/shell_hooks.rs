@@ -34,9 +34,9 @@ use std::process::Stdio;
 use anyhow::Result;
 use async_trait::async_trait;
 use brainwires_core::ToolContext;
+use brainwires_core::ToolUse;
 use brainwires_core::lifecycle::{HookResult, LifecycleEvent, LifecycleHook};
 use brainwires_tools::{PreHookDecision, ToolPreHook};
-use brainwires_core::ToolUse;
 use serde_json::json;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
@@ -46,10 +46,10 @@ use crate::config::HooksSection;
 // ── helpers ─────────────────────────────────────────────────────────────────
 
 fn expand_tilde(path: &str) -> String {
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(rest).to_string_lossy().into_owned();
-        }
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Some(home) = dirs::home_dir()
+    {
+        return home.join(rest).to_string_lossy().into_owned();
     }
     path.to_string()
 }
@@ -58,43 +58,74 @@ fn expand_tilde(path: &str) -> String {
 /// a shell script via stdin.
 fn event_to_json(event: &LifecycleEvent) -> serde_json::Value {
     match event {
-        LifecycleEvent::AgentStarted { agent_id, task_description } => json!({
+        LifecycleEvent::AgentStarted {
+            agent_id,
+            task_description,
+        } => json!({
             "type": "agent_started",
             "agent_id": agent_id,
             "task_description": task_description,
         }),
-        LifecycleEvent::AgentCompleted { agent_id, iterations, summary } => json!({
+        LifecycleEvent::AgentCompleted {
+            agent_id,
+            iterations,
+            summary,
+        } => json!({
             "type": "agent_completed",
             "agent_id": agent_id,
             "iterations": iterations,
             "summary": summary,
         }),
-        LifecycleEvent::AgentFailed { agent_id, error, iterations } => json!({
+        LifecycleEvent::AgentFailed {
+            agent_id,
+            error,
+            iterations,
+        } => json!({
             "type": "agent_failed",
             "agent_id": agent_id,
             "error": error,
             "iterations": iterations,
         }),
-        LifecycleEvent::ToolBeforeExecute { agent_id, tool_name, args } => json!({
+        LifecycleEvent::ToolBeforeExecute {
+            agent_id,
+            tool_name,
+            args,
+        } => json!({
             "type": "tool_before_execute",
             "agent_id": agent_id,
             "tool_name": tool_name,
             "args": args,
         }),
-        LifecycleEvent::ToolAfterExecute { agent_id, tool_name, success, duration_ms } => json!({
+        LifecycleEvent::ToolAfterExecute {
+            agent_id,
+            tool_name,
+            success,
+            duration_ms,
+        } => json!({
             "type": "tool_after_execute",
             "agent_id": agent_id,
             "tool_name": tool_name,
             "success": success,
             "duration_ms": duration_ms,
         }),
-        LifecycleEvent::ProviderRequest { agent_id, provider, model } => json!({
+        LifecycleEvent::ProviderRequest {
+            agent_id,
+            provider,
+            model,
+        } => json!({
             "type": "provider_request",
             "agent_id": agent_id,
             "provider": provider,
             "model": model,
         }),
-        LifecycleEvent::ProviderResponse { agent_id, provider, model, input_tokens, output_tokens, duration_ms } => json!({
+        LifecycleEvent::ProviderResponse {
+            agent_id,
+            provider,
+            model,
+            input_tokens,
+            output_tokens,
+            duration_ms,
+        } => json!({
             "type": "provider_response",
             "agent_id": agent_id,
             "provider": provider,
@@ -108,7 +139,11 @@ fn event_to_json(event: &LifecycleEvent) -> serde_json::Value {
             "agent_id": agent_id,
             "checks": checks,
         }),
-        LifecycleEvent::ValidationCompleted { agent_id, passed, issues } => json!({
+        LifecycleEvent::ValidationCompleted {
+            agent_id,
+            passed,
+            issues,
+        } => json!({
             "type": "validation_completed",
             "agent_id": agent_id,
             "passed": passed,
@@ -152,11 +187,8 @@ async fn run_script(script_path: &str, payload: &serde_json::Value) -> (bool, St
     }
 
     // Wait with timeout
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        child.wait_with_output(),
-    )
-    .await;
+    let result =
+        tokio::time::timeout(std::time::Duration::from_secs(10), child.wait_with_output()).await;
 
     match result {
         Ok(Ok(output)) => {

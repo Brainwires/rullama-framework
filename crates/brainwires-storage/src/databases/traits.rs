@@ -2,9 +2,9 @@
 //!
 //! Two traits define the database capabilities:
 //!
-//! - [`StorageBackend`] — generic CRUD + vector search for domain stores
+//! - [`StorageBackend`](self::StorageBackend) — generic CRUD + vector search for domain stores
 //!   (conversations, messages, tasks, plans, etc.)
-//! - [`VectorDatabase`] — RAG-style embedding storage with hybrid search
+//! - [`VectorDatabase`](self::VectorDatabase) — RAG-style embedding storage with hybrid search
 //!   for the codebase indexing subsystem
 //!
 //! A single database struct (e.g. `LanceDatabase`, `PostgresDatabase`) can
@@ -21,7 +21,7 @@ pub use brainwires_core::{ChunkMetadata, DatabaseStats, SearchResult};
 
 /// Backend-agnostic storage operations.
 ///
-/// Domain stores ([`MessageStore`](crate::stores::message_store::MessageStore), etc.)
+/// Domain stores (e.g. `MessageStore` in `brainwires-stores`, etc.)
 /// are generic over this trait so they can work with any supported database.
 #[async_trait::async_trait]
 pub trait StorageBackend: Send + Sync {

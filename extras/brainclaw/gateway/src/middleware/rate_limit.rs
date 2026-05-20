@@ -40,12 +40,22 @@ impl RateLimiter {
 
     /// Check whether the user is under the message rate limit (does **not** increment).
     pub fn check_message_rate(&self, platform: &str, user_id: &str) -> bool {
-        self.check_rate(&self.message_limits, platform, user_id, self.max_messages_per_minute)
+        self.check_rate(
+            &self.message_limits,
+            platform,
+            user_id,
+            self.max_messages_per_minute,
+        )
     }
 
     /// Check whether the user is under the tool-call rate limit (does **not** increment).
     pub fn check_tool_rate(&self, platform: &str, user_id: &str) -> bool {
-        self.check_rate(&self.tool_limits, platform, user_id, self.max_tool_calls_per_minute)
+        self.check_rate(
+            &self.tool_limits,
+            platform,
+            user_id,
+            self.max_tool_calls_per_minute,
+        )
     }
 
     /// Record that a message was sent by this user.

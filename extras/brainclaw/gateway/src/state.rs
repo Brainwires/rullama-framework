@@ -14,8 +14,13 @@ use crate::identity::UserIdentityStore;
 use crate::metrics::MetricsCollector;
 use crate::middleware::rate_limit::RateLimiter;
 use crate::middleware::sanitizer::MessageSanitizer;
+use crate::pairing::PairingStore;
 use crate::router::InboundHandler;
 use crate::session::SessionManager;
+use crate::webchat::{SharedVerifier, WebChatHistory};
+
+#[cfg(feature = "email-push")]
+use crate::gmail_push::GmailPushRegistry;
 
 /// Shared application state, passed to all axum handlers via Extension.
 #[derive(Clone)]
@@ -46,4 +51,18 @@ pub struct AppState {
     pub cron_store: Option<Arc<CronStore>>,
     /// Optional cross-channel user identity store.
     pub identity_store: Option<Arc<UserIdentityStore>>,
+    /// Optional pairing store exposed to the admin pairing endpoints.
+    pub pairing_store: Option<Arc<PairingStore>>,
+    /// Optional bearer-token verifier for the JWT-gated `/webchat/ws`
+    /// endpoint. When `None`, `/webchat/ws` rejects every upgrade.
+    pub webchat_verifier: Option<SharedVerifier>,
+    /// Optional per-session history store for the webchat channel.
+    /// When `None`, history is not retained and `/webchat/history/:id`
+    /// returns an empty list.
+    pub webchat_history: Option<Arc<WebChatHistory>>,
+    /// Optional Gmail push registry. When `Some`, the gateway exposes
+    /// `POST /webhooks/gmail-push` and authenticates requests against the
+    /// per-account [`GmailPushHandler`]s kept inside.
+    #[cfg(feature = "email-push")]
+    pub gmail_push_registry: Option<Arc<GmailPushRegistry>>,
 }

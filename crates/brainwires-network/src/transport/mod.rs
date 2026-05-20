@@ -3,7 +3,7 @@
 //! The transport layer defines how bytes move between agents. Each
 //! networking paradigm (IPC, Remote Bridge, TCP, A2A, Pub/Sub) is
 //! implemented as a [`Transport`] that can send and receive
-//! [`MessageEnvelope`](crate::network::MessageEnvelope)s.
+//! [`MessageEnvelope`](crate::MessageEnvelope)s.
 //!
 //! ## Provided transports
 //!

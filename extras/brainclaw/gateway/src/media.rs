@@ -118,11 +118,7 @@ impl MediaProcessor {
             .and_then(|n| n.to_str())
             .unwrap_or("unknown");
         let metadata = std::fs::metadata(path).context("Failed to read image metadata")?;
-        Ok(format!(
-            "[Image: {}, {} bytes]",
-            filename,
-            metadata.len()
-        ))
+        Ok(format!("[Image: {}, {} bytes]", filename, metadata.len()))
     }
 
     /// Produce a transcription for an audio file.
@@ -187,11 +183,11 @@ impl MediaProcessor {
 
     /// Remove all files in the temporary media directory.
     pub fn cleanup(&self) {
-        if self.temp_dir.exists() {
-            if let Ok(entries) = std::fs::read_dir(&self.temp_dir) {
-                for entry in entries.flatten() {
-                    let _ = std::fs::remove_file(entry.path());
-                }
+        if self.temp_dir.exists()
+            && let Ok(entries) = std::fs::read_dir(&self.temp_dir)
+        {
+            for entry in entries.flatten() {
+                let _ = std::fs::remove_file(entry.path());
             }
         }
     }
@@ -240,9 +236,7 @@ impl MediaProcessor {
             self.transcribe_audio(&path).await
         } else {
             let filename = &attachment.filename;
-            let size = std::fs::metadata(&path)
-                .map(|m| m.len())
-                .unwrap_or(0);
+            let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
             Ok(format!("[File: {}, {} bytes]", filename, size))
         };
 
@@ -335,6 +329,8 @@ mod tests {
             max_size_bytes: 1024,
             temp_dir: PathBuf::from("/tmp/brainwires-media-nonexistent-test-dir"),
             http_client: Client::new(),
+            #[cfg(feature = "voice")]
+            stt: None,
         };
         processor.cleanup(); // Should not panic.
     }

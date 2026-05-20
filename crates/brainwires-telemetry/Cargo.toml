@@ -1,6 +1,6 @@
 [package]
 name = "brainwires-telemetry"
-description = "Unified telemetry — analytics events, billing hooks, SQLite persistence, and cost/usage queries for the Brainwires Agent Framework"
+description = "Unified telemetry for the Brainwires Agent Framework — analytics events, SQLite persistence, cost/usage queries, and a `BillingHook` trait consumed by `brainwires-billing`"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -19,7 +19,7 @@ anyhow        = { workspace = true }
 thiserror     = { workspace = true }
 chrono        = { workspace = true }
 uuid          = { workspace = true }
-tokio         = { workspace = true, features = ["sync", "rt", "macros"] }
+tokio         = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "time", "macros"] }
 async-trait   = { workspace = true }
 tracing       = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["registry"] }
@@ -34,3 +34,7 @@ tempfile = { workspace = true }
 default = ["native"]
 native  = ["sqlite", "dep:dirs"]
 sqlite  = ["dep:rusqlite"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

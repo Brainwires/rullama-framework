@@ -178,6 +178,7 @@ impl WorkerAgent {
                     .to_string(),
             ),
             model: None,
+            cache_strategy: Default::default(),
         };
 
         self.provider

@@ -21,6 +21,11 @@ pub struct AutonomyConfig {
     #[serde(default)]
     pub crash_recovery: CrashRecoveryConfig,
     /// GPIO hardware access configuration.
+    ///
+    /// Only available with the `gpio` feature; uses
+    /// [`brainwires_hardware::gpio::config::GpioConfig`] (which the GPIO
+    /// pin manager / safety policy `from_config` expects).
+    #[cfg(feature = "gpio")]
     #[serde(default)]
     pub gpio: GpioConfig,
 }
@@ -299,27 +304,17 @@ impl Default for CrashRecoveryConfig {
     }
 }
 
-/// GPIO hardware access configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GpioConfig {
-    /// Allowed (chip, line) pairs — empty means no access.
-    #[serde(default)]
-    pub allowed_pins: Vec<(u32, u32)>,
-    /// Maximum concurrent pins an agent may hold.
-    pub max_concurrent_pins: usize,
-    /// Timeout in seconds before auto-releasing a pin from an unhealthy agent.
-    pub auto_release_timeout_secs: u64,
-}
-
-impl Default for GpioConfig {
-    fn default() -> Self {
-        Self {
-            allowed_pins: Vec::new(),
-            max_concurrent_pins: 4,
-            auto_release_timeout_secs: 300,
-        }
-    }
-}
+/// GPIO hardware access configuration — re-exported from
+/// [`brainwires_hardware::gpio::config::GpioConfig`].
+///
+/// Previously `brainwires-autonomy` declared its own divergent
+/// `GpioConfig` struct here, which (despite identical fields) was not
+/// accepted by [`brainwires_hardware::gpio::GpioPinManager::from_config`]
+/// or [`brainwires_hardware::gpio::GpioSafetyPolicy::from_config`]. The
+/// re-export ensures `AutonomyConfig.gpio` is the same type the hardware
+/// crate's pin manager and safety policy operate on.
+#[cfg(feature = "gpio")]
+pub use brainwires_hardware::gpio::config::GpioConfig;
 
 #[cfg(test)]
 mod tests {

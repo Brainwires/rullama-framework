@@ -81,7 +81,7 @@ async fn main() -> anyhow::Result<()> {
     eprintln!("anthropic-openai-proxy (brainwires-proxy)");
     eprintln!("  listen:   http://127.0.0.1:{}", port);
     eprintln!("  upstream: {}", resolved.provider.base_url);
-    eprintln!("  model:    {} → {}", "sonnet", resolved.target_model);
+    eprintln!("  model:    sonnet → {}", resolved.target_model);
 
     let proxy = ProxyBuilder::new()
         .listen_on(&format!("127.0.0.1:{}", port))

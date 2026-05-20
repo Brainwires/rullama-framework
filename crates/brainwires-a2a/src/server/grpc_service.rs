@@ -103,10 +103,10 @@ mod grpc_impl {
 
             let payload = if let Some(t) = result.task {
                 Some(lf_a2a_v1::send_message_response::Payload::Task(t.into()))
-            } else if let Some(m) = result.message {
-                Some(lf_a2a_v1::send_message_response::Payload::Message(m.into()))
             } else {
-                None
+                result
+                    .message
+                    .map(|m| lf_a2a_v1::send_message_response::Payload::Message(m.into()))
             };
 
             Ok(Response::new(lf_a2a_v1::SendMessageResponse { payload }))

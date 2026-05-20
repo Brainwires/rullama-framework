@@ -61,13 +61,18 @@ impl SessionManager {
 
     /// List all active sessions.
     pub fn list_sessions(&self) -> Vec<ChannelSession> {
-        self.sessions.iter().map(|entry| entry.value().clone()).collect()
+        self.sessions
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect()
     }
 
     /// Remove sessions that have been inactive longer than the given timeout.
     pub fn cleanup_expired(&self, timeout: Duration) {
-        let cutoff = Utc::now() - chrono::Duration::from_std(timeout).unwrap_or(chrono::Duration::hours(1));
-        self.sessions.retain(|_key, session| session.last_activity > cutoff);
+        let cutoff =
+            Utc::now() - chrono::Duration::from_std(timeout).unwrap_or(chrono::Duration::hours(1));
+        self.sessions
+            .retain(|_key, session| session.last_activity > cutoff);
     }
 
     /// Return the number of active sessions.

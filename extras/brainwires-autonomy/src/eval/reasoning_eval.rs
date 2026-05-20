@@ -14,11 +14,11 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use brainwires_agents::eval::{EvaluationCase, TrialResult, ndcg_at_k};
-use brainwires_agents::reasoning::ComplexityScorer;
 use brainwires_core::message::{ChatResponse, Message, StreamChunk};
 use brainwires_core::provider::{ChatOptions, Provider};
 use brainwires_core::tool::Tool;
+use brainwires_eval::{EvaluationCase, TrialResult, ndcg_at_k};
+use brainwires_reasoning::ComplexityScorer;
 use futures::stream::BoxStream;
 
 // ── Stub provider ─────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ impl EvaluationCase for ComplexityHeuristicCase {
 // ── Suite constructor ─────────────────────────────────────────────────────────
 
 /// Return all reasoning eval cases ready for use with
-/// [`brainwires_agents::eval::EvaluationSuite`] or
+/// [`brainwires_eval::EvaluationSuite`] or
 /// [`brainwires_autonomy::self_improve::AutonomousFeedbackLoop`].
 pub fn reasoning_eval_suite() -> Vec<Arc<dyn EvaluationCase>> {
     vec![Arc::new(ComplexityHeuristicCase)]

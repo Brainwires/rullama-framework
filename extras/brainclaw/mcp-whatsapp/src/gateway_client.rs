@@ -68,8 +68,8 @@ impl GatewayClient {
             .await?
             .context("Gateway closed connection before handshake response")?;
 
-        let response: ChannelHandshakeResponse = serde_json::from_str(&response_text)
-            .context("Failed to parse handshake response")?;
+        let response: ChannelHandshakeResponse =
+            serde_json::from_str(&response_text).context("Failed to parse handshake response")?;
 
         if !response.accepted {
             let err_msg = response.error.unwrap_or_else(|| "unknown reason".into());

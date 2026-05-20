@@ -35,9 +35,9 @@ fn should_forward(msg: &Message, config: &TelegramConfig) -> bool {
                     // Telegram bots in groups are @mentioned via a Mention entity.
                     // If we have a configured username, verify it matches.
                     if let Some(ref bot_uname) = config.bot_username {
-                        if let Some(ref text) = msg.text() {
-                            let start = entity.offset as usize;
-                            let end = start + entity.length as usize;
+                        if let Some(text) = msg.text() {
+                            let start = entity.offset;
+                            let end = start + entity.length;
                             let mention_text = text.get(start..end).unwrap_or("");
                             // Mention text starts with @; strip it for comparison
                             let name = mention_text.trim_start_matches('@');
@@ -72,7 +72,11 @@ fn should_forward(msg: &Message, config: &TelegramConfig) -> bool {
 /// Starts the teloxide update dispatcher, forwarding events over the provided sender.
 ///
 /// This function blocks until the bot is shut down.
-pub async fn run_dispatcher(bot: Bot, event_tx: mpsc::Sender<ChannelEvent>, config: TelegramConfig) {
+pub async fn run_dispatcher(
+    bot: Bot,
+    event_tx: mpsc::Sender<ChannelEvent>,
+    config: TelegramConfig,
+) {
     let event_tx = Arc::new(event_tx);
     let config = Arc::new(config);
 
@@ -84,10 +88,10 @@ pub async fn run_dispatcher(bot: Bot, event_tx: mpsc::Sender<ChannelEvent>, conf
             let cfg = Arc::clone(&cfg);
             async move {
                 // Skip bot messages to avoid loops
-                if let Some(ref from) = msg.from {
-                    if from.is_bot {
-                        return respond(());
-                    }
+                if let Some(ref from) = msg.from
+                    && from.is_bot
+                {
+                    return respond(());
                 }
 
                 // Group mention filter

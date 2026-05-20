@@ -390,7 +390,7 @@ async fn execute_chained_tools<'a>(
     let mut result_text = full_text.to_string();
 
     if pending_tool_calls.is_empty() {
-        debug_log!("🔄 DEBUG: No pending tool calls, returning text response");
+        tracing::debug!("No pending tool calls, returning text response");
         return Ok(result_text);
     }
 

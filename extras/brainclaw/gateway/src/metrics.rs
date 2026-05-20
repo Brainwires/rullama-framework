@@ -70,7 +70,10 @@ impl MetricsCollector {
 
     /// Attach an analytics collector to record ChannelMessage events.
     #[cfg(feature = "telemetry")]
-    pub fn with_analytics(mut self, collector: std::sync::Arc<brainwires_telemetry::AnalyticsCollector>) -> Self {
+    pub fn with_analytics(
+        mut self,
+        collector: std::sync::Arc<brainwires_telemetry::AnalyticsCollector>,
+    ) -> Self {
         self.analytics_collector = Some(collector);
         self
     }
@@ -123,8 +126,10 @@ impl MetricsCollector {
 
     /// Record token usage from a completed agent turn.
     pub fn record_token_usage(&self, prompt_tokens: u64, completion_tokens: u64) {
-        self.total_prompt_tokens.fetch_add(prompt_tokens, Ordering::Relaxed);
-        self.total_completion_tokens.fetch_add(completion_tokens, Ordering::Relaxed);
+        self.total_prompt_tokens
+            .fetch_add(prompt_tokens, Ordering::Relaxed);
+        self.total_completion_tokens
+            .fetch_add(completion_tokens, Ordering::Relaxed);
     }
 
     /// Take a snapshot of current metrics.

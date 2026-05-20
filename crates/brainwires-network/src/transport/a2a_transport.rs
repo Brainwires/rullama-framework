@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use tokio::sync::{Mutex, broadcast};
 
 use super::traits::{Transport, TransportAddress};
-use crate::network::{MessageEnvelope, MessageTarget, Payload, TransportType};
+use crate::{MessageEnvelope, MessageTarget, Payload, TransportType};
 
 /// A2A protocol transport for inter-agent communication.
 ///
@@ -211,10 +211,10 @@ pub fn a2a_message_to_envelope(
     envelope.recipient = recipient;
 
     // Map context_id to correlation
-    if let Some(ctx) = &msg.context_id {
-        if let Ok(uuid) = ctx.parse() {
-            envelope.correlation_id = Some(uuid);
-        }
+    if let Some(ctx) = &msg.context_id
+        && let Ok(uuid) = ctx.parse()
+    {
+        envelope.correlation_id = Some(uuid);
     }
 
     envelope

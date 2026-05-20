@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 
-use brainwires_providers::azure_speech::AzureSpeechClient;
+use brainwires_provider_speech::azure_speech::AzureSpeechClient;
 
 use crate::audio::error::{AudioError, AudioResult};
 use crate::audio::tts::TextToSpeech;
@@ -12,7 +12,7 @@ use crate::audio::wav::decode_wav;
 
 /// Azure Cognitive Services text-to-speech implementation.
 ///
-/// Wraps an [`AzureSpeechClient`] from `brainwires-providers`.
+/// Wraps an [`AzureSpeechClient`] from `brainwires-provider`.
 pub struct AzureTts {
     client: Arc<AzureSpeechClient>,
 }

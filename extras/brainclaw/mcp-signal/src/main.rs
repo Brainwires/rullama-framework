@@ -22,6 +22,10 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+// reason: clap subcommand enums naturally have one large `Serve` variant
+// alongside zero-sized informational variants like `Version`; boxing each
+// CLI argument set adds noise without runtime benefit.
+#[allow(clippy::large_enum_variant)]
 enum Commands {
     /// Start the Signal adapter.
     ///

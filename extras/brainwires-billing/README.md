@@ -19,12 +19,12 @@ This crate implements the hook surface defined in `crates/brainwires-billing`. T
 ```toml
 [dependencies]
 brainwires-billing-impl = { path = "extras/brainwires-billing" }
-brainwires-agents = { path = "crates/brainwires-agents", features = ["billing"] }
+brainwires-agent = { path = "crates/brainwires-agent", features = ["billing"] }
 ```
 
 ```rust
 use brainwires_billing_impl::{AgentWallet, SqliteLedger};
-use brainwires_agents::task_agent::{BillingHookRef, TaskAgentConfig};
+use brainwires_agent::task_agent::{BillingHookRef, TaskAgentConfig};
 use std::sync::Arc;
 
 // $5.00 budget per customer session
@@ -38,6 +38,19 @@ let config = TaskAgentConfig {
 ```
 
 Every provider call and tool call the agent makes fires `on_usage()` on the wallet, which persists the event and checks the budget. Errors are logged but never abort the run (fail-open) — check `wallet.budget_exhausted()` between iterations if you want hard enforcement.
+
+## Advisory vs enforced hooks
+
+`BillingHook` exposes two methods with different failure semantics:
+
+| Method | When called | On error | Intended use |
+|---|---|---|---|
+| `on_usage(event)` | **After** a call has happened | Logged, call already completed | Ledger persistence, analytics, metered billing |
+| `authorize(pending)` | **Before** a call is dispatched | Tool call is rejected (fail-closed) | Hard budget enforcement |
+
+`authorize()` has a default implementation that returns `Ok(())`, so existing `BillingHook` integrators who only care about observation do not need to change any code — their hooks remain purely advisory.
+
+`AgentWallet` overrides `authorize()` to return `BillingError::BudgetExhausted` as soon as `wallet.budget_exhausted()` is true, which causes the agent's tool-call dispatcher to reject the pending call before it runs. The advisory `on_usage()` path is unchanged: it still records every event to the ledger and logs a `Hook(...)` error when the ceiling is crossed, for integrators who want to observe but not enforce.
 
 ## Feature flags
 

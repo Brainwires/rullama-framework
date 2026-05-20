@@ -16,15 +16,9 @@ const MAX_RING_ENTRIES: usize = 1000;
 #[serde(tag = "event_type")]
 pub enum AuditEvent {
     /// Failed authentication attempt.
-    AuthFailure {
-        source: String,
-        reason: String,
-    },
+    AuthFailure { source: String, reason: String },
     /// Message dropped due to rate limiting.
-    RateLimited {
-        platform: String,
-        user_id: String,
-    },
+    RateLimited { platform: String, user_id: String },
     /// System-message spoofing detected and blocked.
     SpoofingDetected {
         platform: String,
@@ -55,9 +49,7 @@ pub enum AuditEvent {
         session_id: String,
     },
     /// Webhook signature verification failed.
-    WebhookAuthFailure {
-        reason: String,
-    },
+    WebhookAuthFailure { reason: String },
 }
 
 /// Timestamped audit entry.
@@ -115,11 +107,9 @@ impl AuditLogger {
         ring.iter()
             .rev()
             .filter(|e| {
-                event_type.map_or(true, |t| {
+                event_type.is_none_or(|t| {
                     let json = serde_json::to_value(&e.event).unwrap_or_default();
-                    json.get("event_type")
-                        .and_then(|v| v.as_str())
-                        .map_or(false, |et| et == t)
+                    json.get("event_type").and_then(|v| v.as_str()) == Some(t)
                 })
             })
             .take(limit)

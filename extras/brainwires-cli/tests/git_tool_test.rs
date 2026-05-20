@@ -17,6 +17,7 @@ async fn test_git_status_in_git_repo() {
         capabilities: None,
         idempotency_registry: None,
         staging_backend: None,
+        intended_writes: None,
     };
 
     let status_input = json!({});
@@ -40,6 +41,7 @@ async fn test_git_log_in_git_repo() {
         capabilities: None,
         idempotency_registry: None,
         staging_backend: None,
+        intended_writes: None,
     };
 
     let log_input = json!({
@@ -63,6 +65,7 @@ async fn test_git_diff_in_git_repo() {
         capabilities: None,
         idempotency_registry: None,
         staging_backend: None,
+        intended_writes: None,
     };
 
     let diff_input = json!({});

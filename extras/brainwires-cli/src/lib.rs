@@ -23,6 +23,8 @@ pub mod logging;
 pub mod mcp;
 pub mod mcp_server;
 pub mod mdap;
+pub mod persistent_task_manager;
+pub mod plan_mode_store;
 pub mod providers;
 // RAG functionality is now provided by project-rag crate (git submodule)
 // pub mod rag;

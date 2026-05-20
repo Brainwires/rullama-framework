@@ -151,12 +151,23 @@ rhai = { version = "1.23", features = ["sync", "serde"] }
 brainwires = { path = "../../crates/brainwires", features = ["full"] }
 
 # ── Brainwires Framework crates (custom feature flags) ──
-brainwires-agents = { workspace = true, features = ["skills-registry"] }
-brainwires-tools = { workspace = true, features = ["orchestrator", "rag", "interpreters"] }
-brainwires-knowledge = { workspace = true, features = ["rag", "lancedb-backend", "alt-folder-name", "documents"] }
+brainwires-agent = { workspace = true }
+brainwires-mdap = { workspace = true }
+brainwires-skills = { workspace = true, features = ["registry"] }
+brainwires-seal = { workspace = true }
+brainwires-eval = { workspace = true }
+brainwires-inference = { workspace = true }
+brainwires-tool-runtime = { workspace = true, features = ["native", "orchestrator", "rag"] }
+brainwires-tool-builtins = { workspace = true, features = ["native", "interpreters", "rag"] }
+brainwires-knowledge = { workspace = true, features = ["alt-folder-name"] }
+brainwires-rag = { workspace = true, features = ["documents"] }
 brainwires-network = { workspace = true, features = ["auth-keyring"] }
-brainwires-providers.workspace = true
+brainwires-provider.workspace = true
 brainwires-telemetry = { workspace = true, features = ["native"] }
+brainwires-storage = { workspace = true, features = ["native"] }
+brainwires-stores = { workspace = true, features = ["session", "task", "plan", "conversation", "memory", "lock", "image"] }
+brainwires-memory = { workspace = true }
+brainwires-core = { workspace = true, features = ["native"] }
 
 petgraph = "0.8.3"
 nix = { version = "0.30.1", features = ["term", "signal", "process"] }
@@ -178,13 +189,13 @@ proptest = "1.5"
 
 [features]
 default = []
-interpreter-javascript = ["brainwires-tools/interpreters-js"]
+interpreter-javascript = []
 interpreter-python = []
 interpreter-all = ["interpreter-javascript", "interpreter-python"]
 piston = []
-bedrock = ["brainwires-providers/bedrock"]
-vertex-ai = ["brainwires-providers/vertex-ai"]
-llama-cpp-2 = ["brainwires-providers/llama-cpp-2"]
+bedrock = ["brainwires-provider/bedrock"]
+vertex-ai = ["brainwires-provider/vertex-ai"]
+llama-cpp-2 = ["brainwires-provider/llama-cpp-2"]
 full = ["interpreter-all", "llama-cpp-2", "bedrock", "vertex-ai"]
 
 [build-dependencies]

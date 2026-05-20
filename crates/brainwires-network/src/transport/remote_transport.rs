@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use tokio::sync::{Mutex, broadcast};
 
 use super::traits::{Transport, TransportAddress};
-use crate::network::{MessageEnvelope, TransportType};
+use crate::{MessageEnvelope, TransportType};
 
 /// Remote transport for cloud-mediated agent communication.
 ///
@@ -138,7 +138,7 @@ impl Transport for RemoteTransport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::network::Payload;
+    use crate::Payload;
     use uuid::Uuid;
 
     #[test]

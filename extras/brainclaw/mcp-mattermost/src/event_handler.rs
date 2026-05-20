@@ -124,10 +124,7 @@ impl MattermostEventHandler {
             Err(_) => return Ok(()), // Not JSON — ignore
         };
 
-        let event_type = value
-            .get("event")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let event_type = value.get("event").and_then(|v| v.as_str()).unwrap_or("");
 
         match event_type {
             "posted" => self.handle_posted(&value).await?,
@@ -147,10 +144,7 @@ impl MattermostEventHandler {
         };
 
         // The post is JSON-encoded inside the data field
-        let post_str = data
-            .get("post")
-            .and_then(|v| v.as_str())
-            .unwrap_or("{}");
+        let post_str = data.get("post").and_then(|v| v.as_str()).unwrap_or("{}");
         let post: Value = serde_json::from_str(post_str).unwrap_or(Value::Null);
 
         let user_id = post
@@ -173,10 +167,7 @@ impl MattermostEventHandler {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let ts_ms = post
-            .get("create_at")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        let ts_ms = post.get("create_at").and_then(|v| v.as_i64()).unwrap_or(0);
         let root_id = post
             .get("root_id")
             .and_then(|v| v.as_str())
@@ -194,9 +185,7 @@ impl MattermostEventHandler {
         }
 
         // Channel allowlist filter
-        if !self.channel_allowlist.is_empty()
-            && !self.channel_allowlist.contains(&channel_id)
-        {
+        if !self.channel_allowlist.is_empty() && !self.channel_allowlist.contains(&channel_id) {
             return Ok(());
         }
 
@@ -207,10 +196,8 @@ impl MattermostEventHandler {
             .unwrap_or("O");
         let is_dm = channel_type == "D" || channel_type == "G";
 
-        if self.group_mention_required && !is_dm {
-            if !self.is_mentioned(&message) {
-                return Ok(());
-            }
+        if self.group_mention_required && !is_dm && !self.is_mentioned(&message) {
+            return Ok(());
         }
 
         let team_id = data
@@ -224,8 +211,8 @@ impl MattermostEventHandler {
             server_id: team_id,
         };
 
-        let timestamp = chrono::DateTime::from_timestamp(ts_ms / 1000, 0)
-            .unwrap_or_else(chrono::Utc::now);
+        let timestamp =
+            chrono::DateTime::from_timestamp(ts_ms / 1000, 0).unwrap_or_else(chrono::Utc::now);
 
         let msg = ChannelMessage {
             id: MessageId::new(post_id),

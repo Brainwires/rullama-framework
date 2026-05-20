@@ -74,8 +74,8 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use super::super::capabilities::ChannelCapabilities;
-use super::super::identity::ConversationId;
+use crate::channels::capabilities::ChannelCapabilities;
+use crate::channels::identity::ConversationId;
 
 /// Extension trait for channel adapters that support real-time WebRTC media.
 ///
@@ -94,7 +94,7 @@ use super::super::identity::ConversationId;
 /// if the adapter handles signaling internally (e.g. encodes SDP into regular messages
 /// and drives the state machine itself).
 #[async_trait]
-pub trait WebRtcChannel: crate::traits::Channel {
+pub trait WebRtcChannel: crate::channels::Channel {
     /// Create a new [`WebRtcSession`] for the given conversation.
     ///
     /// The returned session is fully initialized but not yet connected.

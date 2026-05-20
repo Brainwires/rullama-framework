@@ -184,7 +184,7 @@ impl App {
     ) -> Result<()> {
         use crate::config::PlatformPaths;
         use crate::storage::{
-            EmbeddingProvider, LanceDatabase, PlanStore, TemplateStore, VectorDatabase,
+            CachedEmbeddingProvider, LanceDatabase, PlanStore, TemplateStore, VectorDatabase,
         };
         use crate::types::plan::{PlanMetadata, PlanStatus};
         use crate::utils::plan_parser::{parse_plan_steps, steps_to_tasks};
@@ -245,7 +245,7 @@ impl App {
                                 )
                                 .await?,
                             );
-                            let embeddings = Arc::new(EmbeddingProvider::new()?);
+                            let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
                             client.initialize(embeddings.dimension()).await?;
                             let plan_store = PlanStore::new(client.clone(), embeddings);
 

@@ -66,6 +66,7 @@ mod tests {
             name: "TestBot".to_string(),
             system_prompt: Some("You are a test bot.".to_string()),
             system_prompt_file: None,
+            context_files: Vec::new(),
         };
         let persona = Persona::from_config(&config).unwrap();
         assert_eq!(persona.name, "TestBot");
@@ -83,6 +84,7 @@ mod tests {
             name: "FileBot".to_string(),
             system_prompt: None,
             system_prompt_file: Some(file_path.to_str().unwrap().to_string()),
+            context_files: Vec::new(),
         };
         let persona = Persona::from_config(&config).unwrap();
         assert_eq!(persona.name, "FileBot");
@@ -99,6 +101,7 @@ mod tests {
             name: "Bot".to_string(),
             system_prompt: Some("From inline.".to_string()),
             system_prompt_file: Some(file_path.to_str().unwrap().to_string()),
+            context_files: Vec::new(),
         };
         let persona = Persona::from_config(&config).unwrap();
         // File takes precedence
@@ -111,6 +114,7 @@ mod tests {
             name: "Bot".to_string(),
             system_prompt: None,
             system_prompt_file: Some("/nonexistent/path/prompt.txt".to_string()),
+            context_files: Vec::new(),
         };
         let result = Persona::from_config(&config);
         assert!(result.is_err());

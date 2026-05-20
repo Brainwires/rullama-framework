@@ -9,11 +9,11 @@
 
 /// Configuration types for the Mattermost adapter.
 pub mod config;
-/// Mattermost bot implementation of the `Channel` trait.
-pub mod mattermost;
 /// WebSocket event handler that converts Mattermost events to `ChannelEvent`.
 pub mod event_handler;
 /// WebSocket client for connecting to the brainwires-gateway.
 pub mod gateway_client;
+/// Mattermost bot implementation of the `Channel` trait.
+pub mod mattermost;
 /// MCP server exposing Mattermost operations as tools.
 pub mod mcp_server;

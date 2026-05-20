@@ -14,7 +14,7 @@
 //! # Usage
 //!
 //! ```rust,ignore
-//! use brainwires_agents::reasoning::strategies::{ReActStrategy, ReasoningStrategy};
+//! use brainwires_agent::reasoning::strategies::{ReActStrategy, ReasoningStrategy};
 //!
 //! let strategy = ReActStrategy::new(10); // max 10 reasoning steps
 //! let system_prompt = strategy.system_prompt("agent-1", "/project");

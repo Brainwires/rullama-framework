@@ -31,6 +31,14 @@ pub struct GatewayConfig {
     /// Whether the built-in WebChat UI is enabled.
     #[serde(default = "default_true")]
     pub webchat_enabled: bool,
+    /// Optional shared secret used to sign/verify HS256 JWTs for the
+    /// JWT-gated `/webchat/ws` endpoint.  When `None`, the webchat channel
+    /// is registered but every upgrade attempt is refused.
+    #[serde(default)]
+    pub webchat_jwt_secret: Option<String>,
+    /// Maximum number of history entries retained per webchat session.
+    #[serde(default = "default_webchat_history_limit")]
+    pub webchat_session_history_limit: usize,
     /// Maximum attachment size in megabytes for the media pipeline.
     #[serde(default = "default_max_attachment_size")]
     pub max_attachment_size_mb: u64,
@@ -83,6 +91,10 @@ fn default_max_tool_calls() -> u32 {
     30
 }
 
+fn default_webchat_history_limit() -> usize {
+    50
+}
+
 impl Default for GatewayConfig {
     fn default() -> Self {
         Self {
@@ -97,6 +109,8 @@ impl Default for GatewayConfig {
             admin_path: "/admin".to_string(),
             allowed_origins: Vec::new(),
             webchat_enabled: true,
+            webchat_jwt_secret: None,
+            webchat_session_history_limit: 50,
             max_attachment_size_mb: 10,
             strip_system_spoofing: true,
             redact_secrets_in_output: true,

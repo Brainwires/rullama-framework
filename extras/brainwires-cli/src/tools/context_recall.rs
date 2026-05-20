@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::storage::{EmbeddingProvider, LanceDatabase, MessageStore, VectorDatabase};
+use crate::storage::{CachedEmbeddingProvider, LanceDatabase, MessageStore, VectorDatabase};
 use crate::types::tool::{Tool, ToolContext, ToolInputSchema, ToolResult};
 
 /// Tool for recalling context from conversation history
@@ -160,7 +160,7 @@ impl ContextRecallTool {
 
         let client: Arc<LanceDatabase> =
             Arc::new(LanceDatabase::new(db_path.to_str().unwrap()).await?);
-        let embeddings: Arc<EmbeddingProvider> = Arc::new(EmbeddingProvider::new()?);
+        let embeddings: Arc<CachedEmbeddingProvider> = Arc::new(CachedEmbeddingProvider::new()?);
 
         // Initialize tables if needed
         client.initialize(embeddings.dimension()).await?;

@@ -8,3 +8,9 @@ Cargo.lock
 .cache/.claude/
 .mcp.json
 CLAUDE_CODE_INTEGRATION.md
+.claude/scheduled_tasks.lock
+
+# Secrets — keep `.env.example` templates tracked, ignore everything else.
+.env
+.env.*
+!.env.example

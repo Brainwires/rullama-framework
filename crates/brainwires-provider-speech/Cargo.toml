@@ -1,0 +1,66 @@
+[package]
+name = "brainwires-provider-speech"
+description = "Speech (TTS / STT) provider clients for the Brainwires Agent Framework — Azure Speech, Cartesia, Deepgram, ElevenLabs, Fish Audio, Google TTS, Murf, plus browser-native `web_speech` (wasm32)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme.workspace = true
+documentation = "https://docs.rs/brainwires-provider-speech"
+keywords = ["tts", "stt", "speech", "elevenlabs", "deepgram"]
+categories = ["api-bindings"]
+
+[lib]
+name = "brainwires_provider_speech"
+path = "src/lib.rs"
+
+[dependencies]
+brainwires-core = { workspace = true }
+
+# Serialization / errors / async
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Native HTTP client for the cloud TTS/STT providers.
+reqwest = { workspace = true, optional = true, features = ["multipart"] }
+tokio = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+
+# Browser-native Web Speech bindings (wasm32 only).
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+web-sys = { version = "0.3", optional = true, features = [
+    "Window",
+    "SpeechSynthesis", "SpeechSynthesisUtterance", "SpeechSynthesisVoice",
+    "SpeechRecognition", "SpeechRecognitionEvent", "SpeechRecognitionResult",
+    "SpeechRecognitionResultList", "SpeechRecognitionAlternative",
+    "SpeechRecognitionError",
+    "SpeechGrammarList", "SpeechGrammar",
+] }
+
+[features]
+default = []
+# Native cloud TTS/STT providers (Azure, Cartesia, Deepgram, ElevenLabs,
+# Fish, Google TTS, Murf).
+native = [
+    "brainwires-core/native",
+    "dep:reqwest", "dep:tokio", "dep:tracing",
+]
+# Browser-native TTS / STT (wasm32 only).
+web-speech = [
+    "brainwires-core/wasm",
+    "dep:wasm-bindgen",
+    "dep:js-sys",
+    "dep:web-sys",
+    "dep:wasm-bindgen-futures",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

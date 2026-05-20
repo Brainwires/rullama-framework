@@ -15,7 +15,9 @@ use brainwires_slack_channel::slack::SlackChannel;
 #[derive(Parser)]
 #[command(name = "brainwires-slack")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "Slack channel adapter for the Brainwires gateway — also serves as an MCP tool server")]
+#[command(
+    about = "Slack channel adapter for the Brainwires gateway — also serves as an MCP tool server"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -170,10 +172,7 @@ async fn run_adapter(config: SlackConfig, enable_mcp: bool) -> Result<()> {
 }
 
 fn show_version_info() {
-    println!(
-        "brainwires-slack v{}",
-        env!("CARGO_PKG_VERSION")
-    );
+    println!("brainwires-slack v{}", env!("CARGO_PKG_VERSION"));
     println!();
     println!("System Information:");
     println!("  Build Date:      {}", env!("BUILD_TIMESTAMP"));

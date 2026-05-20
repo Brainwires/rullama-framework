@@ -2,15 +2,18 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use zeroize::Zeroizing;
+
+static STALE_MODEL_WARNED: AtomicBool = AtomicBool::new(false);
 
 use super::paths::PlatformPaths;
 use crate::types::agent::PermissionMode;
 use crate::types::provider::ProviderType;
 use brainwires::agent_network::auth::keyring::KeyringKeyStore;
 use brainwires::agent_network::traits::KeyStore;
-use brainwires::brain::bks_pks::KnowledgeSettings as KnowledgeSettingsCore;
-use brainwires::seal::SealConfig;
+use brainwires::knowledge::bks_pks::KnowledgeSettings as KnowledgeSettingsCore;
+use brainwires_seal::SealConfig;
 
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -395,8 +398,8 @@ impl Default for SealKnowledgeSettings {
 
 impl SealKnowledgeSettings {
     /// Convert to IntegrationConfig for use with SealKnowledgeCoordinator
-    pub fn to_integration_config(&self) -> brainwires::seal::IntegrationConfig {
-        use brainwires::seal::EntityResolutionStrategy;
+    pub fn to_integration_config(&self) -> brainwires_seal::IntegrationConfig {
+        use brainwires_seal::EntityResolutionStrategy;
 
         let strategy = match self.entity_resolution_strategy.as_str() {
             "seal_first" => EntityResolutionStrategy::SealFirst,
@@ -407,7 +410,7 @@ impl SealKnowledgeSettings {
             },
         };
 
-        brainwires::seal::IntegrationConfig {
+        brainwires_seal::IntegrationConfig {
             enabled: self.enabled,
             seal_to_knowledge: self.seal_to_knowledge,
             knowledge_to_seal: self.knowledge_to_seal,
@@ -668,7 +671,14 @@ fn default_provider_type() -> ProviderType {
 }
 
 pub(crate) fn default_model() -> String {
-    "gpt-5-mini".to_string()
+    // A first-run default must be a model the backend actually advertises in
+    // `brainwires models list`. The previous default "gpt-5-mini" did not
+    // appear in that list (the closest real model is "openai-gpt-5-mini"),
+    // which produced silent request failures for fresh installs.
+    //
+    // Claude Haiku 4.5 is small, cheap, supported on the Brainwires SaaS
+    // relay, and widely available to users who are just exploring the CLI.
+    "claude-haiku-4-5-20251001".to_string()
 }
 
 pub(crate) fn default_backend_url() -> String {
@@ -747,8 +757,25 @@ impl ConfigManager {
         let contents = fs::read_to_string(path)
             .with_context(|| format!("Failed to read config file: {}", path.display()))?;
 
-        let config: Config =
+        let mut config: Config =
             serde_json::from_str(&contents).context("Failed to parse config file")?;
+
+        // Migration: pre-v0.11 installs may still pin stale/phantom model names
+        // as the value of `model`. Remap in-memory only — the user's config.json
+        // stays untouched until they run `config --set`, which is the expected
+        // place for persistent changes.
+        const STALE_MODELS: &[&str] = &["openai-gpt-5.2", "gpt-5-mini"];
+        if STALE_MODELS.contains(&config.model.as_str()) {
+            let fresh = default_model();
+            if !STALE_MODEL_WARNED.swap(true, Ordering::Relaxed) {
+                eprintln!(
+                    "⚠ Config pins a stale model ('{}'). Using '{}' for this session. \
+                     Run `brainwires config --set model=<name>` to persist a choice.",
+                    config.model, fresh
+                );
+            }
+            config.model = fresh;
+        }
 
         Ok(config)
     }

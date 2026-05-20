@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::providers::Provider;
-use crate::storage::{EmbeddingProvider, MessageMetadata, MessageStore, VectorDatabase};
+use crate::storage::{CachedEmbeddingProvider, MessageMetadata, MessageStore, VectorDatabase};
 use crate::tools::ToolExecutor;
 use crate::types::agent::{AgentContext, PermissionMode, Task};
 use crate::types::message::{ChatResponse, ContentBlock, Message, MessageContent, Role};
@@ -152,6 +152,15 @@ pub struct TaskAgent {
     config: TaskAgentConfig,
     /// Agent context
     context: Arc<RwLock<AgentContext>>,
+    /// Per-run shared registry of `(path -> SHA-256 of most recent write)`.
+    ///
+    /// Each iteration builds a fresh `ToolContext` (via
+    /// `ToolContext::from_agent_context`), so the registry must live on the
+    /// agent — not on `ToolContext` or `AgentContext` — to persist across
+    /// iterations.  The file_ops `write_file` tool records hashes into this
+    /// registry; the validation loop re-reads at finalisation to detect
+    /// post-validation clobber by a concurrent writer.
+    intended_writes: brainwires::core::IntendedWrites,
 }
 
 impl TaskAgent {
@@ -175,6 +184,7 @@ impl TaskAgent {
             status: Arc::new(RwLock::new(TaskAgentStatus::Idle)),
             config,
             context: Arc::new(RwLock::new(context)),
+            intended_writes: brainwires::core::IntendedWrites::new(),
         }
     }
 
@@ -544,7 +554,12 @@ impl TaskAgent {
             // Execute tools
             let tool_context = {
                 let context = self.context.read().await;
-                ToolContext::from_agent_context(&context)
+                let mut tc = ToolContext::from_agent_context(&context);
+                // Share the per-run intended-writes registry so write_file
+                // records hashes that the validation loop re-reads at
+                // finalisation to detect post-validation clobber.
+                tc.intended_writes = Some(self.intended_writes.clone());
+                tc
             };
 
             for tool_use in tool_uses {
@@ -825,6 +840,11 @@ impl TaskAgent {
             // Update validation config with working set files
             let mut config_with_ws = validation_config.clone();
             config_with_ws.working_set_files = working_set_files;
+            // Inject the shared intended-writes registry so validation can
+            // detect post-validation clobber by a concurrent writer.
+            if config_with_ws.intended_writes.is_none() {
+                config_with_ws.intended_writes = Some(self.intended_writes.clone());
+            }
 
             tracing::debug!(
                 "[Agent {}] Validating {} working set files",
@@ -960,7 +980,7 @@ impl TaskAgent {
                 return None;
             }
         };
-        let embeddings = match EmbeddingProvider::new() {
+        let embeddings = match CachedEmbeddingProvider::new() {
             Ok(e) => Arc::new(e),
             Err(e) => {
                 tracing::debug!("TaskAgent: skipping MessageStore (embeddings) — {e}");
@@ -1086,6 +1106,7 @@ impl TaskAgent {
             stop: None,
             system: Some(system_prompt),
             model: None,
+            cache_strategy: Default::default(),
         };
 
         self.provider

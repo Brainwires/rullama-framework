@@ -54,16 +54,14 @@ const _: fn() = || {
 
 #[cfg(feature = "reasoning")]
 const _: fn() = || {
-    // Restored in v0.10: reasoning owns plan_parser + output_parser +
-    // the 8 scorers. This assertion guards the re-export chain
-    // metacrate → agents (feature) → brainwires-reasoning.
-    use brainwires::agents::reasoning::plan_parser::parse_plan_steps;
+    // brainwires::reasoning re-exports directly from brainwires-reasoning.
+    use brainwires::reasoning::plan_parser::parse_plan_steps;
     let _: fn(&str) -> Vec<_> = parse_plan_steps;
 };
 
-#[cfg(feature = "storage")]
+#[cfg(feature = "tiered")]
 const _: fn() = || {
-    use brainwires::storage::TieredMemory;
+    use brainwires::memory::TieredMemory;
     let _ty: std::marker::PhantomData<TieredMemory> = std::marker::PhantomData;
     let _ = _ty;
 };

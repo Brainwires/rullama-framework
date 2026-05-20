@@ -1,0 +1,55 @@
+[package]
+name = "brainwires-mdap"
+description = "Multi-Dimensional Adaptive Planning (MAKER voting framework) for the Brainwires Agent Framework — k-out-of-n voting, recursive decomposition, microagent dispatch, red-flag validation, scaling estimation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/brainwires-mdap"
+keywords = ["mdap", "maker-voting", "agents", "decomposition", "ensembling"]
+categories = ["development-tools"]
+
+[dependencies]
+# Internal — only core; mdap is the cleanest split in the workspace
+brainwires-core = { workspace = true }
+
+# Async runtime — Semaphore for parallel microagent dispatch
+tokio = { version = "1.43", features = ["sync", "time", "rt", "macros"] }
+
+# Async traits
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Time + ids
+chrono = { workspace = true }
+uuid = { workspace = true }
+
+# Regex — red-flag pattern matching
+regex = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+
+[[example]]
+name = "task_decomposition"
+
+[[example]]
+name = "voting_consensus"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

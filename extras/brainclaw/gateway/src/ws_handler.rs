@@ -148,30 +148,28 @@ pub async fn handle_ws_connection(mut ws: WebSocket, state: AppState) {
     // Read loop: process inbound messages from the channel
     while let Some(result) = ws_receiver.next().await {
         match result {
-            Ok(Message::Text(text)) => {
-                match serde_json::from_str::<ChannelEvent>(&text) {
-                    Ok(event) => {
-                        let router = state.router.clone();
-                        let cid = channel_id;
-                        tokio::spawn(async move {
-                            if let Err(e) = router.handle_inbound(cid, &event).await {
-                                tracing::error!(
-                                    channel_id = %cid,
-                                    error = %e,
-                                    "Failed to handle inbound event"
-                                );
-                            }
-                        });
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            channel_id = %channel_id,
-                            error = %e,
-                            "Failed to deserialize channel event"
-                        );
-                    }
+            Ok(Message::Text(text)) => match serde_json::from_str::<ChannelEvent>(&text) {
+                Ok(event) => {
+                    let router = state.router.clone();
+                    let cid = channel_id;
+                    tokio::spawn(async move {
+                        if let Err(e) = router.handle_inbound(cid, &event).await {
+                            tracing::error!(
+                                channel_id = %cid,
+                                error = %e,
+                                "Failed to handle inbound event"
+                            );
+                        }
+                    });
                 }
-            }
+                Err(e) => {
+                    tracing::warn!(
+                        channel_id = %channel_id,
+                        error = %e,
+                        "Failed to deserialize channel event"
+                    );
+                }
+            },
             Ok(Message::Close(_)) => {
                 tracing::info!(channel_id = %channel_id, "Channel sent close frame");
                 break;
@@ -222,17 +220,18 @@ async fn receive_handshake(ws: &mut WebSocket) -> Option<ChannelHandshake> {
 }
 
 /// Serialize a value to JSON and send it as a WebSocket text message.
-async fn send_json<T: serde::Serialize>(
-    ws: &mut WebSocket,
-    value: &T,
-) -> Result<(), axum::Error> {
+async fn send_json<T: serde::Serialize>(ws: &mut WebSocket, value: &T) -> Result<(), axum::Error> {
     let json = serde_json::to_string(value).map_err(axum::Error::new)?;
-    ws.send(Message::Text(json.into())).await.map_err(axum::Error::new)
+    ws.send(Message::Text(json.into()))
+        .await
+        .map_err(axum::Error::new)
 }
 
 #[cfg(test)]
 mod tests {
-    use brainwires_network::channels::{ChannelCapabilities, ChannelHandshake, ChannelHandshakeResponse};
+    use brainwires_network::channels::{
+        ChannelCapabilities, ChannelHandshake, ChannelHandshakeResponse,
+    };
 
     #[test]
     fn handshake_validation_accepted() {

@@ -58,10 +58,14 @@ mod tests {
             telegram_token: "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11".to_string(),
             gateway_url: "ws://localhost:9999/ws".to_string(),
             gateway_token: Some("gw-secret".to_string()),
+            ..Default::default()
         };
         let json = serde_json::to_string(&config).unwrap();
         let parsed: TelegramConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.telegram_token, "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11");
+        assert_eq!(
+            parsed.telegram_token,
+            "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+        );
         assert_eq!(parsed.gateway_url, "ws://localhost:9999/ws");
         assert_eq!(parsed.gateway_token.as_deref(), Some("gw-secret"));
     }

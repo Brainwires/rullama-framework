@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use super::peer_table::PeerTable;
-use crate::network::MessageEnvelope;
+use crate::MessageEnvelope;
 use crate::transport::TransportAddress;
 
 /// Routing strategy identifier.

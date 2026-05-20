@@ -1,24 +1,31 @@
 use thiserror::Error;
 
+/// Errors returned by the analytics subsystem — sinks, queries, exporters.
 #[derive(Debug, Error)]
 pub enum AnalyticsError {
+    /// SQLite driver error from the persistent sink or query layer.
     #[cfg(feature = "sqlite")]
     #[error("SQLite error: {0}")]
     Sqlite(#[from] rusqlite::Error),
 
+    /// Filesystem / pipe I/O failure.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// The collector's sink channel was dropped before the event could be delivered.
     #[error("Analytics sink channel closed")]
     ChannelClosed,
 
+    /// JSON serialization / deserialization of an event payload failed.
     #[error("Serialization error: {0}")]
     Serde(#[from] serde_json::Error),
 
+    /// Catch-all for lower-level failures surfaced as `anyhow::Error`.
     #[error("{0}")]
     Other(#[from] anyhow::Error),
 }
 
+/// Convenience result alias used throughout the telemetry crate.
 pub type AnalyticsResult<T> = Result<T, AnalyticsError>;
 
 #[cfg(test)]
@@ -55,7 +62,7 @@ mod tests {
     #[test]
     fn analytics_result_ok() {
         let result: AnalyticsResult<i32> = Ok(42);
-        assert_eq!(result.unwrap(), 42);
+        assert!(matches!(result, Ok(42)));
     }
 
     #[test]

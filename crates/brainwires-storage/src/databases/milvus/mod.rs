@@ -101,19 +101,20 @@ impl MilvusDatabase {
             .with_context(|| format!("Milvus returned non-JSON (HTTP {}): {}", status, text))?;
 
         // Milvus REST v2 uses a `code` field — 0 (or 200) means success.
-        if let Some(code) = parsed.get("code").and_then(|c| c.as_i64()) {
-            if code != 0 && code != 200 {
-                let message = parsed
-                    .get("message")
-                    .and_then(|m| m.as_str())
-                    .unwrap_or("unknown error");
-                anyhow::bail!(
-                    "Milvus API error on {}: code={}, message={}",
-                    path,
-                    code,
-                    message
-                );
-            }
+        if let Some(code) = parsed.get("code").and_then(|c| c.as_i64())
+            && code != 0
+            && code != 200
+        {
+            let message = parsed
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("unknown error");
+            anyhow::bail!(
+                "Milvus API error on {}: code={}, message={}",
+                path,
+                code,
+                message
+            );
         }
 
         Ok(parsed)

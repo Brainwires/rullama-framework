@@ -6,9 +6,9 @@
 //! wraps a **single shared connection** and can implement one or both of the
 //! core traits:
 //!
-//! - [`StorageBackend`] — generic CRUD + vector search for domain stores
+//! - [`StorageBackend`](crate::databases::traits::StorageBackend) — generic CRUD + vector search for domain stores
 //!   (conversations, messages, tasks, plans, images, tiered memory, etc.)
-//! - [`VectorDatabase`] — RAG-style embedding storage with hybrid search
+//! - [`VectorDatabase`](crate::databases::traits::VectorDatabase) — RAG-style embedding storage with hybrid search
 //!   for the codebase indexing subsystem in `brainwires-knowledge`
 //!
 //! ## Trait implementation matrix

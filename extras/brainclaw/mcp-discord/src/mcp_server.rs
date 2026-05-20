@@ -4,16 +4,15 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use rmcp::{
-    ServerHandler, ServiceExt,
-    handler::server::tool::ToolRouter,
-    handler::server::wrapper::Parameters,
-    model::*,
-    tool, tool_handler, tool_router,
+    ServerHandler, ServiceExt, handler::server::tool::ToolRouter,
+    handler::server::wrapper::Parameters, model::*, tool, tool_handler, tool_router,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use brainwires_network::channels::{Channel, ChannelMessage, ConversationId, MessageContent, MessageId};
+use brainwires_network::channels::{
+    Channel, ChannelMessage, ConversationId, MessageContent, MessageId,
+};
 
 use crate::discord::DiscordChannel;
 
@@ -259,7 +258,9 @@ impl DiscordMcpServer {
             .map_err(|e| format!("Serialization error: {e}"))
     }
 
-    #[tool(description = "Send a typing indicator to a Discord channel. The indicator lasts ~10 seconds or until a message is sent.")]
+    #[tool(
+        description = "Send a typing indicator to a Discord channel. The indicator lasts ~10 seconds or until a message is sent."
+    )]
     async fn send_typing(
         &self,
         Parameters(req): Parameters<SendTypingRequest>,
@@ -300,9 +301,8 @@ impl ServerHandler for DiscordMcpServer {
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
-        info.server_info =
-            Implementation::new("brainwires-discord", env!("CARGO_PKG_VERSION"))
-                .with_title("Brainwires Discord Channel — MCP Tool Server");
+        info.server_info = Implementation::new("brainwires-discord", env!("CARGO_PKG_VERSION"))
+            .with_title("Brainwires Discord Channel — MCP Tool Server");
         info.instructions = Some(
             "Discord channel adapter MCP server. \
              Use send_message to send messages, edit_message to edit, \

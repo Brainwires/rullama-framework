@@ -13,8 +13,8 @@ use tokio::sync::mpsc;
 use brainwires_network::channels::{Channel, ChannelEvent};
 
 use config::GitHubConfig;
-use github::GitHubChannel;
 use gateway_client::GatewayClient;
+use github::GitHubChannel;
 use mcp_server::GitHubMcpServer;
 
 /// Brainwires GitHub Channel Adapter
@@ -70,11 +70,7 @@ enum Commands {
         repos: Vec<String>,
 
         /// GitHub API base URL (override for GitHub Enterprise Server).
-        #[arg(
-            long,
-            default_value = "https://api.github.com",
-            env = "GITHUB_API_URL"
-        )]
+        #[arg(long, default_value = "https://api.github.com", env = "GITHUB_API_URL")]
         api_url: String,
 
         /// Also start the MCP server on stdio for direct tool access.
@@ -185,8 +181,7 @@ async fn run_adapter(
         let mcp_api_url = api_url.clone();
         let mcp_token = token.clone();
         tokio::spawn(async move {
-            if let Err(e) =
-                GitHubMcpServer::serve_stdio(mcp_channel, mcp_api_url, mcp_token).await
+            if let Err(e) = GitHubMcpServer::serve_stdio(mcp_channel, mcp_api_url, mcp_token).await
             {
                 tracing::error!("MCP server error: {e:#}");
             }

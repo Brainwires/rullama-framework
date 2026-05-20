@@ -6,8 +6,8 @@ impl App {
     /// Handle /learn command - teach a behavioral truth
     pub(super) async fn handle_learn_truth(&mut self, rule: &str, rationale: Option<&str>) {
         use crate::utils::paths::PlatformPaths;
-        use brainwires::brain::bks_pks::cache::BehavioralKnowledgeCache;
-        use brainwires::brain::bks_pks::truth::{BehavioralTruth, TruthCategory, TruthSource};
+        use brainwires::knowledge::bks_pks::cache::BehavioralKnowledgeCache;
+        use brainwires::knowledge::bks_pks::truth::{BehavioralTruth, TruthCategory, TruthSource};
 
         // Infer category from the rule text
         let category = if rule.to_lowercase().contains("--") || rule.to_lowercase().contains("flag")
@@ -75,7 +75,7 @@ impl App {
     /// Handle /knowledge command - show status
     pub(super) async fn handle_knowledge_status(&mut self) {
         use crate::utils::paths::PlatformPaths;
-        use brainwires::brain::bks_pks::cache::BehavioralKnowledgeCache;
+        use brainwires::knowledge::bks_pks::cache::BehavioralKnowledgeCache;
 
         // Try to load cache to get stats
         let stats_msg = match PlatformPaths::knowledge_db() {
@@ -122,8 +122,8 @@ impl App {
     /// Handle /knowledge:list command
     pub(super) async fn handle_knowledge_list(&mut self, category: Option<&str>) {
         use crate::utils::paths::PlatformPaths;
-        use brainwires::brain::bks_pks::cache::BehavioralKnowledgeCache;
-        use brainwires::brain::bks_pks::truth::TruthCategory;
+        use brainwires::knowledge::bks_pks::cache::BehavioralKnowledgeCache;
+        use brainwires::knowledge::bks_pks::truth::TruthCategory;
 
         let result = match PlatformPaths::knowledge_db() {
             Ok(db_path) => match BehavioralKnowledgeCache::new(&db_path, 100) {
@@ -186,8 +186,8 @@ impl App {
     /// Handle /knowledge:search command
     pub(super) async fn handle_knowledge_search(&mut self, query: &str) {
         use crate::utils::paths::PlatformPaths;
-        use brainwires::brain::bks_pks::cache::BehavioralKnowledgeCache;
-        use brainwires::brain::bks_pks::matcher::ContextMatcher;
+        use brainwires::knowledge::bks_pks::cache::BehavioralKnowledgeCache;
+        use brainwires::knowledge::bks_pks::matcher::ContextMatcher;
 
         let result = match PlatformPaths::knowledge_db() {
             Ok(db_path) => match BehavioralKnowledgeCache::new(&db_path, 100) {
@@ -244,7 +244,7 @@ impl App {
     /// Handle /knowledge:contradict command
     pub(super) async fn handle_knowledge_contradict(&mut self, id: &str, reason: Option<&str>) {
         use crate::utils::paths::PlatformPaths;
-        use brainwires::brain::bks_pks::cache::BehavioralKnowledgeCache;
+        use brainwires::knowledge::bks_pks::cache::BehavioralKnowledgeCache;
 
         let result = match PlatformPaths::knowledge_db() {
             Ok(db_path) => {
@@ -279,7 +279,7 @@ impl App {
     /// Handle /knowledge:delete command
     pub(super) async fn handle_knowledge_delete(&mut self, id: &str) {
         use crate::utils::paths::PlatformPaths;
-        use brainwires::brain::bks_pks::cache::BehavioralKnowledgeCache;
+        use brainwires::knowledge::bks_pks::cache::BehavioralKnowledgeCache;
 
         let result = match PlatformPaths::knowledge_db() {
             Ok(db_path) => match BehavioralKnowledgeCache::new(&db_path, 100) {

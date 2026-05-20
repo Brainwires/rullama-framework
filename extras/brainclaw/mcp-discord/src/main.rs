@@ -2,22 +2,24 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use serenity::all::GatewayIntents;
 use serenity::Client;
+use serenity::all::GatewayIntents;
 use tokio::sync::mpsc;
 
-use brainwires_network::channels::Channel;
 use brainwires_discord_channel::config::DiscordConfig;
 use brainwires_discord_channel::discord::DiscordChannel;
 use brainwires_discord_channel::event_handler::DiscordEventHandler;
 use brainwires_discord_channel::gateway_client::GatewayClient;
 use brainwires_discord_channel::mcp_server::DiscordMcpServer;
+use brainwires_network::channels::Channel;
 
 /// Brainwires Discord Channel Adapter
 #[derive(Parser)]
 #[command(name = "brainwires-discord")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "Discord channel adapter for the Brainwires gateway — also serves as an MCP tool server")]
+#[command(
+    about = "Discord channel adapter for the Brainwires gateway — also serves as an MCP tool server"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -173,10 +175,7 @@ async fn run_adapter(config: DiscordConfig, enable_mcp: bool) -> Result<()> {
 }
 
 fn show_version_info() {
-    println!(
-        "brainwires-discord v{}",
-        env!("CARGO_PKG_VERSION")
-    );
+    println!("brainwires-discord v{}", env!("CARGO_PKG_VERSION"));
     println!();
     println!("System Information:");
     println!("  Build Date:      {}", env!("BUILD_TIMESTAMP"));

@@ -35,6 +35,7 @@ impl ModelPricing {
 }
 
 /// Default pricing for common models (as of 2025)
+// TODO: drive pricing from ModelRegistry::fetch_models() instead of hard-coding
 fn default_model_pricing() -> HashMap<String, ModelPricing> {
     let mut pricing = HashMap::new();
 
@@ -53,11 +54,22 @@ fn default_model_pricing() -> HashMap<String, ModelPricing> {
         ModelPricing::new(0.003, 0.015),
     );
     pricing.insert("claude-opus-4".to_string(), ModelPricing::new(0.015, 0.075));
+    pricing.insert(
+        "claude-haiku-4-5-20251001".to_string(),
+        ModelPricing::new(0.00025, 0.00125),
+    );
+    pricing.insert(
+        "claude-sonnet-4-5-20250929".to_string(),
+        ModelPricing::new(0.003, 0.015),
+    );
+    pricing.insert(
+        "claude-opus-4-1-20250805".to_string(),
+        ModelPricing::new(0.015, 0.075),
+    );
 
     // OpenAI models
     pricing.insert("gpt-4".to_string(), ModelPricing::new(0.03, 0.06));
     pricing.insert("gpt-4-turbo".to_string(), ModelPricing::new(0.01, 0.03));
-    pricing.insert("openai-gpt-5.2".to_string(), ModelPricing::new(0.002, 0.01));
     pricing.insert(
         "gpt-3.5-turbo".to_string(),
         ModelPricing::new(0.0005, 0.0015),

@@ -21,10 +21,10 @@
 
 /// Configuration types for the GitHub adapter.
 pub mod config;
-/// GitHub REST API client implementing the `Channel` trait.
-pub mod github;
 /// WebSocket client for connecting to the brainwires-gateway.
 pub mod gateway_client;
+/// GitHub REST API client implementing the `Channel` trait.
+pub mod github;
 /// MCP server exposing GitHub operations as tools.
 pub mod mcp_server;
 /// Webhook receiver (Axum) for inbound GitHub events.

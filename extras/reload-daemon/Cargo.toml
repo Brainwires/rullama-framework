@@ -10,6 +10,10 @@ repository.workspace = true
 authors.workspace = true
 documentation = "https://docs.rs/reload-daemon"
 
+[lib]
+name = "reload_daemon"
+path = "src/lib.rs"
+
 [[bin]]
 name = "reload-daemon"
 path = "src/main.rs"
@@ -27,4 +31,7 @@ clap = { version = "4", features = ["derive"] }
 axum = "0.8"
 
 [target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(unix)'.dev-dependencies]
 libc = "0.2"

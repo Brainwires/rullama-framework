@@ -22,5 +22,4 @@ This is a Rust-based CLI tool for interacting with AI assistants. It features a 
 - Run `cargo test` before committing
 
 ## Import Example
-You can import other files using @filename.md syntax:
-@docs/CONTRIBUTING.md
+You can import other files using @filename.md syntax.

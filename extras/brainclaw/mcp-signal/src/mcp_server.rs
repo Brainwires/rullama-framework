@@ -4,16 +4,15 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use rmcp::{
-    ServerHandler, ServiceExt,
-    handler::server::tool::ToolRouter,
-    handler::server::wrapper::Parameters,
-    model::*,
-    tool, tool_handler, tool_router,
+    ServerHandler, ServiceExt, handler::server::tool::ToolRouter,
+    handler::server::wrapper::Parameters, model::*, tool, tool_handler, tool_router,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use brainwires_network::channels::{Channel, ChannelMessage, ConversationId, MessageContent, MessageId};
+use brainwires_network::channels::{
+    Channel, ChannelMessage, ConversationId, MessageContent, MessageId,
+};
 
 use crate::signal::SignalChannel;
 
@@ -65,10 +64,8 @@ pub struct AddReactionRequest {
 
 #[tool_router(router = tool_router)]
 impl SignalMcpServer {
-    #[tool(
-        description = "Send a Signal message to a phone number or group. \
-                       Use '+E164' for direct messages or 'group.<base64id>' for groups."
-    )]
+    #[tool(description = "Send a Signal message to a phone number or group. \
+                       Use '+E164' for direct messages or 'group.<base64id>' for groups.")]
     async fn send_message(
         &self,
         Parameters(req): Parameters<SendMessageRequest>,
@@ -99,10 +96,8 @@ impl SignalMcpServer {
         Ok(format!("{{\"message_id\": \"{}\"}}", msg_id.0))
     }
 
-    #[tool(
-        description = "Add an emoji reaction to a Signal message. \
-                       The message_id must be in 'recipient:author:timestamp' format."
-    )]
+    #[tool(description = "Add an emoji reaction to a Signal message. \
+                       The message_id must be in 'recipient:author:timestamp' format.")]
     async fn add_reaction(
         &self,
         Parameters(req): Parameters<AddReactionRequest>,
@@ -124,9 +119,8 @@ impl ServerHandler for SignalMcpServer {
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
-        info.server_info =
-            Implementation::new("brainwires-signal", env!("CARGO_PKG_VERSION"))
-                .with_title("Brainwires Signal Channel — MCP Tool Server");
+        info.server_info = Implementation::new("brainwires-signal", env!("CARGO_PKG_VERSION"))
+            .with_title("Brainwires Signal Channel — MCP Tool Server");
         info.instructions = Some(
             "Signal channel adapter MCP server. \
              Use send_message to send messages to phone numbers or groups, \

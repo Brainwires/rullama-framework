@@ -483,7 +483,10 @@ mod tests {
             }]
         });
         let msgs = parse_webhook_messages(&payload, "pid");
-        assert!(msgs.is_empty(), "message with missing text body should be skipped");
+        assert!(
+            msgs.is_empty(),
+            "message with missing text body should be skipped"
+        );
     }
 
     // --- GRAPH_API_BASE ---

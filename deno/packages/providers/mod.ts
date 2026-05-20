@@ -39,6 +39,67 @@ export { VertexAiProvider } from "./vertex.ts";
 export { GoogleChatProvider } from "./gemini.ts";
 export { OllamaChatProvider } from "./ollama.ts";
 
+// Brainwires Relay — HTTP-based backend that multiplexes upstream models
+export {
+  BrainwiresRelayProvider,
+  DEFAULT_BACKEND_URL,
+  DEV_BACKEND_URL,
+  getBackendFromApiKey,
+  maxOutputTokensForModel,
+} from "./brainwires_relay.ts";
+
+// Audio providers — TTS / STT / ASR HTTP clients
+export {
+  AzureSpeechClient,
+  type AzureSttRequest,
+  type AzureSttResponse,
+  type AzureVoice,
+  CARTESIA_API_BASE,
+  CARTESIA_VERSION,
+  CartesiaClient,
+  type CartesiaOutputFormat,
+  type CartesiaTtsRequest,
+  type CartesiaVoice,
+  DEEPGRAM_API_BASE,
+  type DeepgramAlternative,
+  type DeepgramChannel,
+  DeepgramClient,
+  type DeepgramListenRequest,
+  type DeepgramListenResponse,
+  type DeepgramResults,
+  type DeepgramSpeakRequest,
+  type DeepgramWord,
+  ELEVENLABS_API_BASE,
+  ElevenLabsClient,
+  elevenLabsSerializeTtsRequest,
+  type ElevenLabsSttRequest,
+  type ElevenLabsSttResponse,
+  type ElevenLabsTtsRequest,
+  type ElevenLabsVoice,
+  type ElevenLabsVoicesResponse,
+  type ElevenLabsVoiceSettings,
+  FISH_API_BASE,
+  type FishAsrRequest,
+  type FishAsrResponse,
+  FishClient,
+  type FishTtsRequest,
+  GOOGLE_TTS_API_BASE,
+  type GoogleTtsAudioConfig,
+  GoogleTtsClient,
+  type GoogleTtsInput,
+  type GoogleTtsSynthesizeRequest,
+  type GoogleTtsSynthesizeResponse,
+  type GoogleTtsVoiceEntry,
+  type GoogleTtsVoicesResponse,
+  type GoogleTtsVoiceSelection,
+  MURF_API_BASE,
+  MurfClient,
+  type MurfGenerateRequest,
+  type MurfGenerateResponse,
+  type MurfVoice,
+  type MurfVoicesResponse,
+} from "./audio/mod.ts";
+
 // Factory
 export { ChatProviderFactory } from "./factory.ts";
 

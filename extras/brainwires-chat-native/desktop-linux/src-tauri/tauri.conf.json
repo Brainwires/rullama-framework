@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Brainwires Chat",
+  "version": "0.1.0",
+  "identifier": "com.brainwires.chat.native",
+  "build": {
+    "frontendDist": "../../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm --prefix ../.. run web",
+    "beforeBuildCommand": "npm --prefix ../.. run web:build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Brainwires Chat",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 600,
+        "minHeight": 400,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": ["deb", "appimage", "rpm"],
+    "category": "Productivity",
+    "shortDescription": "Brainwires Chat — native client",
+    "longDescription": "Native chat client for the Brainwires Agent Framework."
+  }
+}

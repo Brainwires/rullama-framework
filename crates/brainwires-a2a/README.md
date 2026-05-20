@@ -211,6 +211,22 @@ let server = A2aServer::new(handler, http_addr)
 server.run().await?;
 ```
 
+#### Build requirements
+
+`build.rs` automatically runs `tonic_build` against `proto/a2a.proto` when any
+`grpc*` feature is enabled — no manual codegen step. Requirements on the build host:
+
+- `protoc` (protobuf compiler) on `$PATH`. Install via:
+  - Debian/Ubuntu: `apt-get install -y protobuf-compiler`
+  - macOS: `brew install protobuf`
+  - Alpine: `apk add protoc protobuf-dev`
+- The proto import root is `proto/` (anchored to the crate root). Google's
+  `api/http.proto` and `api/annotations.proto` are vendored under `proto/google/`
+  so no well-known-types package is required.
+
+Default-feature builds (`native` only) skip the gRPC codegen entirely and have
+no `protoc` requirement.
+
 ## Transport selection (client)
 
 ```rust
@@ -260,19 +276,19 @@ Both fields are `skip_serializing_if = None` so existing clients and serialized 
 
 ```toml
 # Types only (no networking)
-brainwires-a2a = { version = "0.10", default-features = false }
+brainwires-a2a = { version = "0.11", default-features = false }
 
 # Client + server (JSON-RPC + REST)
-brainwires-a2a = "0.10"
+brainwires-a2a = "0.11"
 
 # Everything including gRPC
-brainwires-a2a = { version = "0.10", features = ["full"] }
+brainwires-a2a = { version = "0.11", features = ["full"] }
 ```
 
 Or via the `brainwires` facade crate:
 
 ```toml
-brainwires = { version = "0.10", features = ["a2a"] }
+brainwires = { version = "0.11", features = ["a2a"] }
 ```
 
 ## License

@@ -5,10 +5,10 @@
 
 use crate::types::question::AmbiguityType;
 use anyhow::Result;
-use brainwires::brain::bks_pks::personal::{
+use brainwires::knowledge::bks_pks::personal::{
     PersonalFact, PersonalFactCategory, PersonalFactSource, PersonalKnowledgeCache,
 };
-use brainwires::brain::bks_pks::{
+use brainwires::knowledge::bks_pks::{
     BehavioralKnowledgeCache, BehavioralTruth, TruthCategory, TruthSource,
 };
 use std::collections::HashMap;

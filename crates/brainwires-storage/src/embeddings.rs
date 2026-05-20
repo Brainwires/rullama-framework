@@ -10,13 +10,14 @@
 //! Both implement the `brainwires_core::EmbeddingProvider` trait.
 
 use anyhow::{Context, Result};
-pub use brainwires_core::EmbeddingProvider as EmbeddingProviderTrait;
+pub use brainwires_core::EmbeddingProvider;
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use lru::LruCache;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
-use std::sync::{Arc, RwLock};
+use std::path::PathBuf;
+use std::sync::{Arc, OnceLock, RwLock};
 
 /// Default cache size for embeddings (1000 entries)
 const DEFAULT_CACHE_SIZE: usize = 1000;
@@ -27,21 +28,31 @@ const EMBEDDING_DIM_BGE_BASE: usize = 768;
 
 /// FastEmbed-based embedding provider using ONNX models.
 ///
+/// The underlying ONNX model is loaded **lazily** on the first `embed` /
+/// `embed_batch` call — construction is cheap and does not touch the network.
+/// Once loaded, the model is cached for the lifetime of the manager.
+///
 /// Uses RwLock for safe interior mutability since fastembed's `embed()` requires `&mut self`.
 /// Default model is all-MiniLM-L6-v2 (384 dimensions).
 pub struct FastEmbedManager {
-    model: RwLock<TextEmbedding>,
+    model: OnceLock<RwLock<TextEmbedding>>,
+    model_enum: EmbeddingModel,
+    cache_dir: PathBuf,
     dimension: usize,
     model_name: String,
 }
 
 impl FastEmbedManager {
-    /// Create a new FastEmbedManager with the default model (all-MiniLM-L6-v2)
+    /// Create a new FastEmbedManager with the default model (all-MiniLM-L6-v2).
+    ///
+    /// This is cheap — the ONNX model is not loaded until the first embed call.
     pub fn new() -> Result<Self> {
         Self::with_model(EmbeddingModel::AllMiniLML6V2)
     }
 
-    /// Create a new FastEmbedManager from a model name string
+    /// Create a new FastEmbedManager from a model name string.
+    ///
+    /// This is cheap — the ONNX model is not loaded until the first embed call.
     pub fn from_model_name(model_name: &str) -> Result<Self> {
         let model = match model_name {
             "all-MiniLM-L6-v2" => EmbeddingModel::AllMiniLML6V2,
@@ -59,10 +70,10 @@ impl FastEmbedManager {
         Self::with_model(model)
     }
 
-    /// Create a new FastEmbedManager with a specific model
+    /// Create a new FastEmbedManager with a specific model.
+    ///
+    /// This is cheap — the ONNX model is not loaded until the first embed call.
     pub fn with_model(model: EmbeddingModel) -> Result<Self> {
-        tracing::info!("Initializing FastEmbed model: {:?}", model);
-
         let (dimension, name) = match model {
             EmbeddingModel::AllMiniLML6V2 => (EMBEDDING_DIM_MINILM, "all-MiniLM-L6-v2"),
             EmbeddingModel::AllMiniLML12V2 => (EMBEDDING_DIM_MINILM, "all-MiniLM-L12-v2"),
@@ -71,22 +82,33 @@ impl FastEmbedManager {
             _ => (EMBEDDING_DIM_MINILM, "all-MiniLM-L6-v2"),
         };
 
-        let cache_dir = crate::paths::PlatformPaths::default_fastembed_cache_path();
+        let cache_dir = brainwires_core::paths::PlatformPaths::default_fastembed_cache_path();
         let _ = std::fs::create_dir_all(&cache_dir);
 
-        let mut options = InitOptions::default();
-        options.model_name = model;
-        options.show_download_progress = true;
-        options.cache_dir = cache_dir;
-
-        let embedding_model =
-            TextEmbedding::try_new(options).context("Failed to initialize FastEmbed model")?;
-
         Ok(Self {
-            model: RwLock::new(embedding_model),
+            model: OnceLock::new(),
+            model_enum: model,
+            cache_dir,
             dimension,
             model_name: name.to_string(),
         })
+    }
+
+    /// Lazily initialize the ONNX model on first use.
+    fn get_model(&self) -> Result<&RwLock<TextEmbedding>> {
+        if let Some(m) = self.model.get() {
+            return Ok(m);
+        }
+        tracing::info!("Initializing FastEmbed model: {:?}", self.model_enum);
+        let mut options = InitOptions::default();
+        options.model_name = self.model_enum.clone();
+        options.show_download_progress = true;
+        options.cache_dir = self.cache_dir.clone();
+        let embedding_model =
+            TextEmbedding::try_new(options).context("Failed to initialize FastEmbed model")?;
+        // If another thread won the init race, use the winner's value.
+        let _ = self.model.set(RwLock::new(embedding_model));
+        Ok(self.model.get().expect("model just set"))
     }
 
     /// Generate embeddings for a batch of texts (raw, no caching).
@@ -100,7 +122,8 @@ impl FastEmbedManager {
 
         tracing::debug!("Generating embeddings for {} texts", texts.len());
 
-        let mut model = self.model.write().unwrap_or_else(|poisoned| {
+        let model = self.get_model()?;
+        let mut model = model.write().unwrap_or_else(|poisoned| {
             tracing::warn!("FastEmbed model lock was poisoned, recovering...");
             poisoned.into_inner()
         });
@@ -137,7 +160,7 @@ impl FastEmbedManager {
     }
 }
 
-impl EmbeddingProviderTrait for FastEmbedManager {
+impl EmbeddingProvider for FastEmbedManager {
     fn embed(&self, text: &str) -> Result<Vec<f32>> {
         let embeddings = self.embed_batch_vec(vec![text.to_string()])?;
         embeddings
@@ -272,7 +295,7 @@ impl CachedEmbeddingProvider {
     }
 }
 
-impl EmbeddingProviderTrait for CachedEmbeddingProvider {
+impl EmbeddingProvider for CachedEmbeddingProvider {
     fn embed(&self, text: &str) -> Result<Vec<f32>> {
         self.embed_cached(text)
     }
@@ -300,9 +323,6 @@ impl Clone for CachedEmbeddingProvider {
         }
     }
 }
-
-/// Type alias for backward compatibility
-pub type EmbeddingProvider = CachedEmbeddingProvider;
 
 #[cfg(test)]
 mod tests {

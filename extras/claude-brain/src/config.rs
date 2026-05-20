@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use brainwires_knowledge::dream::policy::DemotionPolicy;
+use brainwires_memory::dream::policy::DemotionPolicy;
 
 /// Top-level configuration for claude-brain.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

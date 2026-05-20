@@ -4,24 +4,30 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tokio::sync::mpsc;
 
-use brainwires_network::channels::Channel;
 use brainwires_mattermost_channel::config::MattermostConfig;
 use brainwires_mattermost_channel::event_handler::MattermostEventHandler;
 use brainwires_mattermost_channel::gateway_client::GatewayClient;
 use brainwires_mattermost_channel::mattermost::MattermostChannel;
 use brainwires_mattermost_channel::mcp_server::MattermostMcpServer;
+use brainwires_network::channels::Channel;
 
 /// Brainwires Mattermost Channel Adapter
 #[derive(Parser)]
 #[command(name = "brainclaw-mcp-mattermost")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "Mattermost channel adapter for the Brainwires gateway — also serves as an MCP tool server")]
+#[command(
+    about = "Mattermost channel adapter for the Brainwires gateway — also serves as an MCP tool server"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
+// reason: clap subcommand enums naturally have one large `Serve` variant
+// alongside zero-sized informational variants like `Version`; boxing each
+// CLI argument set adds noise without runtime benefit.
+#[allow(clippy::large_enum_variant)]
 enum Commands {
     /// Start the Mattermost adapter.
     /// Connects to Mattermost via WebSocket and the brainwires-gateway, forwarding events bidirectionally.

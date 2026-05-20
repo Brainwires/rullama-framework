@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use base64::Engine;
 use futures::stream::BoxStream;
 
-use brainwires_providers::openai_responses::{
+use brainwires_provider::openai_responses::{
     CreateResponseRequest, InputContent, InputContentPart, OutputContentBlock, ResponseInput,
     ResponseInputItem, ResponseOutputItem, ResponsesClient,
 };

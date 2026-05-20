@@ -81,6 +81,7 @@ pub enum UsbClass {
 }
 
 impl UsbClass {
+    /// Decode a USB class byte from a device descriptor into the named variant.
     pub fn from_code(code: u8) -> Self {
         match code {
             0x01 => Self::Audio,
@@ -173,16 +174,32 @@ impl std::fmt::Display for UsbSpeed {
 /// Errors from USB operations.
 #[derive(Debug, Error)]
 pub enum UsbError {
+    /// No device with the requested VID:PID is attached.
     #[error("no device found with VID:PID {vendor_id:04x}:{product_id:04x}")]
-    DeviceNotFound { vendor_id: u16, product_id: u16 },
+    DeviceNotFound {
+        /// Requested USB Vendor ID.
+        vendor_id: u16,
+        /// Requested USB Product ID.
+        product_id: u16,
+    },
+    /// Device was discoverable but could not be opened.
     #[error("failed to open device: {0}")]
     OpenFailed(String),
+    /// Interface claim (`claim_interface`) failed.
     #[error("failed to claim interface {0}: {1}")]
     ClaimFailed(u8, String),
+    /// Bulk/interrupt/control transfer failed.
     #[error("transfer failed on endpoint 0x{endpoint:02x}: {reason}")]
-    TransferFailed { endpoint: u8, reason: String },
+    TransferFailed {
+        /// Endpoint address (0x80 bit = IN, else OUT).
+        endpoint: u8,
+        /// OS-level failure reason.
+        reason: String,
+    },
+    /// Transfer did not complete within its timeout window.
     #[error("transfer timed out on endpoint 0x{0:02x}")]
     Timeout(u8),
+    /// Catch-all for platform-specific failures.
     #[error("USB error: {0}")]
     Other(String),
 }

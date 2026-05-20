@@ -381,10 +381,7 @@ mod tests {
             all: false,
             refresh: false,
         };
-        match cmd {
-            ModelsCommands::List { .. } => assert!(true),
-            _ => panic!("Expected List variant"),
-        }
+        assert!(matches!(cmd, ModelsCommands::List { .. }));
     }
 
     #[test]
@@ -393,9 +390,6 @@ mod tests {
             provider: None,
             refresh: false,
         };
-        match cmd {
-            ModelsCommands::Stats { .. } => assert!(true),
-            _ => panic!("Expected Stats variant"),
-        }
+        assert!(matches!(cmd, ModelsCommands::Stats { .. }));
     }
 }

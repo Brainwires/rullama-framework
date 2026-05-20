@@ -751,17 +751,17 @@ impl RelationshipGraph {
         }
 
         for edge in &self.edges {
-            if let (Some(&i), Some(&j)) = (idx.get(edge.from.as_str()), idx.get(edge.to.as_str())) {
-                if sparse_adj[[i, j]] > 0.0 {
-                    let edge_idx = new_edges.len();
-                    if let Some(adj_list) = new_adjacency.get_mut(&edge.from) {
-                        adj_list.push(edge_idx);
-                    }
-                    if let Some(adj_list) = new_adjacency.get_mut(&edge.to) {
-                        adj_list.push(edge_idx);
-                    }
-                    new_edges.push(edge.clone());
+            if let (Some(&i), Some(&j)) = (idx.get(edge.from.as_str()), idx.get(edge.to.as_str()))
+                && sparse_adj[[i, j]] > 0.0
+            {
+                let edge_idx = new_edges.len();
+                if let Some(adj_list) = new_adjacency.get_mut(&edge.from) {
+                    adj_list.push(edge_idx);
                 }
+                if let Some(adj_list) = new_adjacency.get_mut(&edge.to) {
+                    adj_list.push(edge_idx);
+                }
+                new_edges.push(edge.clone());
             }
         }
 

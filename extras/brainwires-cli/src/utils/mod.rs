@@ -61,7 +61,7 @@ pub mod test_util {
 /// Plan parser re-exported from the framework's reasoning crate.
 /// (Moved out of `brainwires-core` during the 0.10 architecture restoration.)
 pub mod plan_parser {
-    pub use brainwires::agents::reasoning::plan_parser::*;
+    pub use brainwires::reasoning::plan_parser::*;
 }
 pub mod prompt_cache;
 pub mod prompt_history;

@@ -1,10 +1,10 @@
 //! Webhook handler for HTTP-based channel integrations.
 
+use axum::Json;
 use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
-use axum::Json;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
@@ -92,7 +92,11 @@ pub async fn handle_webhook(
     // Use a synthetic channel ID of all-zeros for webhook-sourced events
     let webhook_channel_id = uuid::Uuid::nil();
 
-    if let Err(e) = state.router.handle_inbound(webhook_channel_id, &event).await {
+    if let Err(e) = state
+        .router
+        .handle_inbound(webhook_channel_id, &event)
+        .await
+    {
         tracing::error!(error = %e, "Failed to route webhook event");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -103,8 +107,5 @@ pub async fn handle_webhook(
         );
     }
 
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({ "status": "ok" })),
-    )
+    (StatusCode::OK, Json(serde_json::json!({ "status": "ok" })))
 }

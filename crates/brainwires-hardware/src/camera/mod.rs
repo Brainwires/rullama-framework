@@ -44,8 +44,11 @@
 //! # Ok(()) }
 //! ```
 
+/// `CameraCapture` trait and the default `nokhwa`-backed implementation.
 pub mod capture;
+/// Device enumeration and opening helpers.
 pub mod device;
+/// Typed values: resolution, frame rate, pixel format, capture errors.
 pub mod types;
 
 pub use capture::{CameraCapture, NokhwaCapture};

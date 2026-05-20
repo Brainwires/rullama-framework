@@ -74,6 +74,7 @@ pub async fn handle() -> Result<()> {
                         tags: Some(tags),
                         importance: None,
                         source: Some("claude-code-turn".to_string()),
+                        owner_id: None,
                     },
                 )
                 .await?;
@@ -103,6 +104,7 @@ pub async fn handle() -> Result<()> {
                     tags: Some(tags),
                     importance: None,
                     source: Some("claude-code-turn".to_string()),
+                    owner_id: None,
                 },
             )
             .await?;

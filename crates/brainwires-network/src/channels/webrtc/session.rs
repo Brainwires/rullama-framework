@@ -381,16 +381,16 @@ impl WebRtcSession {
         let base_registry = register_default_interceptors(Registry::new(), &mut media_engine)
             .map_err(|e| anyhow!("register interceptors: {e}"))?;
 
-        // Warn when congestion control is unavailable (missing `webrtc-advanced` feature).
-        #[cfg(not(feature = "webrtc-advanced"))]
+        // Warn when congestion control is unavailable (missing `channels-webrtc-advanced` feature).
+        #[cfg(not(feature = "channels-webrtc-advanced"))]
         tracing::warn!(
             session_id = %self.id,
-            "WebRtcSession opened without the `webrtc-advanced` feature: \
+            "WebRtcSession opened without the `channels-webrtc-advanced` feature: \
              GCC congestion control, JitterBuffer, and TwccSender are disabled. \
-             Add `features = [\"webrtc-advanced\"]` to enable adaptive bitrate."
+             Add `features = [\"channels-webrtc-advanced\"]` to enable adaptive bitrate."
         );
 
-        // With `webrtc-advanced`, layer on JitterBuffer + TwccSender + GCC.
+        // With `channels-webrtc-advanced`, layer on JitterBuffer + TwccSender + GCC.
         #[cfg(feature = "channels-webrtc-advanced")]
         let registry = {
             use rtc_interceptor::{GccInterceptorBuilder, JitterBufferBuilder, TwccSenderBuilder};
@@ -407,7 +407,7 @@ impl WebRtcSession {
                 .with(gcc_builder.build())
                 .with(JitterBufferBuilder::new().build())
         };
-        #[cfg(not(feature = "webrtc-advanced"))]
+        #[cfg(not(feature = "channels-webrtc-advanced"))]
         let registry = base_registry;
 
         // Apply DTLS role via SettingEngine (only when not Auto).
@@ -423,6 +423,13 @@ impl WebRtcSession {
                 .set_answering_dtls_role(role)
                 .map_err(|e| anyhow!("set dtls_role: {e}"))?;
         }
+        // mDNS candidate gathering moved off `PeerConnectionBuilder` and onto
+        // `SettingEngine` in newer webrtc-rs.
+        setting_engine.set_multicast_dns_mode(if self.config.mdns_enabled {
+            MulticastDnsMode::QueryAndGather
+        } else {
+            MulticastDnsMode::Disabled
+        });
 
         let handler = Arc::new(SessionEventHandler {
             session_id: self.id.clone(),
@@ -439,11 +446,6 @@ impl WebRtcSession {
             .with_interceptor_registry(registry)
             .with_setting_engine(setting_engine)
             .with_handler(handler as Arc<dyn PeerConnectionEventHandler>)
-            .with_mdns_mode(if self.config.mdns_enabled {
-                MulticastDnsMode::QueryAndGather
-            } else {
-                MulticastDnsMode::Disabled
-            })
             .with_udp_addrs(bind_addrs.clone());
 
         if self.config.tcp_candidates_enabled {
@@ -803,7 +805,7 @@ impl WebRtcSession {
 
 #[cfg(test)]
 mod tests {
-    use super::super::identity::ConversationId;
+    use super::super::super::identity::ConversationId;
     use super::*;
     use std::sync::Arc;
 
@@ -908,11 +910,14 @@ mod tests {
             }
         });
 
-        tokio::time::timeout(std::time::Duration::from_secs(10), async {
-            tokio::join!(init_relay, resp_relay)
-        })
-        .await
-        .expect("sessions did not connect within 10 seconds");
+        let (init_res, resp_res) =
+            tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                tokio::join!(init_relay, resp_relay)
+            })
+            .await
+            .expect("sessions did not connect within 10 seconds");
+        init_res.expect("initiator relay task panicked");
+        resp_res.expect("responder relay task panicked");
 
         assert_eq!(
             initiator.peer_connection_state().await,

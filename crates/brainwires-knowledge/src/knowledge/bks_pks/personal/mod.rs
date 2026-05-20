@@ -38,7 +38,7 @@ pub use cache::PersonalKnowledgeCache;
 pub use collector::PersonalFactCollector;
 pub use fact::{PersonalFact, PersonalFactCategory, PersonalFactFeedback, PersonalFactSource};
 pub use integration::{
-    DetectedFact, DetectionSource, PksBackgroundProcessor, PksIntegration, PksSseListener,
+    DetectedFact, DetectionSource, PksBackgroundProcessor, PksIntegration, PksRestPoller,
 };
 pub use matcher::PersonalFactMatcher;
 

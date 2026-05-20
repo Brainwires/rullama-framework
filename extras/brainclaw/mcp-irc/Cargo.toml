@@ -1,0 +1,45 @@
+[package]
+name = "brainclaw-mcp-irc"
+description = "IRC channel adapter for BrainClaw — connects to an IRC network and bridges PRIVMSG to/from the gateway"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+name = "brainwires_irc_channel"
+path = "src/lib.rs"
+
+[[bin]]
+name = "brainclaw-mcp-irc"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+brainwires-network.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+reqwest.workspace = true
+tokio-tungstenite.workspace = true
+futures.workspace = true
+rmcp.workspace = true
+async-trait.workspace = true
+schemars.workspace = true
+sha2.workspace = true
+hex.workspace = true
+dashmap.workspace = true
+irc.workspace = true
+irc-proto.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

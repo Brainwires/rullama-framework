@@ -1,6 +1,6 @@
 [package]
 name = "brainwires-knowledge"
-description = "Knowledge layer — knowledge graphs, adaptive prompting, RAG, spectral math, and code analysis for the Brainwires Agent Framework"
+description = "Knowledge layer — knowledge graphs, BKS/PKS, brain client, entity extraction for the Brainwires Agent Framework. RAG / spectral / code-analysis live in `brainwires-rag`; prompting lives in `brainwires-prompting`."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,7 +10,7 @@ homepage.workspace = true
 authors.workspace = true
 readme = "README.md"
 documentation = "https://docs.rs/brainwires-knowledge"
-keywords = ["knowledge-graph", "rag", "prompting", "semantic-search", "code-analysis"]
+keywords = ["knowledge-graph", "bks", "pks", "ai-agents", "framework"]
 categories = ["development-tools"]
 
 [lib]
@@ -45,61 +45,20 @@ regex = { workspace = true }
 
 # ── Knowledge deps (from brainwires-brain) ──────────────────────────────
 brainwires-storage = { workspace = true, optional = true }
-arrow-array = { workspace = true, optional = true }
-arrow-schema = { workspace = true, optional = true }
-futures = { workspace = true, optional = true }
-lancedb = { workspace = true, optional = true }
 dirs = { version = "6", optional = true }
 schemars = { workspace = true, optional = true }
 rusqlite = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 urlencoding = { workspace = true, optional = true }
 
-# ── Prompting deps ──────────────────────────────────────────────────────
-linfa = { workspace = true, optional = true }
-linfa-clustering = { workspace = true, optional = true }
-ndarray = { workspace = true, optional = true }
-bincode = { workspace = true, optional = true }
-
-# ── RAG deps (from brainwires-rag) ──────────────────────────────────────
-rmcp = { version = "1.1", features = ["server", "transport-io", "macros"], optional = true }
-fastembed = { workspace = true, optional = true }
-git2 = { workspace = true, optional = true }
-async-trait = { workspace = true, optional = true }
-walkdir = { workspace = true, optional = true }
-sha2 = { workspace = true, optional = true }
-ignore = { workspace = true, optional = true }
-toml = { workspace = true, optional = true }
-rayon = { version = "1.10", optional = true }
-tokio-util = { workspace = true, optional = true }
-fs2 = { version = "0.4", optional = true }
-tracing-subscriber = { workspace = true, optional = true }
-clap = { version = "4", features = ["derive", "env"], optional = true }
-
-# ── Code analysis deps ──────────────────────────────────────────────────
-tree-sitter = { version = "0.25", optional = true }
-tree-sitter-rust = { version = "0.23", optional = true }
-tree-sitter-python = { version = "0.23", optional = true }
-tree-sitter-javascript = { version = "0.23", optional = true }
-tree-sitter-typescript = { version = "0.23", optional = true }
-tree-sitter-go = { version = "0.23", optional = true }
-tree-sitter-java = { version = "0.23", optional = true }
-tree-sitter-swift = { version = "0.7", optional = true }
-tree-sitter-c = { version = "0.24", optional = true }
-tree-sitter-cpp = { version = "0.23", optional = true }
-tree-sitter-c-sharp = { version = "0.23", optional = true }
-tree-sitter-ruby = { version = "0.23", optional = true }
-tree-sitter-php = { version = "0.24", optional = true }
-
-# ── Document deps ───────────────────────────────────────────────────────
-pdf-extract = { version = "0.7", optional = true }
-zip = { version = "8", optional = true }
+# Prompting (linfa / linfa-clustering / ndarray / bincode) lives in
+# `brainwires-prompting`.
 
 [features]
-default = ["knowledge", "prompting"]
+default = ["knowledge"]
 
-# Dream — offline memory consolidation, summarization, fact extraction
-dream = ["dep:futures", "dep:async-trait"]
+# Dream (offline memory consolidation) lives in `brainwires-stores`
+# under its `dream` feature — depend on that crate directly.
 
 # Analytics integration — enables DreamCycle event recording
 telemetry = ["dep:brainwires-telemetry"]
@@ -112,72 +71,24 @@ knowledge = [
     "brainwires-core/native",
 ]
 
-# Adaptive prompting, clustering, temperature (from brainwires-prompting)
-prompting = [
-    "dep:linfa", "dep:linfa-clustering", "dep:ndarray", "dep:bincode",
-]
+# Adaptive prompting features live on `brainwires-prompting`.
 
-# Prompting SQLite persistence
-prompting-storage = ["prompting", "dep:rusqlite"]
-
-# Spectral math (pure ndarray, ~500 LOC)
-spectral = ["dep:ndarray"]
-
-# RAG: codebase indexing + semantic search
-rag = [
-    "dep:brainwires-storage",
-    "dep:fastembed", "dep:git2", "dep:async-trait",
-    "dep:walkdir", "dep:sha2", "dep:ignore",
-    "dep:tree-sitter", "dep:toml", "dep:rayon", "dep:tokio-util", "dep:fs2",
-    "dep:rmcp", "dep:schemars", "dep:clap",
-    "dep:dirs", "dep:futures", "dep:tracing-subscriber",
-    "dep:lancedb", "dep:arrow-array", "dep:arrow-schema",
-    "brainwires-storage/vector-db",
-    "brainwires-core/native",
-    "brainwires-core/schemars",
-    "tokio/full",
-]
-
-# All tree-sitter language parsers for AST-aware chunking
-tree-sitter-languages = [
-    "dep:tree-sitter",
-    "dep:tree-sitter-rust", "dep:tree-sitter-python", "dep:tree-sitter-javascript",
-    "dep:tree-sitter-typescript", "dep:tree-sitter-go", "dep:tree-sitter-java",
-    "dep:tree-sitter-swift", "dep:tree-sitter-c", "dep:tree-sitter-cpp",
-    "dep:tree-sitter-c-sharp", "dep:tree-sitter-ruby", "dep:tree-sitter-php",
-]
-
-# Code analysis: find definitions, references, call graphs
-code-analysis = [
-    "dep:tree-sitter", "tree-sitter-languages", "dep:async-trait",
-    "dep:lancedb", "dep:arrow-array", "dep:arrow-schema",
-    "dep:futures",
-]
-
-# PDF document extraction
-pdf-extract-feature = ["dep:pdf-extract"]
-
-# Document processing
-documents = ["dep:zip"]
-
-# Vector database backend selection (forwarded to storage)
-lancedb-backend = []
-qdrant-backend = ["brainwires-storage/qdrant-backend"]
+# RAG (with internal spectral + code-analysis subdomains), tree-sitter
+# language parsers, PDF/document processing, and the lancedb-backend /
+# qdrant-backend selectors live on `brainwires-rag` — depend on that
+# crate directly.
 
 # Alternative folder name for data storage
 alt-folder-name = []
 
-# Spectral subset selection (deprecated alias for spectral)
-spectral-select = ["spectral"]
+# Referenced by src/knowledge/relationship_graph.rs for spectral graph
+# analysis cfg gates. Empty placeholder so the cfg gates resolve under
+# -Dwarnings.
+spectral = []
 
-# Stack-graphs (prepared, not yet fully implemented)
-stack-graphs = []
-
-# Native = everything
+# Native = everything in this crate (knowledge + telemetry + persistence).
 native = [
-    "knowledge", "prompting", "prompting-storage", "spectral",
-    "rag", "code-analysis", "tree-sitter-languages",
-    "documents", "pdf-extract-feature", "dream", "telemetry",
+    "knowledge", "telemetry",
 ]
 
 # WASM = lightweight
@@ -190,18 +101,14 @@ tracing-subscriber = { workspace = true }
 criterion = { version = "0.5", features = ["async_tokio"] }
 filetime = "0.2"
 
-[[example]]
-name = "prompting_techniques"
-required-features = ["prompting"]
+# `prompting_techniques` example lives in brainwires-prompting.
 
 [[example]]
 name = "knowledge_graph"
 required-features = ["knowledge"]
 
-[[example]]
-name = "rag_search"
-required-features = ["rag"]
+# `rag_search` and `code_analysis` examples live in brainwires-rag.
 
-[[example]]
-name = "code_analysis"
-required-features = ["code-analysis", "rag"]
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

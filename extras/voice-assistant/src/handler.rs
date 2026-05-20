@@ -1,58 +1,115 @@
+//! Voice handler wired to the Brainwires harness.
+//!
+//! Replaces the legacy direct-OpenAI loop with the full `ChatAgent` pipeline:
+//!
+//! - `brainwires_core::Provider` for LLM I/O (OpenAI-compatible).
+//! - `brainwires_call_policy::BudgetGuard` for hard token/cost caps.
+//! - `brainwires_stores::SessionStore` for persistence across restarts.
+//! - `brainwires_agent::personas::PersonaProvider` for prompt assembly.
+//! - `CacheStrategy::SystemAndTools` so the static persona is cached on
+//!   every turn instead of rebuilt from scratch.
+
+use std::sync::Arc;
+
 use async_trait::async_trait;
+use brainwires_agent::personas::{PersonaContext, PersonaProvider, blocks_to_system_text};
+use brainwires_call_policy::BudgetGuard;
+use brainwires_core::ToolContext;
+use brainwires_core::{CacheStrategy, ChatOptions, Provider};
 use brainwires_hardware::audio::{
     assistant::VoiceAssistantHandler, error::AudioError, types::Transcript,
 };
-use brainwires_providers::openai_chat::{
-    OpenAIContent, OpenAIMessage, OpenAiClient, OpenAiRequestOptions,
-};
-use std::sync::Arc;
+use brainwires_inference::ChatAgent;
+use brainwires_stores::{ArcSessionStore, SessionId};
+use brainwires_tool_builtins::BuiltinToolExecutor;
+use brainwires_tool_runtime::{ToolExecutor, ToolRegistry};
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 
-#[cfg(any(
-    feature = "wake-word",
-    feature = "wake-word-rustpotter",
-    feature = "wake-word-porcupine"
-))]
+#[cfg(any(feature = "wake-word", feature = "wake-word-rustpotter"))]
 use brainwires_hardware::audio::wake_word::WakeWordDetection;
 
-/// Handler that forwards transcripts to an LLM and returns the response text.
-///
-/// Maintains full multi-turn conversation history across calls so the assistant
-/// can reference earlier messages in the session.
+/// Voice handler that routes transcripts through a [`ChatAgent`].
 pub struct LlmHandler {
-    client: Arc<OpenAiClient>,
-    model: String,
-    system_prompt: String,
-    /// Accumulated conversation history (user + assistant turns only; system
-    /// prompt is prepended fresh on every request so it is never stale).
-    history: Mutex<Vec<OpenAIMessage>>,
+    agent: Mutex<ChatAgent>,
+    /// Session persistence — `Some` means we load on startup and save each
+    /// turn; `None` keeps history in memory only.
+    session: Option<SessionPersistence>,
+}
+
+struct SessionPersistence {
+    store: ArcSessionStore,
+    id: SessionId,
 }
 
 impl LlmHandler {
-    pub fn new(client: Arc<OpenAiClient>, model: String, system_prompt: String) -> Self {
-        Self {
-            client,
-            model,
-            system_prompt,
-            history: Mutex::new(Vec::new()),
+    /// Build a handler from a provider and persona text. Optional session
+    /// persistence is attached via [`Self::with_session_store`].
+    pub async fn new(
+        provider: Arc<dyn Provider>,
+        persona: Arc<dyn PersonaProvider>,
+        budget: Option<BudgetGuard>,
+    ) -> anyhow::Result<Self> {
+        // Assemble the system prompt once per session — voice interactions
+        // are a long-lived conversation with a stable persona, so there's
+        // no reason to rebuild it on every turn like the legacy handler did.
+        let blocks = persona.build(&PersonaContext::new()).await?;
+        let system = blocks_to_system_text(&blocks);
+
+        let options = ChatOptions::default().cache_strategy(CacheStrategy::SystemAndTools);
+
+        let executor: Arc<dyn ToolExecutor> = Arc::new(BuiltinToolExecutor::new(
+            ToolRegistry::new(),
+            ToolContext::default(),
+        ));
+
+        let mut agent = ChatAgent::new(provider, executor, options).with_system_prompt(&system);
+        if let Some(guard) = budget {
+            agent = agent.with_budget(guard);
         }
+        Ok(Self {
+            agent: Mutex::new(agent),
+            session: None,
+        })
     }
 
-    /// Clear the conversation history (useful after a long pause or explicit reset).
+    /// Attach a session store. The handler will load any existing transcript
+    /// for `id` on startup and overwrite it after every turn.
+    pub async fn with_session_store(
+        mut self,
+        store: ArcSessionStore,
+        id: SessionId,
+    ) -> anyhow::Result<Self> {
+        if let Some(msgs) = store.load(&id).await? {
+            info!(
+                "restored {} messages from session store for '{id}'",
+                msgs.len()
+            );
+            self.agent.lock().await.restore_messages(msgs);
+        }
+        self.session = Some(SessionPersistence { store, id });
+        Ok(self)
+    }
+
+    /// Clear conversation history (does NOT drop the system prompt).
     #[allow(dead_code)]
     pub async fn clear_history(&self) {
-        self.history.lock().await.clear();
+        self.agent.lock().await.clear_history();
+    }
+
+    async fn persist(&self) {
+        if let Some(ref s) = self.session {
+            let agent = self.agent.lock().await;
+            if let Err(e) = s.store.save(&s.id, agent.messages()).await {
+                warn!("failed to persist session '{}': {e}", s.id);
+            }
+        }
     }
 }
 
 #[async_trait]
 impl VoiceAssistantHandler for LlmHandler {
-    #[cfg(any(
-        feature = "wake-word",
-        feature = "wake-word-rustpotter",
-        feature = "wake-word-porcupine"
-    ))]
+    #[cfg(any(feature = "wake-word", feature = "wake-word-rustpotter"))]
     async fn on_wake_word(&self, detection: &WakeWordDetection) {
         info!(
             keyword = %detection.keyword,
@@ -66,78 +123,54 @@ impl VoiceAssistantHandler for LlmHandler {
         if text.is_empty() {
             return None;
         }
-
         info!("You: {text}");
 
-        let user_msg = OpenAIMessage {
-            role: "user".into(),
-            content: OpenAIContent::Text(text.to_string()),
-            name: None,
-            tool_calls: None,
-            tool_call_id: None,
-        };
-
-        // Build full message list: system + history + new user turn
-        let messages = {
-            let history = self.history.lock().await;
-            let mut msgs = Vec::with_capacity(history.len() + 2);
-            msgs.push(OpenAIMessage {
-                role: "system".into(),
-                content: OpenAIContent::Text(self.system_prompt.clone()),
-                name: None,
-                tool_calls: None,
-                tool_call_id: None,
-            });
-            msgs.extend(history.iter().cloned());
-            msgs.push(user_msg.clone());
-            msgs
-        };
-
-        let opts = OpenAiRequestOptions::default();
-
-        match self
-            .client
-            .chat_completions(&messages, &self.model, None, &opts)
-            .await
-        {
-            Ok(response) => {
-                let reply = response
-                    .choices
-                    .into_iter()
-                    .next()
-                    .map(|c| match c.message.content {
-                        OpenAIContent::Text(s) => s,
-                        OpenAIContent::Array(_) => String::new(),
-                    })
-                    .unwrap_or_default();
-
-                if !reply.is_empty() {
-                    info!("Assistant: {reply}");
-
-                    // Persist this turn to history
-                    let mut history = self.history.lock().await;
-                    history.push(user_msg);
-                    history.push(OpenAIMessage {
-                        role: "assistant".into(),
-                        content: OpenAIContent::Text(reply.clone()),
-                        name: None,
-                        tool_calls: None,
-                        tool_call_id: None,
-                    });
-
-                    Some(reply)
-                } else {
-                    None
+        let reply = {
+            let mut agent = self.agent.lock().await;
+            match agent.process_message(text).await {
+                Ok(r) => r,
+                Err(e) => {
+                    warn!("LLM error: {e:#}");
+                    // Speak a short, user-visible reason instead of
+                    // silently dropping like the legacy handler did.
+                    return Some(short_error_for_tts(&e));
                 }
             }
-            Err(e) => {
-                warn!("LLM error: {e}");
-                None
-            }
+        };
+
+        self.persist().await;
+
+        if reply.trim().is_empty() {
+            None
+        } else {
+            info!("Assistant: {reply}");
+            Some(reply)
         }
     }
 
     async fn on_error(&self, error: &AudioError) {
         warn!("Pipeline error: {error}");
     }
+}
+
+/// Produce a short TTS-friendly message for a harness error.
+fn short_error_for_tts(e: &anyhow::Error) -> String {
+    use brainwires_call_policy::ResilienceError;
+    if let Some(re) = e.downcast_ref::<ResilienceError>() {
+        return match re {
+            ResilienceError::BudgetExceeded { kind, .. } => {
+                format!("Sorry, I've hit the {kind} budget for this session.")
+            }
+            ResilienceError::CircuitOpen { .. } => {
+                "Sorry, the model is temporarily unavailable.".into()
+            }
+            ResilienceError::RetriesExhausted { .. } => {
+                "Sorry, I couldn't reach the model after several tries.".into()
+            }
+            ResilienceError::DeadlineExceeded { .. } => {
+                "Sorry, the model took too long to respond.".into()
+            }
+        };
+    }
+    "Sorry, I hit an error.".into()
 }

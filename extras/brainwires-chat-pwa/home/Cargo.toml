@@ -1,0 +1,91 @@
+[package]
+name = "brainwires-home"
+description = "Dial-home daemon for the Brainwires chat PWA — WebRTC peer + A2A JSON-RPC bridge into the framework's agents"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["webrtc", "a2a", "agents", "chat-pwa", "home-server"]
+categories = ["network-programming", "web-programming::http-server"]
+
+[lib]
+name = "brainwires_home"
+path = "src/lib.rs"
+
+[[bin]]
+name = "brainwires-home"
+path = "src/main.rs"
+
+[dependencies]
+# Framework crates (depended on, not modified)
+brainwires-agent = { workspace = true }
+brainwires-inference = { workspace = true }
+brainwires-tool-runtime = { workspace = true }
+brainwires-tool-builtins = { workspace = true }
+brainwires-a2a = { workspace = true }
+brainwires-core = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time", "signal", "io-util", "net"] }
+async-trait = { workspace = true }
+futures = { workspace = true }
+
+# HTTP server (signaling endpoints — wired in M2)
+axum = { workspace = true }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+hyper = { workspace = true }
+
+# Outbound HTTP — Cloudflare Calls TURN credential minting (M7).
+# `json` feature for the request/response (de)ser; we don't need streams here.
+reqwest = { workspace = true }
+
+# WebRTC — match the Brainwires fork pinned by the rest of the workspace.
+# Upstream webrtc-rs (0.13.x on crates.io) is not used here; the fork at
+# 0.20.0-alpha.1 is what `brainwires-network`'s `channels-webrtc` builds
+# against, so we stay version-aligned.
+webrtc = { version = "0.20.0-alpha.1", git = "https://github.com/Brainwires/webrtc-rs", rev = "a0c7a51876a44758448e7d5a76dea06aca653203" }
+bytes = { workspace = true }
+
+# Sync store — dogfooding our own pure-Rust SQLite
+rsqlite = { git = "https://github.com/Brainwires/rsqlite-wasm.git", rev = "856c098" }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# In-memory session map
+dashmap = { workspace = true }
+
+# IDs & time
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+# Pairing flow (M8): random tokens / device ids, hex encoding for opaque
+# device_token strings, sha2 for fingerprint hashing of the peer_pubkey.
+rand = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+
+# Binary chunking (M11): base64 transcode for `bin/chunk.data` payloads.
+base64 = { workspace = true }
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Errors / logging
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+tempfile = { workspace = true }
+# `tower::ServiceExt::oneshot` for axum router tests without a real port.
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

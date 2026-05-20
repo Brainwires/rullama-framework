@@ -10,7 +10,7 @@ pub mod types_ffi;
 use std::sync::Arc;
 
 use brainwires_hardware::*;
-use brainwires_providers::openai_responses::ResponsesClient;
+use brainwires_provider::openai_responses::ResponsesClient;
 
 pub use error::FfiAudioError;
 pub use types_ffi::*;
@@ -37,7 +37,7 @@ use bridge::{ProviderEntry, insert_provider, remove_provider};
 /// | `cartesia` | Yes | No |
 /// | `murf` | Yes | No |
 #[uniffi::export]
-fn create_provider(
+pub fn create_provider(
     name: String,
     api_key: String,
     region: Option<String>,
@@ -95,7 +95,7 @@ fn create_provider(
 
 /// Release a provider handle.
 #[uniffi::export]
-fn drop_provider(handle: u64) {
+pub fn drop_provider(handle: u64) {
     remove_provider(handle);
 }
 
@@ -175,13 +175,13 @@ fn list_providers() -> Vec<FfiProviderInfo> {
 
 /// List available voices for a TTS provider.
 #[uniffi::export]
-fn tts_list_voices(handle: u64) -> Result<Vec<FfiVoice>, FfiAudioError> {
+pub fn tts_list_voices(handle: u64) -> Result<Vec<FfiVoice>, FfiAudioError> {
     bridge::tts_list_voices_sync(handle)
 }
 
 /// Synthesize text to audio.
 #[uniffi::export]
-fn tts_synthesize(
+pub fn tts_synthesize(
     handle: u64,
     text: String,
     options: FfiTtsOptions,
@@ -195,7 +195,7 @@ fn tts_synthesize(
 
 /// Transcribe audio to text.
 #[uniffi::export]
-fn stt_transcribe(
+pub fn stt_transcribe(
     handle: u64,
     audio: FfiAudioBuffer,
     options: FfiSttOptions,

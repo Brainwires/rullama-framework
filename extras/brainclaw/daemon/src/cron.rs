@@ -14,11 +14,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
-use brainwires_network::channels::message::{ChannelMessage, MessageContent, MessageId};
-use brainwires_network::channels::ConversationId;
+use brainwires_gateway::AgentInboundHandler;
 use brainwires_gateway::channel_registry::ChannelRegistry;
 use brainwires_gateway::cron::CronStore;
-use brainwires_gateway::AgentInboundHandler;
+use brainwires_network::channels::ConversationId;
+use brainwires_network::channels::message::{ChannelMessage, MessageContent, MessageId};
 use chrono::Utc;
 use uuid::Uuid;
 
@@ -35,7 +35,11 @@ impl CronRunner {
         handler: Arc<AgentInboundHandler>,
         channels: Arc<ChannelRegistry>,
     ) -> Self {
-        Self { store, handler, channels }
+        Self {
+            store,
+            handler,
+            channels,
+        }
     }
 
     /// Start the cron runner as a background tokio task.
@@ -63,7 +67,9 @@ impl CronRunner {
                 continue;
             }
 
-            let since = job.last_run.unwrap_or_else(|| now - chrono::Duration::days(1));
+            let since = job
+                .last_run
+                .unwrap_or_else(|| now - chrono::Duration::days(1));
             let Some(next) = job.next_run_after(since) else {
                 tracing::warn!(job = %job.name, "Could not compute next run; skipping");
                 continue;

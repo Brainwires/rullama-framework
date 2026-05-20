@@ -25,7 +25,7 @@ case "${1:-}" in
     --live)
         DRY_RUN=false
         echo "=== LIVE PUBLISH MODE ==="
-        echo "This will publish all 16 workspace crates + any unpublished deprecated crates to crates.io."
+        echo "This will publish all 21 workspace crates + any unpublished deprecated crates to crates.io."
         echo "Estimated time: ~5 minutes (burst 30, then 1/min)"
         echo "Press Ctrl+C within 5 seconds to abort..."
         sleep 5
@@ -35,10 +35,17 @@ case "${1:-}" in
         ;;
 esac
 
-# 16 publishable workspace crates in strict dependency order (leaves → facade).
+# 30 publishable workspace crates in strict dependency order (leaves → facade).
 # Within each layer, crates have no mutual dependencies.
-# Excluded (publish = false): brainwires-autonomy, brainwires-wasm
+# Excluded (publish = false): brainwires-autonomy, brainwires-wasm, brainwires-sandbox-proxy
 # Excluded (webrtc git-only dep): brainwires-channels (tombstone only)
+# Retired (deprecated/, picked up by the auto-detect loop below):
+#   brainwires-tools — split into brainwires-tool-runtime + brainwires-tool-builtins.
+#   brainwires-permissions, brainwires-providers, brainwires-mcp,
+#   brainwires-resilience, brainwires-agents — singularized.
+#   brainwires-resilience also got a content-rename to brainwires-call-policy.
+#   brainwires-finetune-local — moved to rullama-finetune in 0.11.
+#   brainwires-training — moved to rullama-training in 0.11.
 CRATES=(
     # Layer 0: Contracts
     brainwires-core
@@ -46,35 +53,65 @@ CRATES=(
     # Layer 1a: Infrastructure — zero internal deps (except core)
     brainwires-telemetry
     brainwires-storage
+    brainwires-eval               # evaluation harness — no brainwires-* deps at all
 
     # Layer 1b: Infrastructure — deps on 1a
-    brainwires-providers          # optional dep: telemetry
-    brainwires-hardware           # optional dep: providers
+    brainwires-provider           # optional dep: telemetry (LLM clients only)
+    brainwires-provider-speech    # speech TTS / STT clients
+    brainwires-hardware           # optional dep: providers + provider-speech
+    brainwires-stores             # dep: storage — schema + CRUD for the opinionated minimum store set
+    brainwires-memory             # dep: stores — TieredMemory orchestration + dream consolidation
+    brainwires-sandbox            # container-backed sandbox executor
+    brainwires-sandbox-proxy      # dep: sandbox — out-of-process proxy
+    brainwires-call-policy        # retry / circuit / budget / cache / classify policies on outbound calls
 
     # Layer 2: Protocols (dep: core only)
-    brainwires-mcp
-    brainwires-mcp-server
+    brainwires-mcp-client
+    brainwires-mcp-server         # depends on mcp-client for shared types
     brainwires-a2a
 
     # Layer 3: Intelligence (storage-backed)
-    brainwires-knowledge
+    brainwires-knowledge          # BKS/PKS, brain client, entity graph
+    brainwires-rag                # codebase indexing + retrieval (with internal spectral + code_analysis)
+    brainwires-prompting          # adaptive prompting (optional dep: knowledge)
 
-    # Layer 4: Action
-    brainwires-tools
-    brainwires-permissions
+    # Layer 4a: Tool runtime — split out of the old `brainwires-tools` in 0.11
+    brainwires-tool-runtime       # ToolExecutor, ToolRegistry, validation, smart_router, +optional rag
+    brainwires-permission
 
-    # Layer 4b: Reasoning — depends on tools (ToolCategory in router.rs), so
-    # must publish after tools. Prior releases had reasoning as a Layer 3
-    # re-export facade with no tools dep; the 0.10 restoration moved real
-    # scorer modules back in and this order became necessary.
+    # Layer 4b: Reasoning — depends on tool-runtime (ToolCategory in router.rs).
+    # Prior releases had reasoning as a Layer 3 re-export facade with no tools
+    # dep; the 0.10 restoration moved real scorer modules back in and this
+    # order became necessary.
     brainwires-reasoning
 
+    # Layer 4c: Tool builtins — concrete bash/git/web/code_exec/email/calendar
+    # tools. Depends on tool-runtime + optional rag.
+    brainwires-tool-builtins
+
+    # Layer 4d: MDAP — extracted from brainwires-agent in 0.11. Zero internal
+    # framework deps beyond core; safe to publish before agent.
+    brainwires-mdap
+
+    # Layer 4e: Skills — extracted from brainwires-agent in 0.11. Depends on
+    # core + tool-runtime only.
+    brainwires-skills
+
+    # Layer 4f: SEAL — extracted from brainwires-agent in 0.11. Depends on
+    # core + tool-runtime + storage (LanceDB pattern store). Optional deps
+    # on knowledge / permission / mdap behind features.
+    brainwires-seal
+
     # Layer 5: Agency
-    brainwires-agents
+    brainwires-agent
     brainwires-network
 
-    # Layer 6: Training
-    brainwires-training
+    # Layer 6: Inference — extracted from brainwires-agent in 0.11. Depends on
+    # agent for coordination types (CommunicationHub, FileLockManager, etc.).
+    brainwires-inference
+
+    # Layer 6: Fine-tuning
+    brainwires-finetune           # cloud fine-tune APIs + dataset pipelines
 
     # Facade (must be last)
     brainwires
@@ -112,7 +149,16 @@ for crate in "${CRATES[@]}"; do
     [ -f "$toml" ] || continue
 
     # 1. Missing README file
-    readme_field=$(grep -m1 '^readme\s*=' "$toml" | sed 's/.*"\(.*\)"/\1/')
+    # Handle three cases: literal `readme = "X"`, `readme.workspace = true`
+    # (inherits workspace.package.readme — usually "README.md"), or absent.
+    readme_line=$(grep -m1 '^readme\b' "$toml" || true)
+    readme_field=""
+    if [[ "$readme_line" == *".workspace"* ]]; then
+        # Workspace-inherited; default is README.md in the crate dir.
+        readme_field="README.md"
+    elif [ -n "$readme_line" ]; then
+        readme_field=$(echo "$readme_line" | sed 's/.*"\(.*\)"/\1/')
+    fi
     if [ -n "$readme_field" ] && [ ! -f "$WORKSPACE_ROOT_PF/crates/$crate/$readme_field" ]; then
         echo "  ERROR [$crate] readme = \"$readme_field\" does not exist"
         PREFLIGHT_ERRORS=$((PREFLIGHT_ERRORS + 1))

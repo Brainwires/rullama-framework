@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use tokio::sync::{Mutex, broadcast};
 
 use super::traits::{Transport, TransportAddress};
-use crate::network::{MessageEnvelope, TransportType};
+use crate::{MessageEnvelope, TransportType};
 
 /// In-process pub/sub transport for topic-based agent messaging.
 ///
@@ -103,13 +103,13 @@ impl Transport for PubSubTransport {
         }
 
         match &envelope.recipient {
-            crate::network::MessageTarget::Topic(topic) => {
+            crate::MessageTarget::Topic(topic) => {
                 let sender = self.get_topic_sender(topic).await;
                 // It's OK if no one is listening (send returns Err if no receivers)
                 let _ = sender.send(envelope.clone());
                 Ok(())
             }
-            crate::network::MessageTarget::Broadcast => {
+            crate::MessageTarget::Broadcast => {
                 // Broadcast to all topics
                 let topics = self.topics.lock().await;
                 for sender in topics.values() {
@@ -117,7 +117,7 @@ impl Transport for PubSubTransport {
                 }
                 Ok(())
             }
-            crate::network::MessageTarget::Direct(_) => {
+            crate::MessageTarget::Direct(_) => {
                 bail!("PubSubTransport does not support direct messages; use topic addressing");
             }
         }
@@ -158,7 +158,7 @@ impl Transport for PubSubTransport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::network::Payload;
+    use crate::Payload;
     use uuid::Uuid;
 
     #[tokio::test]

@@ -1,7 +1,8 @@
 //! Unified event schema with trace IDs and sequence numbers.
 //!
-//! Defines a common [`Event`] trait and [`EventEnvelope<E>`] wrapper that can
-//! carry any domain event with correlation metadata. This enables cross-system
+//! Defines a common [`Event`](crate::event::Event) trait and
+//! [`EventEnvelope<E>`](crate::event::EventEnvelope) wrapper that can carry
+//! any domain event with correlation metadata. This enables cross-system
 //! tracing across the provider, A2A, and agent-network layers without forcing
 //! a breaking change on existing event types.
 //!

@@ -8,7 +8,7 @@ use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 
 use super::traits::{Transport, TransportAddress};
-use crate::network::{MessageEnvelope, TransportType};
+use crate::{MessageEnvelope, TransportType};
 
 /// Maximum message size (16 MB).
 const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024;
@@ -162,7 +162,7 @@ impl Transport for TcpTransport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::network::Payload;
+    use crate::Payload;
     use tokio::net::TcpListener;
     use uuid::Uuid;
 

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 
-use brainwires_providers::elevenlabs::{ElevenLabsClient, ElevenLabsSttRequest};
+use brainwires_provider_speech::elevenlabs::{ElevenLabsClient, ElevenLabsSttRequest};
 
 use crate::audio::error::{AudioError, AudioResult};
 use crate::audio::stt::SpeechToText;
@@ -12,7 +12,7 @@ use crate::audio::wav::encode_wav;
 
 /// ElevenLabs speech-to-text implementation.
 ///
-/// Wraps an [`ElevenLabsClient`] from `brainwires-providers` for the actual HTTP
+/// Wraps an [`ElevenLabsClient`] from `brainwires-provider` for the actual HTTP
 /// transport; this struct adds the `SpeechToText` trait and audio-domain logic.
 pub struct ElevenLabsStt {
     client: Arc<ElevenLabsClient>,

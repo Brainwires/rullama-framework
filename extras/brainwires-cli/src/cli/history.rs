@@ -5,7 +5,7 @@ use console::style;
 
 use crate::config::PlatformPaths;
 use crate::storage::{
-    ConversationStore, EmbeddingProvider, LanceDatabase, MessageStore, VectorDatabase,
+    CachedEmbeddingProvider, ConversationStore, LanceDatabase, MessageStore, VectorDatabase,
 };
 use std::sync::Arc;
 
@@ -317,7 +317,7 @@ async fn initialize_storage() -> Result<(
             .context("Failed to create LanceDB client")?,
     );
 
-    let embeddings = Arc::new(EmbeddingProvider::new()?);
+    let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
     client
         .initialize(embeddings.dimension())
         .await

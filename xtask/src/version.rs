@@ -1502,13 +1502,13 @@ mod tests {
         let args = vec![
             "0.4.1".into(),
             "--crates".into(),
-            "brainwires-core,brainwires-agents".into(),
+            "brainwires-core,brainwires-agent".into(),
         ];
         let parsed = parse_bump_args(&args).unwrap();
         assert_eq!(parsed.version, "0.4.1");
         assert_eq!(
             parsed.crates,
-            Some(vec!["brainwires-core".into(), "brainwires-agents".into()])
+            Some(vec!["brainwires-core".into(), "brainwires-agent".into()])
         );
     }
 
@@ -1536,24 +1536,24 @@ mod tests {
     #[test]
     fn test_cascade_single_dep() {
         let mut graph: HashMap<String, Vec<String>> = HashMap::new();
-        graph.insert("brainwires-agents".into(), vec!["brainwires-core".into()]);
+        graph.insert("brainwires-agent".into(), vec!["brainwires-core".into()]);
         graph.insert("brainwires-core".into(), vec![]);
 
         let affected = cascade(&["brainwires-core".to_string()], &graph);
         assert!(affected.contains("brainwires-core"));
-        assert!(affected.contains("brainwires-agents"));
+        assert!(affected.contains("brainwires-agent"));
     }
 
     #[test]
     fn test_cascade_transitive() {
         let mut graph: HashMap<String, Vec<String>> = HashMap::new();
-        graph.insert("brainwires".into(), vec!["brainwires-agents".into()]);
-        graph.insert("brainwires-agents".into(), vec!["brainwires-core".into()]);
+        graph.insert("brainwires".into(), vec!["brainwires-agent".into()]);
+        graph.insert("brainwires-agent".into(), vec!["brainwires-core".into()]);
         graph.insert("brainwires-core".into(), vec![]);
 
         let affected = cascade(&["brainwires-core".to_string()], &graph);
         assert!(affected.contains("brainwires-core"));
-        assert!(affected.contains("brainwires-agents"));
+        assert!(affected.contains("brainwires-agent"));
         assert!(affected.contains("brainwires"));
     }
 
@@ -1609,13 +1609,13 @@ mod tests {
     #[test]
     fn test_is_in_affected_crate() {
         let affected: HashSet<String> =
-            ["brainwires-core".into(), "brainwires-agents".into()].into();
+            ["brainwires-core".into(), "brainwires-agent".into()].into();
         assert!(is_in_affected_crate(
             "crates/brainwires-core/src/lib.rs",
             &affected
         ));
         assert!(is_in_affected_crate(
-            "crates/brainwires-agents/src/mod.rs",
+            "crates/brainwires-agent/src/mod.rs",
             &affected
         ));
         assert!(!is_in_affected_crate(
@@ -1633,8 +1633,8 @@ mod tests {
             Some("brainwires-core".to_string())
         );
         assert_eq!(
-            file_to_crate("crates/brainwires-agents/src/mod.rs"),
-            Some("brainwires-agents".to_string())
+            file_to_crate("crates/brainwires-agent/src/mod.rs"),
+            Some("brainwires-agent".to_string())
         );
         assert_eq!(
             file_to_crate("extras/brainwires-proxy/src/main.rs"),

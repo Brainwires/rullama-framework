@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use brainwires_mcp::{JsonRpcRequest, JsonRpcResponse};
+use brainwires_mcp_client::{JsonRpcRequest, JsonRpcResponse};
 
 use super::{Middleware, MiddlewareResult};
 use crate::connection::RequestContext;
@@ -73,7 +73,7 @@ mod tests {
 
     #[tokio::test]
     async fn logging_middleware_process_response_does_not_panic() {
-        let middleware = LoggingMiddleware::default();
+        let middleware = LoggingMiddleware;
         let mut response = JsonRpcResponse {
             jsonrpc: "2.0".to_string(),
             id: json!(1),
@@ -91,7 +91,7 @@ mod tests {
             jsonrpc: "2.0".to_string(),
             id: json!(1),
             result: None,
-            error: Some(brainwires_mcp::JsonRpcError {
+            error: Some(brainwires_mcp_client::JsonRpcError {
                 code: -32603,
                 message: "internal error".to_string(),
                 data: None,

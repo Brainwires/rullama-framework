@@ -35,29 +35,41 @@ The output is:
 
 ## Generating Language Bindings
 
-### C# (for Avalonia / .NET)
+This crate uses UniFFI 0.29 in **library (proc-macro) mode** — there is no `.udl` file. The FFI surface is declared inline via `#[uniffi::export]` attributes in `src/lib.rs` and `uniffi::setup_scaffolding!()`. Bindings are generated from the compiled shared library.
+
+Build the library once, then run `uniffi-bindgen generate --library <libpath>` per target language. The library path is platform-specific — `.so` on Linux, `.dylib` on macOS, `.dll` on Windows.
 
 ```bash
-cargo install uniffi-bindgen-cs --git https://github.com/aspect-build/uniffi-bindgen-cs
-uniffi-bindgen-cs target/release/libaudio_demo_ffi.so --out-dir bindings/csharp/
+# Build first — bindgen reads metadata from the compiled artifact.
+cargo build --release -p audio-demo-ffi
+
+# Path used in the examples below (adjust per platform):
+LIB=target/release/libaudio_demo_ffi.so
 ```
 
-### Kotlin
+### Kotlin / Swift / Python (built-in generators)
+
+The `uniffi` crate's `cli` feature ships the `uniffi-bindgen` binary:
 
 ```bash
-cargo run -p audio-demo-ffi -- generate --language kotlin --out-dir bindings/kotlin/
+cargo run -p uniffi-bindgen -- generate --library "$LIB" --language kotlin --out-dir bindings/kotlin/
+cargo run -p uniffi-bindgen -- generate --library "$LIB" --language swift  --out-dir bindings/swift/
+cargo run -p uniffi-bindgen -- generate --library "$LIB" --language python --out-dir bindings/python/
 ```
 
-### Swift
+If you have `uniffi-bindgen` installed globally (`cargo install uniffi-bindgen`), you can invoke it directly:
 
 ```bash
-cargo run -p audio-demo-ffi -- generate --language swift --out-dir bindings/swift/
+uniffi-bindgen generate --library "$LIB" --language kotlin --out-dir bindings/kotlin/
 ```
 
-### Python
+### C# (third-party generator)
+
+C# is not part of upstream UniFFI. Use [`uniffi-bindgen-cs`](https://github.com/NordSecurity/uniffi-bindgen-cs):
 
 ```bash
-cargo run -p audio-demo-ffi -- generate --language python --out-dir bindings/python/
+cargo install uniffi-bindgen-cs
+uniffi-bindgen-cs --library "$LIB" --out-dir bindings/csharp/
 ```
 
 ## FFI API
@@ -115,7 +127,7 @@ Foreign Language (C#, Kotlin, Swift, Python)
     └──────────┬───────────┘
                │
     ┌──────────▼──────────┐
-    │ brainwires-providers│
+    │ brainwires-provider│
     │  (HTTP API clients) │
     └─────────────────────┘
 ```

@@ -522,14 +522,14 @@ impl VectorDatabase for SurrealDatabase {
         let lang_rows: Vec<serde_json::Value> = lang_result.take(0).unwrap_or_default();
         let language_breakdown: Vec<(String, usize)> = lang_rows
             .iter()
-            .filter_map(|row| {
+            .map(|row| {
                 let lang = row
                     .get("language")
                     .and_then(|v| v.as_str())
                     .unwrap_or("Unknown")
                     .to_string();
                 let cnt = row.get("lang_count").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                Some((lang, cnt))
+                (lang, cnt)
             })
             .collect();
 

@@ -49,16 +49,6 @@ pub const COMPACTION_THRESHOLD_TOKENS: usize = 80_000;
 /// Maximum worker iterations
 pub const MAX_WORKER_ITERATIONS: u32 = 15;
 
-/// Default model configurations
-pub mod models {
-    pub const ANTHROPIC_DEFAULT: &str = "claude-3-5-sonnet-20241022";
-    pub const OPENAI_DEFAULT: &str = "gpt-5.2";
-    pub const GOOGLE_DEFAULT: &str = "gemini-2.0-flash-exp";
-    pub const GROQ_DEFAULT: &str = "llama-3.3-70b-versatile";
-    pub const OLLAMA_DEFAULT: &str = "llama3.1";
-    pub const BRAINWIRES_DEFAULT: &str = "gpt-5-mini";
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -125,7 +115,7 @@ mod tests {
         #[allow(deprecated)]
         {
             assert_eq!(COMPACTION_THRESHOLD_TOKENS, 80_000);
-            assert!(COMPACTION_THRESHOLD_TOKENS < MAX_CONTEXT_TOKENS);
+            const _: () = assert!(COMPACTION_THRESHOLD_TOKENS < MAX_CONTEXT_TOKENS);
             // Threshold should be 80% of max
             assert_eq!(COMPACTION_THRESHOLD_TOKENS, (MAX_CONTEXT_TOKENS * 80) / 100);
         }
@@ -134,23 +124,7 @@ mod tests {
     #[test]
     fn test_worker_iterations() {
         assert_eq!(MAX_WORKER_ITERATIONS, 15);
-        assert!(MAX_WORKER_ITERATIONS > 0);
-    }
-
-    #[test]
-    fn test_model_defaults_not_empty() {
-        assert!(!models::ANTHROPIC_DEFAULT.is_empty());
-        assert!(!models::OPENAI_DEFAULT.is_empty());
-        assert!(!models::GOOGLE_DEFAULT.is_empty());
-        assert!(!models::OLLAMA_DEFAULT.is_empty());
-    }
-
-    #[test]
-    fn test_model_defaults_correct() {
-        assert!(models::ANTHROPIC_DEFAULT.starts_with("claude"));
-        assert!(models::OPENAI_DEFAULT.starts_with("gpt"));
-        assert!(models::GOOGLE_DEFAULT.starts_with("gemini"));
-        assert!(models::OLLAMA_DEFAULT.starts_with("llama"));
+        const _: () = assert!(MAX_WORKER_ITERATIONS > 0);
     }
 
     #[test]

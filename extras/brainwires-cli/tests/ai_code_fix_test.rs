@@ -294,41 +294,40 @@ Respond with ONLY a JSON object in this exact format:
 
     // Try to parse the evaluation JSON
     // Extract JSON from the response (it might be wrapped in other text)
-    if let Some(json_start) = eval_response.find('{') {
-        if let Some(json_end) = eval_response.rfind('}') {
-            let json_str = &eval_response[json_start..=json_end];
+    if let Some(json_start) = eval_response.find('{')
+        && let Some(json_end) = eval_response.rfind('}')
+    {
+        let json_str = &eval_response[json_start..=json_end];
 
-            match serde_json::from_str::<serde_json::Value>(json_str) {
-                Ok(evaluation) => {
-                    println!("✓ Evaluation parsed successfully");
+        match serde_json::from_str::<serde_json::Value>(json_str) {
+            Ok(evaluation) => {
+                println!("✓ Evaluation parsed successfully");
 
-                    if let Some(overall_pass) =
-                        evaluation.get("overall_pass").and_then(|v| v.as_bool())
-                    {
-                        assert!(
-                            overall_pass,
-                            "AI evaluation failed: {}",
-                            evaluation
-                                .get("reasoning")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("No reasoning provided")
-                        );
-                        println!("✅ AI evaluation: PASS");
-                    } else {
-                        eprintln!("⚠️  Warning: Could not parse overall_pass from evaluation");
-                    }
+                if let Some(overall_pass) = evaluation.get("overall_pass").and_then(|v| v.as_bool())
+                {
+                    assert!(
+                        overall_pass,
+                        "AI evaluation failed: {}",
+                        evaluation
+                            .get("reasoning")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("No reasoning provided")
+                    );
+                    println!("✅ AI evaluation: PASS");
+                } else {
+                    eprintln!("⚠️  Warning: Could not parse overall_pass from evaluation");
+                }
 
-                    // Print scores
-                    for metric in &["correctness", "safety", "quality", "explanation_clarity"] {
-                        if let Some(score) = evaluation.get(metric).and_then(|v| v.as_i64()) {
-                            println!("  {}: {}/10", metric, score);
-                        }
+                // Print scores
+                for metric in &["correctness", "safety", "quality", "explanation_clarity"] {
+                    if let Some(score) = evaluation.get(metric).and_then(|v| v.as_i64()) {
+                        println!("  {}: {}/10", metric, score);
                     }
                 }
-                Err(e) => {
-                    eprintln!("⚠️  Warning: Failed to parse evaluation JSON: {}", e);
-                    eprintln!("   Response: {}", json_str);
-                }
+            }
+            Err(e) => {
+                eprintln!("⚠️  Warning: Failed to parse evaluation JSON: {}", e);
+                eprintln!("   Response: {}", json_str);
             }
         }
     }

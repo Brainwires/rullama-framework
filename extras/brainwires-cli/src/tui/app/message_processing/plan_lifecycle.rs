@@ -11,7 +11,7 @@ impl App {
     /// Handle activate plan command
     pub(super) async fn handle_activate_plan(&mut self, plan_id: String) -> Result<()> {
         use crate::config::PlatformPaths;
-        use crate::storage::{EmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
+        use crate::storage::{CachedEmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
         use crate::utils::plan_parser::{parse_plan_steps, steps_to_tasks};
 
         // Initialize plan store
@@ -24,7 +24,7 @@ impl App {
             )
             .await?,
         );
-        let embeddings = Arc::new(EmbeddingProvider::new()?);
+        let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
         client.initialize(embeddings.dimension()).await?;
         let plan_store = PlanStore::new(client.clone(), embeddings);
 
@@ -146,7 +146,7 @@ impl App {
     /// Handle pause plan command - saves current task state and pauses plan
     pub(super) async fn handle_pause_plan(&mut self) -> Result<()> {
         use crate::config::PlatformPaths;
-        use crate::storage::{EmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
+        use crate::storage::{CachedEmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
 
         let content = if let Some(ref mut plan) = self.active_plan {
             // Persist all current task states before pausing
@@ -169,7 +169,7 @@ impl App {
                 )
                 .await?,
             );
-            let embeddings = Arc::new(EmbeddingProvider::new()?);
+            let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
             client.initialize(embeddings.dimension()).await?;
             let plan_store = PlanStore::new(client, embeddings);
 
@@ -214,7 +214,7 @@ impl App {
     /// Handle resume plan command - restores task state and reactivates plan
     pub(super) async fn handle_resume_plan(&mut self, plan_id: String) -> Result<()> {
         use crate::config::PlatformPaths;
-        use crate::storage::{EmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
+        use crate::storage::{CachedEmbeddingProvider, LanceDatabase, PlanStore, VectorDatabase};
 
         // Initialize stores
         let db_path = PlatformPaths::conversations_db_path()?;
@@ -226,7 +226,7 @@ impl App {
             )
             .await?,
         );
-        let embeddings = Arc::new(EmbeddingProvider::new()?);
+        let embeddings = Arc::new(CachedEmbeddingProvider::new()?);
         client.initialize(embeddings.dimension()).await?;
         let plan_store = PlanStore::new(client.clone(), embeddings);
 

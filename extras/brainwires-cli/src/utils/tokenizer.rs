@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn test_estimate_tokens_short() {
         let tokens = estimate_tokens("Hello, world!");
-        assert!(tokens >= 2 && tokens <= 5);
+        assert!((2..=5).contains(&tokens));
     }
 
     #[test]
@@ -273,7 +273,7 @@ mod tests {
             "The quick brown fox jumps over the lazy dog. This is a sample sentence for testing.";
         let tokens = estimate_tokens(text);
         // Should be roughly 20-25 tokens
-        assert!(tokens >= 15 && tokens <= 30);
+        assert!((15..=30).contains(&tokens));
     }
 
     #[test]
@@ -281,7 +281,7 @@ mod tests {
         let code = "fn main() { println!(\"Hello, world!\"); }";
         let tokens = estimate_tokens(code);
         // Code should have slightly higher token density
-        assert!(tokens >= 8 && tokens <= 20);
+        assert!((8..=20).contains(&tokens));
     }
 
     #[test]
@@ -289,7 +289,7 @@ mod tests {
         let cjk = "你好世界"; // "Hello world" in Chinese
         let tokens = estimate_tokens(cjk);
         // 4 CJK chars should be ~6 tokens
-        assert!(tokens >= 4 && tokens <= 10);
+        assert!((4..=10).contains(&tokens));
     }
 
     #[test]
@@ -302,7 +302,7 @@ mod tests {
         };
         let tokens = estimate_message_tokens(&message);
         // ~5 content tokens + 4 overhead
-        assert!(tokens >= 6 && tokens <= 15);
+        assert!((6..=15).contains(&tokens));
     }
 
     #[test]

@@ -1,0 +1,12 @@
+name: refactor_small_func
+category: coding
+model: claude-opus-4-7
+messages:
+  - role: user
+    content: "Rename the function `foo` to `bar` in lib.rs, then verify the build passes."
+expected:
+  tool_sequence: [read_file, edit_file, execute_command]
+  assertions:
+    - contains: "fn bar"
+    - tool_called: edit_file
+    - finish_reason: end_turn

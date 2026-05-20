@@ -1,0 +1,65 @@
+[package]
+name = "brainwires-memory"
+description = "Tiered hot/warm/cold agent memory orchestration for the Brainwires Agent Framework — `TieredMemory` multi-factor adaptive search across the schema stores in `brainwires-stores`, plus the `dream` offline consolidation engine (summarisation, fact extraction, tier demotion)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/brainwires-memory"
+keywords = ["agent-memory", "tiered-memory", "consolidation", "rag", "lancedb"]
+categories = ["database"]
+
+[dependencies]
+# Internal — schema stores and the substrate they sit on
+brainwires-core = { workspace = true }
+brainwires-storage = { workspace = true, features = ["native"] }
+brainwires-stores = { workspace = true, default-features = false, features = ["memory"] }
+
+# Async runtime
+tokio = { version = "1.43", features = ["sync", "time"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# Identifiers & time
+uuid.workspace = true
+chrono.workspace = true
+
+# Async traits
+async-trait.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Offline-consolidation deps (dream feature)
+futures = { workspace = true, optional = true }
+
+# Optional telemetry hook for dream (DreamCycle event recording)
+brainwires-telemetry = { workspace = true, optional = true }
+
+[features]
+default = []
+
+# Offline consolidation engine — produces summaries / facts and demotes
+# tiers. Pulls `futures` for the async cycle plumbing.
+dream = ["dep:futures"]
+
+# Wire dream's `with_analytics` hook to brainwires-telemetry's AnalyticsCollector
+telemetry = ["dream", "dep:brainwires-telemetry"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+tempfile.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

@@ -440,7 +440,7 @@ mod tests {
 
     #[test]
     fn test_agent_tree_relationships() {
-        let agents = vec![
+        let agents = [
             AgentMetadata::new(
                 "parent-1".to_string(),
                 "gpt-4".to_string(),

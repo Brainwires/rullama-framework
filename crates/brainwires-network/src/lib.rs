@@ -32,17 +32,6 @@ pub mod remote;
 pub mod traits;
 
 // ============================================================================
-// Agent Management (tool registry + lifecycle trait)
-// ============================================================================
-/// Agent lifecycle management.
-pub mod agent_manager;
-/// Pre-built MCP tools for agent operations.
-pub mod agent_tools;
-
-pub use agent_manager::{AgentInfo, AgentManager, AgentResult, SpawnConfig};
-pub use agent_tools::AgentToolRegistry;
-
-// ============================================================================
 // Client
 // ============================================================================
 /// Client for connecting to a remote agent network server.
@@ -66,19 +55,34 @@ pub mod mesh;
 pub mod discovery;
 /// Agent identity, capability advertisement, and credentials.
 pub mod identity;
-/// Core network types: message envelopes, events, and errors.
-pub mod network;
 /// Message routing — direct, broadcast, and content-based routing.
 pub mod routing;
+
+/// Message envelopes and payload types exchanged across the network.
+pub mod envelope;
+/// Network lifecycle events and connection state.
+pub mod event;
+/// Application-layer entry point: `NetworkManager` + builder.
+pub mod manager;
+/// Errors emitted by the protocol-stack layers (identity / transport / routing / discovery / application).
+pub mod network_error;
 
 /// Universal messaging channels (absorbed from brainwires-channels).
 pub mod channels;
 
+/// LAN inspection tooling — NIC enumeration, IP config, ARP discovery, port scanning.
+///
+/// These are **operator** tools (akin to `ip`, `ifconfig`, `arp`, `nmap`), distinct
+/// from the agent-discovery primitives in [`mod@discovery`]. Originally lived in
+/// `brainwires-hardware::network`.
+#[cfg(feature = "lan")]
+pub mod lan;
+
+pub use envelope::{MessageEnvelope, MessageTarget, Payload};
+pub use event::{ConnectionState, NetworkEvent, TransportType};
 pub use identity::{AgentCard, AgentIdentity, ProtocolId};
-pub use network::{
-    ConnectionState, MessageEnvelope, MessageTarget, NetworkError, NetworkEvent, NetworkManager,
-    NetworkManagerBuilder, Payload, TransportType,
-};
+pub use manager::{NetworkManager, NetworkManagerBuilder};
+pub use network_error::NetworkError;
 pub use transport::{Transport, TransportAddress};
 
 #[cfg(feature = "ipc-transport")]

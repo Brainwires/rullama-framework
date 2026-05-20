@@ -166,13 +166,12 @@ impl WebhookLogger {
         if let Ok(entries) = fs::read_dir(&self.log_dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
-                if let Some(date_str) = extract_date_from_filename(&name) {
-                    if let Ok(date) = NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
-                        if date < cutoff {
-                            let _ = fs::remove_file(entry.path());
-                            tracing::debug!("Cleaned up old webhook log: {name}");
-                        }
-                    }
+                if let Some(date_str) = extract_date_from_filename(&name)
+                    && let Ok(date) = NaiveDate::parse_from_str(&date_str, "%Y-%m-%d")
+                    && date < cutoff
+                {
+                    let _ = fs::remove_file(entry.path());
+                    tracing::debug!("Cleaned up old webhook log: {name}");
                 }
             }
         }

@@ -7,12 +7,14 @@
 //!
 //! # Storage
 //!
-//! [`FsWorkflowStateStore`] persists checkpoints as JSON files under
+//! [`FsWorkflowStateStore`](crate::workflow_state::FsWorkflowStateStore)
+//! persists checkpoints as JSON files under
 //! `~/.brainwires/workflow/<task_id>.json` using an atomic write (write to a
 //! temp file, then rename) so the checkpoint is never left in a partially-written
 //! state.
 //!
-//! [`InMemoryWorkflowStateStore`] is provided for tests.
+//! [`InMemoryWorkflowStateStore`](crate::workflow_state::InMemoryWorkflowStateStore)
+//! is provided for tests.
 //!
 //! # Usage
 //!

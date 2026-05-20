@@ -35,7 +35,7 @@ pub use task_manager::*;
 pub use validation_tools::*;
 
 // Explicitly re-export the CLI's concrete ToolExecutor struct so it shadows
-// the brainwires_tools::ToolExecutor trait that enters via the glob above.
+// the brainwires_tool_runtime::ToolExecutor trait that enters via the glob above.
 pub use executor::ToolExecutor;
 
 // ── CLI-level tool-selection flag ─────────────────────────────────────────
@@ -62,7 +62,7 @@ pub fn all_tools_override() -> bool {
 /// Return the tool set to send to the provider for a non-TUI chat path.
 /// Honors `--all-tools` when set; otherwise returns the curated core set
 /// in canonical order (stable prefix for prompt caching).
-pub fn select_non_tui_tools(registry: &brainwires_tools::ToolRegistry) -> Vec<Tool> {
+pub fn select_non_tui_tools(registry: &brainwires_tool_runtime::ToolRegistry) -> Vec<Tool> {
     if all_tools_override() {
         registry.get_all().to_vec()
     } else {

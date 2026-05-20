@@ -6,15 +6,15 @@
 //! CLI-specific modules: tool_executor (local), plus MdapConfig/MdapExecutor (inline).
 
 // Re-export all framework modules
-pub use brainwires::mdap::composer;
-pub use brainwires::mdap::decomposition;
-pub use brainwires::mdap::error;
-pub use brainwires::mdap::metrics;
-pub use brainwires::mdap::microagent;
-pub use brainwires::mdap::red_flags;
-pub use brainwires::mdap::scaling;
-pub use brainwires::mdap::tool_intent;
-pub use brainwires::mdap::voting;
+pub use brainwires_mdap::composer;
+pub use brainwires_mdap::decomposition;
+pub use brainwires_mdap::error;
+pub use brainwires_mdap::metrics;
+pub use brainwires_mdap::microagent;
+pub use brainwires_mdap::red_flags;
+pub use brainwires_mdap::scaling;
+pub use brainwires_mdap::tool_intent;
+pub use brainwires_mdap::voting;
 
 // CLI-specific module (kept local)
 pub mod tool_executor;
@@ -55,7 +55,7 @@ pub use tool_executor::{
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use brainwires::agents::reasoning::{ComplexityScorer, RecommendedStrategy, StrategySelector};
+use brainwires::reasoning::{ComplexityScorer, RecommendedStrategy, StrategySelector};
 
 /// Main MDAP configuration
 #[derive(Clone, Debug)]
@@ -192,7 +192,7 @@ impl MdapConfig {
                 None => s.select_heuristic(task),
             }
         } else {
-            let _selector = brainwires::agents::reasoning::StrategySelectorBuilder::default();
+            let _selector = brainwires::reasoning::StrategySelectorBuilder::default();
             self.select_strategy_heuristic(task)
         };
 
@@ -208,11 +208,8 @@ impl MdapConfig {
         self
     }
 
-    fn select_strategy_heuristic(
-        &self,
-        task: &str,
-    ) -> brainwires::agents::reasoning::StrategyResult {
-        use brainwires::agents::reasoning::{RecommendedStrategy, StrategyResult, TaskType};
+    fn select_strategy_heuristic(&self, task: &str) -> brainwires::reasoning::StrategyResult {
+        use brainwires::reasoning::{RecommendedStrategy, StrategyResult, TaskType};
 
         let lower = task.to_lowercase();
         let word_count = task.split_whitespace().count();
@@ -559,9 +556,14 @@ mod local_llm_mdap {
     use super::*;
     use crate::providers::local_llm::{LocalInferenceParams, LocalLlmProvider};
 
-    /// MicroagentProvider implementation for LocalLlmProvider
+    /// Newtype wrapper around `LocalLlmProvider` to satisfy Rust's orphan
+    /// rules — both `MicroagentProvider` (defined in `brainwires_agent`) and
+    /// `LocalLlmProvider` (re-exported from `brainwires::providers::local_llm`)
+    /// are foreign to this crate, so the impl has to hang off a local type.
+    pub struct LocalLlmMicroagent(pub Arc<LocalLlmProvider>);
+
     #[async_trait::async_trait]
-    impl MicroagentProvider for LocalLlmProvider {
+    impl MicroagentProvider for LocalLlmMicroagent {
         async fn chat(
             &self,
             system: &str,
@@ -569,9 +571,9 @@ mod local_llm_mdap {
             temperature: f32,
             max_tokens: u32,
         ) -> MdapResult<MicroagentResponse> {
-            use brainwires::agents::reasoning::InferenceTimer;
+            use brainwires::reasoning::InferenceTimer;
 
-            let timer = InferenceTimer::new("microagent_chat", self.config().name.as_str());
+            let timer = InferenceTimer::new("microagent_chat", self.0.config().name.as_str());
             let start = std::time::Instant::now();
 
             let prompt = format!("{}\n\n{}\n", system, user);
@@ -585,7 +587,7 @@ mod local_llm_mdap {
                 stop_sequences: vec![],
             };
 
-            let result = self.generate(&prompt, &params).await;
+            let result = self.0.generate(&prompt, &params).await;
             let elapsed = start.elapsed();
 
             match result {
@@ -609,11 +611,16 @@ mod local_llm_mdap {
         }
 
         fn available_tools(&self) -> Vec<ToolSchema> {
-            if self.config().supports_tools {
-                vec![]
-            } else {
-                vec![]
-            }
+            // The model's `supports_tools` flag (see `LocalLlmProviderConfig` /
+            // `KnownModel`) describes whether the underlying weights were
+            // trained for function calling — it's informational metadata used
+            // by CLI listings (`local-models list`, etc.), not a dispatch
+            // switch. The actual tool-call wiring lives at the orchestrator
+            // layer, and `LocalLlmProvider::generate` exposes a plain
+            // text-completion API with no tool-schema parameter. Until that
+            // changes upstream, microagents driven by the local backend run
+            // tool-free regardless of model capability.
+            Vec::new()
         }
     }
 
@@ -621,13 +628,13 @@ mod local_llm_mdap {
     pub fn create_local_microagent(
         provider: Arc<LocalLlmProvider>,
         subtask: Subtask,
-    ) -> Microagent<LocalLlmProvider> {
+    ) -> Microagent<LocalLlmMicroagent> {
         let config = MicroagentConfigBuilder::new()
             .max_output_tokens(512)
             .temperature(0.1)
             .timeout_ms(10000)
             .build();
-        Microagent::new(provider, subtask, config)
+        Microagent::new(Arc::new(LocalLlmMicroagent(provider)), subtask, config)
     }
 
     /// Determine if a subtask is suitable for local execution
@@ -635,15 +642,11 @@ mod local_llm_mdap {
         if subtask.complexity_estimate >= 0.4 {
             return false;
         }
-        if let Some(ref format) = subtask.expected_output_format {
-            match format {
-                OutputFormat::JsonWithFields(_) | OutputFormat::Custom { .. } => {
-                    if subtask.complexity_estimate >= 0.3 {
-                        return false;
-                    }
-                }
-                _ => {}
-            }
+        if let Some(OutputFormat::JsonWithFields(_) | OutputFormat::Custom { .. }) =
+            subtask.expected_output_format.as_ref()
+            && subtask.complexity_estimate >= 0.3
+        {
+            return false;
         }
         if subtask.description.len() > 500 {
             return false;

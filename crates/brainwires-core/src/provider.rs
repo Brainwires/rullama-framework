@@ -35,6 +35,32 @@ pub trait Provider: Send + Sync {
     ) -> BoxStream<'a, Result<StreamChunk>>;
 }
 
+/// Prompt-cache strategy for providers that support explicit caching
+/// (Anthropic Messages API today; a no-op elsewhere).
+///
+/// Controls which parts of a request receive `cache_control` breakpoints.
+/// Caching reuses cached prompt bytes across turns for a 50–90% input-token
+/// discount on subsequent calls, at the cost of a one-time "creation" charge
+/// on first population.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CacheStrategy {
+    /// No cache breakpoints. Fresh compute on every call.
+    Off,
+    /// Cache only the system prompt.
+    SystemOnly,
+    /// Cache the system prompt and tool definitions (the default).
+    #[default]
+    SystemAndTools,
+    /// Cache system + tools + the tail of the conversation once the message
+    /// history reaches the given approximate token threshold.
+    SystemAndTailTurn {
+        /// Minimum conversation size (approximate tokens) before the tail
+        /// breakpoint is emitted. Avoids wasting a cache slot on short chats.
+        threshold_tokens: u32,
+    },
+}
+
 /// Chat completion options
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatOptions {
@@ -59,6 +85,9 @@ pub struct ChatOptions {
     /// This enables per-session model switching without replacing the provider.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Prompt-cache strategy. Ignored by providers without prompt caching.
+    #[serde(default)]
+    pub cache_strategy: CacheStrategy,
 }
 
 impl Default for ChatOptions {
@@ -70,6 +99,7 @@ impl Default for ChatOptions {
             stop: None,
             system: None,
             model: None,
+            cache_strategy: CacheStrategy::default(),
         }
     }
 }
@@ -107,6 +137,12 @@ impl ChatOptions {
     /// Override the model for this request.
     pub fn model<S: Into<String>>(mut self, model: S) -> Self {
         self.model = Some(model.into());
+        self
+    }
+
+    /// Set the prompt-cache strategy.
+    pub fn cache_strategy(mut self, strategy: CacheStrategy) -> Self {
+        self.cache_strategy = strategy;
         self
     }
 

@@ -296,7 +296,7 @@ Background agent process management (distinct from `src/agents/` orchestration):
 - `plan_mode.rs` — Plan-mode integration for agents
 - `message_queue.rs` — Persistent message queue for background agents
 
-### 15. Remote Layer (`src/remote.rs`, framework: `brainwires-relay` crate)
+### 15. Remote Layer (`src/remote.rs`, framework: `brainwires-network` crate, `remote-transport` feature)
 
 Remote relay connector for external orchestration:
 

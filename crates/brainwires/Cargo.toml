@@ -18,15 +18,27 @@ categories = ["development-tools"]
 brainwires-core.workspace = true
 
 # Feature-gated framework crates
-brainwires-tools = { workspace = true, optional = true }
-brainwires-agents = { workspace = true, optional = true }
+brainwires-agent = { workspace = true, optional = true }
+brainwires-mdap = { workspace = true, optional = true }
+brainwires-skills = { workspace = true, optional = true }
+brainwires-seal = { workspace = true, optional = true }
+brainwires-eval = { workspace = true, optional = true }
+brainwires-inference = { workspace = true, optional = true }
+brainwires-tool-runtime = { workspace = true, optional = true }
+brainwires-tool-builtins = { workspace = true, optional = true }
 brainwires-storage = { workspace = true, optional = true }
-brainwires-mcp = { workspace = true, optional = true }
+brainwires-stores = { workspace = true, default-features = false, optional = true }
+brainwires-memory = { workspace = true, optional = true }
+brainwires-mcp-client = { workspace = true, optional = true }
 brainwires-knowledge = { workspace = true, optional = true }
-brainwires-permissions = { workspace = true, optional = true }
+brainwires-rag = { workspace = true, optional = true }
+brainwires-prompting = { workspace = true, optional = true }
+brainwires-permission = { workspace = true, optional = true }
+brainwires-reasoning = { workspace = true, optional = true }
 
 # Providers
-brainwires-providers = { workspace = true, optional = true }
+brainwires-provider = { workspace = true, optional = true }
+brainwires-provider-speech = { workspace = true, optional = true }
 
 # Agent network (IPC, remote bridge, mesh)
 brainwires-network = { workspace = true, optional = true }
@@ -38,14 +50,15 @@ brainwires-mcp-server = { workspace = true, optional = true }
 brainwires-a2a = { workspace = true, optional = true }
 
 # Skills system
-# skills now part of brainwires-agents (see skills module)
+# skills extracted to brainwires-skills in 0.11 (Phase 11c)
 
 
 # Hardware I/O (audio, GPIO, Bluetooth, network)
 brainwires-hardware = { workspace = true, optional = true }
 
-# Datasets & Training
-brainwires-training = { workspace = true, optional = true }
+# Datasets & Fine-tuning
+brainwires-finetune = { workspace = true, optional = true }
+# brainwires-finetune-local moved to the `rullama` workspace (rullama-finetune).
 
 
 
@@ -87,77 +100,99 @@ required-features = ["providers", "chat"]
 
 [[example]]
 name = "storage_with_rag"
-required-features = ["storage", "rag"]
+required-features = ["memory", "rag"]
 
 [features]
-default = ["tools", "agents"]
+default = ["tools", "agents", "inference"]
 wasm = ["brainwires-core/wasm"]
-tools = ["dep:brainwires-tools"]
-agents = ["dep:brainwires-agents"]
+tools = [
+    "dep:brainwires-tool-runtime",
+    "dep:brainwires-tool-builtins",
+    "brainwires-tool-runtime/native",
+    "brainwires-tool-builtins/native",
+]
+agents = ["dep:brainwires-agent"]
+# LLM-driven workhorses (ChatAgent, TaskAgent, planner/judge/validator).
+inference = ["dep:brainwires-inference", "agents"]
 storage = ["dep:brainwires-storage", "brainwires-storage/native"]
-mcp = ["dep:brainwires-mcp"]
-mdap = ["agents", "brainwires-agents/mdap"]
-knowledge = ["brain"]
-prompting = ["dep:brainwires-knowledge", "brainwires-knowledge/prompting"]
-permissions = ["dep:brainwires-permissions"]
-orchestrator = ["tools", "brainwires-tools/orchestrator"]
-openapi = ["tools", "brainwires-tools/openapi"]
-rag = ["dep:brainwires-knowledge", "brainwires-knowledge/rag", "dep:brainwires-storage", "brainwires-storage/vector-db", "tools", "brainwires-tools/rag"]
-rag-full-languages = ["rag", "brainwires-knowledge/tree-sitter-languages"]
-interpreters = ["tools", "brainwires-tools/interpreters"]
-providers = ["dep:brainwires-providers"]
-chat = ["providers"]
-reasoning = ["agents", "brainwires-agents/reasoning"]
-seal = ["agents", "brainwires-agents/seal"]
+session = ["dep:brainwires-stores", "brainwires-stores/session"]
+session-sqlite = ["session", "brainwires-stores/sqlite"]
+task = ["dep:brainwires-stores", "brainwires-stores/task", "storage"]
+plan = ["dep:brainwires-stores", "brainwires-stores/plan", "storage"]
+conversation = ["dep:brainwires-stores", "brainwires-stores/conversation", "storage"]
+lock = ["dep:brainwires-stores", "brainwires-stores/lock"]
+image = ["dep:brainwires-stores", "brainwires-stores/image", "storage"]
+memory = ["dep:brainwires-stores", "brainwires-stores/memory", "storage"]
+# `tiered` enables the orchestration crate (TieredMemory + multi-factor search).
+tiered = ["memory", "dep:brainwires-memory"]
+mcp = ["dep:brainwires-mcp-client"]
+mdap = ["dep:brainwires-mdap"]
+knowledge = ["dep:brainwires-knowledge", "brainwires-knowledge/knowledge"]
+prompting = ["dep:brainwires-prompting", "brainwires-prompting/knowledge", "knowledge"]
+permissions = ["dep:brainwires-permission"]
+orchestrator = ["tools", "brainwires-tool-runtime/orchestrator", "brainwires-tool-builtins/orchestrator"]
+openapi = ["tools", "brainwires-tool-runtime/openapi"]
+rag = ["dep:brainwires-rag", "dep:brainwires-storage", "brainwires-storage/lance-backend", "tools", "brainwires-tool-builtins/rag", "brainwires-tool-runtime/rag"]
+# Tree-sitter language parsers are always-on in `brainwires-rag`, so this
+# feature is equivalent to `rag` and kept only for back-compat.
+rag-full-languages = ["rag"]
+interpreters = ["tools", "brainwires-tool-builtins/interpreters"]
+providers = ["dep:brainwires-provider"]
+chat = ["providers", "inference"]
+reasoning = ["dep:brainwires-reasoning"]
+seal = ["dep:brainwires-seal"]
 agent-network = ["dep:brainwires-network"]
 mcp-server-framework = ["dep:brainwires-mcp-server"]
-skills = ["agents", "brainwires-agents/skills-registry"]
-eval = ["agents", "brainwires-agents/eval"]
-otel = ["agents", "brainwires-agents/otel"]
+skills = ["dep:brainwires-skills", "brainwires-skills/registry"]
+eval = ["dep:brainwires-eval"]
+otel = ["agents", "brainwires-agent/otel"]
 # proxy feature removed — brainwires-proxy is an extras app, not a framework crate
 a2a = ["dep:brainwires-a2a", "brainwires-a2a/native"]
 mesh = ["agent-network", "brainwires-network/mesh"]
 audio = ["dep:brainwires-hardware", "brainwires-hardware/audio"]
 gpio = ["dep:brainwires-hardware", "brainwires-hardware/gpio"]
 bluetooth = ["dep:brainwires-hardware", "brainwires-hardware/bluetooth"]
-network-hardware = ["dep:brainwires-hardware", "brainwires-hardware/network"]
+lan-tools = ["dep:brainwires-network", "brainwires-network/lan"]
 camera = ["dep:brainwires-hardware", "brainwires-hardware/camera"]
 usb = ["dep:brainwires-hardware", "brainwires-hardware/usb"]
 vad = ["dep:brainwires-hardware", "brainwires-hardware/vad"]
 wake-word = ["dep:brainwires-hardware", "brainwires-hardware/wake-word"]
-wake-word-porcupine = ["dep:brainwires-hardware", "brainwires-hardware/wake-word-porcupine"]
 voice-assistant = ["dep:brainwires-hardware", "brainwires-hardware/voice-assistant"]
-datasets = ["training", "brainwires-training/datasets-full"]
-training = ["dep:brainwires-training"]
-training-cloud = ["training", "brainwires-training/cloud"]
-training-local = ["training", "brainwires-training/local"]
-training-full = ["training", "brainwires-training/full", "datasets"]
+datasets = ["training", "brainwires-finetune/datasets-full"]
+training = ["dep:brainwires-finetune"]
+training-cloud = ["training", "brainwires-finetune/cloud"]
+# `training-local` and `training-full` removed when local PEFT moved to rullama;
+# depend on `rullama-finetune` directly for LoRA / QLoRA / DoRA.
 # autonomy feature requires brainwires-autonomy (publish = false, workspace-only)
-system = ["tools", "brainwires-tools/system"]
-dream = ["dep:brainwires-knowledge", "brainwires-knowledge/dream"]
-telemetry = ["dep:brainwires-telemetry", "brainwires-telemetry/native", "brainwires-providers?/telemetry"]
-brain = ["dep:brainwires-knowledge", "brainwires-knowledge/knowledge"]
-bedrock = ["providers", "brainwires-providers/bedrock"]
-vertex-ai = ["providers", "brainwires-providers/vertex-ai"]
-llama-cpp-2 = ["providers", "brainwires-providers/llama-cpp-2"]
+system = ["tools", "brainwires-tool-builtins/system"]
+dream = ["tiered", "brainwires-memory/dream"]
+telemetry = ["dep:brainwires-telemetry", "brainwires-telemetry/native", "brainwires-provider?/telemetry"]
+bedrock = ["providers", "brainwires-provider/bedrock"]
+vertex-ai = ["providers", "brainwires-provider/vertex-ai"]
+llama-cpp-2 = ["providers", "brainwires-provider/llama-cpp-2"]
+web-speech = ["dep:brainwires-provider-speech", "brainwires-provider-speech/web-speech"]
 mcp-server = ["dep:rmcp", "dep:schemars", "dep:tokio-util"]
 # Convenience: enables all learning/knowledge subsystems with integration
-learning = ["seal", "knowledge", "permissions", "brainwires-agents/seal-knowledge", "brainwires-agents/seal-feedback"]
+learning = ["seal", "knowledge", "permissions", "brainwires-seal/knowledge", "brainwires-seal/feedback"]
 # Convenience: everything needed for agent workflows
 agent-full = ["agents", "permissions", "prompting", "tools"]
 # Convenience: everything a researcher typically needs
-researcher = ["providers", "agents", "storage", "rag", "training", "datasets"]
+researcher = ["providers", "agents", "storage", "memory", "rag", "training", "datasets"]
 full = [
-    "tools", "agents", "storage", "mcp", "mdap", "knowledge",
+    "tools", "agents", "inference", "storage", "memory", "mcp", "mdap", "knowledge",
     "prompting", "permissions", "orchestrator", "rag-full-languages", "interpreters",
     "providers", "chat", "reasoning", "seal", "agent-network",
-    "brainwires-agents/seal-knowledge", "brainwires-agents/seal-mdap", "brainwires-agents/seal-feedback",
+    "brainwires-seal/knowledge", "brainwires-seal/mdap", "brainwires-seal/feedback",
     "llama-cpp-2", "mcp-server", "skills", "eval",
-    "a2a", "mesh", "audio", "gpio", "bluetooth", "network-hardware", "camera", "usb",
+    "a2a", "mesh", "audio", "gpio", "bluetooth", "lan-tools", "camera", "usb",
     "vad", "wake-word", "voice-assistant", "mcp-server-framework",
     "training-cloud", "datasets",
     "system",
     "dream",
     "telemetry",
 ]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 

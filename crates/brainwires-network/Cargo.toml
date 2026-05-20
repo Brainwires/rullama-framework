@@ -16,10 +16,10 @@ categories = ["network-programming"]
 [dependencies]
 # Core framework
 brainwires-core = { workspace = true }
-brainwires-mcp = { workspace = true, optional = true }
+brainwires-mcp-client = { workspace = true, optional = true }
 
 # Async runtime
-tokio = { workspace = true, features = ["io-std", "io-util", "sync", "time", "macros", "net", "process", "fs"] }
+tokio = { workspace = true, features = ["io-std", "io-util", "sync", "time", "macros", "net", "process", "fs", "rt", "rt-multi-thread"] }
 futures = { workspace = true }
 async-trait = { workspace = true }
 
@@ -80,9 +80,15 @@ rtc-interceptor = { version = "0.20.0-alpha.1", git = "https://github.com/Brainw
 rtc-ice         = { version = "0.20.0-alpha.1", git = "https://github.com/Brainwires/webrtc-rs", rev = "a0c7a51876a44758448e7d5a76dea06aca653203", package = "rtc-ice",         optional = true }
 bytes           = { workspace = true, optional = true }
 
+# LAN tooling deps (lan feature) — moved from brainwires-hardware
+network-interface = { version = "2", optional = true }
+ipnetwork = { version = "0.21", optional = true, features = ["serde"] }
+pnet = { version = "0.35", optional = true }
+pnet_datalink = { version = "0.35", optional = true }
+
 [features]
 default = ["client", "ipc-transport", "remote-transport"]
-client = ["dep:brainwires-mcp"]
+client = ["dep:brainwires-mcp-client"]
 ipc-transport = []
 remote-transport = []
 tcp-transport = []
@@ -99,6 +105,8 @@ email-identity = []
 channels = []
 channels-webrtc = ["channels", "dep:webrtc", "dep:rtc", "dep:bytes"]
 channels-webrtc-advanced = ["channels-webrtc", "dep:rtc-interceptor", "dep:rtc-ice"]
+# LAN inspection tooling — NIC enumeration, IP config, ARP discovery, port scanning
+lan = ["dep:network-interface", "dep:ipnetwork", "dep:pnet", "dep:pnet_datalink"]
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -106,3 +114,19 @@ tempfile = { workspace = true }
 [[example]]
 name = "network_manager"
 required-features = ["client", "ipc-transport"]
+
+[[example]]
+name = "host_discovery"
+required-features = ["lan"]
+
+[[example]]
+name = "port_scan"
+required-features = ["lan"]
+
+[[example]]
+name = "network_interfaces"
+required-features = ["lan"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

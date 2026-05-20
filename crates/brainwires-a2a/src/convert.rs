@@ -169,10 +169,9 @@ mod grpc_convert {
                 Some(pb::part::Content::Url(url))
             } else if let Some(raw) = p.raw {
                 Some(pb::part::Content::Raw(raw.into_bytes()))
-            } else if let Some(data) = p.data {
-                Some(pb::part::Content::Data(json_to_prost_value(data)))
             } else {
-                None
+                p.data
+                    .map(|data| pb::part::Content::Data(json_to_prost_value(data)))
             };
 
             pb::Part {

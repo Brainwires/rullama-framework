@@ -15,9 +15,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use brainwires_agents::contract_net::TaskBid;
-use brainwires_agents::eval::{EvaluationCase, TrialResult, ndcg_at_k};
-use brainwires_agents::market_allocation::ResourceBid;
+use brainwires_agent::contract_net::TaskBid;
+use brainwires_agent::market_allocation::ResourceBid;
+use brainwires_eval::{EvaluationCase, TrialResult, ndcg_at_k};
 
 // ── Case 1: TaskBid scoring ───────────────────────────────────────────────────
 
@@ -185,7 +185,7 @@ impl EvaluationCase for ResourceBidScoringCase {
 // ── Suite constructor ─────────────────────────────────────────────────────────
 
 /// Return all agent allocation eval cases ready for use with
-/// [`brainwires_agents::eval::EvaluationSuite`] or
+/// [`brainwires_eval::EvaluationSuite`] or
 /// [`brainwires_autonomy::self_improve::AutonomousFeedbackLoop`].
 pub fn agent_scoring_suite() -> Vec<Arc<dyn EvaluationCase>> {
     vec![

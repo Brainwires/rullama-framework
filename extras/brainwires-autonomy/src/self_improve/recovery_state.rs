@@ -226,6 +226,151 @@ mod tests {
         assert_eq!(deserialized.crash_context.last_cycle_index, 3);
     }
 
+    // ── Helpers ─────────────────────────────────────────────────────────
+
+    fn sample_git_state() -> GitState {
+        GitState {
+            branch: "self-improve/test".to_string(),
+            last_commit: "abc123".to_string(),
+            dirty_files: vec!["src/main.rs".to_string()],
+            has_uncommitted_changes: true,
+        }
+    }
+
+    fn sample_checkpoint() -> CycleCheckpoint {
+        CycleCheckpoint {
+            cycle_index: 4,
+            total_cycles: 10,
+            task_id: Some("task-42".to_string()),
+            strategy: Some("clippy".to_string()),
+            git_state: sample_git_state(),
+            timestamp: Utc::now(),
+        }
+    }
+
+    fn sample_recovery_state() -> RecoveryState {
+        RecoveryState {
+            version: 1,
+            crash_id: "crash-xyz".to_string(),
+            crash_context: CrashContext {
+                crash_time: Utc::now(),
+                exit_code: Some(101),
+                signal: None,
+                stderr_tail: "panicked at main.rs:1".to_string(),
+                last_cycle_index: 4,
+                last_task_id: Some("task-42".to_string()),
+                last_strategy: Some("clippy".to_string()),
+                working_directory: "/tmp/work".to_string(),
+                git_state: sample_git_state(),
+            },
+            fix_attempts: 0,
+            max_fix_attempts: 3,
+            recovery_plan: None,
+        }
+    }
+
+    // ── Recovery tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn recovery_with_no_checkpoint_is_safe() {
+        // Calling load on a missing path returns Ok(None) — the "no prior checkpoint"
+        // case must not panic and must not pretend there's state.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("does-not-exist.json");
+        let loaded = RecoveryState::load(&path).expect("load should be Ok");
+        assert!(loaded.is_none(), "no checkpoint → no state");
+
+        let checkpoint = CycleCheckpoint::load(&path).expect("load should be Ok");
+        assert!(checkpoint.is_none(), "no checkpoint → no checkpoint");
+
+        // Cleanup on a missing path is a no-op, not an error.
+        RecoveryState::cleanup(&path).expect("cleanup on missing path should be a no-op");
+    }
+
+    #[test]
+    fn recovery_restores_last_checkpoint() {
+        // Simulate the "crash" path: write a checkpoint, then load it back and
+        // assert the state matches what was saved.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("state.json");
+
+        let original = sample_recovery_state();
+        original.save(&path).expect("save should succeed");
+
+        let restored = RecoveryState::load(&path)
+            .expect("load should succeed")
+            .expect("saved state should load back");
+
+        assert_eq!(restored.crash_id, original.crash_id);
+        assert_eq!(restored.version, original.version);
+        assert_eq!(
+            restored.crash_context.last_cycle_index,
+            original.crash_context.last_cycle_index
+        );
+        assert_eq!(
+            restored.crash_context.git_state.branch,
+            original.crash_context.git_state.branch
+        );
+        assert_eq!(restored.fix_attempts, 0);
+        assert!(!restored.is_meta_crash());
+    }
+
+    #[test]
+    fn cycle_checkpoint_save_and_load_roundtrip() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("cycle-checkpoint.json");
+
+        let original = sample_checkpoint();
+        original.save(&path).expect("save should succeed");
+
+        let loaded = CycleCheckpoint::load(&path)
+            .expect("load should succeed")
+            .expect("checkpoint should exist on disk");
+
+        assert_eq!(loaded.cycle_index, original.cycle_index);
+        assert_eq!(loaded.total_cycles, original.total_cycles);
+        assert_eq!(loaded.task_id, original.task_id);
+        assert_eq!(loaded.strategy, original.strategy);
+    }
+
+    #[test]
+    fn cleanup_removes_saved_state() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("state.json");
+
+        sample_recovery_state().save(&path).unwrap();
+        assert!(path.exists(), "state file should exist after save");
+
+        RecoveryState::cleanup(&path).expect("cleanup should succeed");
+        assert!(!path.exists(), "state file should be gone after cleanup");
+
+        // Re-cleanup on now-missing path should still succeed.
+        RecoveryState::cleanup(&path).expect("double cleanup should not error");
+    }
+
+    #[test]
+    fn checkpoint_path_is_sibling_of_state_file() {
+        let state = Path::new("/tmp/foo/bar.json");
+        let cp = checkpoint_path(state);
+        assert_eq!(
+            cp,
+            PathBuf::from("/tmp/foo/bar-checkpoint.json"),
+            "checkpoint should be derived from state stem"
+        );
+    }
+
+    #[test]
+    fn save_creates_parent_directories() {
+        // Safety guard: saving into a path whose parent doesn't exist should
+        // not panic — `save` must create the directory tree.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("nested").join("deeper").join("state.json");
+        sample_recovery_state()
+            .save(&path)
+            .expect("save should create missing parent dirs");
+        assert!(path.exists(), "nested state file should exist after save");
+    }
+
     #[test]
     fn is_meta_crash_when_max_attempts_reached() {
         let state = RecoveryState {

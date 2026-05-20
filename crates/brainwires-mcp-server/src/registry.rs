@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use brainwires_mcp::CallToolResult;
+use brainwires_mcp_client::CallToolResult;
 use serde_json::Value;
 
 use crate::connection::RequestContext;

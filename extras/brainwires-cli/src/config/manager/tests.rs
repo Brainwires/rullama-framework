@@ -6,7 +6,7 @@ use super::*;
 fn test_default_config() {
     let config = Config::default();
     assert_eq!(config.permission_mode, PermissionMode::Auto);
-    assert_eq!(config.model, "gpt-5-mini");
+    assert_eq!(config.model, "claude-haiku-4-5-20251001");
 }
 
 #[test]
@@ -21,7 +21,7 @@ fn test_config_serialization() {
 #[test]
 fn test_default_values() {
     let config = Config::default();
-    assert_eq!(config.model, "gpt-5-mini");
+    assert_eq!(config.model, "claude-haiku-4-5-20251001");
     assert_eq!(config.permission_mode, PermissionMode::Auto);
     assert_eq!(config.temperature, 0.7);
     assert_eq!(config.max_tokens, 4096);
@@ -63,7 +63,7 @@ fn test_config_updates() {
 
 #[test]
 fn test_default_functions() {
-    assert_eq!(default_model(), "gpt-5-mini");
+    assert_eq!(default_model(), "claude-haiku-4-5-20251001");
     assert_eq!(default_temperature(), 0.7);
     assert_eq!(default_max_tokens(), 4096);
     assert!(!default_backend_url().is_empty());
@@ -200,9 +200,11 @@ fn test_config_provider_type_default() {
 
 #[test]
 fn test_config_provider_type_serialization() {
-    let mut config = Config::default();
-    config.provider_type = ProviderType::Anthropic;
-    config.provider_base_url = Some("https://custom.api.com".to_string());
+    let config = Config {
+        provider_type: ProviderType::Anthropic,
+        provider_base_url: Some("https://custom.api.com".to_string()),
+        ..Default::default()
+    };
 
     let json = serde_json::to_string(&config).unwrap();
     let parsed: Config = serde_json::from_str(&json).unwrap();
@@ -222,7 +224,7 @@ fn test_config_load_from_file() {
     // Write a config file
     let config = Config {
         provider_type: ProviderType::OpenAI,
-        model: "openai-gpt-5.2".to_string(),
+        model: "claude-haiku-4-5-20251001".to_string(),
         permission_mode: PermissionMode::Full,
         backend_url: "https://api.openai.com".to_string(),
         provider_base_url: None,
@@ -243,7 +245,7 @@ fn test_config_load_from_file() {
     // Load it
     let loaded = ConfigManager::load_from_file(&config_path).unwrap();
 
-    assert_eq!(loaded.model, "openai-gpt-5.2");
+    assert_eq!(loaded.model, "claude-haiku-4-5-20251001");
     assert_eq!(loaded.permission_mode, PermissionMode::Full);
     assert_eq!(loaded.temperature, 0.8);
     assert_eq!(loaded.max_tokens, 2048);
@@ -335,9 +337,11 @@ fn test_config_save_success() {
     std::fs::create_dir_all(temp.path()).unwrap();
     let config_path = temp.path().join("save_test.json");
 
-    let mut config = Config::default();
-    config.model = "gemini-2.0".to_string();
-    config.temperature = 0.5;
+    let config = Config {
+        model: "gemini-2.0".to_string(),
+        temperature: 0.5,
+        ..Default::default()
+    };
 
     let manager = ConfigManager {
         config,
@@ -423,10 +427,12 @@ fn test_config_update_only_backend_url() {
 
 #[test]
 fn test_config_temperature_boundary() {
-    let mut config = Config::default();
+    let mut config = Config {
+        temperature: 0.0,
+        ..Default::default()
+    };
 
     // Test minimum temperature
-    config.temperature = 0.0;
     let json = serde_json::to_string(&config).unwrap();
     let parsed: Config = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed.temperature, 0.0);
@@ -446,10 +452,12 @@ fn test_config_temperature_boundary() {
 
 #[test]
 fn test_config_max_tokens_boundary() {
-    let mut config = Config::default();
+    let mut config = Config {
+        max_tokens: 0,
+        ..Default::default()
+    };
 
     // Test minimum tokens
-    config.max_tokens = 0;
     let json = serde_json::to_string(&config).unwrap();
     let parsed: Config = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed.max_tokens, 0);
@@ -549,8 +557,10 @@ fn test_config_update_extreme_values() {
 #[test]
 fn test_config_serialization_with_all_permission_modes() {
     // Test Auto
-    let mut config = Config::default();
-    config.permission_mode = PermissionMode::Auto;
+    let mut config = Config {
+        permission_mode: PermissionMode::Auto,
+        ..Default::default()
+    };
     let json = serde_json::to_string(&config).unwrap();
     let parsed: Config = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed.permission_mode, PermissionMode::Auto);
@@ -628,4 +638,45 @@ fn test_config_load_with_missing_fields() {
     assert_eq!(loaded.model, default_model());
     assert_eq!(loaded.temperature, default_temperature());
     assert_eq!(loaded.max_tokens, default_max_tokens());
+}
+
+#[test]
+fn test_stale_model_migrated_on_load() {
+    use tempfile::TempDir;
+    let temp = TempDir::new().unwrap();
+    let config_path = temp.path().join("config.json");
+
+    // Write a config fixture that pins a stale/phantom model name.
+    let stale_config = Config {
+        provider_type: ProviderType::Brainwires,
+        model: "openai-gpt-5.2".to_string(),
+        permission_mode: PermissionMode::Auto,
+        backend_url: "https://api.brainwires.net".to_string(),
+        provider_base_url: None,
+        temperature: 0.7,
+        max_tokens: 4096,
+        extra: std::collections::HashMap::new(),
+        seal: SealSettings::default(),
+        seal_knowledge: SealKnowledgeSettings::default(),
+        knowledge: KnowledgeSettings::default(),
+        remote: RemoteSettings::default(),
+        local_llm: LocalLlmSettings::default(),
+        status_line_command: None,
+    };
+    let json = serde_json::to_string_pretty(&stale_config).unwrap();
+    std::fs::write(&config_path, &json).unwrap();
+
+    // Load: the in-memory migration must swap to the current default.
+    let loaded = ConfigManager::load_from_file(&config_path).unwrap();
+    assert_eq!(loaded.model, default_model());
+    assert_eq!(loaded.model, "claude-haiku-4-5-20251001");
+
+    // Invariant: the file on disk is NOT silently rewritten — persistence is
+    // user-initiated via `config --set`.
+    let on_disk = std::fs::read_to_string(&config_path).unwrap();
+    assert!(
+        on_disk.contains("\"openai-gpt-5.2\""),
+        "load_from_file must not rewrite the user's config.json; raw disk contents were: {}",
+        on_disk
+    );
 }

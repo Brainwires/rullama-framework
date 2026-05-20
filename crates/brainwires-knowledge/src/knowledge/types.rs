@@ -21,6 +21,9 @@ pub struct CaptureThoughtRequest {
     /// Source identifier (default: "manual")
     #[serde(default)]
     pub source: Option<String>,
+    /// Optional tenant/owner ID for per-owner scoping. `None` = unscoped.
+    #[serde(default)]
+    pub owner_id: Option<String>,
 }
 
 /// Response after capturing a thought.
@@ -72,6 +75,9 @@ pub struct SearchMemoryRequest {
     /// Which stores to search: "thoughts", "facts". Default: all.
     #[serde(default)]
     pub sources: Option<Vec<String>>,
+    /// Optional tenant/owner ID for per-owner scoping. `None` = unscoped.
+    #[serde(default)]
+    pub owner_id: Option<String>,
 }
 
 /// Response from a memory search.
@@ -120,6 +126,9 @@ pub struct ListRecentRequest {
     /// ISO 8601 timestamp (default: 7 days ago)
     #[serde(default)]
     pub since: Option<String>,
+    /// Optional tenant/owner ID for per-owner scoping. `None` = unscoped.
+    #[serde(default)]
+    pub owner_id: Option<String>,
 }
 
 /// Response from listing recent thoughts.
@@ -155,6 +164,9 @@ pub struct ThoughtSummary {
 pub struct GetThoughtRequest {
     /// Thought UUID
     pub id: String,
+    /// Optional tenant/owner ID for per-owner scoping. `None` = unscoped.
+    #[serde(default)]
+    pub owner_id: Option<String>,
 }
 
 /// Response containing a full thought.
@@ -288,6 +300,9 @@ pub struct BksStats {
 pub struct DeleteThoughtRequest {
     /// Thought UUID to delete
     pub id: String,
+    /// Optional tenant/owner ID for per-owner scoping. `None` = unscoped.
+    #[serde(default)]
+    pub owner_id: Option<String>,
 }
 
 /// Response after deleting a thought.

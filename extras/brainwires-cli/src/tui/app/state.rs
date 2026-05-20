@@ -8,7 +8,7 @@ use crate::commands::CommandExecutor;
 use crate::mdap::MdapConfig;
 use crate::providers::{Provider, ProviderFactory};
 use crate::storage::{TaskStore, VectorDatabase};
-use crate::tools::{ToolExecutor, ToolRegistry};
+use crate::tools::ToolExecutor;
 use crate::tui::hotkey_content::HotkeyCategory;
 use crate::types::agent::PermissionMode;
 use crate::types::message::{Message, MessageContent, Role};
@@ -369,9 +369,9 @@ pub struct App {
     /// Flag to signal main loop to resume AI response (after reattach with pending user message)
     pub pending_resume_ai: bool,
     /// SEAL processor for query enhancement
-    pub(super) seal_processor: Option<brainwires::seal::SealProcessor>,
+    pub(super) seal_processor: Option<brainwires_seal::SealProcessor>,
     /// Dialog state for SEAL coreference resolution
-    pub(super) seal_dialog_state: brainwires::seal::DialogState,
+    pub(super) seal_dialog_state: brainwires_seal::DialogState,
     /// Entity store for SEAL
     pub(super) seal_entity_store: crate::utils::entity_extraction::EntityStore,
     /// Entity extractor for SEAL
@@ -389,7 +389,7 @@ pub struct App {
     /// Flag indicating Session connection was lost and needs respawn
     pub ipc_needs_respawn: bool,
     /// Skill registry for agent skills
-    pub skill_registry: Option<brainwires_agents::skills::SkillRegistry>,
+    pub skill_registry: Option<brainwires_skills::SkillRegistry>,
     /// Tool allowlist scoped to the next AI turn, set by `/skill` when the
     /// invoked skill declared `allowed_tools`. Cleared after the next
     /// successful AI response so subsequent turns see the full tool set again.
@@ -407,7 +407,7 @@ pub struct App {
     /// Saved main context when entering plan mode (for restoration)
     pub(super) plan_mode_saved_main: Option<SavedMainContext>,
     /// PKS integration for implicit fact detection and behavioral inference
-    pub pks_integration: brainwires::brain::bks_pks::personal::PksIntegration,
+    pub pks_integration: brainwires::knowledge::bks_pks::personal::PksIntegration,
     /// Count of unread Warn/Error journal entries (cleared when journal is opened)
     pub unread_error_count: usize,
 }
@@ -664,7 +664,7 @@ impl App {
             .await
             .context("Failed to initialize LanceDB")?;
         let embeddings = std::sync::Arc::new(
-            crate::storage::embeddings::EmbeddingProvider::new()
+            crate::storage::embeddings::CachedEmbeddingProvider::new()
                 .context("Failed to create embedding provider")?,
         );
 
@@ -823,7 +823,7 @@ impl App {
             pending_resume_ai: false,
             // SEAL - Session handles preprocessing
             seal_processor: None,
-            seal_dialog_state: brainwires::seal::DialogState::new(),
+            seal_dialog_state: brainwires_seal::DialogState::new(),
             seal_entity_store: crate::utils::entity_extraction::EntityStore::new(),
             seal_entity_extractor: crate::utils::entity_extraction::EntityExtractor::new(),
             // Multi-Agent System
@@ -834,7 +834,7 @@ impl App {
             ipc_needs_respawn: false,
             // Skills system
             skill_registry: {
-                let mut registry = brainwires_agents::skills::SkillRegistry::new();
+                let mut registry = brainwires_skills::SkillRegistry::new();
                 if let Err(e) = crate::utils::skills::discover_skills(&mut registry) {
                     tracing::warn!("Failed to discover skills: {}", e);
                 }
@@ -848,7 +848,7 @@ impl App {
             plan_mode_state: None,
             plan_mode_saved_main: None,
             // PKS integration for implicit fact detection and behavioral inference
-            pks_integration: brainwires::brain::bks_pks::personal::PksIntegration::default(),
+            pks_integration: brainwires::knowledge::bks_pks::personal::PksIntegration::default(),
             unread_error_count: 0,
         });
 
@@ -912,7 +912,7 @@ impl App {
             .await
             .context("Failed to initialize LanceDB")?;
         let embeddings = std::sync::Arc::new(
-            crate::storage::embeddings::EmbeddingProvider::new()
+            crate::storage::embeddings::CachedEmbeddingProvider::new()
                 .context("Failed to create embedding provider")?,
         );
 
@@ -927,7 +927,7 @@ impl App {
         ));
 
         // Initialize tools and tool executor with core tools only to reduce token cost
-        let registry = ToolRegistry::with_builtins();
+        let registry = brainwires_tool_builtins::registry_with_builtins();
         let tools: Vec<_> = registry.get_core().into_iter().cloned().collect();
         let mut tool_executor = ToolExecutor::new(PermissionMode::Auto);
 
@@ -959,8 +959,8 @@ impl App {
         // Build system prompt with CWD context and behavioral knowledge
         let system_prompt = {
             use crate::utils::paths::PlatformPaths;
-            use brainwires::brain::bks_pks::BehavioralKnowledgeCache;
-            use brainwires::brain::bks_pks::matcher::{MatchedTruth, format_truths_for_prompt};
+            use brainwires::knowledge::bks_pks::BehavioralKnowledgeCache;
+            use brainwires::knowledge::bks_pks::matcher::{MatchedTruth, format_truths_for_prompt};
 
             // Try to load BKS cache and get reliable truths
             let truths_section = if let Ok(cache_path) = PlatformPaths::knowledge_db() {
@@ -1145,11 +1145,11 @@ impl App {
             pending_resume_ai: false,
             // SEAL components for query enhancement
             seal_processor: if seal_settings.enabled {
-                Some(brainwires::seal::SealProcessor::with_defaults())
+                Some(brainwires_seal::SealProcessor::with_defaults())
             } else {
                 None
             },
-            seal_dialog_state: brainwires::seal::DialogState::new(),
+            seal_dialog_state: brainwires_seal::DialogState::new(),
             seal_entity_store: crate::utils::entity_extraction::EntityStore::new(),
             seal_entity_extractor: crate::utils::entity_extraction::EntityExtractor::new(),
             // Multi-Agent System
@@ -1160,7 +1160,7 @@ impl App {
             ipc_needs_respawn: false,
             // Skills system
             skill_registry: {
-                let mut registry = brainwires_agents::skills::SkillRegistry::new();
+                let mut registry = brainwires_skills::SkillRegistry::new();
                 if let Err(e) = crate::utils::skills::discover_skills(&mut registry) {
                     tracing::warn!("Failed to discover skills: {}", e);
                 }
@@ -1174,7 +1174,7 @@ impl App {
             plan_mode_state: None,
             plan_mode_saved_main: None,
             // PKS integration for implicit fact detection and behavioral inference
-            pks_integration: brainwires::brain::bks_pks::personal::PksIntegration::default(),
+            pks_integration: brainwires::knowledge::bks_pks::personal::PksIntegration::default(),
             unread_error_count: 0,
         });
 
@@ -1221,7 +1221,7 @@ impl App {
     /// Update SEAL status from processing result
     ///
     /// Call this after SEAL preprocessing to update the UI status display.
-    pub fn update_seal_status(&mut self, result: &brainwires::seal::SealProcessingResult) {
+    pub fn update_seal_status(&mut self, result: &brainwires_seal::SealProcessingResult) {
         if !self.seal_status.show_status {
             return;
         }

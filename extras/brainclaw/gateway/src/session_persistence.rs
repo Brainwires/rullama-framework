@@ -102,10 +102,10 @@ impl SessionStore for JsonFileStore {
         let mut entries = tokio::fs::read_dir(&self.storage_dir).await?;
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("json") {
-                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                    sessions.push(stem.to_string());
-                }
+            if path.extension().and_then(|e| e.to_str()) == Some("json")
+                && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+            {
+                sessions.push(stem.to_string());
             }
         }
         Ok(sessions)
@@ -134,10 +134,10 @@ fn sanitize_session_key(key: &str) -> String {
 
 /// Expand a leading `~` in a path to the user's home directory.
 pub fn expand_tilde(path: &str) -> PathBuf {
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(rest);
-        }
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Some(home) = dirs::home_dir()
+    {
+        return home.join(rest);
     }
     PathBuf::from(path)
 }
@@ -156,10 +156,7 @@ mod tests {
     #[tokio::test]
     async fn test_save_and_load() {
         let (_dir, store) = temp_store();
-        let messages = vec![
-            Message::user("Hello"),
-            Message::assistant("Hi there!"),
-        ];
+        let messages = vec![Message::user("Hello"), Message::assistant("Hi there!")];
         store.save("test_session", &messages).await.unwrap();
 
         let loaded = store.load("test_session").await.unwrap().unwrap();

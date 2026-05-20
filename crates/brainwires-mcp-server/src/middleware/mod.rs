@@ -12,7 +12,7 @@ pub mod tool_filter;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use brainwires_mcp::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
+use brainwires_mcp_client::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
 
 use crate::connection::RequestContext;
 

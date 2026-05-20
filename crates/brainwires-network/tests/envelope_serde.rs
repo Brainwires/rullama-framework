@@ -5,7 +5,7 @@
 //! cross-payload envelope interactions (reply chains, correlation IDs)
 //! work as expected.
 
-use brainwires_network::network::{MessageEnvelope, MessageTarget, Payload};
+use brainwires_network::{MessageEnvelope, MessageTarget, Payload};
 use uuid::Uuid;
 
 /// Verify that all three payload variants survive a JSON round-trip
@@ -65,7 +65,7 @@ fn reply_chain_preserves_correlation() {
     assert_eq!(msg_4.correlation_id, Some(msg_3.id));
 
     // All messages should have unique IDs
-    let ids = vec![msg_1.id, msg_2.id, msg_3.id, msg_4.id];
+    let ids = [msg_1.id, msg_2.id, msg_3.id, msg_4.id];
     let unique: std::collections::HashSet<_> = ids.iter().collect();
     assert_eq!(unique.len(), 4, "all message IDs should be unique");
 }

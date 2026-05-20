@@ -252,8 +252,8 @@ mod tests {
 
     #[test]
     fn field_value_as_f32_works() {
-        let v = FieldValue::Float32(Some(3.14));
-        assert!((v.as_f32().unwrap() - 3.14f32).abs() < 1e-5);
+        let v = FieldValue::Float32(Some(2.5));
+        assert!((v.as_f32().unwrap() - 2.5f32).abs() < 1e-5);
         assert_eq!(FieldValue::Float32(None).as_f32(), None);
     }
 
