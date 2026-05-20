@@ -143,7 +143,7 @@ impl SessionServer {
 
                 // Set controlling terminal
                 unsafe {
-                    libc::ioctl(0, libc::TIOCSCTTY, 0);
+                    libc::ioctl(0, libc::TIOCSCTTY as libc::c_ulong, 0);
                 }
 
                 // Exec the TUI

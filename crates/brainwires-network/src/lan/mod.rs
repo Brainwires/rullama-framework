@@ -12,27 +12,27 @@
 //! ## Quick start
 //!
 //! ```rust,no_run
-//! use brainwires_network::lan;
+//! use brainwires_lan::lan;
 //! use std::time::Duration;
 //!
 //! #[tokio::main]
 //! async fn main() {
 //!     // List interfaces
-//!     for iface in network::list_interfaces() {
+//!     for iface in lan::list_interfaces() {
 //!         println!("{} ({:?}) — {:?}", iface.name, iface.kind, iface.addrs);
 //!     }
 //!
 //!     // IP config with gateways
-//!     for cfg in network::get_ip_configs() {
+//!     for cfg in lan::get_ip_configs() {
 //!         println!("{}: gateway={:?}", cfg.interface, cfg.gateway);
 //!     }
 //!
 //!     // Port scan
-//!     let results = network::scan_common_ports(
+//!     let results = lan::scan_common_ports(
 //!         "192.168.1.1".parse().unwrap(),
 //!         Duration::from_millis(500),
 //!     ).await;
-//!     for r in results.iter().filter(|r| r.state == network::PortState::Open) {
+//!     for r in results.iter().filter(|r| r.state == lan::PortState::Open) {
 //!         println!("Open: {}", r.port);
 //!     }
 //! }

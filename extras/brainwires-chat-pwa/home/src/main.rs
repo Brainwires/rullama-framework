@@ -1,10 +1,10 @@
 //! `brainwires-home` — dial-home daemon for the chat PWA.
 //!
 //! Subcommands:
-//!   * (default) / `serve`  — long-running signaling + pairing daemon.
-//!   * `pair`               — print a QR + 6-digit code, wait for the PWA
-//!                            to claim + confirm, persist a `device_token`
-//!                            to `~/.brainwires/home/devices.json`, exit.
+//! * (default) / `serve`  — long-running signaling + pairing daemon.
+//! * `pair`               — print a QR + 6-digit code, wait for the PWA
+//!   to claim + confirm, persist a `device_token` to
+//!   `~/.brainwires/home/devices.json`, exit.
 
 use anyhow::{Context, Result};
 use brainwires_home::{

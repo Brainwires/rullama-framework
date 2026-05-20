@@ -655,26 +655,26 @@ async fn post_ice(
         && !s_str.is_empty()
     {
         if let Some(pc) = s.peer.read().await.clone() {
-                if let Err(e) = pc
-                    .add_ice_candidate(RTCIceCandidateInit {
-                        candidate: s_str.to_string(),
-                        sdp_mid: body.sdp_mid.clone(),
-                        sdp_mline_index: body.sdp_m_line_index,
-                        username_fragment: None,
-                        url: None,
-                    })
-                    .await
-                {
-                    tracing::warn!(session = %session, error = %e, "add_ice_candidate failed");
-                } else {
-                    s.peer_input_count.fetch_add(1, Ordering::Relaxed);
-                }
+            if let Err(e) = pc
+                .add_ice_candidate(RTCIceCandidateInit {
+                    candidate: s_str.to_string(),
+                    sdp_mid: body.sdp_mid.clone(),
+                    sdp_mline_index: body.sdp_m_line_index,
+                    username_fragment: None,
+                    url: None,
+                })
+                .await
+            {
+                tracing::warn!(session = %session, error = %e, "add_ice_candidate failed");
             } else {
-                tracing::debug!(
-                    session = %session,
-                    "received PWA ICE candidate before offer; buffering would race the answerer build"
-                );
+                s.peer_input_count.fetch_add(1, Ordering::Relaxed);
             }
+        } else {
+            tracing::debug!(
+                session = %session,
+                "received PWA ICE candidate before offer; buffering would race the answerer build"
+            );
+        }
     }
 
     StatusCode::NO_CONTENT
