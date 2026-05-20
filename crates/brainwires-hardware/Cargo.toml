@@ -96,8 +96,10 @@ gpio = ["dep:gpio-cdev", "dep:sysfs_gpio"]
 # Bluetooth discovery and scanning
 bluetooth = ["dep:btleplug", "dep:uuid"]
 
-# Camera / webcam capture via nokhwa (cross-platform)
-camera = ["dep:nokhwa", "dep:image"]
+# Camera / webcam capture via nokhwa (cross-platform). nokhwa is synchronous
+# so capture.rs wraps calls in `tokio::task::block_in_place`, which requires
+# the multi-thread runtime.
+camera = ["dep:nokhwa", "dep:image", "tokio/rt-multi-thread"]
 
 # Raw USB device access and transfers via nusb
 usb = ["dep:nusb"]

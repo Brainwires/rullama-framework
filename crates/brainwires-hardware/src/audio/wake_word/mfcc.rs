@@ -226,9 +226,11 @@ fn build_mel_filterbank(
         let center = edges[i + 1];
         let right = edges[i + 2];
 
-        // Find first bin where filter is nonzero.
-        let mut start_bin: Option<usize> = None;
-        let mut weights: Vec<f32> = Vec::new();
+        // Find first bin where filter is nonzero. We track the start bin
+        // and any nonzero weights in a single Option pair so the post-loop
+        // fallback below can be the sole construction point — no separate
+        // `.unwrap()` needed.
+        let mut found: Option<(usize, Vec<f32>)> = None;
         for bin in 0..n_bins {
             let f = bin_freq(bin);
             let w = if f <= left || f >= right {
@@ -238,26 +240,20 @@ fn build_mel_filterbank(
             } else {
                 (right - f) / (right - center)
             };
-            if w > 0.0 {
-                if start_bin.is_none() {
-                    start_bin = Some(bin);
-                    weights.push(w);
-                } else {
-                    weights.push(w);
-                }
-            } else if start_bin.is_some() {
-                // We've passed the right edge — done.
-                break;
+            match (&mut found, w > 0.0) {
+                (None, true) => found = Some((bin, vec![w])),
+                (Some((_, weights)), true) => weights.push(w),
+                (Some(_), false) => break, // past the right edge
+                (None, false) => continue,
             }
         }
         // Edge case: filter narrower than one bin → emit at least one bin
         // at the centre with weight 1 so it isn't silently dropped.
-        if weights.is_empty() {
+        let (start_bin, weights) = found.unwrap_or_else(|| {
             let bin = ((center * fft_size as f32) / (sample_rate as f32)) as usize;
-            start_bin = Some(bin.min(n_bins.saturating_sub(1)));
-            weights.push(1.0);
-        }
-        filters.push((start_bin.unwrap(), weights));
+            (bin.min(n_bins.saturating_sub(1)), vec![1.0])
+        });
+        filters.push((start_bin, weights));
     }
     filters
 }

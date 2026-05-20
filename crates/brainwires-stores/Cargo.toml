@@ -65,11 +65,13 @@ default = ["session", "task", "plan", "conversation"]
 session = []
 sqlite = ["dep:rusqlite"]
 
-# Task / agent-state persistence
-task = []
+# Task / agent-state persistence. Pulls arrow-schema for the
+# `tasks_arrow_schema()` / `agent_states_arrow_schema()` helpers.
+task = ["dep:arrow-schema"]
 
-# Plan + plan-template persistence
-plan = ["dep:dirs", "dep:regex"]
+# Plan + plan-template persistence. Pulls arrow-schema for the
+# `plans_schema()` helper.
+plan = ["dep:dirs", "dep:regex", "dep:arrow-schema"]
 
 # Conversation catalog metadata
 conversation = []

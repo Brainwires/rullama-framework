@@ -236,4 +236,109 @@ mod tests {
         let b = seq(&[&[1.0, 2.0, 3.0]]);
         assert!(dtw_distance(&a, &b).is_infinite());
     }
+
+    /// Direct DTW with a custom band width — exposed so the band-restriction
+    /// test below can dial it down to a single frame and prove the band
+    /// actually restricts the path. Mirrors `dtw_distance` exactly except
+    /// the constant is parameterised.
+    fn dtw_with_window(a: &[Vec<f32>], b: &[Vec<f32>], window: usize) -> f32 {
+        if a.is_empty() && b.is_empty() {
+            return 0.0;
+        }
+        if a.is_empty() || b.is_empty() {
+            return f32::INFINITY;
+        }
+        if a[0].len() != b[0].len() {
+            return f32::INFINITY;
+        }
+        let n = a.len();
+        let m = b.len();
+        let w = window.max(n.abs_diff(m));
+        let mut cost = vec![vec![f32::INFINITY; m]; n];
+        let mut steps = vec![vec![0usize; m]; n];
+        cost[0][0] = euclid(&a[0], &b[0]);
+        steps[0][0] = 1;
+        for j in 1..m.min(w + 1) {
+            cost[0][j] = cost[0][j - 1] + euclid(&a[0], &b[j]);
+            steps[0][j] = j + 1;
+        }
+        for i in 1..n.min(w + 1) {
+            cost[i][0] = cost[i - 1][0] + euclid(&a[i], &b[0]);
+            steps[i][0] = i + 1;
+        }
+        for i in 1..n {
+            let j_lo = i.saturating_sub(w).max(1);
+            let j_hi = (i + w + 1).min(m);
+            for j in j_lo..j_hi {
+                let d = euclid(&a[i], &b[j]);
+                let (best_prev, best_steps) = best_predecessor(
+                    cost[i - 1][j],
+                    steps[i - 1][j],
+                    cost[i][j - 1],
+                    steps[i][j - 1],
+                    cost[i - 1][j - 1],
+                    steps[i - 1][j - 1],
+                );
+                if best_prev.is_finite() {
+                    cost[i][j] = best_prev + d;
+                    steps[i][j] = best_steps + 1;
+                }
+            }
+        }
+        let total = cost[n - 1][m - 1];
+        let len = steps[n - 1][m - 1].max(1) as f32;
+        if total.is_finite() {
+            total / len
+        } else {
+            f32::INFINITY
+        }
+    }
+
+    #[test]
+    fn sakoe_chiba_band_actually_restricts_search() {
+        // Construct two sequences where the optimal warp requires a wide
+        // jump (the matching content sits at different positions in each).
+        // With a narrow band, the optimal path is unreachable; with a wide
+        // band, it is. The cost difference proves the band is doing work.
+        //
+        // Sequence `a`: [low, low, low, low, low, HIGH, HIGH, HIGH]
+        // Sequence `b`: [HIGH, HIGH, HIGH, low, low, low, low, low]
+        // The natural alignment is `a[5..]` ↔ `b[..3]` and `a[..5]` ↔ `b[3..]`
+        // — requires a path that drifts |i - j| up to ~5.
+        let a = seq(&[
+            &[0.0],
+            &[0.0],
+            &[0.0],
+            &[0.0],
+            &[0.0],
+            &[100.0],
+            &[100.0],
+            &[100.0],
+        ]);
+        let b = seq(&[
+            &[100.0],
+            &[100.0],
+            &[100.0],
+            &[0.0],
+            &[0.0],
+            &[0.0],
+            &[0.0],
+            &[0.0],
+        ]);
+        let narrow = dtw_with_window(&a, &b, 1);
+        let wide = dtw_with_window(&a, &b, 6);
+        // The wide band can find a measurably better alignment than the
+        // narrow band — they must not be equal, which would mean the band
+        // wasn't restricting anything. (Magnitude depends on input; what
+        // matters is the strict inequality.)
+        assert!(
+            wide < narrow,
+            "wide band should beat narrow band on diagonal-shift inputs: \
+             narrow={narrow}, wide={wide}",
+        );
+        // Sanity: both costs must be finite (the corner must be reachable
+        // in both — the algorithm widens the band to at least |n-m| to
+        // guarantee this).
+        assert!(narrow.is_finite() && wide.is_finite());
+    }
 }

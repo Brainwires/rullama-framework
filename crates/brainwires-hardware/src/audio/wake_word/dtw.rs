@@ -342,14 +342,121 @@ mod tests {
 
     #[test]
     fn detector_reset_window_clears_state() {
-        let mut d = DtwWakeWordDetector::new();
-        d.enroll_template(&sine_16k(8_000, 440.0)).unwrap();
-        for chunk in sine_16k(8_000, 440.0).chunks(160) {
+        // Permissive threshold so the same template-audio replay fires.
+        let mut d = DtwWakeWordDetector::new().with_threshold(100.0);
+        let template_audio = sine_16k(8_000, 440.0);
+        d.enroll_template(&template_audio).unwrap();
+
+        // Prime the rolling buffer all the way through with template audio.
+        for chunk in template_audio.chunks(160) {
             let _ = d.process_frame(chunk);
         }
+        // At this point the rolling buffer has the full template's worth
+        // of samples. Reset it.
         d.reset_window();
-        // After reset, a fresh sub-frame chunk can't immediately fire.
+
+        // After reset, the buffer is empty. Feeding 3 × 80 = 240 sub-frame-
+        // length samples keeps the buffer below `frame_len` (400), so MFCC
+        // can't even extract a frame and `dtw_best` short-circuits to None.
+        // That's the strict invariant: a freshly reset detector must not
+        // fire on less-than-one-frame of new input, regardless of what it
+        // was primed with.
         let tiny = vec![0i16; 80];
-        assert!(d.process_frame(&tiny).is_none());
+        for i in 0..3 {
+            assert!(
+                d.process_frame(&tiny).is_none(),
+                "after reset_window, sub-frame input must not fire (iteration {i})"
+            );
+        }
+    }
+
+    #[test]
+    fn detector_with_threshold_low_does_not_fire_on_identical_audio() {
+        // Stricter mirror of `fires_on_identical_audio`: with a threshold of
+        // 0.0, even a perfect-match DTW distance would have to *also* be
+        // exactly zero to fire (`d < threshold` => never on float DTW).
+        // Proves the threshold knob is actually wired up — otherwise the
+        // identical-audio test would still pass here.
+        let mut d = DtwWakeWordDetector::new().with_threshold(0.0);
+        let template_audio = sine_16k(8_000, 440.0);
+        d.enroll_template(&template_audio).unwrap();
+
+        for chunk in template_audio.chunks(160) {
+            assert!(
+                d.process_frame(chunk).is_none(),
+                "threshold=0.0 must never fire (even identical audio has non-zero DTW)"
+            );
+        }
+    }
+
+    #[test]
+    fn detector_with_threshold_high_fires_on_unrelated_audio() {
+        // Inverse: with an absurdly high threshold, even weakly-similar
+        // audio should fire. Combined with the previous test, this proves
+        // `with_threshold` controls the firing behaviour.
+        let mut d = DtwWakeWordDetector::new().with_threshold(1.0e9);
+        d.enroll_template(&sine_16k(8_000, 440.0)).unwrap();
+
+        // Feed completely unrelated noise. With a high enough threshold,
+        // even that should "fire" since DTW distance, however large, is
+        // below 1e9.
+        let mut fired = false;
+        let noise = white_noise_16k(16_000, 0xDEADBEEF);
+        for chunk in noise.chunks(160) {
+            if d.process_frame(chunk).is_some() {
+                fired = true;
+                break;
+            }
+        }
+        assert!(
+            fired,
+            "threshold=1e9 must accept anything once the rolling buffer fills"
+        );
+    }
+
+    #[test]
+    fn detector_threshold_getter_reflects_with_threshold() {
+        let d = DtwWakeWordDetector::new().with_threshold(42.5);
+        assert!(
+            (d.threshold() - 42.5).abs() < 1e-6,
+            "with_threshold must update the field exposed by threshold()"
+        );
+    }
+
+    #[test]
+    fn detector_second_enrollment_of_same_audio_does_not_regress() {
+        // Sanity: enrolling the same audio twice should not lower the
+        // detection rate. Compare the score(s) seen with 1 template vs
+        // with 2 identical templates — the second template provides another
+        // matching path, so the best-DTW (minimum across templates) can
+        // only stay the same or improve.
+        let mut d1 = DtwWakeWordDetector::new().with_threshold(200.0);
+        let template_audio = sine_16k(8_000, 440.0);
+        d1.enroll_template(&template_audio).unwrap();
+
+        let mut best_score_1: f32 = 0.0;
+        for chunk in template_audio.chunks(160) {
+            if let Some(det) = d1.process_frame(chunk) {
+                best_score_1 = best_score_1.max(det.score);
+            }
+        }
+
+        let mut d2 = DtwWakeWordDetector::new().with_threshold(200.0);
+        d2.enroll_template(&template_audio).unwrap();
+        d2.enroll_template(&template_audio).unwrap();
+        let mut best_score_2: f32 = 0.0;
+        for chunk in template_audio.chunks(160) {
+            if let Some(det) = d2.process_frame(chunk) {
+                best_score_2 = best_score_2.max(det.score);
+            }
+        }
+
+        // Score is `1.0 - d/threshold`; the higher score reflects the lower
+        // (better) DTW distance. With two identical templates the best DTW
+        // distance can only be ≤ what one template alone produced.
+        assert!(
+            best_score_2 >= best_score_1 - 1e-4,
+            "two identical templates regressed score: 1-tpl={best_score_1}, 2-tpl={best_score_2}"
+        );
     }
 }
