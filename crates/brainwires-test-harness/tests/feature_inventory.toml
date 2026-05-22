@@ -325,9 +325,11 @@ required_cases = []
 [[feature]]
 section = "Permissions & Security"
 feature_id = "permissions_security"
-crate_name = "TODO"
-description = "TODO"
-required_cases = []
+crate_name = "brainwires-permission"
+description = "Capability profile shapes — default safe-by-default, full opens everything"
+required_cases = [
+    "brainwires_test_harness::cases::permission_capabilities::default_and_full_have_expected_shape",
+]
 
 [[feature]]
 section = "Capabilities"
@@ -633,9 +635,11 @@ required_cases = []
 [[feature]]
 section = "Safety"
 feature_id = "safety"
-crate_name = "TODO"
-description = "TODO"
-required_cases = []
+crate_name = "brainwires-call-policy"
+description = "BudgetGuard caps + record_usage + reset lifecycle"
+required_cases = [
+    "brainwires_test_harness::cases::call_policy_safety::budget_guard_caps_record_check_reset",
+]
 
 [[feature]]
 section = "Metrics"
