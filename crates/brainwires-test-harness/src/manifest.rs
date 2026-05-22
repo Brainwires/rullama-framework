@@ -15,7 +15,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 /// Default seed for cases that don't specify one explicitly.
-const DEFAULT_SEED: u64 = 0xB7A1_15_CA5E;
+const DEFAULT_SEED: u64 = 0x00B7_A115_CA5E;
 /// Default trial count for cases that don't specify one explicitly.
 const DEFAULT_TRIALS: usize = 1;
 /// Default Wilson-CI lower-bound gate. 1.0 = strict pass/fail.

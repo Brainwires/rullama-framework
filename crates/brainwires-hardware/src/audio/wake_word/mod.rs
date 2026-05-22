@@ -13,6 +13,8 @@
 //! ## Quick start
 //!
 //! ```rust,no_run
+//! # #[cfg(feature = "wake-word-dtw")]
+//! # fn _example() -> Result<(), anyhow::Error> {
 //! use brainwires_hardware::audio::wake_word::{DtwWakeWordDetector, WakeWordDetector};
 //!
 //! let mut detector = DtwWakeWordDetector::new();
@@ -22,7 +24,8 @@
 //! // detector.enroll_template(&recording2)?;
 //! // detector.enroll_template(&recording3)?;
 //! // Then feed live audio in chunks and watch for `Some(...)` returns.
-//! # Ok::<(), anyhow::Error>(())
+//! # Ok(())
+//! # }
 //! ```
 
 /// In-house DTW wake-word detector implementation.
