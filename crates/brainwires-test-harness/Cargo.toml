@@ -19,6 +19,10 @@ brainwires-sandbox = { workspace = true, default-features = false }
 brainwires-call-policy = { workspace = true, default-features = false }
 brainwires-provider-speech = { workspace = true, default-features = false, features = ["native"] }
 brainwires-permission = { workspace = true }
+brainwires-network = { workspace = true }
+brainwires-skills = { workspace = true, features = ["skills-signing"] }
+chrono = { workspace = true }
+semver = { workspace = true }
 
 async-trait = { workspace = true }
 inventory = { workspace = true }
