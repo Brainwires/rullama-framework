@@ -11,5 +11,6 @@
 pub mod call_policy_safety;
 pub mod core_types;
 pub mod evaluation_framework;
+pub mod mdap_composition;
 pub mod permission_capabilities;
 pub mod security;

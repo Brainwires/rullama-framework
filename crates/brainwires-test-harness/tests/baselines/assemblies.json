@@ -1,8 +1,14 @@
 [
   {
+    "category": "assembly.providers.recording_budget_scripted",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779444285,
+    "n_trials": 1
+  },
+  {
     "category": "assembly.call_policy.budget_accumulates_scripted_usage",
     "baseline_success_rate": 1.0,
-    "measured_at_unix": 1779443155,
+    "measured_at_unix": 1779444285,
     "n_trials": 1
   }
 ]

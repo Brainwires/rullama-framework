@@ -248,9 +248,12 @@ required_cases = []
 [[feature]]
 section = "MDAP Voting"
 feature_id = "mdap_voting"
-crate_name = "TODO"
-description = "TODO"
-required_cases = []
+crate_name = "brainwires-mdap"
+description = "Composer combines subtask outputs under Identity / LastOnly / Concatenate; rejects empty result sets"
+required_cases = [
+    "brainwires_test_harness::cases::mdap_composition::identity_lastonly_concatenate",
+    "brainwires_test_harness::cases::mdap_composition::empty_results_errors",
+]
 
 [[feature]]
 section = "Storage & Memory"
