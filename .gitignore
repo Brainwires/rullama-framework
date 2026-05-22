@@ -19,3 +19,6 @@ CLAUDE_CODE_INTEGRATION.md
 fuzz/target/
 fuzz/artifacts/
 fuzz/Cargo.lock
+# Ignore libfuzzer-discovered corpus entries (hex-named hashes); keep the
+# human-named seed files (e.g. canonical.json, minimal_card.json) checked in.
+fuzz/corpus/**/[0-9a-f]*
