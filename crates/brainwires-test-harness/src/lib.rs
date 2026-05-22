@@ -37,10 +37,33 @@ pub use brainwires_test_fixtures::{
 /// Path to the feature-inventory manifest, relative to the workspace root.
 pub const MANIFEST_PATH: &str = "crates/brainwires-test-harness/tests/feature_inventory.toml";
 
-/// Tier-A suite: every case the feature-inventory manifest lists. Empty
-/// until manifest entries are populated and registered (Steps 9-10).
+/// Tier-A suite: every case the feature-inventory manifest lists.
+/// Loads `tests/feature_inventory.toml` relative to the workspace root,
+/// resolves each `required_cases` Rust path via [`registry::lookup_tier_a`],
+/// and silently skips entries whose paths aren't yet registered (those
+/// surface separately via `cargo xtask test-harness coverage`).
 pub fn tier_a_suite() -> Vec<Arc<dyn EvaluationCase>> {
-    Vec::new()
+    // Manifest lives in the harness crate's tests/ directory. From a built
+    // binary we look it up via CARGO_MANIFEST_DIR (set by cargo when the
+    // binary runs); fall back to the workspace-relative path otherwise.
+    let manifest_path = std::env::var("CARGO_MANIFEST_DIR")
+        .map(std::path::PathBuf::from)
+        .map(|p| p.join("tests/feature_inventory.toml"))
+        .unwrap_or_else(|_| std::path::PathBuf::from(MANIFEST_PATH));
+
+    let m = match manifest::load(&manifest_path) {
+        Ok(m) => m,
+        Err(_) => return Vec::new(),
+    };
+    let mut out = Vec::new();
+    for entry in &m.entries {
+        for path in &entry.required_cases {
+            if let Some(case) = registry::lookup_tier_a(path) {
+                out.push(case);
+            }
+        }
+    }
+    out
 }
 
 /// Tier-B suite: every security adversarial case registered via

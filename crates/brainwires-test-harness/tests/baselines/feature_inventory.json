@@ -1,1 +1,38 @@
-{"baselines":{},"recorded_at":0}
+[
+  {
+    "category": "feature.core.provider_trait_roundtrip",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443935,
+    "n_trials": 1
+  },
+  {
+    "category": "feature.eval.always_pass_fail",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443935,
+    "n_trials": 1
+  },
+  {
+    "category": "feature.core.usage_totals",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443935,
+    "n_trials": 1
+  },
+  {
+    "category": "feature.eval.stochastic_deterministic",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443935,
+    "n_trials": 1
+  },
+  {
+    "category": "feature.eval.wilson_ci_brackets_rate",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443935,
+    "n_trials": 1
+  },
+  {
+    "category": "feature.core.message_constructors",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443935,
+    "n_trials": 1
+  }
+]

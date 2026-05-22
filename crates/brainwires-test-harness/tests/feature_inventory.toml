@@ -20,9 +20,13 @@ schema_version = 1
 [[feature]]
 section = "Core Types & Traits"
 feature_id = "core_types_traits"
-crate_name = "TODO"
-description = "TODO"
-required_cases = []
+crate_name = "brainwires-core"
+description = "Message / ChatResponse / Usage / Provider primitive shapes and trait dispatch"
+required_cases = [
+    "brainwires_test_harness::cases::core_types::usage_totals",
+    "brainwires_test_harness::cases::core_types::message_constructors",
+    "brainwires_test_harness::cases::core_types::provider_trait_roundtrip",
+]
 
 [[feature]]
 section = "AI Providers"
@@ -678,9 +682,13 @@ required_cases = []
 [[feature]]
 section = "Evaluation Framework"
 feature_id = "evaluation_framework"
-crate_name = "TODO"
-description = "TODO"
-required_cases = []
+crate_name = "brainwires-eval"
+description = "AlwaysPass/Fail/StochasticCase helpers + Wilson-CI math"
+required_cases = [
+    "brainwires_test_harness::cases::evaluation_framework::always_pass",
+    "brainwires_test_harness::cases::evaluation_framework::stochastic_deterministic",
+    "brainwires_test_harness::cases::evaluation_framework::wilson_ci",
+]
 
 [[feature]]
 section = "Telemetry & Analytics"
