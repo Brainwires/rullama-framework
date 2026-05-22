@@ -99,7 +99,13 @@ impl Drop for LockGuard {
                 .release_lock_internal(&agent_id, &path, lock_type)
                 .await
             {
-                eprintln!("Warning: Failed to release lock on drop: {}", e);
+                tracing::warn!(
+                    agent_id = %agent_id,
+                    path = %path.display(),
+                    ?lock_type,
+                    error = %e,
+                    "failed to release file lock on drop"
+                );
             }
         });
     }

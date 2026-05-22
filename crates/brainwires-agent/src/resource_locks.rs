@@ -183,7 +183,13 @@ impl Drop for ResourceLockGuard {
                 .release_resource_internal(&agent_id, resource_type, &scope)
                 .await
             {
-                eprintln!("Warning: Failed to release resource lock on drop: {}", e);
+                tracing::warn!(
+                    agent_id = %agent_id,
+                    ?resource_type,
+                    scope = %scope,
+                    error = %e,
+                    "failed to release resource lock on drop"
+                );
             }
         });
     }

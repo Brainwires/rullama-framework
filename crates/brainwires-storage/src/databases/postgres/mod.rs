@@ -26,7 +26,7 @@
 //! ```
 
 use crate::databases::bm25_helpers::{self, SharedIdfStats};
-use crate::databases::sql::{self, postgres::PostgresDialect};
+use crate::databases::sql::{self, SqlDialect, postgres::PostgresDialect};
 use crate::databases::traits::{
     ChunkMetadata, DatabaseStats, SearchResult, StorageBackend, VectorDatabase,
 };
@@ -114,7 +114,10 @@ impl PostgresDatabase {
             .await
             .context("Failed to get connection from pool")?;
 
-        let query = format!("SELECT content FROM {}", self.table_name);
+        let query = format!(
+            "SELECT content FROM {}",
+            PostgresDialect.quote_ident(&self.table_name)
+        );
         let rows = match client.query(&*query, &[]).await {
             Ok(rows) => rows,
             Err(e) => {
@@ -510,7 +513,10 @@ impl VectorDatabase for PostgresDatabase {
             .await
             .context("Failed to get connection from pool")?;
 
-        let query = format!("DELETE FROM {} WHERE file_path = $1", self.table_name);
+        let query = format!(
+            "DELETE FROM {} WHERE file_path = $1",
+            PostgresDialect.quote_ident(&self.table_name)
+        );
 
         let deleted = client
             .execute(&*query, &[&file_path])
@@ -555,7 +561,10 @@ impl VectorDatabase for PostgresDatabase {
             .context("Failed to get connection from pool")?;
 
         // Total row count.
-        let count_query = format!("SELECT COUNT(*) AS total FROM {}", self.table_name);
+        let count_query = format!(
+            "SELECT COUNT(*) AS total FROM {}",
+            PostgresDialect.quote_ident(&self.table_name)
+        );
         let row = client
             .query_one(&*count_query, &[])
             .await

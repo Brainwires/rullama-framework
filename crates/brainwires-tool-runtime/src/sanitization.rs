@@ -72,7 +72,12 @@ fn sensitive_patterns() -> &'static Vec<(Regex, &'static str)> {
                     Ok(re) => Some((re, *label)),
                     Err(e) => {
                         // Should never happen with hard-coded patterns; log and skip.
-                        eprintln!("brainwires-tools: failed to compile sensitive pattern '{}': {}", pattern, e);
+                        tracing::warn!(
+                            pattern = pattern,
+                            error = %e,
+                            "failed to compile sensitive-data regex pattern; the pattern \
+                             will be silently dropped"
+                        );
                         None
                     }
                 }
