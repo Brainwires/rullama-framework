@@ -20,8 +20,11 @@ brainwires-call-policy.workspace = true
 brainwires-tool-runtime = { workspace = true }
 brainwires-tool-builtins = { workspace = true }
 
-# Async runtime
-tokio = { workspace = true, features = ["sync", "time", "rt", "macros", "process"] }
+# Async runtime — wasm-compatible feature set (sync, time, rt, macros).
+# `process` (used by saga.rs for git subprocesses) pulls in mio's net
+# stack, which doesn't compile on wasm32-unknown-unknown. Added under a
+# non-wasm target gate below.
+tokio = { workspace = true, features = ["sync", "time", "rt", "macros"] }
 
 # Serialization
 serde = { workspace = true }
@@ -73,6 +76,13 @@ tracing.workspace = true
 
 # Skills deps removed in Phase 11c (extracted to brainwires-skills).
 # Eval deps (serde_yml + thiserror gated by `eval`) removed in Phase 11e.
+
+# Native-only extras: `process` (subprocess management via saga.rs) and
+# the rt-multi-thread executor are not supported on wasm32. Adding them
+# here keeps `cargo check -p brainwires-agent --target wasm32-...` green
+# while the native build still picks them up automatically.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["process", "rt-multi-thread"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }

@@ -14,14 +14,21 @@ keywords = ["inference", "llm", "agents", "chat", "framework"]
 categories = ["development-tools"]
 
 [dependencies]
-# Internal — agent coordination primitives + LLM call policy + tools
+# Internal — agent coordination primitives + LLM call policy + tools.
+# `brainwires-tool-runtime` is plumbed without features here so the
+# wasm32 build doesn't drag in `tokio/process` via its `native` feature
+# (which transitively pulls mio and breaks wasm). Native callers
+# re-activate `tool-runtime/native` via this crate's own `native`
+# feature below.
 brainwires-core = { workspace = true }
 brainwires-agent = { workspace = true }
 brainwires-call-policy = { workspace = true }
-brainwires-tool-runtime = { workspace = true, features = ["native"] }
+brainwires-tool-runtime = { workspace = true, default-features = false }
 
-# Async runtime + streams
-tokio = { version = "1.43", features = ["sync", "time", "rt", "macros", "fs"] }
+# Async runtime + streams. `fs` is not supported on wasm32 (tokio's
+# wasm support is limited to sync/macros/io-util/rt/time); keep the
+# base set wasm-compatible and add `fs` only on non-wasm targets below.
+tokio = { version = "1.43", features = ["sync", "time", "rt", "macros"] }
 async-trait = { workspace = true }
 futures = { workspace = true }
 
@@ -49,9 +56,19 @@ opentelemetry = { version = "0.28", optional = true }
 # Activated by the `telemetry` feature below.
 brainwires-telemetry = { workspace = true, optional = true }
 
+# Filesystem helpers (used by chat_agent.rs prompt snapshotting and
+# task_agent.rs validation hooks). wasm has no filesystem.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["fs"] }
+
 [features]
 default = ["native"]
-native = ["brainwires-core/native", "brainwires-call-policy/native", "brainwires-agent/native"]
+native = [
+    "brainwires-core/native",
+    "brainwires-call-policy/native",
+    "brainwires-agent/native",
+    "brainwires-tool-runtime/native",
+]
 wasm = ["brainwires-core/wasm", "brainwires-call-policy/wasm", "brainwires-agent/wasm"]
 
 # OpenTelemetry span export

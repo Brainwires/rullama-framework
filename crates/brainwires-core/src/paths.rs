@@ -143,7 +143,11 @@ impl PlatformPaths {
     ///
     /// Models are global (not per-project), so this is a single shared location
     /// consistent with the rest of the framework's use of ~/.brainwires/.
-    #[cfg(feature = "native")]
+    ///
+    /// The home-directory variant requires the `dirs` crate, which is only
+    /// pulled in on non-wasm targets; on wasm32 (or when `native` is off) we
+    /// fall back to a project-local path.
+    #[cfg(all(feature = "native", not(target_arch = "wasm32")))]
     pub fn default_fastembed_cache_path() -> PathBuf {
         dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
@@ -152,8 +156,8 @@ impl PlatformPaths {
             .join("fastembed")
     }
 
-    /// Get default fastembed model cache path (non-native fallback)
-    #[cfg(not(feature = "native"))]
+    /// Get default fastembed model cache path (non-native / wasm fallback)
+    #[cfg(not(all(feature = "native", not(target_arch = "wasm32"))))]
     pub fn default_fastembed_cache_path() -> PathBuf {
         PathBuf::from(".brainwires").join("cache").join("fastembed")
     }

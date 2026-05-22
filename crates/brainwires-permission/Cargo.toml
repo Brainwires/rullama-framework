@@ -34,8 +34,10 @@ chrono.workspace = true
 # Identifiers
 uuid = { workspace = true }
 
-# Async (for approval oneshot channels)
-tokio = { workspace = true }
+# Async (for approval oneshot channels) — only `sync` is used; pinning the
+# feature set keeps the crate wasm32-compatible (tokio's `net` feature
+# pulls in mio which doesn't compile for wasm32-unknown-unknown).
+tokio = { workspace = true, features = ["sync"] }
 
 # Pattern matching (native only)
 glob = { workspace = true, optional = true }

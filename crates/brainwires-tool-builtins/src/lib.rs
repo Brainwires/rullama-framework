@@ -110,6 +110,10 @@ pub use browser::BrowserTool;
 /// the runtime can't reference concrete builtins, so the convenience
 /// constructor lives here where it can.
 pub fn registry_with_builtins() -> brainwires_tool_runtime::ToolRegistry {
+    // `mut` is required whenever any of `native` / `interpreters` / `rag` is
+    // active (each calls `register_tools` below). Without any of those
+    // features the binding ends up unused-mutable, hence the local allow.
+    #[allow(unused_mut)]
     let mut registry = brainwires_tool_runtime::ToolRegistry::with_runtime_meta_tools();
 
     #[cfg(feature = "native")]
