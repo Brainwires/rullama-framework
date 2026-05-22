@@ -14,11 +14,12 @@ keywords = ["ai-agents", "multi-agent", "task-orchestration", "llm", "autonomous
 categories = ["development-tools"]
 
 [dependencies]
-# Internal crates
+# Internal crates. brainwires-call-policy + brainwires-telemetry kept here
+# (without code-level use) because they're referenced by this crate's
+# `native` / `telemetry` features for downstream feature passthrough.
 brainwires-core.workspace = true
 brainwires-call-policy.workspace = true
 brainwires-tool-runtime = { workspace = true }
-brainwires-tool-builtins = { workspace = true }
 
 # Async runtime — wasm-compatible feature set (sync, time, rt, macros).
 # `process` (used by saga.rs for git subprocesses) pulls in mio's net
@@ -37,10 +38,6 @@ anyhow.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 
-# Hashing (for prompt hash snapshotting)
-sha2.workspace = true
-hex.workspace = true
-
 # Git (for worktree management, native only)
 git2 = { workspace = true, optional = true }
 
@@ -53,13 +50,11 @@ libc = { version = "0.2", optional = true }
 # Async traits
 async-trait.workspace = true
 
-# Regex — required for skills template parsing; also used by reasoning/mdap/seal
-regex = { workspace = true }
-
-# Async streams (needed by ChatAgent for StreamExt)
-futures.workspace = true
-
 # thiserror removed — was eval-only; eval extracted to brainwires-eval in Phase 11e.
+# sha2 / hex / regex / futures / brainwires-tool-builtins removed in harness
+# Phase-2 cleanup — `cargo machete` confirmed all five had zero usages in
+# src/ after the Phase-11 module extractions. `futures` still lives in
+# [dev-dependencies] for tests that drive streams.
 
 # SEAL deps moved with the crate in Phase 11d (extracted to brainwires-seal).
 # brainwires-knowledge / brainwires-permission / brainwires-storage / arrow /
@@ -68,7 +63,9 @@ futures.workspace = true
 # OpenTelemetry (optional, for otel feature)
 opentelemetry = { version = "0.28", optional = true }
 
-# Telemetry — analytics events + billing hooks (optional)
+# Telemetry — analytics events + billing hooks (optional, used by `telemetry`
+# feature for downstream feature passthrough — agent code itself no longer
+# emits events directly; brainwires-inference does).
 brainwires-telemetry = { workspace = true, optional = true }
 
 # Logging
