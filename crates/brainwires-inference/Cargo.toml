@@ -44,6 +44,11 @@ regex = { workspace = true }
 # OpenTelemetry (optional, mirrored from agent's `otel` feature)
 opentelemetry = { version = "0.28", optional = true }
 
+# Analytics collector + BillingHook + UsageEvent — used by the
+# `telemetry`-gated billing/observability paths in task_agent/agent.rs.
+# Activated by the `telemetry` feature below.
+brainwires-telemetry = { workspace = true, optional = true }
+
 [features]
 default = ["native"]
 native = ["brainwires-core/native", "brainwires-call-policy/native", "brainwires-agent/native"]
@@ -51,10 +56,10 @@ wasm = ["brainwires-core/wasm", "brainwires-call-policy/wasm", "brainwires-agent
 
 # OpenTelemetry span export
 otel = ["dep:opentelemetry"]
-# Source uses `telemetry` cfg name in task_agent/* for the analytics
-# integration hook. Empty placeholder so the cfg gates resolve under
-# -Dwarnings; tracing is conditionally wired when this feature is on.
-telemetry = []
+# Wire the analytics-collector / BillingHook / UsageEvent integrations in
+# task_agent/agent.rs. Was previously `telemetry = []` (empty placeholder
+# — broke compile when enabled because the dep wasn't declared).
+telemetry = ["dep:brainwires-telemetry", "brainwires-telemetry/native"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }

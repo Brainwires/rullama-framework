@@ -81,11 +81,6 @@ knowledge = [
 # Alternative folder name for data storage
 alt-folder-name = []
 
-# Referenced by src/knowledge/relationship_graph.rs for spectral graph
-# analysis cfg gates. Empty placeholder so the cfg gates resolve under
-# -Dwarnings.
-spectral = []
-
 # Native = everything in this crate (knowledge + telemetry + persistence).
 native = [
     "knowledge", "telemetry",
