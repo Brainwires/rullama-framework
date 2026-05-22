@@ -1,0 +1,8 @@
+[
+  {
+    "category": "assembly.call_policy.budget_accumulates_scripted_usage",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443155,
+    "n_trials": 1
+  }
+]

@@ -3,14 +3,14 @@
 //! Seven deterministic end-to-end scenarios that prove common feature
 //! combinations work together. Listed manually here (not via inventory)
 //! because there are only seven and explicit listing is easier to scan.
-//!
-//! Skeleton: no assemblies yet. Step 11 populates this list.
 
 use std::sync::Arc;
 
 use brainwires_eval::EvaluationCase;
 
-/// Every assembly the harness knows about. Empty in the skeleton.
+pub mod call_policy_with_scripted_provider;
+
+/// Every assembly the harness knows about.
 pub fn all() -> Vec<Arc<dyn EvaluationCase>> {
-    Vec::new()
+    vec![Arc::from(call_policy_with_scripted_provider::case())]
 }

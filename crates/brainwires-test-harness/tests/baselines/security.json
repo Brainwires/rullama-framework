@@ -1,0 +1,92 @@
+[
+  {
+    "category": "sec.call_policy.budget_precheck_blocks_provider",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443155,
+    "n_trials": 1
+  },
+  {
+    "category": "sec.permission.full_caps_explicitly_clears_denies",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443155,
+    "n_trials": 1
+  },
+  {
+    "category": "sec.speech.rate_limit_max_is_stable",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443155,
+    "n_trials": 1
+  },
+  {
+    "category": "sec.permission.default_no_write_no_delete",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443155,
+    "n_trials": 1
+  },
+  {
+    "category": "sec.sandbox.default_safe_invariants",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443155,
+    "n_trials": 1
+  },
+  {
+    "category": "sec.speech.rate_limit_no_burst_overrun",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443155,
+    "n_trials": 1
+  },
+  {
+    "category": "sec.call_policy.budget_unbounded_default",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443155,
+    "n_trials": 1
+  },
+  {
+    "category": "sec.sandbox.network_default_none",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443155,
+    "n_trials": 1
+  },
+  {
+    "category": "sec.speech.rate_limit_zero_blocks",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443155,
+    "n_trials": 1
+  },
+  {
+    "category": "sec.sandbox.mount_whitelist",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443155,
+    "n_trials": 1
+  },
+  {
+    "category": "sec.call_policy.budget_rejects_oversized_input",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443155,
+    "n_trials": 1
+  },
+  {
+    "category": "sec.permission.default_denies_env_credentials_secrets",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443155,
+    "n_trials": 1
+  },
+  {
+    "category": "sec.call_policy.circuit_opens_and_blocks",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443155,
+    "n_trials": 1
+  },
+  {
+    "category": "sec.speech.rate_limit_acquire_decrements",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443155,
+    "n_trials": 1
+  },
+  {
+    "category": "sec.sandbox.parent_dir_traversal",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779443155,
+    "n_trials": 1
+  }
+]

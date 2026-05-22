@@ -1,13 +1,37 @@
-# Testing Guide — `brainwires_agent::eval`
+# Testing Guide
 
-The evaluation framework for Brainwires agents lives at
-`crates/brainwires-agent/src/eval/` (behind the `eval` feature), not in a
-separate `brainwires-eval` crate. The types are reached as
-`brainwires_agent::eval::…` in Rust code and via `cargo test -p
-brainwires-agent --features eval eval::…` on the CLI.
-It provides an N-trial Monte Carlo runner, Wilson-score confidence intervals,
-adversarial test cases, long-horizon stability tests, regression baselines, and
-an eval-driven autonomous self-improvement loop.
+The framework has two layered testing surfaces:
+
+1. **`brainwires-eval`** — the underlying evaluation library. Defines
+   `EvaluationCase`, `EvaluationSuite` (N-trial Monte Carlo + Wilson CI),
+   `AdversarialTestCase`, `RegressionSuite`, ranking metrics, and the
+   fault-classification used by the autonomous feedback loop. Standalone
+   crate with zero internal `brainwires-*` deps — published to crates.io
+   so external consumers can adopt the same evaluation primitives.
+
+2. **`brainwires-test-harness`** *(internal, `publish = false`)* — the
+   cross-crate orchestrator that uses `brainwires-eval` to attack the rest
+   of the framework. Three tiers:
+   - **Tier A (feature determinism)** — every `FEATURES.md` heading has
+     ≥1 deterministic case, registered via a TOML manifest at
+     `crates/brainwires-test-harness/tests/feature_inventory.toml`.
+   - **Tier B (security adversarial)** — per-invariant cases registered
+     via `inventory::submit!` next to each attack file under
+     `crates/brainwires-test-harness/src/cases/security/`.
+   - **Tier C (golden-path assemblies)** — manually-listed integration
+     scenarios in `crates/brainwires-test-harness/src/assemblies/`.
+
+   Driven via `cargo xtask test-harness …`.
+
+3. **`brainwires-test-fixtures`** *(internal, `publish = false`)* —
+   consolidated mock providers and test helpers used by both the harness
+   and per-crate unit tests. Replaces the inline `MockProvider` /
+   `FakeProvider` / `ScriptedProvider` impls that used to live duplicated
+   in 7+ crates.
+
+The rest of this document covers `brainwires-eval` primitives in detail.
+Skip to [§ 9 Test Harness](#9-test-harness-cargo-xtask-test-harness) if
+you want to add a feature case, security invariant, or assembly.
 
 ---
 
@@ -20,6 +44,7 @@ an eval-driven autonomous self-improvement loop.
 5. [Stability Tests](#5-stability-tests)
 6. [RegressionSuite](#6-regressionsuite)
 7. [Eval-Driven Self-Improvement](#7-eval-driven-self-improvement)
+9. [Test Harness (`cargo xtask test-harness`)](#9-test-harness-cargo-xtask-test-harness)
 
 ---
 
@@ -636,3 +661,145 @@ All cases use the pure functions from `brainwires_agent::eval`:
 **Agent allocation** (`TaskBid::score`, `ResourceBid::score`): linear combinations of capability/availability/speed and priority/urgency. Cases validate that each weight correctly drives the ranking when isolated.
 
 **Complexity heuristic** (`score_heuristic`): base 0.3 + keyword adjustments. Case validates that architectural/distributed tasks score higher than simple bug fixes.
+
+---
+
+## 9. Test Harness (`cargo xtask test-harness`)
+
+The test harness builds on `brainwires-eval` to attack the framework's
+own surface — feature determinism, security invariants, and end-to-end
+feature assemblies. It is **manually run** (no CI integration today);
+the maintainer fires it on a weekly cadence to surface regressions and
+hand high-priority faults to `extras/brainwires-autonomy`'s
+`AutonomousFeedbackLoop`.
+
+### Commands
+
+```bash
+# Run every registered case (Tier A + B + C).
+cargo xtask test-harness run
+
+# Just one tier.
+cargo xtask test-harness run --tier=b
+
+# Filter by name (substring).
+cargo xtask test-harness run --tier=b --filter=sandbox
+
+# More trials for stochastic cases.
+cargo xtask test-harness run --tier=a --trials=30
+
+# Diff FEATURES.md against the manifest. Exits non-zero if any heading
+# lacks a `[[feature]]` block; prints copy-pasteable stubs for gaps.
+cargo xtask test-harness coverage
+
+# Static forbidden-pattern grep (.deny-grep.toml at workspace root).
+cargo xtask test-harness deny-grep
+```
+
+The `run` subcommand shells out to the `run-harness` binary in
+`brainwires-test-harness`. Tier-B cases are picked up automatically via
+`inventory::submit!`, so adding a new case file is all you need.
+
+### Adding a Tier-A feature case
+
+1. Edit the manifest at
+   `crates/brainwires-test-harness/tests/feature_inventory.toml` and
+   fill in `required_cases` on the relevant `[[feature]]` block:
+
+   ```toml
+   [[feature]]
+   section = "MDAP Voting"
+   feature_id = "mdap_voting"
+   required_cases = ["brainwires_test_harness::cases::mdap::k_of_n_quorum"]
+   trials = 5
+   wilson_min_pass = 0.95
+   ```
+
+2. Create the Rust function at the path listed in `required_cases`. The
+   function returns `Box<dyn EvaluationCase>` and the case registers via
+   `inventory::submit!` with a `TierACase` entry:
+
+   ```rust
+   // crates/brainwires-test-harness/src/cases/mdap.rs
+   inventory::submit! {
+       crate::registry::TierACase {
+           path: "brainwires_test_harness::cases::mdap::k_of_n_quorum",
+           crate_name: "brainwires-mdap",
+           description: "k-out-of-n quorum voting",
+           factory: || Box::new(KOfNQuorumCase),
+       }
+   }
+   struct KOfNQuorumCase;
+   #[async_trait::async_trait]
+   impl brainwires_eval::EvaluationCase for KOfNQuorumCase { /* … */ }
+   ```
+
+3. Declare the module from `src/cases/mod.rs`:
+
+   ```rust
+   pub mod mdap;
+   ```
+
+4. `cargo xtask test-harness coverage` to confirm the wiring; then
+   `cargo xtask test-harness run --tier=a --filter=mdap` to execute.
+
+### Adding a Tier-B security invariant
+
+1. Create one file under `src/cases/security/` per invariant (or per
+   crate, when invariants are closely related). Each file:
+
+   ```rust
+   inventory::submit! {
+       crate::registry::SecurityCase {
+           id: "sec.sandbox.mount_whitelist",
+           crate_name: "brainwires-sandbox",
+           invariant: "validate_mount rejects sources outside allowed roots",
+           factory: || Box::new(MountWhitelistCase),
+       }
+   }
+   ```
+
+2. Declare the file from `src/cases/security/mod.rs`. **This is
+   non-optional** — `inventory` only picks up symbols from compiled
+   translation units, so the linker will silently drop an undeclared
+   case file.
+
+3. Run with `cargo xtask test-harness run --tier=b`.
+
+### Adding a Tier-C golden-path assembly
+
+Plain `pub fn` listed manually in `src/assemblies/mod.rs::all()`. Only
+seven such assemblies are planned, so explicit listing is the right
+tool.
+
+### What the harness does NOT do today
+
+- **No CI integration**. The user-decided rollout deferred CI gating;
+  every run is local and manual. Adding a GitHub Actions job that runs
+  `cargo xtask test-harness coverage` and `run --tier=all` is a future
+  enhancement.
+- **No fuzz runs out of the box**. `cargo-fuzz` workspace + 4 starter
+  targets is planned (Step 8 of the build-out) but not yet present.
+- **No sandbox-proxy dynamic cases**. The proxy is a binary-only crate;
+  HTTP-probe infrastructure is a deferred refactor.
+- **No `brainwires-hardware` runtime cases**. The "API keys never
+  logged" invariant is covered statically by `deny-grep` rule
+  `no_api_key_in_log`.
+
+### Feeding faults to `brainwires-autonomy`
+
+`cargo xtask test-harness run --tier=all --json` emits a single-line
+JSON report. The autonomy crate (in `extras/`) consumes this via its
+`AutonomousFeedbackLoop`, classifies each failing case as
+`Regression` / `ConsistentFailure` / `Flaky` / `NewCapability`, and
+runs its budgeted ($10 / 3-fail / 2000-line) fix cycle. The harness
+itself does not import the autonomy crate — the data flow is one-way.
+
+### Deny-grep rules
+
+`.deny-grep.toml` at the workspace root. Six rules today (no SQL
+`format!`, no pickle, no insecure TLS, no library `println!`, no
+API-key-in-log, no `unsafe-host` in defaults). On the current tree it
+surfaces ~20 patterns for triage — most SQL hits are
+`quote_ident`-safe table-name interpolation that can be added to a
+rule's `allow_files` after manual confirmation.

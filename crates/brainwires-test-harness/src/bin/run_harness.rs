@@ -27,6 +27,7 @@ fn main() -> ExitCode {
     let mut trials: usize = 1;
     let mut json = false;
     let mut filter: Option<String> = None;
+    let mut record_baselines: Option<String> = None;
 
     for arg in &args {
         if let Some(v) = arg.strip_prefix("--tier=") {
@@ -46,6 +47,8 @@ fn main() -> ExitCode {
             filter = Some(v.to_string());
         } else if arg == "--json" {
             json = true;
+        } else if let Some(v) = arg.strip_prefix("--record-baselines=") {
+            record_baselines = Some(v.to_string());
         } else if arg == "--help" || arg == "-h" {
             print_help();
             return ExitCode::SUCCESS;
@@ -84,6 +87,24 @@ fn main() -> ExitCode {
         print_human(&result);
     }
 
+    if let Some(path) = &record_baselines {
+        let mut suite = brainwires_eval::RegressionSuite::new();
+        suite.record_baselines(&result);
+        match suite.baselines_to_json() {
+            Ok(s) => {
+                if let Err(e) = std::fs::write(path, s) {
+                    eprintln!("failed to write baselines to {path}: {e}");
+                    return ExitCode::FAILURE;
+                }
+                eprintln!("baselines written to {path}");
+            }
+            Err(e) => {
+                eprintln!("failed to serialise baselines: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+
     let any_failed = result
         .stats
         .values()
@@ -105,6 +126,7 @@ fn print_help() {
     println!("  --trials=<N>   Trials per case (default: 1)");
     println!("  --filter=<s>   Only cases whose name contains <s>");
     println!("  --json         Emit a single-line JSON report instead of human output");
+    println!("  --record-baselines=PATH  Write a brainwires-eval RegressionSuite baseline file");
 }
 
 fn print_human(result: &brainwires_eval::SuiteResult) {

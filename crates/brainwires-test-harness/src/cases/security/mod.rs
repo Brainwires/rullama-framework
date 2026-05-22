@@ -10,5 +10,6 @@
 //! whole module and `inventory::iter::<SecurityCase>()` returns nothing.
 
 pub mod call_policy_budget;
+pub mod permission_default_deny;
 pub mod sandbox_mount_whitelist;
 pub mod speech_rate_limiter;
