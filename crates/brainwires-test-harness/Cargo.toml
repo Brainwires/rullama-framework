@@ -21,6 +21,7 @@ brainwires-provider-speech = { workspace = true, default-features = false, featu
 brainwires-permission = { workspace = true }
 brainwires-network = { workspace = true }
 brainwires-skills = { workspace = true, features = ["skills-signing"] }
+brainwires-tool-runtime = { workspace = true }
 chrono = { workspace = true }
 semver = { workspace = true }
 
