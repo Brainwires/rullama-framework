@@ -1,62 +1,80 @@
 [
   {
-    "category": "feature.permissions.capability_shapes",
+    "category": "feature.eval.stochastic_deterministic",
     "baseline_success_rate": 1.0,
-    "measured_at_unix": 1779444285,
+    "measured_at_unix": 1779444383,
     "n_trials": 1
   },
   {
-    "category": "feature.core.provider_trait_roundtrip",
+    "category": "feature.tools.input_schema_object",
     "baseline_success_rate": 1.0,
-    "measured_at_unix": 1779444285,
-    "n_trials": 1
-  },
-  {
-    "category": "feature.eval.wilson_ci_brackets_rate",
-    "baseline_success_rate": 1.0,
-    "measured_at_unix": 1779444285,
-    "n_trials": 1
-  },
-  {
-    "category": "feature.core.usage_totals",
-    "baseline_success_rate": 1.0,
-    "measured_at_unix": 1779444285,
-    "n_trials": 1
-  },
-  {
-    "category": "feature.core.message_constructors",
-    "baseline_success_rate": 1.0,
-    "measured_at_unix": 1779444285,
-    "n_trials": 1
-  },
-  {
-    "category": "feature.safety.budget_guard_lifecycle",
-    "baseline_success_rate": 1.0,
-    "measured_at_unix": 1779444285,
-    "n_trials": 1
-  },
-  {
-    "category": "feature.mdap.composition_identity_lastonly_concatenate",
-    "baseline_success_rate": 1.0,
-    "measured_at_unix": 1779444285,
-    "n_trials": 1
-  },
-  {
-    "category": "feature.eval.always_pass_fail",
-    "baseline_success_rate": 1.0,
-    "measured_at_unix": 1779444285,
+    "measured_at_unix": 1779444383,
     "n_trials": 1
   },
   {
     "category": "feature.mdap.empty_results_errors",
     "baseline_success_rate": 1.0,
-    "measured_at_unix": 1779444285,
+    "measured_at_unix": 1779444383,
     "n_trials": 1
   },
   {
-    "category": "feature.eval.stochastic_deterministic",
+    "category": "feature.eval.wilson_ci_brackets_rate",
     "baseline_success_rate": 1.0,
-    "measured_at_unix": 1779444285,
+    "measured_at_unix": 1779444383,
+    "n_trials": 1
+  },
+  {
+    "category": "feature.tools.tool_struct_default",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779444383,
+    "n_trials": 1
+  },
+  {
+    "category": "feature.permissions.capability_shapes",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779444383,
+    "n_trials": 1
+  },
+  {
+    "category": "feature.mcp.jsonrpc_request_shape",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779444383,
+    "n_trials": 1
+  },
+  {
+    "category": "feature.core.message_constructors",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779444383,
+    "n_trials": 1
+  },
+  {
+    "category": "feature.core.usage_totals",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779444383,
+    "n_trials": 1
+  },
+  {
+    "category": "feature.core.provider_trait_roundtrip",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779444383,
+    "n_trials": 1
+  },
+  {
+    "category": "feature.eval.always_pass_fail",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779444383,
+    "n_trials": 1
+  },
+  {
+    "category": "feature.safety.budget_guard_lifecycle",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779444383,
+    "n_trials": 1
+  },
+  {
+    "category": "feature.mdap.composition_identity_lastonly_concatenate",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779444383,
     "n_trials": 1
   }
 ]

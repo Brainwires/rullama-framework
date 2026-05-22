@@ -23,6 +23,7 @@ brainwires-network = { workspace = true }
 brainwires-skills = { workspace = true, features = ["skills-signing"] }
 brainwires-tool-runtime = { workspace = true }
 brainwires-mdap = { workspace = true }
+brainwires-mcp-client = { workspace = true }
 chrono = { workspace = true }
 semver = { workspace = true }
 

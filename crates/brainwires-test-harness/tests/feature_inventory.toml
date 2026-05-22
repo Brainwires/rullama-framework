@@ -150,16 +150,20 @@ required_cases = []
 [[feature]]
 section = "Tool System"
 feature_id = "tool_system"
-crate_name = "TODO"
-description = "TODO"
-required_cases = []
+crate_name = "brainwires-core"
+description = "Tool struct + ToolInputSchema constructors used by tool-runtime and builtins"
+required_cases = [
+    "brainwires_test_harness::cases::mcp_and_tools::tool_struct_default",
+    "brainwires_test_harness::cases::mcp_and_tools::tool_input_schema_object",
+]
 
 [[feature]]
 section = "Built-in Tools (always available)"
 feature_id = "built_in_tools_always_available"
-crate_name = "TODO"
-description = "TODO"
+crate_name = "brainwires-tool-builtins"
+description = "Bash, file_ops, git, web, search, etc. — shape covered by tool-runtime sanitisation Tier-B cases"
 required_cases = []
+coverage_via = "tool_system"
 
 [[feature]]
 section = "Tool Infrastructure"
@@ -185,9 +189,11 @@ required_cases = []
 [[feature]]
 section = "MCP Protocol"
 feature_id = "mcp_protocol"
-crate_name = "TODO"
-description = "TODO"
-required_cases = []
+crate_name = "brainwires-mcp-client"
+description = "JSON-RPC 2.0 envelope shape — jsonrpc=\"2.0\", method/id/params propagation, None params"
+required_cases = [
+    "brainwires_test_harness::cases::mcp_and_tools::jsonrpc_request_shape",
+]
 
 [[feature]]
 section = "MCP Server Framework"
