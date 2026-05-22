@@ -9,6 +9,7 @@
 //! nothing else in the harness imports it — otherwise the linker drops the
 //! whole module and `inventory::iter::<SecurityCase>()` returns nothing.
 
+pub mod agent_file_locks;
 pub mod call_policy_budget;
 pub mod mcp_server_auth;
 pub mod network_api_key_format;
