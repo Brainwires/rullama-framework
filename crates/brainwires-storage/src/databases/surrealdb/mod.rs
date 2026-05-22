@@ -23,6 +23,7 @@
 
 use crate::databases::bm25_helpers::{self, SharedIdfStats};
 use crate::databases::capabilities::BackendCapabilities;
+use crate::databases::sql::{SqlDialect, surrealdb::SurrealDialect};
 use crate::databases::traits::{
     ChunkMetadata, DatabaseStats, SearchResult, StorageBackend, VectorDatabase,
 };
@@ -895,7 +896,8 @@ impl StorageBackend for SurrealDatabase {
         filter: Option<&Filter>,
         limit: Option<usize>,
     ) -> Result<Vec<Record>> {
-        let mut query = format!("SELECT * FROM {table_name}");
+        let table = SurrealDialect.quote_ident(table_name);
+        let mut query = format!("SELECT * FROM {table}");
         let mut bindings = Vec::new();
 
         if let Some(f) = filter {
@@ -916,14 +918,19 @@ impl StorageBackend for SurrealDatabase {
     async fn delete(&self, table_name: &str, filter: &Filter) -> Result<()> {
         let mut offset = 0usize;
         let (where_sql, bindings) = filter_to_surrealql(filter, &mut offset);
-        let query = format!("DELETE FROM {table_name} WHERE {where_sql}");
+        let table = SurrealDialect.quote_ident(table_name);
+        // `where_sql` is produced by `filter_to_surrealql`, which emits
+        // positional `$N` placeholders + binds values into `bindings` —
+        // safe to embed verbatim into the query string.
+        let query = format!("DELETE FROM {table} WHERE {where_sql}");
 
         execute_void_with_bindings(&self.db, &query, bindings).await?;
         Ok(())
     }
 
     async fn count(&self, table_name: &str, filter: Option<&Filter>) -> Result<usize> {
-        let mut query = format!("SELECT count() AS total FROM {table_name}");
+        let table = SurrealDialect.quote_ident(table_name);
+        let mut query = format!("SELECT count() AS total FROM {table}");
         let mut bindings = Vec::new();
 
         if let Some(f) = filter {

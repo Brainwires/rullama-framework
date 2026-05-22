@@ -28,22 +28,11 @@ allow_files = [
     # call sites — index_name is operator-set during database init.
     "crates/brainwires-storage/src/databases/nornicdb/database.rs",
     "crates/brainwires-storage/src/databases/nornicdb/tests.rs",
-    # postgres now interpolates `self.table_name` via PostgresDialect
-    # .quote_ident() (fixed by harness Phase 2 triage — was previously
-    # raw interpolation matching the flagged pattern).
+    # postgres + surrealdb now interpolate `table_name` via
+    # `<dialect>.quote_ident()` (fixed by harness Phase 2 triage —
+    # previously raw interpolation matching the flagged pattern).
     "crates/brainwires-storage/src/databases/postgres/mod.rs",
-    # KNOWN TRIAGE: surrealdb interpolates `table_name` / `where_sql`
-    # directly via `format!` without going through quote_ident
-    # (surrealdb/mod.rs:898/919/926). mysql + postgres in the same
-    # workspace DO quote_ident — surrealdb is inconsistent. A malicious
-    # `table_name` passed to `select`/`delete`/`count` could land arbitrary
-    # SurrealQL fragments. (The lines 113/480 hits use the compile-time
-    # `DEFAULT_TABLE` constant and are noise here.)
-    #
-    # Left UNallowed deliberately so the surrealdb hits surface every
-    # run. To resolve: thread quote_ident through the surrealdb impl
-    # (the SurrealQLDialect at sql/surrealdb.rs already has the method),
-    # then allow-list this file.
+    "crates/brainwires-storage/src/databases/surrealdb/mod.rs",
 ]
 
 [[rule]]
