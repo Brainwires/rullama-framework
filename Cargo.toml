@@ -25,6 +25,8 @@ members = [
     "crates/brainwires-call-policy",
     "crates/brainwires-hardware",
     "crates/brainwires-finetune",
+    "crates/brainwires-test-fixtures",
+    "crates/brainwires-test-harness",
     "extras/brainwires-autonomy",
     "extras/brainwires-chat-pwa/home",
     "extras/brainwires-wasm",
@@ -127,6 +129,15 @@ brainwires-telemetry  = { path = "crates/brainwires-telemetry",  version = "0.11
 # the API surface of the framework. See ADR-0004 (framework / extras boundary)
 # and `cargo xtask lint-deps`.
 
+# Internal test fixtures (publish = false). Consumed only as a dev-dependency
+# by `crates/*` test modules; not part of the framework's published API.
+# Centralised here to keep dev-dep versions aligned across consumers.
+brainwires-test-fixtures = { path = "crates/brainwires-test-fixtures", version = "0.11.0" }
+# Internal test harness (publish = false). Aggregates Tier-A feature cases,
+# Tier-B security cases, and Tier-C assembly cases. Consumed by `xtask` and
+# by `extras/brainwires-autonomy` (which drives the AutonomousFeedbackLoop).
+brainwires-test-harness = { path = "crates/brainwires-test-harness", version = "0.11.0" }
+
 # Tokenizer dependencies
 tokenizers = "0.22"
 tiktoken-rs = "0.9"
@@ -220,6 +231,7 @@ zeroize = { version = "1", features = ["derive"] }
 
 # Config parsing
 toml = "1.0"
+inventory = "0.3"
 
 # ML / Clustering
 linfa = "0.7"

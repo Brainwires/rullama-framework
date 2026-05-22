@@ -1,0 +1,12 @@
+//! Tier-B security adversarial cases.
+//!
+//! One file per invariant (or per group of closely-related invariants on
+//! the same module). Each file registers its cases via
+//! `inventory::submit! { crate::registry::SecurityCase { ... } }`.
+//!
+//! Note: `inventory` only picks up symbols from compiled translation units.
+//! Each new case file MUST be declared here via `pub mod foo;` even though
+//! nothing else in the harness imports it — otherwise the linker drops the
+//! whole module and `inventory::iter::<SecurityCase>()` returns nothing.
+
+pub mod sandbox_mount_whitelist;

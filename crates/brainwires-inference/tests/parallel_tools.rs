@@ -13,86 +13,28 @@ use std::time::Duration;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use futures::stream::BoxStream;
 
 use brainwires_core::{
-    ChatOptions, ChatResponse, ContentBlock, Message, MessageContent, Provider, StreamChunk, Tool,
-    ToolContext, ToolInputSchema, ToolResult, ToolUse, Usage,
+    ChatOptions, ContentBlock, MessageContent, Tool, ToolContext, ToolInputSchema, ToolResult,
+    ToolUse,
 };
 use brainwires_inference::ChatAgent;
+use brainwires_test_fixtures::ScriptedProvider;
 use brainwires_tool_runtime::ToolExecutor;
 
-/// Provider that on the first stream_chat emits N tool uses, then on the
-/// second call emits a single final text chunk. Sufficient to drive one
-/// round of parallel-tool dispatch in `ChatAgent::run_completion`.
-struct ScriptedProvider {
-    tool_names: Vec<String>,
-    calls: AtomicU32,
-}
-
-impl ScriptedProvider {
-    fn new(names: Vec<String>) -> Self {
-        Self {
-            tool_names: names,
-            calls: AtomicU32::new(0),
-        }
-    }
-}
-
-#[async_trait]
-impl Provider for ScriptedProvider {
-    fn name(&self) -> &str {
-        "scripted"
-    }
-
-    async fn chat(
-        &self,
-        _messages: &[Message],
-        _tools: Option<&[Tool]>,
-        _options: &ChatOptions,
-    ) -> Result<ChatResponse> {
-        Ok(ChatResponse {
-            message: Message::assistant("done"),
-            usage: Usage::new(1, 1),
-            finish_reason: Some("stop".into()),
-        })
-    }
-
-    fn stream_chat<'a>(
-        &'a self,
-        _messages: &'a [Message],
-        _tools: Option<&'a [Tool]>,
-        _options: &'a ChatOptions,
-    ) -> BoxStream<'a, Result<StreamChunk>> {
-        let call = self.calls.fetch_add(1, Ordering::Relaxed);
-        let chunks: Vec<Result<StreamChunk>> = if call == 0 {
-            // Round 1: emit one tool_use per configured name.
-            self.tool_names
-                .iter()
-                .enumerate()
-                .flat_map(|(i, name)| {
-                    vec![
-                        Ok(StreamChunk::ToolUse {
-                            id: format!("call-{i}"),
-                            name: name.clone(),
-                        }),
-                        Ok(StreamChunk::ToolInputDelta {
-                            id: format!("call-{i}"),
-                            partial_json: "{}".into(),
-                        }),
-                    ]
-                })
-                .chain(std::iter::once(Ok(StreamChunk::Done)))
-                .collect()
-        } else {
-            // Round 2: final assistant text, no more tool uses → loop exits.
-            vec![
-                Ok(StreamChunk::Text("all tools done".into())),
-                Ok(StreamChunk::Done),
-            ]
-        };
-        Box::pin(futures::stream::iter(chunks))
-    }
+/// Build a `ScriptedProvider` that on the first stream_chat emits N tool uses
+/// (one per name, with `call-{i}` ids), then on the second call emits a final
+/// "all tools done" text chunk. Sufficient to drive one round of parallel-tool
+/// dispatch in `ChatAgent::run_completion`.
+fn scripted_for(names: &[String]) -> ScriptedProvider {
+    let calls = names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| (format!("call-{i}"), name.clone(), serde_json::json!({})))
+        .collect::<Vec<_>>();
+    ScriptedProvider::new("scripted")
+        .then_tool_calls(calls)
+        .then_text("all tools done")
 }
 
 /// Executor that sleeps `delay_ms` per tool call and tracks the maximum
@@ -166,7 +108,7 @@ async fn five_parallel_tools_run_concurrently() {
     let tools: Vec<Tool> = names.iter().map(|n| mk_tool(n, false)).collect();
     let executor = Arc::new(LatencyExecutor::new(tools, Duration::from_millis(100)));
 
-    let provider = Arc::new(ScriptedProvider::new(names.clone()));
+    let provider = Arc::new(scripted_for(&names));
     let mut agent = ChatAgent::new(
         provider.clone(),
         executor.clone() as Arc<dyn ToolExecutor>,
@@ -224,7 +166,7 @@ async fn serialize_flag_forces_sequential_execution() {
     let tools: Vec<Tool> = names.iter().map(|n| mk_tool(n, true)).collect();
     let executor = Arc::new(LatencyExecutor::new(tools, Duration::from_millis(50)));
 
-    let provider = Arc::new(ScriptedProvider::new(names));
+    let provider = Arc::new(scripted_for(&names));
     let mut agent = ChatAgent::new(
         provider,
         executor.clone() as Arc<dyn ToolExecutor>,
@@ -255,7 +197,7 @@ async fn concurrency_of_one_preserves_legacy_behavior() {
     let tools: Vec<Tool> = names.iter().map(|n| mk_tool(n, false)).collect();
     let executor = Arc::new(LatencyExecutor::new(tools, Duration::from_millis(30)));
 
-    let provider = Arc::new(ScriptedProvider::new(names));
+    let provider = Arc::new(scripted_for(&names));
     let mut agent = ChatAgent::new(
         provider,
         executor.clone() as Arc<dyn ToolExecutor>,

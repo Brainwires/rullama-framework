@@ -1,0 +1,41 @@
+[package]
+name = "brainwires-test-harness"
+description = "Cross-crate test harness for the Brainwires framework. Tier A (feature determinism), Tier B (security adversarial), Tier C (golden-path assemblies). Not published; orchestrated via `cargo xtask test-harness`."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+brainwires-eval = { workspace = true }
+brainwires-test-fixtures = { workspace = true }
+
+# Crates under attack by Tier-B security cases. Add new entries here as the
+# harness expands to cover more invariants.
+brainwires-sandbox = { workspace = true, default-features = false }
+
+async-trait = { workspace = true }
+inventory = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+anyhow = { workspace = true }
+tokio = { version = "1.43", features = ["sync", "rt", "macros"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+
+[[bin]]
+name = "print-manifest"
+path = "src/bin/print_manifest.rs"
+
+[[bin]]
+name = "run-harness"
+path = "src/bin/run_harness.rs"
+
+# NOTE: if a future workspace-wide change enables LTO in release, this
+# harness binary needs `lto = false` (or `-Clink-dead-code`) so that
+# `inventory::submit!` items survive linking. Workspace-level profile
+# tweaks are the only way — per-crate `[profile.*]` blocks are ignored.

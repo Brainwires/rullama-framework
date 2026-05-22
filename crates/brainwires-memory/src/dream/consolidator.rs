@@ -212,38 +212,9 @@ mod tests {
 
     #[test]
     fn test_consolidator_construction() {
-        use brainwires_core::{ChatOptions, ChatResponse, StreamChunk, Tool, Usage};
-
-        struct FakeProvider;
-
-        #[async_trait::async_trait]
-        impl Provider for FakeProvider {
-            fn name(&self) -> &str {
-                "fake"
-            }
-            async fn chat(
-                &self,
-                _messages: &[Message],
-                _tools: Option<&[Tool]>,
-                _options: &ChatOptions,
-            ) -> Result<ChatResponse> {
-                Ok(ChatResponse {
-                    message: Message::assistant("summary"),
-                    usage: Usage::new(0, 0),
-                    finish_reason: None,
-                })
-            }
-            fn stream_chat<'a>(
-                &'a self,
-                _messages: &'a [Message],
-                _tools: Option<&'a [Tool]>,
-                _options: &'a ChatOptions,
-            ) -> futures::stream::BoxStream<'a, Result<StreamChunk>> {
-                Box::pin(futures::stream::empty())
-            }
-        }
-
-        let provider = Arc::new(FakeProvider);
+        let provider = Arc::new(brainwires_test_fixtures::ScriptedProvider::always_text(
+            "fake", "summary",
+        ));
         let policy = make_policy();
         let consolidator = DreamConsolidator::new(provider, policy);
         assert_eq!(consolidator.last_metrics().sessions_processed, 0);

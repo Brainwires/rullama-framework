@@ -4,6 +4,7 @@ use std::process::{Command, ExitCode};
 mod lint_deps;
 mod package_count;
 mod stubs;
+mod test_harness;
 mod version;
 
 struct Step {
@@ -61,6 +62,7 @@ fn main() -> ExitCode {
         Some("check-stubs") => return stubs::check_stubs(&args[1..]),
         Some("lint-deps") => return lint_deps::lint_deps(&args[1..]),
         Some("package-count") => return package_count::update_package_count(&args[1..]),
+        Some("test-harness") => return test_harness::dispatch(&args[1..]),
         Some("--help" | "-h") => {
             print_help();
             return ExitCode::SUCCESS;
@@ -82,6 +84,7 @@ fn print_help() {
     println!("  check-stubs             Scan for unfinished code (todo!(), FIXME, etc.)");
     println!("  lint-deps               Enforce framework/extras boundary (ADR-0004)");
     println!("  package-count [--dry-run]  Update crate/extras count references in .md files");
+    println!("  test-harness <sub>      Run the test harness (coverage, run, deny-grep, baselines)");
     println!("  [step ...]              Run CI steps: fmt, check, clippy, test, doc");
     println!();
     println!("Flags (CI mode):");

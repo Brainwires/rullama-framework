@@ -458,51 +458,9 @@ mod tests {
     use brainwires_agent::file_locks::FileLockManager;
 
     use async_trait::async_trait;
-    use brainwires_core::{
-        ChatOptions, ChatResponse, Message, Provider, StreamChunk, Tool, ToolContext, ToolResult,
-        ToolUse, Usage,
-    };
+    use brainwires_core::{Provider, Tool, ToolContext, ToolResult, ToolUse};
+    use brainwires_test_fixtures::ScriptedProvider;
     use brainwires_tool_runtime::ToolExecutor;
-    use futures::stream::BoxStream;
-
-    // ── Mock provider that returns "Done" immediately ────────────────────
-
-    struct MockProvider(ChatResponse);
-
-    impl MockProvider {
-        fn done(text: &str) -> Self {
-            Self(ChatResponse {
-                message: Message::assistant(text),
-                finish_reason: Some("stop".to_string()),
-                usage: Usage::default(),
-            })
-        }
-    }
-
-    #[async_trait]
-    impl Provider for MockProvider {
-        fn name(&self) -> &str {
-            "mock"
-        }
-
-        async fn chat(
-            &self,
-            _: &[Message],
-            _: Option<&[Tool]>,
-            _: &ChatOptions,
-        ) -> Result<ChatResponse> {
-            Ok(self.0.clone())
-        }
-
-        fn stream_chat<'a>(
-            &'a self,
-            _: &'a [Message],
-            _: Option<&'a [Tool]>,
-            _: &'a ChatOptions,
-        ) -> BoxStream<'a, Result<StreamChunk>> {
-            Box::pin(futures::stream::empty())
-        }
-    }
 
     struct NoOpExecutor;
 
@@ -522,7 +480,7 @@ mod tests {
     fn make_deps(max_pool: usize) -> (Arc<TaskManager>, Arc<AgentPool>, Arc<CommunicationHub>) {
         let hub = Arc::new(CommunicationHub::new());
         let flm = Arc::new(FileLockManager::new());
-        let provider: Arc<dyn Provider> = Arc::new(MockProvider::done("Done"));
+        let provider: Arc<dyn Provider> = Arc::new(ScriptedProvider::always_text("mock", "Done"));
         let executor: Arc<dyn ToolExecutor> = Arc::new(NoOpExecutor);
 
         let tm = Arc::new(TaskManager::new());
@@ -731,7 +689,7 @@ mod tests {
         // a way to fail. TaskAgent treats a "stop" finish_reason as success
         // when the assistant text is non-empty. So we use a two-task setup
         // where we manually fail one task to test the policy.
-        let provider: Arc<dyn Provider> = Arc::new(MockProvider::done("Done"));
+        let provider: Arc<dyn Provider> = Arc::new(ScriptedProvider::always_text("mock", "Done"));
         let executor: Arc<dyn ToolExecutor> = Arc::new(NoOpExecutor);
 
         let tm = Arc::new(TaskManager::new());
@@ -785,7 +743,7 @@ mod tests {
     async fn test_continue_on_failure() {
         let hub = Arc::new(CommunicationHub::new());
         let flm = Arc::new(FileLockManager::new());
-        let provider: Arc<dyn Provider> = Arc::new(MockProvider::done("Done"));
+        let provider: Arc<dyn Provider> = Arc::new(ScriptedProvider::always_text("mock", "Done"));
         let executor: Arc<dyn ToolExecutor> = Arc::new(NoOpExecutor);
 
         let tm = Arc::new(TaskManager::new());

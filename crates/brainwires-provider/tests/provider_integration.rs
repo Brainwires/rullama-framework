@@ -1,50 +1,25 @@
 /// Integration tests for the brainwires-provider crate.
 ///
-/// These tests validate the Provider trait contract using a MockProvider,
+/// These tests validate the Provider trait contract using a ScriptedProvider,
 /// and exercise per-provider request/response serialization logic without
 /// hitting real network endpoints.
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use brainwires_core::{
-    message::{ChatResponse, Message, StreamChunk, Usage},
+    message::{ChatResponse, Message, Usage},
     provider::ChatOptions,
-    tool::Tool,
 };
 use brainwires_provider::Provider;
-use futures::stream::{self, BoxStream};
+use brainwires_test_fixtures::ScriptedProvider;
 
-// ── MockProvider ──────────────────────────────────────────────────────────────
-
-/// A mock Provider that returns a fixed response without any network I/O.
-struct MockProvider {
-    name: String,
-    response_text: String,
-}
-
-impl MockProvider {
-    fn new(name: &str, response_text: &str) -> Self {
-        Self {
-            name: name.to_string(),
-            response_text: response_text.to_string(),
-        }
-    }
-}
-
-#[async_trait]
-impl Provider for MockProvider {
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    async fn chat(
-        &self,
-        _messages: &[Message],
-        _tools: Option<&[Tool]>,
-        _options: &ChatOptions,
-    ) -> anyhow::Result<ChatResponse> {
-        Ok(ChatResponse {
-            message: Message::assistant(&self.response_text),
+/// Build a provider with the integration-test usage shape (10/5/15 tokens),
+/// so `mock_provider_chat_usage_is_populated` continues to assert
+/// canned-Usage round-tripping through the framework.
+fn make_provider(name: &str, response_text: &str) -> ScriptedProvider {
+    ScriptedProvider::always_response(
+        name,
+        ChatResponse {
+            message: Message::assistant(response_text),
             usage: Usage {
                 prompt_tokens: 10,
                 completion_tokens: 5,
@@ -52,30 +27,21 @@ impl Provider for MockProvider {
                 ..Default::default()
             },
             finish_reason: None,
-        })
-    }
-
-    fn stream_chat<'a>(
-        &'a self,
-        _messages: &'a [Message],
-        _tools: Option<&'a [Tool]>,
-        _options: &'a ChatOptions,
-    ) -> BoxStream<'a, anyhow::Result<StreamChunk>> {
-        Box::pin(stream::empty())
-    }
+        },
+    )
 }
 
 // ── Trait contract tests ──────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn mock_provider_name_returns_expected() {
-    let provider = MockProvider::new("test-provider", "hello");
+    let provider = make_provider("test-provider", "hello");
     assert_eq!(provider.name(), "test-provider");
 }
 
 #[tokio::test]
 async fn mock_provider_chat_returns_fixed_response() {
-    let provider = MockProvider::new("mock", "The answer is 42");
+    let provider = make_provider("mock", "The answer is 42");
     let messages = vec![Message::user("What is the answer?")];
     let options = ChatOptions::default();
 
@@ -88,7 +54,7 @@ async fn mock_provider_chat_returns_fixed_response() {
 
 #[tokio::test]
 async fn mock_provider_chat_usage_is_populated() {
-    let provider = MockProvider::new("mock", "response");
+    let provider = make_provider("mock", "response");
     let messages = vec![Message::user("test")];
     let options = ChatOptions::default();
 
@@ -100,7 +66,7 @@ async fn mock_provider_chat_usage_is_populated() {
 
 #[tokio::test]
 async fn mock_provider_works_behind_arc() {
-    let provider: Arc<dyn Provider> = Arc::new(MockProvider::new("arc-mock", "works"));
+    let provider: Arc<dyn Provider> = Arc::new(make_provider("arc-mock", "works"));
     let messages = vec![Message::user("test")];
     let options = ChatOptions::default();
 
@@ -109,20 +75,29 @@ async fn mock_provider_works_behind_arc() {
 }
 
 #[tokio::test]
-async fn mock_provider_stream_chat_is_empty() {
+async fn mock_provider_stream_chat_emits_text_then_done() {
+    use brainwires_core::StreamChunk;
     use futures::StreamExt;
-    let provider = MockProvider::new("stream-mock", "irrelevant");
+
+    let provider = make_provider("stream-mock", "streamed");
     let messages = vec![Message::user("test")];
     let options = ChatOptions::default();
 
-    let mut stream = provider.stream_chat(&messages, None, &options);
-    let next = stream.next().await;
-    assert!(next.is_none(), "MockProvider stream should be empty");
+    let chunks: Vec<_> = provider
+        .stream_chat(&messages, None, &options)
+        .collect()
+        .await;
+    assert_eq!(chunks.len(), 2);
+    match &chunks[0] {
+        Ok(StreamChunk::Text(t)) => assert_eq!(t, "streamed"),
+        other => panic!("expected Text chunk, got {other:?}"),
+    }
+    assert!(matches!(chunks[1], Ok(StreamChunk::Done)));
 }
 
 #[tokio::test]
 async fn mock_provider_max_output_tokens_defaults_to_none() {
-    let provider = MockProvider::new("mock", "x");
+    let provider = make_provider("mock", "x");
     assert_eq!(provider.max_output_tokens(), None);
 }
 

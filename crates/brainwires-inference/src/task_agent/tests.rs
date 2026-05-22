@@ -3,12 +3,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use brainwires_core::{
-    ChatOptions, ChatResponse, ContentBlock, Message, MessageContent, Role, StreamChunk, Task,
-    Tool, ToolContext, ToolResult, ToolUse, Usage,
-};
+use brainwires_core::{Task, Tool, ToolContext, ToolResult, ToolUse};
+use brainwires_test_fixtures::ScriptedProvider;
 use brainwires_tool_runtime::ToolExecutor;
-use futures::stream::BoxStream;
 
 use anyhow::Result;
 
@@ -19,53 +16,6 @@ use brainwires_agent::file_locks::FileLockManager;
 use super::agent::TaskAgent;
 use super::spawn::spawn_task_agent;
 use super::types::{TaskAgentConfig, TaskAgentStatus};
-
-// ── Mock provider ──────────────────────────────────────────────────────────
-
-struct MockProvider {
-    responses: std::sync::Mutex<Vec<ChatResponse>>,
-}
-
-impl MockProvider {
-    fn single(text: &str) -> Self {
-        Self {
-            responses: std::sync::Mutex::new(vec![ChatResponse {
-                message: Message::assistant(text),
-                finish_reason: Some("stop".to_string()),
-                usage: Usage::default(),
-            }]),
-        }
-    }
-}
-
-#[async_trait]
-impl brainwires_core::Provider for MockProvider {
-    fn name(&self) -> &str {
-        "mock"
-    }
-
-    async fn chat(
-        &self,
-        _messages: &[Message],
-        _tools: Option<&[Tool]>,
-        _options: &ChatOptions,
-    ) -> Result<ChatResponse> {
-        let mut guard = self.responses.lock().unwrap();
-        if guard.is_empty() {
-            anyhow::bail!("no more mock responses")
-        }
-        Ok(guard.remove(0))
-    }
-
-    fn stream_chat<'a>(
-        &'a self,
-        _messages: &'a [Message],
-        _tools: Option<&'a [Tool]>,
-        _options: &'a ChatOptions,
-    ) -> BoxStream<'a, Result<StreamChunk>> {
-        Box::pin(futures::stream::empty())
-    }
-}
 
 // ── Mock tool executor ─────────────────────────────────────────────────────
 
@@ -99,7 +49,7 @@ async fn test_creation() {
     let agent = TaskAgent::new(
         "agent-1".to_string(),
         task,
-        Arc::new(MockProvider::single("done")),
+        Arc::new(ScriptedProvider::new("mock").then_text("done")),
         make_context(),
         TaskAgentConfig::default(),
     );
@@ -113,7 +63,7 @@ async fn test_execution_completes() {
     let agent = Arc::new(TaskAgent::new(
         "agent-1".to_string(),
         task,
-        Arc::new(MockProvider::single("Task completed successfully")),
+        Arc::new(ScriptedProvider::new("mock").then_text("Task completed successfully")),
         make_context(),
         TaskAgentConfig {
             validation_config: None,
@@ -134,7 +84,7 @@ async fn test_spawn_task_agent() {
     let agent = Arc::new(TaskAgent::new(
         "agent-1".to_string(),
         task,
-        Arc::new(MockProvider::single("done")),
+        Arc::new(ScriptedProvider::new("mock").then_text("done")),
         make_context(),
         TaskAgentConfig {
             validation_config: None,
@@ -166,7 +116,7 @@ async fn test_result_has_execution_graph() {
     let agent = Arc::new(TaskAgent::new(
         "agent-1".to_string(),
         task,
-        Arc::new(MockProvider::single("done")),
+        Arc::new(ScriptedProvider::new("mock").then_text("done")),
         make_context(),
         TaskAgentConfig {
             validation_config: None,
@@ -209,54 +159,12 @@ async fn test_pre_execute_hook_reject() {
         }
     }
 
-    // Provider that requests a tool call on iteration 1, then stops.
-    struct ToolThenStop;
-    #[async_trait]
-    impl brainwires_core::Provider for ToolThenStop {
-        fn name(&self) -> &str {
-            "tool-then-stop"
-        }
-        async fn chat(
-            &self,
-            messages: &[Message],
-            _tools: Option<&[Tool]>,
-            _options: &ChatOptions,
-        ) -> Result<ChatResponse> {
-            // First call: return a tool use. Subsequent calls: return done.
-            let has_tool_result = messages.iter().any(|m| {
-                matches!(&m.content, MessageContent::Blocks(b) if b.iter().any(|cb| matches!(cb, ContentBlock::ToolResult { .. })))
-            });
-            if has_tool_result {
-                return Ok(ChatResponse {
-                    message: Message::assistant("done after hook rejection"),
-                    finish_reason: Some("stop".to_string()),
-                    usage: Usage::default(),
-                });
-            }
-            Ok(ChatResponse {
-                message: Message {
-                    role: Role::Assistant,
-                    content: MessageContent::Blocks(vec![ContentBlock::ToolUse {
-                        id: "tu-1".to_string(),
-                        name: "bash".to_string(),
-                        input: serde_json::json!({"command": "echo hi"}),
-                    }]),
-                    name: None,
-                    metadata: None,
-                },
-                finish_reason: None,
-                usage: Usage::default(),
-            })
-        }
-        fn stream_chat<'a>(
-            &'a self,
-            _messages: &'a [Message],
-            _tools: Option<&'a [Tool]>,
-            _options: &'a ChatOptions,
-        ) -> futures::stream::BoxStream<'a, Result<brainwires_core::StreamChunk>> {
-            Box::pin(futures::stream::empty())
-        }
-    }
+    // Provider that requests a tool call on iteration 1, then stops on iteration 2.
+    let provider = Arc::new(
+        ScriptedProvider::new("tool-then-stop")
+            .then_tool_call("tu-1", "bash", serde_json::json!({"command": "echo hi"}))
+            .then_text("done after hook rejection"),
+    );
 
     let ctx = Arc::new(
         AgentContext::new(
@@ -272,7 +180,7 @@ async fn test_pre_execute_hook_reject() {
     let agent = Arc::new(TaskAgent::new(
         "agent-hook".to_string(),
         task,
-        Arc::new(ToolThenStop),
+        provider,
         ctx,
         TaskAgentConfig {
             validation_config: None,

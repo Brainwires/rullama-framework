@@ -10,49 +10,12 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use futures::stream::BoxStream;
 
-use brainwires_agent::brainwires_core::{
-    ChatOptions, ChatResponse, Message, Provider, StreamChunk, Task, Tool, ToolContext, ToolResult,
-    ToolUse, Usage,
-};
+use brainwires_agent::brainwires_core::{Task, Tool, ToolContext, ToolResult, ToolUse};
 use brainwires_agent::brainwires_tool_runtime::ToolExecutor;
 use brainwires_agent::{AgentMessage, CommunicationHub, FileLockManager, LockType};
 use brainwires_inference::{AgentPool, TaskAgentConfig};
-
-// ── Mock Provider ──────────────────────────────────────────────────────────
-
-/// A minimal provider that always returns a fixed "Done" response.
-struct MockProvider;
-
-#[async_trait]
-impl Provider for MockProvider {
-    fn name(&self) -> &str {
-        "mock"
-    }
-
-    async fn chat(
-        &self,
-        _messages: &[Message],
-        _tools: Option<&[Tool]>,
-        _options: &ChatOptions,
-    ) -> Result<ChatResponse> {
-        Ok(ChatResponse {
-            message: Message::assistant("Done"),
-            finish_reason: Some("stop".to_string()),
-            usage: Usage::default(),
-        })
-    }
-
-    fn stream_chat<'a>(
-        &'a self,
-        _messages: &'a [Message],
-        _tools: Option<&'a [Tool]>,
-        _options: &'a ChatOptions,
-    ) -> BoxStream<'a, Result<StreamChunk>> {
-        Box::pin(futures::stream::empty())
-    }
-}
+use brainwires_test_fixtures::ScriptedProvider;
 
 // ── No-Op Tool Executor ───────────────────────────────────────────────────
 
@@ -85,7 +48,7 @@ async fn main() -> Result<()> {
     // 2. Create the agent pool (max 5 concurrent agents)
     let pool = AgentPool::new(
         5,
-        Arc::new(MockProvider),
+        Arc::new(ScriptedProvider::always_text("mock", "Done")),
         Arc::new(NoOpExecutor),
         Arc::clone(&hub),
         Arc::clone(&lock_manager),

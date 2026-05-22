@@ -608,56 +608,10 @@ async fn execute_one_tool(
 mod tests {
     use super::*;
     use brainwires_core::{ToolContext, ToolInputSchema};
+    use brainwires_test_fixtures::ScriptedProvider;
     use brainwires_tool_builtins::BuiltinToolExecutor;
     use brainwires_tool_runtime::ToolRegistry;
-    use futures::stream;
     use std::collections::HashMap;
-
-    /// A mock provider that returns a simple text response.
-    struct MockProvider {
-        response_text: String,
-    }
-
-    impl MockProvider {
-        fn new(text: &str) -> Self {
-            Self {
-                response_text: text.to_string(),
-            }
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl Provider for MockProvider {
-        fn name(&self) -> &str {
-            "mock"
-        }
-
-        async fn chat(
-            &self,
-            _messages: &[Message],
-            _tools: Option<&[Tool]>,
-            _options: &ChatOptions,
-        ) -> Result<brainwires_core::ChatResponse> {
-            Ok(brainwires_core::ChatResponse {
-                message: Message::assistant(&self.response_text),
-                usage: brainwires_core::Usage::new(10, 20),
-                finish_reason: Some("stop".to_string()),
-            })
-        }
-
-        fn stream_chat<'a>(
-            &'a self,
-            _messages: &'a [Message],
-            _tools: Option<&'a [Tool]>,
-            _options: &'a ChatOptions,
-        ) -> futures::stream::BoxStream<'a, Result<StreamChunk>> {
-            let text = self.response_text.clone();
-            Box::pin(stream::iter(vec![
-                Ok(StreamChunk::Text(text)),
-                Ok(StreamChunk::Done),
-            ]))
-        }
-    }
 
     fn make_executor() -> Arc<dyn ToolExecutor> {
         let mut registry = ToolRegistry::new();
@@ -672,7 +626,7 @@ mod tests {
     }
 
     fn make_agent() -> ChatAgent {
-        let provider = Arc::new(MockProvider::new("Hello from mock!"));
+        let provider = Arc::new(ScriptedProvider::always_text("mock", "Hello from mock!"));
         let executor = make_executor();
         ChatAgent::new(provider, executor, ChatOptions::default())
     }

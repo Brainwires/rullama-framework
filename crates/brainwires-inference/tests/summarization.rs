@@ -1,100 +1,41 @@
 //! End-to-end test for ChatAgent history compaction via LLM summarizer.
 
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use anyhow::Result;
-use async_trait::async_trait;
-use futures::stream::BoxStream;
-
-use brainwires_core::ToolContext;
-use brainwires_core::{
-    ChatOptions, ChatResponse, Message, Provider, Role, StreamChunk, Tool, Usage,
-};
+use brainwires_core::{ChatOptions, Message, Provider, Role, ToolContext};
 use brainwires_inference::ChatAgent;
 use brainwires_inference::summarization::LlmSummarizer;
+use brainwires_test_fixtures::{FailingProvider, RecordingProvider, ScriptedProvider};
 use brainwires_tool_builtins::BuiltinToolExecutor;
 use brainwires_tool_runtime::{ToolExecutor, ToolRegistry};
 
-/// Minimal provider — never called by compact_history() itself.
-struct NoopProvider;
-#[async_trait]
-impl Provider for NoopProvider {
-    fn name(&self) -> &str {
-        "noop"
-    }
-    async fn chat(
-        &self,
-        _: &[Message],
-        _: Option<&[Tool]>,
-        _: &ChatOptions,
-    ) -> Result<ChatResponse> {
-        unreachable!("process_message not exercised in this test")
-    }
-    fn stream_chat<'a>(
-        &'a self,
-        _: &'a [Message],
-        _: Option<&'a [Tool]>,
-        _: &'a ChatOptions,
-    ) -> BoxStream<'a, Result<StreamChunk>> {
-        Box::pin(futures::stream::empty())
-    }
-}
-
-/// Summarizer provider that records how many messages it was shown and
-/// returns a deterministic summary.
-struct RecordingProvider {
-    observed_msg_lens: Arc<Mutex<Vec<usize>>>,
-    calls: AtomicU32,
-}
-
-impl RecordingProvider {
-    fn new() -> Self {
-        Self {
-            observed_msg_lens: Arc::new(Mutex::new(Vec::new())),
-            calls: AtomicU32::new(0),
-        }
-    }
-    fn calls(&self) -> u32 {
-        self.calls.load(Ordering::Relaxed)
-    }
-    fn observed_lens(&self) -> Vec<usize> {
-        self.observed_msg_lens.lock().unwrap().clone()
-    }
-}
-
-#[async_trait]
-impl Provider for RecordingProvider {
-    fn name(&self) -> &str {
-        "recording"
-    }
-    async fn chat(
-        &self,
-        messages: &[Message],
-        _: Option<&[Tool]>,
-        _: &ChatOptions,
-    ) -> Result<ChatResponse> {
-        self.calls.fetch_add(1, Ordering::Relaxed);
-        let first = messages
-            .last()
-            .and_then(|m| m.text())
-            .unwrap_or_default()
-            .to_string();
-        self.observed_msg_lens.lock().unwrap().push(first.len());
-        Ok(ChatResponse {
-            message: Message::assistant("earlier work covered topics A, B, and C"),
-            usage: Usage::new(30, 10),
-            finish_reason: Some("stop".into()),
+/// Per-call last-message length, derived from a `RecordingProvider` log.
+fn observed_lens<P: Provider>(rec: &RecordingProvider<P>) -> Vec<usize> {
+    rec.calls()
+        .iter()
+        .map(|c| {
+            c.messages
+                .last()
+                .and_then(|m| m.text())
+                .map(|s| s.len())
+                .unwrap_or(0)
         })
-    }
-    fn stream_chat<'a>(
-        &'a self,
-        _: &'a [Message],
-        _: Option<&'a [Tool]>,
-        _: &'a ChatOptions,
-    ) -> BoxStream<'a, Result<StreamChunk>> {
-        Box::pin(futures::stream::empty())
-    }
+        .collect()
+}
+
+fn make_summarizer_recorder() -> Arc<RecordingProvider<ScriptedProvider>> {
+    Arc::new(RecordingProvider::new(ScriptedProvider::always_text(
+        "recording",
+        "earlier work covered topics A, B, and C",
+    )))
+}
+
+/// Main agent provider — never expected to be called by compact_history().
+/// Using `FailingProvider` makes any accidental invocation a clear test failure.
+fn unreachable_agent_provider() -> Arc<dyn Provider> {
+    Arc::new(FailingProvider::new(
+        "compact_history must not invoke the main provider",
+    ))
 }
 
 fn make_executor() -> Arc<dyn ToolExecutor> {
@@ -106,11 +47,11 @@ fn make_executor() -> Arc<dyn ToolExecutor> {
 
 #[tokio::test]
 async fn compact_history_replaces_middle_with_summary() {
-    let recorder = Arc::new(RecordingProvider::new());
+    let recorder = make_summarizer_recorder();
     let summarizer = Arc::new(LlmSummarizer::new(recorder.clone() as Arc<dyn Provider>));
 
     let mut agent = ChatAgent::new(
-        Arc::new(NoopProvider) as Arc<dyn Provider>,
+        unreachable_agent_provider(),
         make_executor(),
         ChatOptions::default(),
     )
@@ -171,18 +112,18 @@ async fn compact_history_replaces_middle_with_summary() {
     );
 
     // Summarizer provider was called exactly once.
-    assert_eq!(recorder.calls(), 1);
+    assert_eq!(recorder.call_count(), 1);
     // Transcript passed in was nonempty.
-    assert!(recorder.observed_lens().iter().all(|&n| n > 0));
+    assert!(observed_lens(&recorder).iter().all(|&n| n > 0));
 }
 
 #[tokio::test]
 async fn compact_history_is_noop_when_history_is_short() {
-    let recorder = Arc::new(RecordingProvider::new());
+    let recorder = make_summarizer_recorder();
     let summarizer = Arc::new(LlmSummarizer::new(recorder.clone() as Arc<dyn Provider>));
 
     let mut agent = ChatAgent::new(
-        Arc::new(NoopProvider) as Arc<dyn Provider>,
+        unreachable_agent_provider(),
         make_executor(),
         ChatOptions::default(),
     )
@@ -201,13 +142,13 @@ async fn compact_history_is_noop_when_history_is_short() {
     agent.compact_history().await.unwrap();
 
     assert_eq!(agent.message_count(), 4);
-    assert_eq!(recorder.calls(), 0, "summarizer should not be invoked");
+    assert_eq!(recorder.call_count(), 0, "summarizer should not be invoked");
 }
 
 #[tokio::test]
 async fn compact_history_without_summarizer_falls_back_to_trim() {
     let mut agent = ChatAgent::new(
-        Arc::new(NoopProvider) as Arc<dyn Provider>,
+        unreachable_agent_provider(),
         make_executor(),
         ChatOptions::default(),
     )

@@ -370,49 +370,9 @@ mod tests {
     use async_trait::async_trait;
     use brainwires_agent::communication::CommunicationHub;
     use brainwires_agent::file_locks::FileLockManager;
-    use brainwires_core::{
-        ChatOptions, ChatResponse, Message, StreamChunk, Tool, ToolContext, ToolResult, ToolUse,
-        Usage,
-    };
+    use brainwires_core::{Tool, ToolContext, ToolResult, ToolUse};
+    use brainwires_test_fixtures::ScriptedProvider;
     use brainwires_tool_runtime::ToolExecutor;
-    use futures::stream::BoxStream;
-
-    struct MockProvider(ChatResponse);
-
-    impl MockProvider {
-        fn done(text: &str) -> Self {
-            Self(ChatResponse {
-                message: Message::assistant(text),
-                finish_reason: Some("stop".to_string()),
-                usage: Usage::default(),
-            })
-        }
-    }
-
-    #[async_trait]
-    impl Provider for MockProvider {
-        fn name(&self) -> &str {
-            "mock"
-        }
-
-        async fn chat(
-            &self,
-            _: &[Message],
-            _: Option<&[Tool]>,
-            _: &ChatOptions,
-        ) -> Result<ChatResponse> {
-            Ok(self.0.clone())
-        }
-
-        fn stream_chat<'a>(
-            &'a self,
-            _: &'a [Message],
-            _: Option<&'a [Tool]>,
-            _: &'a ChatOptions,
-        ) -> BoxStream<'a, Result<StreamChunk>> {
-            Box::pin(futures::stream::empty())
-        }
-    }
 
     struct NoOpExecutor;
 
@@ -430,7 +390,7 @@ mod tests {
     fn make_pool(max: usize) -> AgentPool {
         AgentPool::new(
             max,
-            Arc::new(MockProvider::done("Done")),
+            Arc::new(ScriptedProvider::always_text("mock", "Done")),
             Arc::new(NoOpExecutor),
             Arc::new(CommunicationHub::new()),
             Arc::new(FileLockManager::new()),

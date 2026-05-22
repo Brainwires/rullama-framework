@@ -59,6 +59,7 @@ telemetry = ["dream", "dep:brainwires-telemetry"]
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile.workspace = true
+brainwires-test-fixtures = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true
