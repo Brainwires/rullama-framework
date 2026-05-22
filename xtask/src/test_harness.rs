@@ -174,10 +174,22 @@ fn coverage(args: &[String]) -> ExitCode {
         }
     }
 
+    let direct: usize = manifest
+        .entries
+        .iter()
+        .filter(|e| !e.required_cases.is_empty())
+        .count();
+    let aliased: usize = manifest
+        .entries
+        .iter()
+        .filter(|e| e.required_cases.is_empty() && e.coverage_via.is_some())
+        .count();
     println!(
-        "Coverage check: {} FEATURES.md headings, {} manifest entries",
+        "Coverage check: {} FEATURES.md headings, {} manifest entries  ({} direct cases, {} aliased)",
         headings.len(),
-        manifest.entries.len()
+        manifest.entries.len(),
+        direct,
+        aliased,
     );
 
     if missing.is_empty() && dangling_alias.is_empty() {
