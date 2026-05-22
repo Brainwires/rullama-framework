@@ -1,14 +1,20 @@
 [
   {
-    "category": "assembly.providers.recording_budget_scripted",
+    "category": "assembly.call_policy.budget_accumulates_scripted_usage",
     "baseline_success_rate": 1.0,
-    "measured_at_unix": 1779444285,
+    "measured_at_unix": 1779455207,
     "n_trials": 1
   },
   {
-    "category": "assembly.call_policy.budget_accumulates_scripted_usage",
+    "category": "assembly.skills.sign_tamper_restore_lifecycle",
     "baseline_success_rate": 1.0,
-    "measured_at_unix": 1779444285,
+    "measured_at_unix": 1779455207,
+    "n_trials": 1
+  },
+  {
+    "category": "assembly.providers.recording_budget_scripted",
+    "baseline_success_rate": 1.0,
+    "measured_at_unix": 1779455207,
     "n_trials": 1
   }
 ]
