@@ -31,23 +31,26 @@ required_cases = [
 [[feature]]
 section = "AI Providers"
 feature_id = "ai_providers"
-crate_name = "TODO"
-description = "TODO"
+crate_name = "brainwires-provider"
+description = "Provider trait surface — concrete provider impls exercised in their own integration tests; harness covers the trait contract"
 required_cases = []
+coverage_via = "core_types_traits"
 
 [[feature]]
 section = "Chat Providers"
 feature_id = "chat_providers"
-crate_name = "TODO"
-description = "TODO"
+crate_name = "brainwires-provider"
+description = "Concrete chat-provider impls; harness asserts the trait contract via core_types_traits"
 required_cases = []
+coverage_via = "core_types_traits"
 
 [[feature]]
 section = "Audio API Clients"
 feature_id = "audio_api_clients"
-crate_name = "TODO"
-description = "TODO"
+crate_name = "brainwires-provider-speech"
+description = "Cloud STT/TTS providers — share the rate-limiter primitive covered by Tier-B sec.speech.* cases"
 required_cases = []
+coverage_via = "core_types_traits"
 
 [[feature]]
 section = "Per-Request Model Override"
@@ -66,16 +69,18 @@ required_cases = []
 [[feature]]
 section = "Agent Orchestration"
 feature_id = "agent_orchestration"
-crate_name = "TODO"
-description = "TODO"
+crate_name = "brainwires-agent"
+description = "Multi-agent coordination — covered structurally by Tier-C assemblies"
 required_cases = []
+coverage_via = "core_types_traits"
 
 [[feature]]
 section = "Chat"
 feature_id = "chat"
-crate_name = "TODO"
-description = "TODO"
+crate_name = "brainwires-core"
+description = "Basic Provider::chat dispatch covered by core_types_traits"
 required_cases = []
+coverage_via = "core_types_traits"
 
 [[feature]]
 section = "Agent Types"
@@ -143,9 +148,10 @@ required_cases = []
 [[feature]]
 section = "Validation"
 feature_id = "validation"
-crate_name = "TODO"
-description = "TODO"
+crate_name = "brainwires-tool-runtime"
+description = "Tool argument validation + prompt-injection sanitisation are asserted by Tier-B sec.tool_runtime.* cases"
 required_cases = []
+coverage_via = "tool_system"
 
 [[feature]]
 section = "Tool System"
@@ -168,16 +174,18 @@ coverage_via = "tool_system"
 [[feature]]
 section = "Tool Infrastructure"
 feature_id = "tool_infrastructure"
-crate_name = "TODO"
-description = "TODO"
+crate_name = "brainwires-tool-runtime"
+description = "Tool runtime sanitisation + execution surface — Tier-B sec.tool_runtime cases assert sanitisation invariants"
 required_cases = []
+coverage_via = "tool_system"
 
 [[feature]]
 section = "Feature-Gated Tools"
 feature_id = "feature_gated_tools"
-crate_name = "TODO"
-description = "TODO"
+crate_name = "brainwires-tool-builtins"
+description = "Optional tools (interpreters, email, calendar, browser) — gated, covered by tool_system aliases"
 required_cases = []
+coverage_via = "tool_system"
 
 [[feature]]
 section = "OpenAPI Tool Generation (feature: `openapi`)"
@@ -233,9 +241,10 @@ required_cases = []
 [[feature]]
 section = "Agent Management"
 feature_id = "agent_management"
-crate_name = "TODO"
-description = "TODO"
+crate_name = "brainwires-network"
+description = "Lifecycle and identity for agents on the network — see Tier-B sec.network.api_key_* for auth coverage"
 required_cases = []
+coverage_via = "agent_orchestration"
 
 [[feature]]
 section = "Relay Client"
