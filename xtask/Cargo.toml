@@ -9,6 +9,8 @@ toml_edit = "0.22"
 walkdir = "2.5"
 toml = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+glob = { workspace = true }
+regex = { workspace = true }
 
 # MSRV pin: constant_time_eq 0.4.3 (released 2026-04-18, the same day we cut
 # 0.10.0) bumped its own MSRV to Rust 1.95. Our workspace MSRV is 1.91, so

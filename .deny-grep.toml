@@ -1,0 +1,68 @@
+# Tier-B static-pattern denylist for the Brainwires framework.
+#
+# Each rule names a forbidden pattern, where it's not allowed to appear, and
+# (optionally) where it IS allowed. The `cargo xtask test-harness deny-grep`
+# command walks the matching files and fails on any hit outside the allow
+# list.
+#
+# Rule schema:
+#   id            stable identifier (used in CI report)
+#   description   one-line explanation of why the pattern is denied
+#   include       glob(s) — files to scan; relative to workspace root
+#   forbid_regex  regex (Rust regex syntax) — any match fails the rule
+#   allow_files   exact paths exempted (e.g. the test that documents the
+#                 pattern is forbidden); relative to workspace root
+
+[[rule]]
+id = "no_format_in_sql"
+description = "SQL queries must use bound parameters, not format!/concat — prevents injection"
+include = ["crates/brainwires-storage/**/*.rs", "crates/brainwires-stores/**/*.rs"]
+forbid_regex = '''format!\([^)]*\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER)\b'''
+allow_files = []
+
+[[rule]]
+id = "no_pickle"
+description = "Python pickle is unsafe deserialisation; never accept it as a model/data format"
+include = ["crates/**/*.rs", "crates/**/Cargo.toml"]
+forbid_regex = '''(serde-pickle|serde_pickle|pickle::from_|from_pickle\b)'''
+allow_files = []
+
+[[rule]]
+id = "no_insecure_tls"
+description = "TLS verification cannot be disabled in framework crates"
+include = ["crates/brainwires-network/**/*.rs", "crates/brainwires-provider/**/*.rs", "crates/brainwires-provider-speech/**/*.rs", "crates/brainwires-a2a/**/*.rs"]
+forbid_regex = '''(insecure_skip_verify|danger_accept_invalid_certs\(\s*true|accept_invalid_hostnames\(\s*true)'''
+allow_files = []
+
+[[rule]]
+id = "no_println_in_libs"
+description = "Library crates must not println! — use `tracing` so callers can filter and route output"
+include = ["crates/brainwires-*/src/**/*.rs"]
+forbid_regex = '''(?m)^\s*(println!|eprintln!)\('''
+allow_files = [
+    # Harness binaries are intentionally println!-driven (they ARE the CLI).
+    "crates/brainwires-test-harness/src/bin/print_manifest.rs",
+    "crates/brainwires-test-harness/src/bin/run_harness.rs",
+    # AST chunker / repomap / parser tests embed raw-string Rust snippets
+    # that legitimately CONTAIN `println!` text as fixture data, not as
+    # framework calls. False-positive class until we add AST-aware grep.
+    "crates/brainwires-rag/src/code_analysis/repomap/reference_finder.rs",
+    "crates/brainwires-rag/src/rag/indexer/ast_parser.rs",
+    "crates/brainwires-rag/src/rag/indexer/chunker.rs",
+]
+
+[[rule]]
+id = "no_api_key_in_log"
+description = "API-key-shaped strings must never reach tracing/log macros"
+include = ["crates/brainwires-provider/**/*.rs", "crates/brainwires-provider-speech/**/*.rs", "crates/brainwires-hardware/**/*.rs"]
+# Match: tracing macros that interpolate a variable whose name contains "key" or "secret".
+# False positives caught by allow_files below.
+forbid_regex = '''(tracing::(info|warn|error|debug)|info!|warn!|error!|debug!)![^;]*\b(api_key|secret_key|access_key|client_secret|bearer_token)\b'''
+allow_files = []
+
+[[rule]]
+id = "no_unsafe_host_in_default"
+description = "brainwires-sandbox `unsafe-host` feature must never be in the default feature set"
+include = ["crates/brainwires-sandbox/Cargo.toml"]
+forbid_regex = '''(?m)^default\s*=\s*\[[^\]]*"unsafe-host"'''
+allow_files = []

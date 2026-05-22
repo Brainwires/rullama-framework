@@ -29,6 +29,7 @@ pub fn dispatch(args: &[String]) -> ExitCode {
     match args.first().map(|s| s.as_str()) {
         Some("coverage") => coverage(&args[1..]),
         Some("run") => run(&args[1..]),
+        Some("deny-grep") => deny_grep::run(&args[1..]),
         Some("--help" | "-h") | None => {
             print_help();
             ExitCode::SUCCESS
@@ -41,12 +42,15 @@ pub fn dispatch(args: &[String]) -> ExitCode {
     }
 }
 
+mod deny_grep;
+
 fn print_help() {
     println!("Usage: cargo xtask test-harness <subcommand>");
     println!();
     println!("Subcommands:");
     println!("  coverage         Diff FEATURES.md against feature_inventory.toml");
     println!("  run [flags]      Run harness cases via the run-harness binary");
+    println!("  deny-grep        Scan crates/ against .deny-grep.toml forbidden patterns");
     println!();
     println!("Run flags (forwarded to run-harness):");
     println!("  --tier=a|b|c|all   Restrict to one tier (default: all)");

@@ -9,4 +9,6 @@
 //! nothing else in the harness imports it — otherwise the linker drops the
 //! whole module and `inventory::iter::<SecurityCase>()` returns nothing.
 
+pub mod call_policy_budget;
 pub mod sandbox_mount_whitelist;
+pub mod speech_rate_limiter;

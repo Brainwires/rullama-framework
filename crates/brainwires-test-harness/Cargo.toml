@@ -14,7 +14,10 @@ brainwires-test-fixtures = { workspace = true }
 
 # Crates under attack by Tier-B security cases. Add new entries here as the
 # harness expands to cover more invariants.
+brainwires-core = { workspace = true }
 brainwires-sandbox = { workspace = true, default-features = false }
+brainwires-call-policy = { workspace = true, default-features = false }
+brainwires-provider-speech = { workspace = true, default-features = false, features = ["native"] }
 
 async-trait = { workspace = true }
 inventory = { workspace = true }
