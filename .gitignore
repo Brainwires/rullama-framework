@@ -14,3 +14,8 @@ CLAUDE_CODE_INTEGRATION.md
 .env
 .env.*
 !.env.example
+
+# cargo-fuzz: ignore generated artifacts, keep source + corpus.
+fuzz/target/
+fuzz/artifacts/
+fuzz/Cargo.lock

@@ -1,0 +1,60 @@
+[package]
+name = "brainwires-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+# NOTE: this Cargo.toml is intentionally NOT a member of the main workspace
+# at the repo root. cargo-fuzz requires nightly Rust + libfuzzer-sys, which
+# would force the whole workspace onto nightly. Keeping this separate lets
+# stable workspace builds continue to work; fuzz runs use:
+#
+#   cargo +nightly fuzz run <target> -- -max_total_time=60
+#
+# Targets each pick at the most security-relevant parse/decode entry points
+# the Tier-B audit identified.
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+
+# Crates under attack — each target only depends on the minimum it needs.
+brainwires-skills = { path = "../crates/brainwires-skills" }
+brainwires-mcp-client = { path = "../crates/brainwires-mcp-client" }
+# a2a's JSON-RPC types live alongside agent-card types in the same crate.
+brainwires-a2a = { path = "../crates/brainwires-a2a", default-features = false }
+
+[workspace]
+# Empty `[workspace]` table makes this a standalone workspace, independent
+# of the framework's root workspace. Required because cargo-fuzz's
+# libfuzzer-sys pulls in nightly-only features.
+
+[[bin]]
+name = "mcp_jsonrpc_parser"
+path = "fuzz_targets/mcp_jsonrpc_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "a2a_envelope_decoder"
+path = "fuzz_targets/a2a_envelope_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "skill_manifest"
+path = "fuzz_targets/skill_manifest.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "model_loader_header"
+path = "fuzz_targets/model_loader_header.rs"
+test = false
+doc = false
+bench = false
