@@ -18,6 +18,33 @@ use brainwires_tool_runtime::{PreHookDecision, ToolExecutor, ToolPreHook};
 
 use crate::summarization::Summarizer;
 
+/// Rough character-level token estimator for the auto-compact threshold.
+///
+/// Used by [`ChatAgent::with_auto_compact_at`]. The estimator mirrors the
+/// 4-chars-per-token heuristic in `brainwires_call_policy::budget` —
+/// imprecise but cheap and dep-free. When `brainwires-call-policy`'s
+/// `Tokenizer` trait lands (Tier 2.1) this helper should be replaced by
+/// a per-provider tokenizer for ±5% accuracy.
+fn estimate_history_tokens(messages: &[Message]) -> u64 {
+    let mut chars: usize = 0;
+    for m in messages {
+        match &m.content {
+            MessageContent::Text(t) => chars += t.len(),
+            MessageContent::Blocks(blocks) => {
+                for b in blocks {
+                    match b {
+                        ContentBlock::Text { text } => chars += text.len(),
+                        ContentBlock::ToolUse { input, .. } => chars += input.to_string().len(),
+                        ContentBlock::ToolResult { content, .. } => chars += content.len(),
+                        ContentBlock::Image { .. } => chars += 512,
+                    }
+                }
+            }
+        }
+    }
+    (chars as u64) / 4
+}
+
 /// A simple chat agent that processes messages through an LLM provider with tool support.
 ///
 /// This is the framework's ready-to-use agent for text message -> response flows.
@@ -71,6 +98,12 @@ pub struct ChatAgent {
     /// How many trailing messages to preserve verbatim when summarization
     /// runs. Default 6. The first message (if system) is always kept.
     summarization_keep_tail: usize,
+    /// When `Some(n)`, the agent calls [`Self::compact_history`] before
+    /// each provider call if the rough-token estimate of `messages`
+    /// exceeds `n`. The intended value is `0.85 * model_context_window`
+    /// — e.g. `0.85 * 200_000 ≈ 170_000` for a 200k-token context.
+    /// `None` (default) preserves the legacy hands-off behaviour.
+    auto_compact_at_tokens: Option<u64>,
 }
 
 impl ChatAgent {
@@ -94,7 +127,22 @@ impl ChatAgent {
             tool_concurrency: 4,
             summarizer: None,
             summarization_keep_tail: 6,
+            auto_compact_at_tokens: None,
         }
+    }
+
+    /// Enable automatic history compaction when the rough token estimate
+    /// of the conversation exceeds `threshold_tokens`. Compaction uses the
+    /// configured [`Summarizer`] if one is attached, otherwise a plain
+    /// tail-keep trim. Pass `0.85 * model_context_window` for a typical
+    /// safety margin against context-window overflow.
+    ///
+    /// The check runs once per provider call inside `run_completion`, so a
+    /// runaway tool loop that grows history rapidly still gets compacted
+    /// before the next round.
+    pub fn with_auto_compact_at(mut self, threshold_tokens: u64) -> Self {
+        self.auto_compact_at_tokens = Some(threshold_tokens);
+        self
     }
 
     /// Attach a [`Summarizer`]. When set, [`Self::compact_history`] will
@@ -311,6 +359,17 @@ impl ChatAgent {
         let mut final_text = String::new();
 
         for _ in 0..self.max_tool_rounds {
+            // Auto-compact pre-flight: if a threshold is configured and the
+            // rough token estimate of the current history is past it, compact
+            // before issuing the next provider call. Catches the "agent grew
+            // its own history past the context window via tool loops" failure
+            // mode that would otherwise surface as a hard provider error.
+            if let Some(threshold) = self.auto_compact_at_tokens
+                && estimate_history_tokens(&self.messages) > threshold
+            {
+                self.compact_history().await?;
+            }
+
             // Budget pre-flight: stop the loop if any cap has been reached.
             if let Some(ref guard) = self.budget {
                 guard.check_and_tick().map_err(anyhow::Error::from)?;
