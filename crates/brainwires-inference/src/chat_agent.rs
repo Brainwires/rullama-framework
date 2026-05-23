@@ -496,10 +496,51 @@ impl ChatAgent {
                 }
             }
 
-            let result_blocks: Vec<ContentBlock> = slots
+            let mut result_blocks: Vec<ContentBlock> = slots
                 .into_iter()
                 .map(|b| b.expect("every tool use produced a result"))
                 .collect();
+
+            // Tool-error rephrase hint: when any tool returned `is_error=true`,
+            // append a guidance text block so the next iteration's provider
+            // call sees an explicit "try with different inputs" cue instead
+            // of looping on the same args. The previous behaviour was to
+            // surface the error blocks verbatim and let the model figure it
+            // out, which models often didn't — they'd re-call with identical
+            // arguments. The hint catches this without changing the agent
+            // loop's control flow.
+            let failed: Vec<String> = result_blocks
+                .iter()
+                .filter_map(|b| match b {
+                    ContentBlock::ToolResult {
+                        is_error: Some(true),
+                        content,
+                        ..
+                    } => Some(content.clone()),
+                    _ => None,
+                })
+                .collect();
+            if !failed.is_empty() {
+                let joined = failed
+                    .iter()
+                    .map(|c| {
+                        // Cap each error message at 200 chars so a single
+                        // huge stderr dump doesn't crowd the next prompt.
+                        if c.len() > 200 {
+                            format!("{}…", &c[..200])
+                        } else {
+                            c.clone()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                result_blocks.push(ContentBlock::Text {
+                    text: format!(
+                        "[Tool error] {joined}. Reconsider the inputs — try a different \
+                         path, argument, or approach instead of repeating the same call."
+                    ),
+                });
+            }
 
             self.messages.push(Message {
                 role: Role::User,

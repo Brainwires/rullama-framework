@@ -12,6 +12,7 @@ pub mod agent_builder;
 pub mod call_policy_safety;
 pub mod core_types;
 pub mod evaluation_framework;
+pub mod inference_tool_error_hint;
 pub mod mcp_and_tools;
 pub mod mdap_composition;
 pub mod permission_capabilities;
