@@ -25,7 +25,7 @@ mod tokenizer;
 #[cfg(test)]
 mod tests_util;
 
-pub use budget::{BudgetConfig, BudgetGuard, BudgetProvider};
+pub use budget::{BudgetConfig, BudgetGuard, BudgetProvider, KeyedBudgetGuard};
 pub use tokenizer::{HeuristicTokenizer, Tokenizer};
 #[cfg(feature = "tokenizers")]
 pub use tokenizer::{AnthropicTokenizer, OpenAiTokenizer};

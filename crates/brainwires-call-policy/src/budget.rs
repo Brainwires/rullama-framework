@@ -12,6 +12,8 @@
 //! request itself would push us over `max_tokens`. For exact counting, use a
 //! `ModelTokenizer` in a future change.
 
+use std::collections::HashMap;
+use std::hash::Hash;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -19,6 +21,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
+use tokio::sync::Mutex;
 
 use brainwires_core::message::{ChatResponse, Message, StreamChunk, Usage};
 use brainwires_core::provider::{ChatOptions, Provider};
@@ -346,5 +349,134 @@ mod tests {
         ];
         let n = crate::tokenizer::HeuristicTokenizer.count(&msgs);
         assert_eq!(n, 40);
+    }
+}
+
+// ── KeyedBudgetGuard ─────────────────────────────────────────────────────────
+
+/// Per-caller budget tracking. Each unique `K` (e.g. `user_id`, `tenant_id`)
+/// gets its own private [`BudgetGuard`] with the same per-key caps.
+///
+/// Concurrent callers with different keys are fully isolated — exhausting
+/// user A's quota does not affect user B. Concurrent callers sharing a key
+/// see the same shared atomic counters (since [`BudgetGuard`] is `Clone`
+/// via `Arc`-bump).
+///
+/// Example:
+///
+/// ```rust,no_run
+/// use brainwires_call_policy::{BudgetConfig, BudgetProvider, KeyedBudgetGuard};
+/// # use brainwires_core::Provider; use std::sync::Arc;
+/// # async fn example(real_provider: Arc<dyn Provider>) -> anyhow::Result<()> {
+/// let kbg = KeyedBudgetGuard::<String>::new(BudgetConfig {
+///     max_rounds: Some(3),
+///     ..Default::default()
+/// });
+/// let user_a_guard = kbg.for_key(&"user_a".to_string()).await;
+/// let provider_for_a = Arc::new(BudgetProvider::new(real_provider, user_a_guard));
+/// # let _ = provider_for_a;
+/// # Ok(()) }
+/// ```
+pub struct KeyedBudgetGuard<K: Hash + Eq + Clone + Send + Sync + 'static> {
+    cfg: BudgetConfig,
+    guards: Arc<Mutex<HashMap<K, BudgetGuard>>>,
+}
+
+impl<K: Hash + Eq + Clone + Send + Sync + 'static> KeyedBudgetGuard<K> {
+    /// Create a fresh keyed guard. Every key starts with a fresh
+    /// [`BudgetGuard`] configured with `cfg`; per-key counters are
+    /// allocated lazily on first `for_key` lookup.
+    pub fn new(cfg: BudgetConfig) -> Self {
+        Self {
+            cfg,
+            guards: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Return the [`BudgetGuard`] for `key`, creating one on first access.
+    /// Subsequent calls for the same key return a guard sharing the same
+    /// atomic counters.
+    pub async fn for_key(&self, key: &K) -> BudgetGuard {
+        let mut guards = self.guards.lock().await;
+        guards
+            .entry(key.clone())
+            .or_insert_with(|| BudgetGuard::new(self.cfg.clone()))
+            .clone()
+    }
+
+    /// Lookup without creating — returns `None` if the key hasn't been
+    /// observed yet.
+    pub async fn try_get(&self, key: &K) -> Option<BudgetGuard> {
+        let guards = self.guards.lock().await;
+        guards.get(key).cloned()
+    }
+
+    /// Number of distinct keys currently tracked.
+    pub async fn len(&self) -> usize {
+        self.guards.lock().await.len()
+    }
+
+    /// Whether no keys are tracked yet.
+    pub async fn is_empty(&self) -> bool {
+        self.guards.lock().await.is_empty()
+    }
+
+    /// The shared budget configuration applied to every per-key guard.
+    pub fn config(&self) -> &BudgetConfig {
+        &self.cfg
+    }
+}
+
+impl<K: Hash + Eq + Clone + Send + Sync + 'static> Clone for KeyedBudgetGuard<K> {
+    fn clone(&self) -> Self {
+        Self {
+            cfg: self.cfg.clone(),
+            guards: Arc::clone(&self.guards),
+        }
+    }
+}
+
+#[cfg(test)]
+mod keyed_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn distinct_keys_are_isolated() {
+        let kbg: KeyedBudgetGuard<&'static str> = KeyedBudgetGuard::new(BudgetConfig {
+            max_rounds: Some(2),
+            ..Default::default()
+        });
+        let a = kbg.for_key(&"alice").await;
+        let b = kbg.for_key(&"bob").await;
+        a.check_and_tick().unwrap();
+        a.check_and_tick().unwrap();
+        // Alice is exhausted; Bob must still have full quota.
+        assert!(a.check().is_err());
+        assert!(b.check().is_ok());
+        b.check_and_tick().unwrap();
+        assert!(b.check().is_ok());
+    }
+
+    #[tokio::test]
+    async fn same_key_shares_counters() {
+        let kbg: KeyedBudgetGuard<String> = KeyedBudgetGuard::new(BudgetConfig {
+            max_rounds: Some(2),
+            ..Default::default()
+        });
+        let h1 = kbg.for_key(&"x".to_string()).await;
+        let h2 = kbg.for_key(&"x".to_string()).await;
+        h1.check_and_tick().unwrap();
+        h2.check_and_tick().unwrap();
+        // Two distinct handles, same counter — third tick must reject.
+        assert!(h1.check().is_err());
+        assert!(h2.check().is_err());
+    }
+
+    #[tokio::test]
+    async fn try_get_is_lookup_only() {
+        let kbg: KeyedBudgetGuard<&'static str> = KeyedBudgetGuard::new(BudgetConfig::default());
+        assert!(kbg.try_get(&"unseen").await.is_none());
+        let _ = kbg.for_key(&"seen").await;
+        assert!(kbg.try_get(&"seen").await.is_some());
     }
 }
