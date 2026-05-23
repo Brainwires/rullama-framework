@@ -51,4 +51,14 @@ pub enum ResilienceError {
         #[source]
         source: anyhow::Error,
     },
+
+    /// Every provider in a [`crate::FailoverProvider`] chain was attempted
+    /// and none returned a usable response.
+    #[error("failover exhausted ({attempts} provider(s) tried): {errors_summary}")]
+    FailoverExhausted {
+        /// Number of providers attempted before giving up.
+        attempts: usize,
+        /// Concatenated `name: error` summary for each attempted provider.
+        errors_summary: String,
+    },
 }

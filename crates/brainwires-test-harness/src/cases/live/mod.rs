@@ -6,6 +6,7 @@
 
 pub mod anthropic_chat;
 pub mod anthropic_streaming;
+pub mod failover_live;
 pub mod keyed_budget_live;
 pub mod ollama_chat;
 pub mod ollama_stream_cancel;

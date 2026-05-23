@@ -19,6 +19,7 @@ mod cache;
 mod circuit;
 mod classify;
 mod error;
+mod failover;
 mod retry;
 mod tokenizer;
 
@@ -26,6 +27,7 @@ mod tokenizer;
 mod tests_util;
 
 pub use budget::{BudgetConfig, BudgetGuard, BudgetProvider, KeyedBudgetGuard};
+pub use failover::FailoverProvider;
 pub use tokenizer::{HeuristicTokenizer, Tokenizer};
 #[cfg(feature = "tokenizers")]
 pub use tokenizer::{AnthropicTokenizer, OpenAiTokenizer};
