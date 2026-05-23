@@ -194,10 +194,19 @@ impl OpenAiClient {
 
         if !response.status().is_success() {
             let status = response.status();
+            let retry_hint = crate::anthropic::extract_retry_after_hint(response.headers());
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
+            if let Some(hint) = retry_hint {
+                anyhow::bail!(
+                    "OpenAI API error ({}): retry-after: {} — {}",
+                    status,
+                    hint,
+                    error_text
+                );
+            }
             anyhow::bail!("OpenAI API error ({}): {}", status, error_text);
         }
 

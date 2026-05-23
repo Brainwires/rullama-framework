@@ -730,9 +730,10 @@ coverage_via = "safety"
 section = "Safety"
 feature_id = "safety"
 crate_name = "brainwires-call-policy"
-description = "BudgetGuard caps + record_usage + reset lifecycle"
+description = "BudgetGuard caps + record_usage + reset lifecycle; Retry-After honoured"
 required_cases = [
     "brainwires_test_harness::cases::call_policy_safety::budget_guard_caps_record_check_reset",
+    "brainwires_test_harness::cases::retry_after::RetryObeysRetryAfterHeader",
 ]
 
 [[feature]]

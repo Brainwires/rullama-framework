@@ -14,6 +14,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use futures::stream::{BoxStream, StreamExt};
 use reqwest::Client;
+use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -328,10 +329,20 @@ impl AnthropicClient {
 
         if !response.status().is_success() {
             let status = response.status();
+            let retry_hint = extract_retry_after_hint(response.headers());
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
+            if let Some(hint) = retry_hint {
+                anyhow::bail!(
+                    "{} API error ({}): retry-after: {} — {}",
+                    self.backend_label(),
+                    status,
+                    hint,
+                    error_text
+                );
+            }
             anyhow::bail!(
                 "{} API error ({}): {}",
                 self.backend_label(),
@@ -367,8 +378,16 @@ impl AnthropicClient {
 
             if !response.status().is_success() {
                 let status = response.status();
+                let retry_hint = extract_retry_after_hint(response.headers());
                 let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                yield Err(anyhow::anyhow!("{} API error ({}): {}", self.backend_label(), status, error_text));
+                if let Some(hint) = retry_hint {
+                    yield Err(anyhow::anyhow!(
+                        "{} API error ({}): retry-after: {} — {}",
+                        self.backend_label(), status, hint, error_text
+                    ));
+                } else {
+                    yield Err(anyhow::anyhow!("{} API error ({}): {}", self.backend_label(), status, error_text));
+                }
                 return;
             }
 
@@ -729,6 +748,51 @@ impl ModelLister for AnthropicModelLister {
 
         Ok(all_models)
     }
+}
+
+/// Extract a retry-after hint from a 429 / 503 response's headers.
+///
+/// Checks (in order): `Retry-After`, then the OpenAI/Anthropic
+/// `x-ratelimit-reset-requests` / `x-ratelimit-reset-tokens` headers.
+/// Returns a human-readable string suitable for embedding in the error
+/// message — the retry decorator's `parse_retry_after` then extracts the
+/// number of seconds from that string. Returns `None` if no recognised
+/// header is present.
+pub(crate) fn extract_retry_after_hint(headers: &HeaderMap) -> Option<String> {
+    // Standard HTTP `Retry-After` header — either "N" (seconds) or an
+    // HTTP-date. We only handle the seconds form here.
+    if let Some(v) = headers.get(reqwest::header::RETRY_AFTER)
+        && let Ok(s) = v.to_str()
+        && s.trim().chars().all(|c| c.is_ascii_digit())
+    {
+        return Some(s.trim().to_string());
+    }
+    // OpenAI / Anthropic style: x-ratelimit-reset-{tokens,requests} report
+    // the duration until quota resets (e.g. "2s", "150ms").
+    for name in ["x-ratelimit-reset-requests", "x-ratelimit-reset-tokens"] {
+        if let Some(v) = headers.get(name)
+            && let Ok(s) = v.to_str()
+        {
+            // Strip trailing `s` or `ms` and produce an integer second
+            // count so `parse_retry_after` finds it.
+            let trimmed = s.trim();
+            if let Some(stripped) = trimmed.strip_suffix("ms") {
+                if let Ok(ms) = stripped.trim().parse::<u64>() {
+                    // Round up to the nearest second so the retry waits
+                    // long enough.
+                    let secs = ms.div_ceil(1000).max(1);
+                    return Some(secs.to_string());
+                }
+            } else if let Some(stripped) = trimmed.strip_suffix('s') {
+                if let Ok(secs) = stripped.trim().parse::<u64>() {
+                    return Some(secs.to_string());
+                }
+            } else if let Ok(secs) = trimmed.parse::<u64>() {
+                return Some(secs.to_string());
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
