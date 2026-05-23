@@ -51,6 +51,7 @@ pub async fn process_chat_stream(
         model: None,
         cache_strategy: Default::default(),
         request_id: None,
+        cancel: None,
     };
 
     let mut stream = provider.stream_chat(

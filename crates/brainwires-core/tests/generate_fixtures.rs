@@ -128,6 +128,7 @@ fn generate_json_fixtures() {
         model: None,
         cache_strategy: Default::default(),
         request_id: None,
+        cancel: None,
     };
     write_fixture(&fixtures_dir, "chat_options_custom", &custom_opts);
 

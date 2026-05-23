@@ -557,6 +557,7 @@ mod tests {
             model: None,
             cache_strategy: Default::default(),
             request_id: None,
+            cancel: None,
         };
 
         let req = GoogleChatProvider::build_request(&messages, None, &options);
@@ -583,6 +584,7 @@ mod tests {
             model: None,
             cache_strategy: Default::default(),
             request_id: None,
+            cancel: None,
         };
 
         let req = GoogleChatProvider::build_request(&messages, None, &options);
@@ -606,6 +608,7 @@ mod tests {
             model: None,
             cache_strategy: Default::default(),
             request_id: None,
+            cancel: None,
         };
 
         let req = GoogleChatProvider::build_request(&messages, None, &options);

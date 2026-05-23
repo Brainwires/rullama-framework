@@ -33,6 +33,7 @@ schemars = { workspace = true, optional = true }
 # the filesystem-backed `workflow_state` module are only compiled off-wasm.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { workspace = true, features = ["fs", "sync"] }
+tokio-util = { workspace = true }
 dirs = { workspace = true }
 # `file_context` (Phase 9 move from brainwires-storage) hashes content with sha256.
 sha2 = { workspace = true }
@@ -45,6 +46,10 @@ sha2 = { workspace = true }
 getrandom = { version = "0.2", features = ["js"] }
 chrono = { workspace = true, features = ["wasmbind"] }
 uuid = { workspace = true, features = ["v4", "serde", "js"] }
+# `CancellationToken` is sync-only and works on wasm too; we still need the
+# dep there so the `cancel: Option<CancellationToken>` field on
+# `ChatOptions` compiles uniformly across targets.
+tokio-util = { workspace = true }
 
 [features]
 default = ["native"]

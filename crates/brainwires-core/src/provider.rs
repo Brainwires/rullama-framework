@@ -95,6 +95,15 @@ pub struct ChatOptions {
     /// `cost_by_request(id)` can pull every event for one request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
+    /// Cooperative cancellation handle for `stream_chat`. When the token
+    /// cancels, the provider stops emitting chunks at the next
+    /// poll-point and drops the underlying HTTP connection. Has no
+    /// effect on the non-streaming `chat` call (use `tokio::select!`
+    /// against the future instead).
+    ///
+    /// Not serialised — only meaningful inside one process.
+    #[serde(skip)]
+    pub cancel: Option<tokio_util::sync::CancellationToken>,
 }
 
 impl Default for ChatOptions {
@@ -108,6 +117,7 @@ impl Default for ChatOptions {
             model: None,
             cache_strategy: CacheStrategy::default(),
             request_id: None,
+            cancel: None,
         }
     }
 }
@@ -158,6 +168,14 @@ impl ChatOptions {
     /// the resulting tokens / cost to this specific call.
     pub fn request_id<S: Into<String>>(mut self, request_id: S) -> Self {
         self.request_id = Some(request_id.into());
+        self
+    }
+
+    /// Attach a cancellation token to `stream_chat`. Cancelling stops
+    /// chunk delivery at the next poll-point and drops the upstream HTTP
+    /// connection.
+    pub fn cancel_with(mut self, token: tokio_util::sync::CancellationToken) -> Self {
+        self.cancel = Some(token);
         self
     }
 

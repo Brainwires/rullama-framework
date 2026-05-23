@@ -303,8 +303,28 @@ impl Provider for OllamaProvider {
             // Parse streaming response (newline-delimited JSON)
             let mut stream = response.bytes_stream();
             let mut buffer = String::new();
+            let cancel = options.cancel.clone();
 
-            while let Some(chunk_result) = stream.next().await {
+            'outer: loop {
+                // Honour the caller's cancellation token. Dropping `stream`
+                // on exit cancels the underlying HTTP body — reqwest's
+                // `bytes_stream` closes the connection when its receiver
+                // is dropped.
+                let chunk_result = if let Some(ref token) = cancel {
+                    tokio::select! {
+                        biased;
+                        _ = token.cancelled() => { break 'outer; }
+                        next = stream.next() => match next {
+                            Some(r) => r,
+                            None => break 'outer,
+                        },
+                    }
+                } else {
+                    match stream.next().await {
+                        Some(r) => r,
+                        None => break 'outer,
+                    }
+                };
                 let chunk = match chunk_result {
                     Ok(c) => c,
                     Err(e) => {

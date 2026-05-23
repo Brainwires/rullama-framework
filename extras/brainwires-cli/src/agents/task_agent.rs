@@ -1108,6 +1108,7 @@ impl TaskAgent {
             model: None,
             cache_strategy: Default::default(),
             request_id: None,
+            cancel: None,
         };
 
         self.provider
