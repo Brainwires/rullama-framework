@@ -11,4 +11,5 @@ pub mod ollama_streaming;
 pub mod ollama_tool_dispatch;
 pub mod openai_chat;
 pub mod openai_streaming;
+pub mod tokenizer_accuracy;
 pub mod usage_token_counts;

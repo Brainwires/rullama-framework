@@ -16,7 +16,7 @@ brainwires-test-fixtures = { workspace = true }
 # harness expands to cover more invariants.
 brainwires-core = { workspace = true }
 brainwires-sandbox = { workspace = true, default-features = false }
-brainwires-call-policy = { workspace = true, default-features = false }
+brainwires-call-policy = { workspace = true, default-features = false, features = ["tokenizers"] }
 brainwires-provider-speech = { workspace = true, default-features = false, features = ["native"] }
 brainwires-permission = { workspace = true }
 brainwires-network = { workspace = true }

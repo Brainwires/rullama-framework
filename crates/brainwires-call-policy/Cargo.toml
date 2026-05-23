@@ -26,12 +26,16 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 rand = "0.8"
 rusqlite = { workspace = true, optional = true }
+tiktoken-rs = { workspace = true, optional = true }
 
 [features]
 default = ["native"]
 native = []
 wasm = []
 cache = ["dep:rusqlite"]
+# Enables `OpenAiTokenizer` / `AnthropicTokenizer` (tiktoken-rs-backed).
+# Off by default so the wasm32 surface stays dep-free.
+tokenizers = ["dep:tiktoken-rs"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }

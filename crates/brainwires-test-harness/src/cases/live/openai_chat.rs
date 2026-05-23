@@ -32,12 +32,18 @@ impl EvaluationCase for OpenAiChatRoundtrip {
         let started = std::time::Instant::now();
         let client = Arc::new(OpenAiClient::new(key, model.clone()));
         let provider = OpenAiChatProvider::new(client, model.clone());
-        let messages = vec![Message::user("Reply with one word: hi")];
+        // Concrete deterministic prompt — gpt-5-nano sometimes returns
+        // empty visible content for vague single-word prompts because
+        // the reasoning step decides "no output needed". An explicit
+        // sentence-shape ask is far more reliable.
+        let messages = vec![Message::user(
+            "What is the capital city of France? Reply in exactly one word.",
+        )];
         // gpt-5 reasoning models spend tokens on internal chain-of-thought
         // before producing visible output, so a small cap leaves nothing for
-        // the visible answer. 512 is enough for a one-word reply with
-        // generous reasoning budget, and still well under a cent per call.
-        let opts = ChatOptions::default().model(model).max_tokens(512);
+        // the visible answer. 1024 keeps cost negligible (well under a
+        // cent) while giving the model enough headroom to finish reasoning.
+        let opts = ChatOptions::default().model(model).max_tokens(1024);
         let response = provider.chat(&messages, None, &opts).await?;
         let elapsed = started.elapsed().as_millis() as u64;
         let text = response.message.text().unwrap_or("").to_string();

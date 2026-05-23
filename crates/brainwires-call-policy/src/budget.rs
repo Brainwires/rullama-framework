@@ -20,11 +20,12 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
 
-use brainwires_core::message::{ChatResponse, Message, MessageContent, StreamChunk, Usage};
+use brainwires_core::message::{ChatResponse, Message, StreamChunk, Usage};
 use brainwires_core::provider::{ChatOptions, Provider};
 use brainwires_core::tool::Tool;
 
 use crate::error::ResilienceError;
+use crate::tokenizer::{HeuristicTokenizer, Tokenizer};
 
 /// Caps to enforce on a single [`BudgetGuard`].
 ///
@@ -151,15 +152,40 @@ impl BudgetGuard {
 }
 
 /// A `Provider` decorator that enforces a [`BudgetGuard`] around every call.
+///
+/// The pre-flight token check uses a pluggable [`Tokenizer`] so callers can
+/// trade off accuracy vs. dependency weight. The default `new` ctor wires
+/// up a [`HeuristicTokenizer`] (chars / 4) for backwards-compatible
+/// behaviour; for exact per-provider counting use `with_tokenizer`.
 pub struct BudgetProvider<P: Provider + ?Sized> {
     inner: Arc<P>,
     guard: BudgetGuard,
+    tokenizer: Arc<dyn Tokenizer>,
 }
 
 impl<P: Provider + ?Sized> BudgetProvider<P> {
-    /// Wrap a provider with a budget guard.
+    /// Wrap a provider with a budget guard. Token pre-flight uses the
+    /// cheap chars/4 heuristic; for provider-accurate counts use
+    /// [`Self::with_tokenizer`].
     pub fn new(inner: Arc<P>, guard: BudgetGuard) -> Self {
-        Self { inner, guard }
+        Self {
+            inner,
+            guard,
+            tokenizer: Arc::new(HeuristicTokenizer),
+        }
+    }
+
+    /// Wrap a provider with a budget guard and a specific tokenizer.
+    pub fn with_tokenizer(
+        inner: Arc<P>,
+        guard: BudgetGuard,
+        tokenizer: Arc<dyn Tokenizer>,
+    ) -> Self {
+        Self {
+            inner,
+            guard,
+            tokenizer,
+        }
     }
 
     /// Access the shared guard — useful for inspecting usage or resetting.
@@ -171,35 +197,10 @@ impl<P: Provider + ?Sized> BudgetProvider<P> {
     pub fn inner(&self) -> &Arc<P> {
         &self.inner
     }
-}
 
-/// Rough character-level estimate of message payload size.
-///
-/// Used only to reject requests whose raw payload already exceeds the token
-/// cap — real token counting belongs in a provider-specific tokenizer.
-fn approx_input_tokens(messages: &[Message]) -> u64 {
-    let mut chars: usize = 0;
-    for m in messages {
-        match &m.content {
-            MessageContent::Text(t) => chars += t.len(),
-            MessageContent::Blocks(blocks) => {
-                for b in blocks {
-                    chars += approx_block_len(b);
-                }
-            }
-        }
-    }
-    // ~4 chars per token is the standard BPE heuristic.
-    (chars as u64) / 4
-}
-
-fn approx_block_len(b: &brainwires_core::ContentBlock) -> usize {
-    use brainwires_core::ContentBlock::*;
-    match b {
-        Text { text } => text.len(),
-        ToolUse { input, .. } => input.to_string().len(),
-        ToolResult { content, .. } => content.len(),
-        Image { .. } => 512, // flat image budget; real counting needs vision tokenizer
+    /// Access the configured tokenizer.
+    pub fn tokenizer(&self) -> &Arc<dyn Tokenizer> {
+        &self.tokenizer
     }
 }
 
@@ -225,7 +226,8 @@ impl<P: Provider + ?Sized + 'static> Provider for BudgetProvider<P> {
         // token cap. Completion tokens aren't known yet, so we only compare
         // inputs-consumed against the limit.
         if let Some(limit) = self.guard.cfg.max_tokens {
-            let projected = self.guard.tokens_consumed() + approx_input_tokens(messages);
+            let projected =
+                self.guard.tokens_consumed() + self.tokenizer.count(messages) as u64;
             if projected > limit {
                 return Err(ResilienceError::BudgetExceeded {
                     kind: "tokens",
@@ -260,7 +262,7 @@ impl<P: Provider + ?Sized + 'static> Provider for BudgetProvider<P> {
         }
 
         if let Some(limit) = guard.cfg.max_tokens {
-            let projected = guard.tokens_consumed() + approx_input_tokens(messages);
+            let projected = guard.tokens_consumed() + self.tokenizer.count(messages) as u64;
             if projected > limit {
                 let err = ResilienceError::BudgetExceeded {
                     kind: "tokens",
@@ -338,11 +340,11 @@ mod tests {
     }
 
     #[test]
-    fn approx_tokens_text_and_blocks() {
+    fn heuristic_tokens_text_and_blocks() {
         let msgs = vec![
             Message::user("abcd".repeat(40)), // 160 chars → ~40 tokens
         ];
-        let n = approx_input_tokens(&msgs);
+        let n = crate::tokenizer::HeuristicTokenizer.count(&msgs);
         assert_eq!(n, 40);
     }
 }
