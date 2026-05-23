@@ -1,6 +1,7 @@
 //! Internal transport abstraction layer for NornicDB.
 //!
-//! Defines the [`NornicTransport`] trait and three concrete implementations:
+//! Defines the `NornicTransport` trait (internal to `nornicdb`) and three
+//! concrete implementations:
 //!
 //! | Transport       | Feature gate        | Protocol          |
 //! |-----------------|---------------------|-------------------|

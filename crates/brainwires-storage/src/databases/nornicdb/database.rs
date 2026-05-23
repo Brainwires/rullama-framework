@@ -25,7 +25,8 @@ use super::transport::GrpcTransport;
 
 /// NornicDB-backed vector database.
 ///
-/// Wraps a [`NornicTransport`] trait object and implements the generic
+/// Wraps a `NornicTransport` trait object (internal — see `transport.rs`)
+/// and implements the generic
 /// [`VectorDatabase`] trait.  NornicDB-specific extensions (graph
 /// relationships, cognitive tiers, raw Cypher) are available as inherent
 /// methods.

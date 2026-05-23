@@ -225,7 +225,7 @@ impl ChatAgent {
     }
 
     /// Process a user message and return both the assistant text AND a
-    /// [`TurnReport`] of token / duration usage for this single turn.
+    /// [`TurnReport`](brainwires_core::TurnReport) of token / duration usage for this single turn.
     ///
     /// The report is computed by snapshotting `cumulative_usage` before
     /// and after the turn, plus measuring wall-clock duration. Useful

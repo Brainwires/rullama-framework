@@ -2,7 +2,7 @@
 //!
 //! The [`WebRtcSignaling`] trait decouples how WebRTC negotiation messages travel
 //! from the `WebRtcSession` itself. Adapters can implement it over any transport:
-//! WebSocket, A2A JSON-RPC, or even encoded inside regular [`ChannelMessage`]s.
+//! WebSocket, A2A JSON-RPC, or even encoded inside regular [`ChannelMessage`](crate::channels::message::ChannelMessage)s.
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -70,7 +70,7 @@ impl SignalingMessage {
 /// - [`BroadcastSignaling`] — in-process broadcast channel; ideal for testing and
 ///   for gateways that act as the signaling intermediary between two sessions.
 /// - [`ChannelMessageSignaling`] — encodes signaling as JSON inside a regular
-///   [`ChannelMessage`](crate::message::ChannelMessage) with a well-known metadata
+///   [`ChannelMessage`](crate::channels::message::ChannelMessage)(crate::message::ChannelMessage) with a well-known metadata
 ///   key, allowing signaling to flow through any existing adapter without changes.
 #[async_trait]
 pub trait WebRtcSignaling: Send + Sync {
@@ -150,7 +150,7 @@ impl WebRtcSignaling for BroadcastSignaling {
 // ── ChannelMessageSignaling ───────────────────────────────────────────────────
 
 /// Signaling that encodes WebRTC negotiation messages as JSON inside regular
-/// [`ChannelMessage`](crate::message::ChannelMessage)s.
+/// [`ChannelMessage`](crate::channels::message::ChannelMessage)(crate::message::ChannelMessage)s.
 ///
 /// Messages are identified by the metadata key `"_bw_webrtc_signaling"` set to `"1"`.
 /// This allows signaling to flow through any existing channel adapter (Discord, Telegram,

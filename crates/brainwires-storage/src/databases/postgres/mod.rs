@@ -53,7 +53,7 @@ pub struct PostgresDatabase {
 impl PostgresDatabase {
     /// Create a new client connected to the default local PostgreSQL instance.
     ///
-    /// Connects to [`DEFAULT_URL`] (`postgresql://localhost:5432/brainwires`)
+    /// Connects to `DEFAULT_URL` (`postgresql://localhost:5432/brainwires`)
     /// and uses the default table name `code_embeddings`.
     pub async fn new() -> Result<Self> {
         Self::with_url(DEFAULT_URL).await

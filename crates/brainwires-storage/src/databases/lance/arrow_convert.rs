@@ -1,7 +1,7 @@
 //! Arrow ↔ Record conversion helpers for LanceDB.
 //!
-//! These functions translate between the generic [`Record`](super::super::types::Record)
-//! / [`FieldDef`](super::super::types::FieldDef) types and Apache Arrow's
+//! These functions translate between the generic `Record` / `FieldDef` types
+//! (see [`crate::databases::types`]) and Apache Arrow's
 //! `RecordBatch` / `Schema` types that LanceDB operates on.
 
 use anyhow::Result;

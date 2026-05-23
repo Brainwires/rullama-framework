@@ -32,7 +32,8 @@ use crate::databases::traits::{ChunkMetadata, DatabaseStats, SearchResult, Vecto
 
 /// Pinecone REST API vector database client.
 ///
-/// Implements [`VectorDatabase`] only (no [`StorageBackend`] — Pinecone is a
+/// Implements [`VectorDatabase`] only (no
+/// [`StorageBackend`](crate::databases::traits::StorageBackend) — Pinecone is a
 /// pure vector store with no relational query support).
 pub struct PineconeDatabase {
     /// Base URL of the Pinecone index (e.g. `https://my-index-abc.svc.pinecone.io`).

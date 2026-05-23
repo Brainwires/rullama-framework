@@ -2,9 +2,9 @@
 //!
 //! Two traits define the database capabilities:
 //!
-//! - [`StorageBackend`](self::StorageBackend) — generic CRUD + vector search for domain stores
+//! - [`StorageBackend`] — generic CRUD + vector search for domain stores
 //!   (conversations, messages, tasks, plans, etc.)
-//! - [`VectorDatabase`](self::VectorDatabase) — RAG-style embedding storage with hybrid search
+//! - [`VectorDatabase`] — RAG-style embedding storage with hybrid search
 //!   for the codebase indexing subsystem
 //!
 //! A single database struct (e.g. `LanceDatabase`, `PostgresDatabase`) can

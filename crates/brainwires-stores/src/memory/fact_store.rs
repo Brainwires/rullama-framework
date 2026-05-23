@@ -1,6 +1,6 @@
 //! Persistent storage for cold tier key facts
 //!
-//! Uses a [`StorageBackend`](brainwires_storage::StorageBackend) for persistence with semantic search capability.
+//! Uses a [`brainwires_storage::StorageBackend`] for persistence with semantic search capability.
 
 use anyhow::{Context, Result};
 use std::sync::Arc;

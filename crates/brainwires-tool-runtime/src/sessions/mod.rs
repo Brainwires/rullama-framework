@@ -6,7 +6,7 @@
 //! research task it wants to delegate and poll later).
 //!
 //! Session state lives outside this crate (in the gateway, typically), so
-//! this module only defines the tool schemas plus a [`SessionBroker`] trait
+//! this module only defines the tool schemas plus a [`SessionBroker`](brainwires_stores::session::broker::SessionBroker) trait
 //! that the host implements over its actual registry.
 
 // SessionBroker / SessionId / SessionMessage / SessionSummary / SpawnRequest /

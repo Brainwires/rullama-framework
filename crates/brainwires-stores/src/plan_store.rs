@@ -1,6 +1,6 @@
 //! Plan Store - Persists execution plans with conversation association
 //!
-//! Plans are stored via a [`StorageBackend`](brainwires_storage::databases::StorageBackend) for querying and linked to conversations.
+//! Plans are stored via a [`brainwires_storage::databases::StorageBackend`] for querying and linked to conversations.
 //! They can also be exported as Markdown files for human readability.
 
 use anyhow::{Context, Result};

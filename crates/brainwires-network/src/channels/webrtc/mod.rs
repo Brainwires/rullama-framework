@@ -79,7 +79,7 @@ use crate::channels::identity::ConversationId;
 
 /// Extension trait for channel adapters that support real-time WebRTC media.
 ///
-/// Implementors also implement [`Channel`](crate::traits::Channel).
+/// Implementors also implement [`Channel`](crate::channels::traits::Channel).
 /// The framework identifies WebRTC-capable channels by checking
 /// `capabilities().contains(ChannelCapabilities::VOICE | ChannelCapabilities::VIDEO)`.
 ///

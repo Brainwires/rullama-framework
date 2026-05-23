@@ -17,7 +17,7 @@ const DROP_WARN_EVERY: u64 = 1_000;
 ///
 /// Stores up to `capacity` events, evicting the oldest when full. Eviction is
 /// counted via [`dropped_count`](Self::dropped_count) and a `tracing::warn!`
-/// is emitted on the first drop and once per [`DROP_WARN_EVERY`] thereafter.
+/// is emitted on the first drop and once per `DROP_WARN_EVERY` (`1_000`) thereafter.
 /// Useful for testing and embedded scenarios where persistence is not needed.
 pub struct MemoryAnalyticsSink {
     capacity: usize,

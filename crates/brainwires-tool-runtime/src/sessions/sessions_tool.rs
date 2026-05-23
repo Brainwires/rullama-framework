@@ -1,5 +1,6 @@
 //! [`SessionsTool`] — bundles `sessions_list`, `sessions_history`,
-//! `sessions_send`, and `sessions_spawn` over a [`SessionBroker`].
+//! `sessions_send`, and `sessions_spawn` over a
+//! [`SessionBroker`](brainwires_stores::session::broker::SessionBroker).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -32,7 +33,7 @@ pub const MAX_HISTORY_LIMIT: usize = 500;
 const DEFAULT_HISTORY_LIMIT: usize = 50;
 
 /// Bundle of four session-control tools, all backed by a single
-/// [`SessionBroker`].
+/// [`SessionBroker`](brainwires_stores::session::broker::SessionBroker).
 ///
 /// Construct one per agent session so the tool call sites know which session
 /// is "self" (for the `sessions_send` recursion check and for `sessions_spawn`

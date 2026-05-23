@@ -207,8 +207,10 @@ impl VideoTrack {
 /// A handle to an incoming remote media track from a WebRTC PeerConnection.
 ///
 /// Use [`poll`](RemoteTrack::poll) to receive RTP packets and lifecycle events.
-/// The track is available via [`WebRtcSession::get_remote_track`] after a
-/// [`ChannelEvent::TrackAdded`](crate::events::ChannelEvent::TrackAdded) is received.
+/// The track is available via `WebRtcSession::get_remote_track` after a
+/// `ChannelEvent::TrackAdded` is received (see the `channels::events`
+/// module for the event type and `channels::webrtc::session` for the
+/// session type).
 pub struct RemoteTrack {
     /// Unique identifier for this track.
     pub id: TrackId,

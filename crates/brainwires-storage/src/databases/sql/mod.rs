@@ -1,8 +1,11 @@
 //! Shared SQL generation layer for SQL-based database backends.
 //!
-//! This module provides a [`SqlDialect`] trait and a set of builder functions
-//! that generate parameterized SQL statements from the backend-agnostic
-//! [`Filter`], [`FieldDef`], and [`FieldValue`] types.
+//! This module provides a [`SqlDialect`](crate::databases::sql::SqlDialect)
+//! trait and a set of builder functions that generate parameterized SQL
+//! statements from the backend-agnostic
+//! [`Filter`](crate::databases::types::Filter),
+//! [`FieldDef`](crate::databases::types::FieldDef), and
+//! [`FieldValue`](crate::databases::types::FieldValue) types.
 //!
 //! Each SQL backend provides its own dialect implementation that handles
 //! differences in placeholder syntax, identifier quoting, and type mapping:
@@ -17,9 +20,10 @@
 //!   of hand-writing SQL strings.
 //! - **Parameterized queries only** — values are always passed as bind
 //!   parameters, never interpolated into the query string.
-//! - **Dialect-agnostic filter tree** — the recursive [`filter_to_sql`]
-//!   function walks a [`Filter`] tree and emits the correct SQL for any
-//!   dialect.
+//! - **Dialect-agnostic filter tree** — the recursive
+//!   [`filter_to_sql`](crate::databases::sql::filter_to_sql) function walks
+//!   a [`Filter`](crate::databases::types::Filter) tree and emits the
+//!   correct SQL for any dialect.
 
 pub mod mysql;
 pub mod postgres;

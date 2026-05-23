@@ -6,10 +6,10 @@
 //!
 //! ## Design
 //!
-//! - [`EmailIdentity`] stores the agent's email address and display name.
-//! - [`EmailMessage`] is a language-agnostic representation of an email.
-//! - [`EmailProvider`] is an async trait for send + poll backends.
-//! - [`HttpEmailProvider`] is a generic REST client that works with any
+//! - [`EmailIdentity`](crate::identity::email::EmailIdentity) stores the agent's email address and display name.
+//! - [`EmailMessage`](crate::identity::email::EmailMessage) is a language-agnostic representation of an email.
+//! - [`EmailProvider`](crate::identity::email::EmailProvider) is an async trait for send + poll backends.
+//! - [`HttpEmailProvider`](crate::identity::email::HttpEmailProvider) is a generic REST client that works with any
 //!   transactional email service: AgentMail, Mailgun, Postmark, Resend,
 //!   SendGrid, or a custom endpoint.
 //!

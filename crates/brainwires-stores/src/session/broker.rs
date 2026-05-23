@@ -1,7 +1,7 @@
 //! Interactive surface for live session orchestration.
 //!
 //! [`SessionStore`](crate::SessionStore) is the **persistence** side of the
-//! session abstraction: load/save the messages of one session. [`SessionBroker`]
+//! session abstraction: load/save the messages of one session. [`SessionBroker`](self::SessionBroker)
 //! is the **interactive** side: list peers, read history, push a message, or
 //! spawn a child session — all against a host-provided live session registry.
 //!
@@ -13,7 +13,7 @@
 //! specific gateway's per-user session map or any concrete agent type.
 //! Hosts (e.g., `brainwires-tools::SessionsTool` or
 //! `extras/brainclaw/gateway/src/sessions_broker.rs`) implement
-//! [`SessionBroker`] over their real registry and hand an
+//! [`SessionBroker`](self::SessionBroker) over their real registry and hand an
 //! `Arc<dyn SessionBroker>` to the consumer.
 //!
 //! Lives here so all session abstractions sit together and the

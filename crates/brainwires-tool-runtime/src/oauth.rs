@@ -6,7 +6,7 @@
 //! - Authorization Code + PKCE flow (user-delegated)
 //! - Client Credentials flow (service-to-service)
 //! - Automatic token refresh on expiry or `401 Unauthorized`
-//! - Pluggable [`OAuthTokenStore`] for per-user token storage
+//! - Pluggable [`OAuthTokenStore`](crate::oauth::OAuthTokenStore) for per-user token storage
 //!
 //! ## Example — client credentials
 //!
@@ -423,7 +423,7 @@ impl<S: OAuthTokenStore> OAuthClient<S> {
     /// Build a PKCE authorization URL for the user to visit.
     ///
     /// Returns `(url, pkce_challenge)` — store the `challenge.verifier` so you
-    /// can pass it to [`exchange_code`] when the callback arrives.
+    /// can pass it to [`Self::exchange_code`] when the callback arrives.
     pub fn authorization_url(&self, state: &str) -> anyhow::Result<(String, PkceChallenge)> {
         match &self.config.flow {
             OAuthFlow::AuthorizationCodePkce {

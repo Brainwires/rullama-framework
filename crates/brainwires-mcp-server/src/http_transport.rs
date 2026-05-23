@@ -58,7 +58,7 @@ struct HttpState {
 /// Stateless HTTP + SSE transport.
 ///
 /// Spawn with [`HttpServerTransport::bind`], then pass to
-/// [`McpServer::with_transport`].
+/// [`McpServer::with_transport`](crate::server::McpServer::with_transport).
 pub struct HttpServerTransport {
     request_rx: mpsc::Receiver<PendingRequest>,
     /// The socket address the server is bound to.

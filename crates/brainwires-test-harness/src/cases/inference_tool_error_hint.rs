@@ -6,8 +6,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use brainwires_core::{
-    ChatOptions, ContentBlock, Message, MessageContent, Provider, Tool, ToolContext, ToolResult,
-    ToolUse,
+    ChatOptions, ContentBlock, MessageContent, Provider, Tool, ToolContext, ToolResult, ToolUse,
 };
 use brainwires_eval::{EvaluationCase, TrialResult};
 use brainwires_inference::AgentBuilder;

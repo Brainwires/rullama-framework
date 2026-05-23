@@ -1,7 +1,7 @@
 //! NornicDB vector database backend.
 //!
-//! Implements [`VectorDatabase`] by delegating to a [`NornicTransport`]
-//! (REST, Bolt, or gRPC).  NornicDB-specific extensions such as cognitive
+//! Implements [`VectorDatabase`] by delegating to a `NornicTransport`
+//! (REST, Bolt, or gRPC; see `transport`).  NornicDB-specific extensions such as cognitive
 //! memory tiers, graph relationships, and raw Cypher access are exposed as
 //! inherent methods on [`NornicDatabase`].
 

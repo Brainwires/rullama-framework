@@ -746,7 +746,7 @@ impl WebRtcSession {
 
     /// Return a snapshot of all RTCP statistics for this PeerConnection.
     ///
-    /// The returned [`RTCStatsReport`] gives access to per-stream metrics via:
+    /// The returned [`RTCStatsReport`](rtc::statistics::report::RTCStatsReport) gives access to per-stream metrics via:
     /// - [`inbound_rtp_streams()`](rtc::statistics::report::RTCStatsReport::inbound_rtp_streams)
     ///   — jitter, packets lost/received, NACK/PLI/FIR counts, jitter buffer stats
     /// - [`outbound_rtp_streams()`](rtc::statistics::report::RTCStatsReport::outbound_rtp_streams)

@@ -3,7 +3,7 @@
 //! Connects to a running Weaviate instance via its REST and GraphQL APIs
 //! (`/v1/schema`, `/v1/batch/objects`, `/v1/graphql`). Hybrid search uses
 //! Weaviate's native `hybrid` operator (vector + BM25 fusion server-side),
-//! with a client-side [`SharedIdfStats`] kept as a fallback only.
+//! with a client-side [`SharedIdfStats`](crate::databases::bm25_helpers::SharedIdfStats) kept as a fallback only.
 
 use crate::databases::bm25_helpers::{self, SharedIdfStats};
 use crate::databases::traits::{ChunkMetadata, DatabaseStats, SearchResult, VectorDatabase};
