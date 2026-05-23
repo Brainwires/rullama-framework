@@ -13,10 +13,13 @@ pub mod clustering;
 /// Dynamic prompt generation. With the `knowledge` feature enabled,
 /// integrates BKS (Behavioral Knowledge System) / PKS (Personal Knowledge
 /// System) / SEAL feedback to adapt outputs over time.
+#[cfg(feature = "knowledge")]
 pub mod generator;
 /// Technique-effectiveness tracking and BKS promotion logic.
+#[cfg(feature = "knowledge")]
 pub mod learning;
 /// Library of 15 prompting techniques from the adaptive-selection paper.
+#[cfg(feature = "knowledge")]
 pub mod library;
 /// SEAL (Self-Evolving Agentic Learning) feedback hook used by `generator`.
 pub mod seal;
@@ -26,20 +29,25 @@ pub mod storage;
 /// Technique enum + per-technique metadata (category / complexity / characteristics).
 pub mod techniques;
 /// Adaptive temperature optimisation per task cluster.
+#[cfg(feature = "knowledge")]
 pub mod temperature;
 
 // ── Public re-exports — preserve the surface previously exposed at
 // `brainwires_knowledge::{TaskCluster, PromptingTechnique, …}`.
 
 pub use clustering::{TaskCluster, TaskClusterManager, cosine_similarity};
+#[cfg(feature = "knowledge")]
 pub use library::TechniqueLibrary;
 pub use seal::SealProcessingResult;
 pub use techniques::{
     ComplexityLevel, PromptingTechnique, TaskCharacteristic, TechniqueCategory, TechniqueMetadata,
 };
 
+#[cfg(feature = "knowledge")]
 pub use generator::{GeneratedPrompt, PromptGenerator};
+#[cfg(feature = "knowledge")]
 pub use learning::{ClusterSummary, PromptingLearningCoordinator, TechniqueStats};
+#[cfg(feature = "knowledge")]
 pub use temperature::{TemperatureOptimizer, TemperaturePerformance};
 
 #[cfg(feature = "storage")]

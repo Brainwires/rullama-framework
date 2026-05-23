@@ -11,6 +11,7 @@
 
 pub mod agent_file_locks;
 pub mod call_policy_budget;
+pub mod empty_features_compile;
 pub mod mcp_server_auth;
 pub mod network_api_key_format;
 pub mod permission_default_deny;
