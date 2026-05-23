@@ -132,7 +132,7 @@ All chat providers honour `ChatOptions::model: Option<String>`. When `Some`, pro
 
 ## Agent Orchestration
 
-**Crate:** `brainwires-agent`
+**Crates:** `brainwires-agent` (coordination primitives — file/resource locks, communication hub, task manager) + `brainwires-inference` (`ChatAgent`, `TaskAgent`, `ValidatorAgent`, `PlanExecutorAgent`, `TaskOrchestrator` — moved from `brainwires-agent` in Phase 11f when LLM-driven agents split out from pure coordination).
 
 Multi-agent infrastructure for autonomous task execution.
 
@@ -485,7 +485,7 @@ Implements "Adaptive Selection of Prompting Techniques" (arXiv:2510.18162).
 
 ## SEAL (Self-Evolving Agentic Learning)
 
-**Crate:** `brainwires-agent` (feature: `seal`)
+**Crate:** `brainwires-seal` (extracted from `brainwires-agent` in Phase 11d — import as `brainwires_seal::*`, not `brainwires_agent::seal::*`)
 
 Self-evolving agent capabilities without retraining.
 
@@ -530,7 +530,7 @@ Capability-based permission system.
 - **AuditLogger** — Event logging with querying and statistics
 - **AuditEvent** — Typed events with outcomes and feedback signals
 - **TrustManager** — Trust levels, violation tracking, trust factor management
-- **AnomalyDetector** — Anomaly detection with configurable thresholds
+- **AnomalyDetector** *(re-exported)* — `AuditLogger::with_anomaly_detection` plugs in `brainwires_telemetry::anomaly::AnomalyDetector` (lives in the telemetry crate; permission consumes it via the `ObservedEvent` impl in `audit.rs`)
 
 ### Approval System
 
@@ -694,7 +694,8 @@ Sandboxed multi-language code execution.
 | **Rhai** | `rhai` | Native Rust | Fastest startup |
 | **Lua** | `lua` | mlua | Small runtime, good stdlib |
 | **JavaScript** | `javascript` | Boa | ECMAScript compliant |
-| **Python** | `python` | RustPython | CPython 3.12 compatible |
+
+In-process interpreters cover **Rhai, Lua, and JavaScript** (the `Language` enum in `code_exec.rs` has exactly these three variants). **Python** is supported only via the optional `RemoteSandboxExecutor` (Docker / Podman) — it executes user code inside a container with a Python image. No in-process RustPython interpreter is wired today; if Python is required by your agent, enable the `sandbox` feature on `brainwires-tool-runtime` and ensure a container runtime is available.
 
 - **Executor** — Unified execution interface with `ExecutionRequest`
 - **WASM support** — Browser-compatible execution (feature: `wasm`)
@@ -875,7 +876,7 @@ Implementation of Google's A2A protocol for interoperable agent communication.
 
 ## Autonomous Operations
 
-**Crate:** `brainwires-autonomy`
+**Crate:** `brainwires-autonomy` *(extras/)* — consumer project, not a framework crate. The `crates/` workspace publishes the primitives this depends on (`brainwires-eval` fault analysis, `SelfImprovementController` traits via `brainwires-agent`); the orchestration that ties them into "supervised self-improvement" lives downstream.
 
 Self-improvement, Git workflows, and human-out-of-loop execution.
 
