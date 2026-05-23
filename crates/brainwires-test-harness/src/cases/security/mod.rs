@@ -18,6 +18,7 @@ pub mod keyed_budget_isolation;
 pub mod mcp_server_auth;
 pub mod network_api_key_format;
 pub mod permission_default_deny;
+pub mod pii_redaction;
 pub mod sandbox_mount_whitelist;
 pub mod schema_violation_retry;
 pub mod skills_signature;
