@@ -87,12 +87,16 @@ async fn mock_provider_stream_chat_emits_text_then_done() {
         .stream_chat(&messages, None, &options)
         .collect()
         .await;
-    assert_eq!(chunks.len(), 2);
+    // ScriptedProvider with non-zero canned Usage emits Text + Usage + Done
+    // so consumers tracking cumulative_usage through stream_chat see the
+    // same totals they'd see through chat().
+    assert_eq!(chunks.len(), 3);
     match &chunks[0] {
         Ok(StreamChunk::Text(t)) => assert_eq!(t, "streamed"),
         other => panic!("expected Text chunk, got {other:?}"),
     }
-    assert!(matches!(chunks[1], Ok(StreamChunk::Done)));
+    assert!(matches!(chunks[1], Ok(StreamChunk::Usage(_))));
+    assert!(matches!(chunks[2], Ok(StreamChunk::Done)));
 }
 
 #[tokio::test]

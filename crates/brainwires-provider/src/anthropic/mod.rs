@@ -172,6 +172,15 @@ impl AnthropicClient {
     // Request body building
     // -----------------------------------------------------------------------
 
+    /// Test-only: expose `build_body` to integration tests that want to
+    /// snapshot the request shape (e.g. cache_control breakpoint placement
+    /// per `CacheStrategy`) without hitting the network. Streaming flag is
+    /// always `false`.
+    #[doc(hidden)]
+    pub fn build_request_body_for_test(&self, req: &AnthropicRequest) -> serde_json::Value {
+        self.build_body(req, false)
+    }
+
     /// Build the JSON request body, adapting for backend differences.
     ///
     /// - **Anthropic**: includes `model`, `anthropic-version` as header
@@ -203,11 +212,24 @@ impl AnthropicClient {
         // Bedrock and Vertex AI have their own (proprietary, different-shaped)
         // caching mechanisms, and some SDK versions reject unknown top-level
         // fields — emitting `cache_control` there risks a 400 regression.
-        let cache_prompt =
-            req.cache_prompt && matches!(&self.auth_strategy, AuthStrategy::Anthropic { .. });
+        let strategy = if matches!(&self.auth_strategy, AuthStrategy::Anthropic { .. }) {
+            req.cache_strategy
+        } else {
+            brainwires_core::provider::CacheStrategy::Off
+        };
+        use brainwires_core::provider::CacheStrategy;
+        let cache_system = !matches!(strategy, CacheStrategy::Off);
+        let cache_tools = matches!(
+            strategy,
+            CacheStrategy::SystemAndTools | CacheStrategy::SystemAndTailTurn { .. }
+        );
+        let cache_tail_turn = match strategy {
+            CacheStrategy::SystemAndTailTurn { threshold_tokens } => Some(threshold_tokens),
+            _ => None,
+        };
 
         if let Some(ref sys) = req.system {
-            body["system"] = if cache_prompt {
+            body["system"] = if cache_system {
                 json!([{
                     "type": "text",
                     "text": sys,
@@ -227,7 +249,7 @@ impl AnthropicClient {
             body["stop_sequences"] = json!(stop);
         }
         if let Some(ref tools) = req.tools {
-            body["tools"] = if cache_prompt && !tools.is_empty() {
+            body["tools"] = if cache_tools && !tools.is_empty() {
                 let mut tools_arr: Vec<serde_json::Value> = tools
                     .iter()
                     .map(|t| serde_json::to_value(t).unwrap_or(serde_json::Value::Null))
@@ -241,6 +263,51 @@ impl AnthropicClient {
             } else {
                 json!(tools)
             };
+        }
+
+        // Tail-turn breakpoint: cache the last user message's content when
+        // the conversation has grown past `threshold_tokens` (approx). The
+        // Anthropic Messages API allows `cache_control` on individual
+        // content blocks of a message.
+        if let Some(threshold) = cache_tail_turn {
+            let approx_tokens: usize = req
+                .messages
+                .iter()
+                .map(|m| crate::anthropic::approx_message_tokens(m))
+                .sum();
+            if approx_tokens >= threshold as usize {
+                if let Some(messages_arr) = body
+                    .get_mut("messages")
+                    .and_then(|m| m.as_array_mut())
+                    && let Some(last) = messages_arr.last_mut()
+                {
+                    // Rewrite the last message's `content` to an array of
+                    // blocks with `cache_control` on the final block.
+                    if let Some(obj) = last.as_object_mut() {
+                        let original_content = obj.remove("content").unwrap_or(json!(""));
+                        let blocks: Vec<serde_json::Value> = match original_content {
+                            serde_json::Value::String(s) => vec![json!({
+                                "type": "text",
+                                "text": s,
+                                "cache_control": { "type": "ephemeral" }
+                            })],
+                            serde_json::Value::Array(mut arr) => {
+                                if let Some(last_block) = arr.last_mut()
+                                    && let Some(block_obj) = last_block.as_object_mut()
+                                {
+                                    block_obj.insert(
+                                        "cache_control".to_string(),
+                                        json!({ "type": "ephemeral" }),
+                                    );
+                                }
+                                arr
+                            }
+                            other => vec![other],
+                        };
+                        obj.insert("content".to_string(), json!(blocks));
+                    }
+                }
+            }
         }
 
         body
@@ -528,12 +595,12 @@ pub struct AnthropicRequest {
     /// Whether to stream the response.
     #[serde(default)]
     pub stream: bool,
-    /// Emit `cache_control: ephemeral` breakpoints on the system prompt and
-    /// the final tool definition. Anthropic silently no-ops when the cached
-    /// prefix is below the model's minimum cacheable size, so it's always
-    /// safe to leave on; disable for debugging or deterministic replay.
+    /// Where to emit `cache_control: ephemeral` breakpoints. Anthropic
+    /// silently no-ops when the cached prefix is below the model's minimum
+    /// cacheable size, so it's safe to leave on `SystemAndTools`; disable
+    /// (`Off`) for debugging or deterministic replay.
     #[serde(skip)]
-    pub cache_prompt: bool,
+    pub cache_strategy: brainwires_core::provider::CacheStrategy,
 }
 
 // ---------------------------------------------------------------------------
@@ -750,6 +817,23 @@ impl ModelLister for AnthropicModelLister {
     }
 }
 
+/// Cheap chars/4 estimator for an Anthropic-wire message — used only to
+/// decide whether `CacheStrategy::SystemAndTailTurn`'s threshold has been
+/// crossed, never for billing.
+pub(crate) fn approx_message_tokens(msg: &AnthropicMessage) -> usize {
+    let body_chars: usize = msg
+        .content
+        .iter()
+        .map(|b| match b {
+            AnthropicContentBlock::Text { text } => text.len(),
+            AnthropicContentBlock::ToolUse { input, .. } => input.to_string().len(),
+            AnthropicContentBlock::ToolResult { content, .. } => content.len(),
+            AnthropicContentBlock::Image { .. } => 512,
+        })
+        .sum();
+    body_chars / 4
+}
+
 /// Extract a retry-after hint from a 429 / 503 response's headers.
 ///
 /// Checks (in order): `Retry-After`, then the OpenAI/Anthropic
@@ -934,7 +1018,7 @@ mod tests {
             stop_sequences: None,
             tools: None,
             stream: false,
-            cache_prompt: false,
+            cache_strategy: brainwires_core::CacheStrategy::Off,
         };
 
         let json = serde_json::to_value(&req).unwrap();
@@ -1079,7 +1163,7 @@ mod tests {
             stop_sequences: None,
             tools: None,
             stream: false,
-            cache_prompt: false,
+            cache_strategy: brainwires_core::CacheStrategy::Off,
         };
         let body = client.build_body(&req, false);
         assert_eq!(body["model"], "claude-sonnet-4-6");
@@ -1099,7 +1183,7 @@ mod tests {
             stop_sequences: None,
             tools: None,
             stream: false,
-            cache_prompt: true,
+            cache_strategy: brainwires_core::CacheStrategy::SystemAndTools,
         };
         let body = client.build_body(&req, false);
         // When caching is on, system must be an array with a cache_control marker
@@ -1124,7 +1208,7 @@ mod tests {
             stop_sequences: None,
             tools: None,
             stream: false,
-            cache_prompt: false,
+            cache_strategy: brainwires_core::CacheStrategy::Off,
         };
         let body = client.build_body(&req, false);
         // When caching is off, system stays a plain string
@@ -1153,7 +1237,7 @@ mod tests {
             stream: false,
             // Even with cache_prompt=true, the build must suppress cache_control
             // for Bedrock to avoid 400 regressions on its proprietary caching.
-            cache_prompt: true,
+            cache_strategy: brainwires_core::CacheStrategy::SystemAndTools,
         };
         let body = client.build_body(&req, false);
         // system must serialise as a plain string, not an array-with-cache-control.
@@ -1185,7 +1269,7 @@ mod tests {
             stop_sequences: None,
             tools: Some(tools),
             stream: false,
-            cache_prompt: true,
+            cache_strategy: brainwires_core::CacheStrategy::SystemAndTools,
         };
         let body = client.build_body(&req, false);
         let tools_arr = body["tools"].as_array().expect("tools must be array");

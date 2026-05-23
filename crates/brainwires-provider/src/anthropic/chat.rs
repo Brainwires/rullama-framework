@@ -129,16 +129,11 @@ impl AnthropicChatProvider {
             .collect()
     }
 
-    /// Map a [`CacheStrategy`](brainwires_core::provider::CacheStrategy) to the Anthropic request's `cache_prompt` bool.
-    ///
-    /// Today the underlying builder at `anthropic/mod.rs::build_body` treats
-    /// `cache_prompt` as a combined "system + tools" switch, so `Off` and
-    /// `SystemOnly` both decay to "no cache" in practice until we refine the
-    /// request path to emit breakpoints per-field. `SystemAndTools` and
-    /// `SystemAndTailTurn` both enable it.
-    fn cache_prompt_enabled(strategy: brainwires_core::CacheStrategy) -> bool {
-        use brainwires_core::CacheStrategy::*;
-        matches!(strategy, SystemAndTools | SystemAndTailTurn { .. })
+    /// Returns whether `strategy` will emit any `cache_control` breakpoint.
+    /// Kept around for callers that want to special-case prompt-cache
+    /// availability without inspecting the strategy variant directly.
+    pub fn cache_prompt_enabled(strategy: brainwires_core::CacheStrategy) -> bool {
+        !matches!(strategy, brainwires_core::CacheStrategy::Off)
     }
 
     /// Extract the first system message from the message list.
@@ -251,7 +246,7 @@ impl Provider for AnthropicChatProvider {
             stop_sequences: None,
             tools: tools.map(Self::convert_tools),
             stream: false,
-            cache_prompt: Self::cache_prompt_enabled(options.cache_strategy),
+            cache_strategy: options.cache_strategy,
         };
 
         #[cfg(feature = "telemetry")]
@@ -304,7 +299,7 @@ impl Provider for AnthropicChatProvider {
                 stop_sequences: None,
                 tools: tools.map(Self::convert_tools),
                 stream: true,
-                cache_prompt: Self::cache_prompt_enabled(options.cache_strategy),
+                cache_strategy: options.cache_strategy,
             };
 
             let mut stream = self.client.stream_messages(&req);
@@ -639,7 +634,7 @@ mod tests {
         assert!(!AnthropicChatProvider::cache_prompt_enabled(
             CacheStrategy::Off
         ));
-        assert!(!AnthropicChatProvider::cache_prompt_enabled(
+        assert!(AnthropicChatProvider::cache_prompt_enabled(
             CacheStrategy::SystemOnly
         ));
         assert!(AnthropicChatProvider::cache_prompt_enabled(

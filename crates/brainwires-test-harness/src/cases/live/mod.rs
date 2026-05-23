@@ -4,6 +4,7 @@
 //! required key/URL is absent. The default `cargo xtask test-harness run`
 //! (no `--tier=d`) doesn't include these at all.
 
+pub mod anthropic_cache_roundtrip;
 pub mod anthropic_chat;
 pub mod anthropic_streaming;
 pub mod failover_live;

@@ -40,9 +40,10 @@ coverage_via = "core_types_traits"
 section = "Chat Providers"
 feature_id = "chat_providers"
 crate_name = "brainwires-provider"
-description = "Concrete chat-provider impls; harness asserts the trait contract via core_types_traits"
-required_cases = []
-coverage_via = "core_types_traits"
+description = "Concrete chat-provider impls; trait contract via core_types_traits; Anthropic cache_control breakpoints emitted per CacheStrategy"
+required_cases = [
+    "brainwires_test_harness::cases::anthropic_cache_control::AnthropicCacheControlEmittedPerStrategy",
+]
 
 [[feature]]
 section = "Audio API Clients"
