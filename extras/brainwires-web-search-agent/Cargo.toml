@@ -1,0 +1,26 @@
+[package]
+name = "brainwires-web-search-agent"
+description = "Minimal end-to-end example: ChatAgent + WebTool + BudgetProvider answering a question from the open web."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "brainwires-web-search-agent"
+path = "src/main.rs"
+
+[dependencies]
+brainwires-core         = { workspace = true }
+brainwires-inference    = { workspace = true }
+brainwires-provider     = { workspace = true }
+brainwires-tool-runtime = { workspace = true }
+brainwires-tool-builtins = { workspace = true, features = ["native"] }
+brainwires-call-policy  = { workspace = true }
+
+anyhow = { workspace = true }
+tokio  = { workspace = true, features = ["macros", "rt-multi-thread"] }

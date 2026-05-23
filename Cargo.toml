@@ -50,6 +50,7 @@ members = [
     "extras/brainwires-chat-native/bridge",
     "extras/voice-assistant",
     "extras/claude-brain",
+    "extras/brainwires-web-search-agent",
     "xtask",
 ]
 exclude = [
