@@ -1,6 +1,7 @@
 // Re-export shared types from core (SearchResult, ChunkMetadata used by both storage and cognition)
 pub use brainwires_core::{ChunkMetadata, SearchResult};
 
+mod cited_answer;
 mod code_relations;
 mod ensemble;
 mod incremental;
@@ -8,6 +9,9 @@ mod index;
 mod query;
 mod search;
 mod statistics;
+
+// --- cited answer ---
+pub use cited_answer::{Citation, CitedAnswer};
 
 #[cfg(test)]
 mod tests;

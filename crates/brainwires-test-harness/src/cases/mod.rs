@@ -18,5 +18,6 @@ pub mod live;
 pub mod mcp_and_tools;
 pub mod mdap_composition;
 pub mod permission_capabilities;
+pub mod rag_cited_answer;
 pub mod security;
 pub mod telemetry_request_id;

@@ -343,10 +343,11 @@ coverage_via = "agent_orchestration"
 [[feature]]
 section = "RAG & Code Search"
 feature_id = "rag_code_search"
-crate_name = "framework"
-description = "Covered via core_types_traits — underlying primitive shape"
-required_cases = []
-coverage_via = "core_types_traits"
+crate_name = "brainwires-rag"
+description = "CitedAnswer + Citation types for traceable answers; markdown footnote rendering."
+required_cases = [
+    "brainwires_test_harness::cases::rag_cited_answer::RagSearchReturnsTraceableCitations",
+]
 
 [[feature]]
 section = "Knowledge & Brain"

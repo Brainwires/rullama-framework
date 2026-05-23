@@ -29,6 +29,7 @@ brainwires-agent = { workspace = true }
 brainwires-inference = { workspace = true }
 brainwires-tool-builtins = { workspace = true }
 brainwires-provider = { workspace = true }
+brainwires-rag = { workspace = true }
 brainwires-reasoning = { workspace = true, features = ["schema-validation"] }
 brainwires-telemetry = { workspace = true, features = ["native"] }
 chrono = { workspace = true }
