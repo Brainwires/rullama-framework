@@ -7,6 +7,7 @@
 pub mod anthropic_cache_roundtrip;
 pub mod anthropic_chat;
 pub mod anthropic_streaming;
+pub mod budget_blocks_real_call;
 pub mod failover_live;
 pub mod keyed_budget_live;
 pub mod ollama_chat;
