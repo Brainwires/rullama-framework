@@ -84,6 +84,7 @@ description = "AgentBuilder quickstart + ChatAgent dispatch + tool-error rephras
 required_cases = [
     "brainwires_test_harness::cases::agent_builder::builder_facade",
     "brainwires_test_harness::cases::inference_tool_error_hint::tool_error_rephrase_injects_hint",
+    "brainwires_test_harness::cases::inference_turn_report::per_turn_report_aggregates_usage",
 ]
 
 [[feature]]

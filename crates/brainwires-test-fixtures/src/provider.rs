@@ -267,11 +267,23 @@ impl Provider for ScriptedProvider {
                 Box::pin(stream::iter(chunks))
             }
             Ok(ScriptedResponse::Custom(response)) => {
+                // Emit Text + Usage + Done so consumers tracking
+                // cumulative_usage (e.g. ChatAgent) see the same totals
+                // they'd see from the chat() path. Without the Usage
+                // chunk, anyone scripting a non-zero Usage on the
+                // canned response would observe 0 tokens accumulating
+                // through stream_chat, which is a footgun.
                 let text = response.message.text().unwrap_or("").to_string();
-                Box::pin(stream::iter(vec![
-                    Ok(StreamChunk::Text(text)),
-                    Ok(StreamChunk::Done),
-                ]))
+                let mut chunks: Vec<Result<StreamChunk>> = Vec::with_capacity(3);
+                chunks.push(Ok(StreamChunk::Text(text)));
+                if response.usage.total_tokens > 0
+                    || response.usage.cache_creation_input_tokens > 0
+                    || response.usage.cache_read_input_tokens > 0
+                {
+                    chunks.push(Ok(StreamChunk::Usage(response.usage)));
+                }
+                chunks.push(Ok(StreamChunk::Done));
+                Box::pin(stream::iter(chunks))
             }
             Ok(ScriptedResponse::Stream(chunks)) => {
                 Box::pin(stream::iter(chunks.into_iter().map(Ok)))

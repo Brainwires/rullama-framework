@@ -243,6 +243,59 @@ impl Usage {
     }
 }
 
+/// Per-turn report returned from agent loop methods like
+/// `ChatAgent::process_message_with_report`. Aggregates the LLM
+/// activity for ONE call to `process_message_*` — i.e. across all
+/// provider calls + tool dispatches that one user message triggered.
+///
+/// Cost is reported as `Option<u64>` because per-token pricing is
+/// provider-specific and not yet plumbed through the `Provider` trait
+/// (Tier 2.4 will land that). Until then, callers compute cost from
+/// `prompt_tokens` / `completion_tokens` against their own pricing
+/// table.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TurnReport {
+    /// Prompt tokens consumed across all provider calls in this turn.
+    pub prompt_tokens: u32,
+    /// Completion tokens consumed across all provider calls in this turn.
+    pub completion_tokens: u32,
+    /// Sum of `prompt_tokens` + `completion_tokens`.
+    pub total_tokens: u32,
+    /// Cache-creation tokens (Anthropic-style explicit cache). Zero on
+    /// providers without prompt caching.
+    pub cache_creation_input_tokens: u32,
+    /// Cache-read tokens (billed at reduced rate). Zero when the cache
+    /// wasn't hit.
+    pub cache_read_input_tokens: u32,
+    /// USD cents, when the framework's pricing tables are populated for
+    /// the provider/model. `None` otherwise.
+    pub cost_usd_cents: Option<u64>,
+    /// Wall-clock duration of the turn, in milliseconds.
+    pub duration_ms: u64,
+}
+
+impl TurnReport {
+    /// Build a report by diffing two `Usage` snapshots (before and after
+    /// the turn) and adding the elapsed duration.
+    pub fn from_usage_delta(before: &Usage, after: &Usage, duration_ms: u64) -> Self {
+        Self {
+            prompt_tokens: after.prompt_tokens.saturating_sub(before.prompt_tokens),
+            completion_tokens: after
+                .completion_tokens
+                .saturating_sub(before.completion_tokens),
+            total_tokens: after.total_tokens.saturating_sub(before.total_tokens),
+            cache_creation_input_tokens: after
+                .cache_creation_input_tokens
+                .saturating_sub(before.cache_creation_input_tokens),
+            cache_read_input_tokens: after
+                .cache_read_input_tokens
+                .saturating_sub(before.cache_read_input_tokens),
+            cost_usd_cents: None,
+            duration_ms,
+        }
+    }
+}
+
 /// Response from a chat completion
 #[derive(Debug, Clone)]
 pub struct ChatResponse {

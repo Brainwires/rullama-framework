@@ -224,6 +224,30 @@ impl ChatAgent {
         self.run_completion(None::<fn(&str)>).await
     }
 
+    /// Process a user message and return both the assistant text AND a
+    /// [`TurnReport`] of token / duration usage for this single turn.
+    ///
+    /// The report is computed by snapshotting `cumulative_usage` before
+    /// and after the turn, plus measuring wall-clock duration. Useful
+    /// for cost dashboards, per-turn billing, and debugging which
+    /// turn ran the budget down.
+    pub async fn process_message_with_report(
+        &mut self,
+        input: &str,
+    ) -> Result<(String, brainwires_core::TurnReport)> {
+        let before = self.cumulative_usage.clone();
+        let started = std::time::Instant::now();
+        self.messages.push(Message::user(input));
+        let text = self.run_completion(None::<fn(&str)>).await?;
+        let elapsed_ms = started.elapsed().as_millis() as u64;
+        let report = brainwires_core::TurnReport::from_usage_delta(
+            &before,
+            &self.cumulative_usage,
+            elapsed_ms,
+        );
+        Ok((text, report))
+    }
+
     /// Process a user message with streaming — calls `on_chunk` for each text
     /// fragment as it arrives from the provider.
     ///
