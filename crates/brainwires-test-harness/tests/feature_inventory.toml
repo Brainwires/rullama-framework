@@ -79,10 +79,11 @@ coverage_via = "core_types_traits"
 [[feature]]
 section = "Chat"
 feature_id = "chat"
-crate_name = "brainwires-core"
-description = "Basic Provider::chat dispatch covered by core_types_traits"
-required_cases = []
-coverage_via = "core_types_traits"
+crate_name = "brainwires-inference"
+description = "AgentBuilder quickstart + ChatAgent dispatch (Provider trait covered by core_types_traits)"
+required_cases = [
+    "brainwires_test_harness::cases::agent_builder::builder_facade",
+]
 
 [[feature]]
 section = "Agent Types"

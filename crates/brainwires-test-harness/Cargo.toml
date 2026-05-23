@@ -26,6 +26,8 @@ brainwires-mdap = { workspace = true }
 brainwires-mcp-client = { workspace = true }
 brainwires-mcp-server = { workspace = true }
 brainwires-agent = { workspace = true }
+brainwires-inference = { workspace = true }
+brainwires-tool-builtins = { workspace = true }
 chrono = { workspace = true }
 semver = { workspace = true }
 

@@ -26,6 +26,7 @@
 //! - [`system_prompts`] — registry of agent prompt templates
 
 pub mod agent_hooks;
+pub mod builder;
 pub mod chat_agent;
 pub mod context;
 pub mod cycle_orchestrator;
@@ -43,6 +44,7 @@ pub mod validation_loop;
 pub mod validator_agent;
 
 pub use agent_hooks::*;
+pub use builder::AgentBuilder;
 pub use chat_agent::*;
 pub use context::*;
 pub use cycle_orchestrator::*;

@@ -8,6 +8,7 @@
 //! Skeleton: only the `security` directory exists. Per-section modules
 //! are added incrementally as features get covered (Steps 5-10).
 
+pub mod agent_builder;
 pub mod call_policy_safety;
 pub mod core_types;
 pub mod evaluation_framework;
