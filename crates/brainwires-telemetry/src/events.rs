@@ -40,6 +40,11 @@ pub enum AnalyticsEvent {
     ProviderCall {
         /// Session that owned the call, if any.
         session_id: Option<String>,
+        /// Caller-supplied identifier for this specific call. Populated when
+        /// `ChatOptions::request_id` is set (the `ChatAgent` plumbs a fresh
+        /// uuid per turn). Powers `AnalyticsQuery::cost_by_request`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        request_id: Option<String>,
         /// Provider name (e.g. `"anthropic"`, `"openai"`).
         provider: String,
         /// Model identifier as reported by the provider.

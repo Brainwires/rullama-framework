@@ -89,4 +89,6 @@ pub use usage::UsageEvent;
 pub use sinks::sqlite::SqliteAnalyticsSink;
 
 #[cfg(feature = "sqlite")]
-pub use query::{AnalyticsQuery, CostByModelRow, DailySummaryRow, ToolFrequencyRow};
+pub use query::{
+    AnalyticsQuery, CostByModelRow, CostByRequestRow, DailySummaryRow, ToolFrequencyRow,
+};

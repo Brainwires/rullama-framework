@@ -19,3 +19,4 @@ pub mod mcp_and_tools;
 pub mod mdap_composition;
 pub mod permission_capabilities;
 pub mod security;
+pub mod telemetry_request_id;

@@ -127,6 +127,7 @@ fn generate_json_fixtures() {
         system: Some("You are a helpful assistant.".to_string()),
         model: None,
         cache_strategy: Default::default(),
+        request_id: None,
     };
     write_fixture(&fixtures_dir, "chat_options_custom", &custom_opts);
 

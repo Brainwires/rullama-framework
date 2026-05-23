@@ -1107,6 +1107,7 @@ impl TaskAgent {
             system: Some(system_prompt),
             model: None,
             cache_strategy: Default::default(),
+            request_id: None,
         };
 
         self.provider

@@ -88,6 +88,13 @@ pub struct ChatOptions {
     /// Prompt-cache strategy. Ignored by providers without prompt caching.
     #[serde(default)]
     pub cache_strategy: CacheStrategy,
+    /// Caller-supplied identifier used to attribute the resulting cost,
+    /// tokens, and duration in telemetry. `ChatAgent` generates a fresh
+    /// id per turn; multi-tenant deployments can stamp their own
+    /// (e.g. `"<tenant>-<msg_id>"`) so the analytics query
+    /// `cost_by_request(id)` can pull every event for one request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
 }
 
 impl Default for ChatOptions {
@@ -100,6 +107,7 @@ impl Default for ChatOptions {
             system: None,
             model: None,
             cache_strategy: CacheStrategy::default(),
+            request_id: None,
         }
     }
 }
@@ -143,6 +151,13 @@ impl ChatOptions {
     /// Set the prompt-cache strategy.
     pub fn cache_strategy(mut self, strategy: CacheStrategy) -> Self {
         self.cache_strategy = strategy;
+        self
+    }
+
+    /// Stamp a caller-supplied `request_id` so telemetry can attribute
+    /// the resulting tokens / cost to this specific call.
+    pub fn request_id<S: Into<String>>(mut self, request_id: S) -> Self {
+        self.request_id = Some(request_id.into());
         self
     }
 

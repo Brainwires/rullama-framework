@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use anyhow::Context;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::schema;
 
@@ -36,6 +36,24 @@ pub struct ToolFrequencyRow {
     pub call_count: i64,
     /// Subset of `call_count` that returned an error.
     pub error_count: i64,
+}
+
+/// Aggregated cost / token totals for a single `request_id`. Returned by
+/// [`AnalyticsQuery::cost_by_request`]. Powers per-turn cost dashboards
+/// and per-tenant cost attribution when the caller stamps a stable
+/// `request_id` (e.g. `"<tenant>-<msg>"`).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CostByRequestRow {
+    /// The `request_id` these totals belong to.
+    pub request_id: String,
+    /// Number of provider calls that shared this `request_id`.
+    pub call_count: i64,
+    /// Sum of prompt tokens across all calls for this request.
+    pub total_prompt_tokens: i64,
+    /// Sum of completion tokens across all calls for this request.
+    pub total_completion_tokens: i64,
+    /// Sum of USD charges across all calls for this request.
+    pub total_cost_usd: f64,
 }
 
 /// Per-day agent run summary.
@@ -242,6 +260,49 @@ impl AnalyticsQuery {
             .filter_map(|r| r.ok())
             .collect();
         Ok(rows)
+    }
+
+    /// Total tokens and cost for a single `request_id`, summed across every
+    /// `provider_call` event tagged with that id. Returns `Ok(None)` when no
+    /// event has been recorded for the given id yet.
+    ///
+    /// Reads the raw event log directly so it works regardless of whether
+    /// `rebuild_summaries` has been called.
+    pub fn cost_by_request(
+        &self,
+        request_id: &str,
+    ) -> anyhow::Result<Option<CostByRequestRow>> {
+        let conn = self.conn.lock().expect("analytics query lock poisoned");
+        let sql = "SELECT
+                count(*),
+                COALESCE(sum(COALESCE(json_extract(payload, '$.prompt_tokens'), 0)), 0),
+                COALESCE(sum(COALESCE(json_extract(payload, '$.completion_tokens'), 0)), 0),
+                COALESCE(sum(COALESCE(json_extract(payload, '$.cost_usd'), 0.0)), 0.0)
+            FROM analytics_events
+            WHERE event_type = 'provider_call'
+              AND json_extract(payload, '$.request_id') = ?1";
+        let mut stmt = conn
+            .prepare(sql)
+            .context("Failed to prepare cost_by_request query")?;
+        let row: Option<(i64, i64, i64, f64)> = stmt
+            .query_row([request_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .optional()
+            .context("cost_by_request query failed")?;
+        Ok(row.and_then(|(count, p, c, cost)| {
+            if count == 0 {
+                None
+            } else {
+                Some(CostByRequestRow {
+                    request_id: request_id.to_string(),
+                    call_count: count,
+                    total_prompt_tokens: p,
+                    total_completion_tokens: c,
+                    total_cost_usd: cost,
+                })
+            }
+        }))
     }
 
     /// Tool call frequency, optionally filtered by date range.

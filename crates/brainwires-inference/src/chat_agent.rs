@@ -15,8 +15,17 @@ use brainwires_core::{
     ToolContext, ToolUse, Usage,
 };
 use brainwires_tool_runtime::{PreHookDecision, ToolExecutor, ToolPreHook};
+use uuid::Uuid;
 
 use crate::summarization::Summarizer;
+
+/// Fresh per-turn request id used to attribute telemetry events back to a
+/// single agent turn. Stamped into `ChatOptions::request_id` at the start
+/// of each `process_message*` call so every provider event under that turn
+/// shares the same id.
+fn new_request_id() -> String {
+    format!("turn-{}", Uuid::new_v4())
+}
 
 /// Rough character-level token estimator for the auto-compact threshold.
 ///
@@ -221,6 +230,7 @@ impl ChatAgent {
     ///    (or `max_tool_rounds` is reached)
     pub async fn process_message(&mut self, input: &str) -> Result<String> {
         self.messages.push(Message::user(input));
+        self.options.request_id = Some(new_request_id());
         self.run_completion(None::<fn(&str)>).await
     }
 
@@ -238,6 +248,7 @@ impl ChatAgent {
         let before = self.cumulative_usage.clone();
         let started = std::time::Instant::now();
         self.messages.push(Message::user(input));
+        self.options.request_id = Some(new_request_id());
         let text = self.run_completion(None::<fn(&str)>).await?;
         let elapsed_ms = started.elapsed().as_millis() as u64;
         let report = brainwires_core::TurnReport::from_usage_delta(
@@ -257,6 +268,7 @@ impl ChatAgent {
         F: Fn(&str) + Send + Sync,
     {
         self.messages.push(Message::user(input));
+        self.options.request_id = Some(new_request_id());
         self.run_completion(Some(on_chunk)).await
     }
 

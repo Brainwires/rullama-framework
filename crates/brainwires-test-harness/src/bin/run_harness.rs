@@ -77,7 +77,10 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    // Multi-threaded so cases that depend on `tokio::task::block_in_place`
+    // (e.g. the SQLite analytics sink) work. Current-thread runtime would
+    // panic on those even when only a single test invokes them.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .expect("tokio runtime");

@@ -73,6 +73,7 @@ impl Provider for OllamaChatProvider {
             use brainwires_telemetry::AnalyticsEvent;
             collector.record(AnalyticsEvent::ProviderCall {
                 session_id: None,
+                request_id: options.request_id.clone(),
                 provider: "ollama".to_string(),
                 model: self.model.clone(),
                 prompt_tokens: response.usage.prompt_tokens,

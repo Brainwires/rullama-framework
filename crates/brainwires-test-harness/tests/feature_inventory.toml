@@ -797,9 +797,10 @@ required_cases = [
 section = "Telemetry & Analytics"
 feature_id = "telemetry_analytics"
 crate_name = "framework"
-description = "Covered via evaluation_framework — underlying primitive shape"
-required_cases = []
-coverage_via = "evaluation_framework"
+description = "request_id cost attribution + cost_by_request query"
+required_cases = [
+    "brainwires_test_harness::cases::telemetry_request_id::CostByRequestIdIsolatesCalls",
+]
 
 [[feature]]
 section = "Event Types (`AnalyticsEvent`)"

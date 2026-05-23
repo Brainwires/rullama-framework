@@ -118,6 +118,7 @@ where
             // This layer captures provider + model + duration from the span.
             self.collector.record(AnalyticsEvent::ProviderCall {
                 session_id: None,
+                request_id: None,
                 provider,
                 model,
                 prompt_tokens: 0,

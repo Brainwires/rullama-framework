@@ -255,6 +255,7 @@ impl Provider for GoogleChatProvider {
             use brainwires_telemetry::AnalyticsEvent;
             collector.record(AnalyticsEvent::ProviderCall {
                 session_id: None,
+                request_id: options.request_id.clone(),
                 provider: "google".to_string(),
                 model: self.model.clone(),
                 prompt_tokens: chat_response.usage.prompt_tokens,
@@ -555,6 +556,7 @@ mod tests {
             system: None,
             model: None,
             cache_strategy: Default::default(),
+            request_id: None,
         };
 
         let req = GoogleChatProvider::build_request(&messages, None, &options);
@@ -580,6 +582,7 @@ mod tests {
             system: Some("Be helpful".to_string()),
             model: None,
             cache_strategy: Default::default(),
+            request_id: None,
         };
 
         let req = GoogleChatProvider::build_request(&messages, None, &options);
@@ -602,6 +605,7 @@ mod tests {
             system: None,
             model: None,
             cache_strategy: Default::default(),
+            request_id: None,
         };
 
         let req = GoogleChatProvider::build_request(&messages, None, &options);

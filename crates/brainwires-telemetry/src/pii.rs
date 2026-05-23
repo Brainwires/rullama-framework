@@ -79,6 +79,7 @@ pub fn redact_event(event: AnalyticsEvent, rules: &PiiRedactionRules) -> Analyti
         }
         AnalyticsEvent::ProviderCall {
             session_id,
+            request_id,
             provider,
             model,
             prompt_tokens,
@@ -92,6 +93,7 @@ pub fn redact_event(event: AnalyticsEvent, rules: &PiiRedactionRules) -> Analyti
             compliance,
         } => AnalyticsEvent::ProviderCall {
             session_id: maybe_hash_session(session_id, rules),
+            request_id,
             provider,
             model,
             prompt_tokens,
