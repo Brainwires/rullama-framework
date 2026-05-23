@@ -29,12 +29,14 @@ brainwires-agent = { workspace = true }
 brainwires-inference = { workspace = true }
 brainwires-tool-builtins = { workspace = true }
 brainwires-provider = { workspace = true }
+brainwires-reasoning = { workspace = true, features = ["schema-validation"] }
 chrono = { workspace = true }
 semver = { workspace = true }
 
 async-trait = { workspace = true }
 futures = { workspace = true }
 inventory = { workspace = true }
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }

@@ -41,10 +41,16 @@
 pub mod output_parser;
 /// Plan text parser for extracting steps from LLM output.
 pub mod plan_parser;
+/// JSON Schema validation + retry-on-violation orchestration. Behind the
+/// `schema-validation` feature.
+#[cfg(feature = "schema-validation")]
+pub mod schema_validator;
 
 // Flat re-exports for convenience.
 pub use output_parser::{JsonListParser, JsonOutputParser, OutputParser, RegexOutputParser};
 pub use plan_parser::{ParsedStep, parse_plan_steps, steps_to_tasks};
+#[cfg(feature = "schema-validation")]
+pub use schema_validator::{SchemaValidator, retry_until_valid};
 
 // ── Scorers (moved from brainwires-agent::reasoning) ────────────────────
 mod complexity;

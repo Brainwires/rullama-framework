@@ -36,12 +36,18 @@ thiserror = { workspace = true }
 # Logging
 tracing = { workspace = true }
 
+# JSON Schema validation (Tier 2.2 — optional, behind `schema-validation`)
+jsonschema = { version = "0.30", default-features = false, optional = true }
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 proptest.workspace = true
 
 [features]
 default = []
+# Enables `SchemaValidator` (jsonschema-backed). Off by default so the
+# reasoning crate stays light when callers don't need schema validation.
+schema-validation = ["dep:jsonschema"]
 
 [package.metadata.docs.rs]
 all-features = true
