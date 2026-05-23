@@ -47,6 +47,21 @@ pub struct SecurityCase {
 
 inventory::collect!(SecurityCase);
 
+/// A Tier-D live-provider case, gated by env-var presence (see [`crate::live`]).
+/// Each case self-skips when its required env vars are absent.
+pub struct LiveCase {
+    /// Stable dotted id (e.g. "live.ollama.gemma_chat_roundtrip").
+    pub id: &'static str,
+    /// Which provider this case exercises ("ollama" | "openai" | "anthropic" | "mixed").
+    pub provider: &'static str,
+    /// One-line description.
+    pub description: &'static str,
+    /// Factory producing a fresh case instance.
+    pub factory: CaseFactory,
+}
+
+inventory::collect!(LiveCase);
+
 /// Look up a Tier-A case by Rust function path. Returns `None` if no
 /// registered case has that path.
 pub fn lookup_tier_a(path: &str) -> Option<Arc<dyn EvaluationCase>> {
@@ -72,6 +87,13 @@ pub fn all_security_cases() -> Vec<Arc<dyn EvaluationCase>> {
 /// critical-gap crate has at least N adversarial cases.
 pub fn all_security_metadata() -> Vec<&'static SecurityCase> {
     inventory::iter::<SecurityCase>().collect()
+}
+
+/// Every Tier-D live-provider case registered in the binary.
+pub fn all_live_cases() -> Vec<Arc<dyn EvaluationCase>> {
+    inventory::iter::<LiveCase>()
+        .map(|c| Arc::from((c.factory)()))
+        .collect()
 }
 
 #[cfg(test)]

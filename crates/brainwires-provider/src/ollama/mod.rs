@@ -193,8 +193,30 @@ impl Provider for OllamaProvider {
             .await
             .context("Failed to parse Ollama response")?;
 
-        // Convert response to our format
-        let content = MessageContent::Text(ollama_response.message.content);
+        // Convert response to our format. If the model emitted any tool
+        // calls, surface them as `ContentBlock::ToolUse` entries alongside
+        // any text the model produced — otherwise the agent loop has no
+        // way to dispatch the call.
+        let content = if ollama_response.message.tool_calls.is_empty() {
+            MessageContent::Text(ollama_response.message.content)
+        } else {
+            let mut blocks: Vec<ContentBlock> = Vec::new();
+            let text = ollama_response.message.content;
+            if !text.is_empty() {
+                blocks.push(ContentBlock::Text { text });
+            }
+            for (idx, tc) in ollama_response.message.tool_calls.into_iter().enumerate() {
+                let id = tc
+                    .id
+                    .unwrap_or_else(|| format!("ollama_tool_call_{idx}"));
+                blocks.push(ContentBlock::ToolUse {
+                    id,
+                    name: tc.function.name,
+                    input: tc.function.arguments,
+                });
+            }
+            MessageContent::Blocks(blocks)
+        };
 
         Ok(ChatResponse {
             message: Message {
@@ -305,10 +327,21 @@ impl Provider for OllamaProvider {
                     // Parse the JSON line
                     match serde_json::from_str::<OllamaStreamChunk>(&line) {
                         Ok(chunk) => {
-                            if let Some(message) = chunk.message
-                                && !message.content.is_empty() {
+                            if let Some(message) = chunk.message {
+                                if !message.content.is_empty() {
                                     yield Ok(StreamChunk::Text(message.content));
                                 }
+                                for (idx, tc) in message.tool_calls.into_iter().enumerate() {
+                                    let id = tc.id.unwrap_or_else(|| {
+                                        format!("ollama_tool_call_{idx}")
+                                    });
+                                    yield Ok(StreamChunk::ToolUse { id: id.clone(), name: tc.function.name.clone() });
+                                    yield Ok(StreamChunk::ToolInputDelta {
+                                        id,
+                                        partial_json: tc.function.arguments.to_string(),
+                                    });
+                                }
+                            }
 
                             if chunk.done {
                                 // Emit usage if available
@@ -379,6 +412,21 @@ struct OllamaResponse {
 #[derive(Debug, Deserialize)]
 struct OllamaResponseMessage {
     content: String,
+    #[serde(default)]
+    tool_calls: Vec<OllamaToolCall>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaToolCall {
+    #[serde(default)]
+    id: Option<String>,
+    function: OllamaToolCallFunction,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaToolCallFunction {
+    name: String,
+    arguments: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize)]

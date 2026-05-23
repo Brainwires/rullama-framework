@@ -11,13 +11,14 @@
 use std::process::ExitCode;
 
 use brainwires_eval::EvaluationSuite;
-use brainwires_test_harness::{all_cases, tier_a_suite, tier_b_suite, tier_c_suite};
+use brainwires_test_harness::{all_cases, tier_a_suite, tier_b_suite, tier_c_suite, tier_d_suite};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tier {
     A,
     B,
     C,
+    D,
     All,
 }
 
@@ -35,9 +36,10 @@ fn main() -> ExitCode {
                 "a" | "A" => Tier::A,
                 "b" | "B" => Tier::B,
                 "c" | "C" => Tier::C,
+                "d" | "D" => Tier::D,
                 "all" => Tier::All,
                 other => {
-                    eprintln!("unknown tier: {other} (expected a, b, c, all)");
+                    eprintln!("unknown tier: {other} (expected a, b, c, d, all)");
                     return ExitCode::FAILURE;
                 }
             };
@@ -62,6 +64,7 @@ fn main() -> ExitCode {
         Tier::A => tier_a_suite(),
         Tier::B => tier_b_suite(),
         Tier::C => tier_c_suite(),
+        Tier::D => tier_d_suite(),
         Tier::All => all_cases(),
     };
 
@@ -117,12 +120,12 @@ fn main() -> ExitCode {
 }
 
 fn print_help() {
-    println!("Usage: run-harness [--tier=a|b|c|all] [--trials=N] [--filter=substring] [--json]");
+    println!("Usage: run-harness [--tier=a|b|c|d|all] [--trials=N] [--filter=substring] [--json]");
     println!();
     println!("Run brainwires test-harness cases and report results.");
     println!();
     println!("Flags:");
-    println!("  --tier=<x>     Restrict to one tier (default: all)");
+    println!("  --tier=<x>     Restrict to one tier (default: all = A+B+C; D is opt-in)");
     println!("  --trials=<N>   Trials per case (default: 1)");
     println!("  --filter=<s>   Only cases whose name contains <s>");
     println!("  --json         Emit a single-line JSON report instead of human output");
@@ -140,15 +143,33 @@ fn print_human(result: &brainwires_eval::SuiteResult) {
     names.sort();
     for name in names {
         let s = &result.stats[name];
-        let mark = if s.success_rate >= 1.0 { "PASS" } else { "FAIL" };
-        println!(
-            "  {mark}  {name}  ({:.0}%  n={}  CI=[{:.3}, {:.3}])",
-            s.success_rate * 100.0,
-            s.n_trials,
-            s.confidence_interval_95.lower,
-            s.confidence_interval_95.upper,
-        );
-        if let Some(trials) = result.case_results.get(name) {
+        let trials = result.case_results.get(name);
+        let all_skipped = trials
+            .map(|ts| !ts.is_empty() && ts.iter().all(|t| t.skipped))
+            .unwrap_or(false);
+        let mark = if all_skipped {
+            "SKIP"
+        } else if s.success_rate >= 1.0 {
+            "PASS"
+        } else {
+            "FAIL"
+        };
+        if all_skipped {
+            let reason = trials
+                .and_then(|ts| ts.first())
+                .and_then(|t| t.error.as_deref())
+                .unwrap_or("no live env vars");
+            println!("  {mark}  {name}  ({reason})");
+        } else {
+            println!(
+                "  {mark}  {name}  ({:.0}%  n={}  CI=[{:.3}, {:.3}])",
+                s.success_rate * 100.0,
+                s.n_trials,
+                s.confidence_interval_95.lower,
+                s.confidence_interval_95.upper,
+            );
+        }
+        if let Some(trials) = trials {
             for trial in trials {
                 if !trial.success {
                     println!(

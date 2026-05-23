@@ -108,6 +108,32 @@ impl OpenAiClient {
         model.starts_with("o1-") || model.starts_with("o3-")
     }
 
+    /// Returns the JSON key OpenAI expects for the token-cap parameter on
+    /// `model`. Modern reasoning/GPT-5 models reject the legacy `max_tokens`
+    /// key and require `max_completion_tokens`; older chat models still
+    /// accept (and require) `max_tokens`.
+    pub fn max_tokens_param_name(model: &str) -> &'static str {
+        if Self::is_reasoning_model(model) {
+            "max_completion_tokens"
+        } else {
+            "max_tokens"
+        }
+    }
+
+    /// Modern OpenAI reasoning/GPT-5 family models use a different API
+    /// shape than the legacy chat models: they require
+    /// `max_completion_tokens` instead of `max_tokens`, and reject any
+    /// `temperature` / `top_p` value other than the default.
+    pub fn is_reasoning_model(model: &str) -> bool {
+        model.starts_with("gpt-5")
+            || model.starts_with("o1")
+            || model.starts_with("o3")
+            || model.starts_with("o4")
+            || model.starts_with("gpt-4o")
+            || model.starts_with("gpt-4.1")
+            || model.starts_with("gpt-4.5")
+    }
+
     // -------------------------------------------------------------------
     // Raw API methods
     // -------------------------------------------------------------------
@@ -127,10 +153,11 @@ impl OpenAiClient {
             "messages": messages,
         });
 
-        if !Self::is_o1_model(model) {
-            if let Some(max_tokens) = options.max_tokens {
-                request_body["max_tokens"] = json!(max_tokens);
-            }
+        let reasoning = Self::is_reasoning_model(model);
+        if let Some(max_tokens) = options.max_tokens {
+            request_body[Self::max_tokens_param_name(model)] = json!(max_tokens);
+        }
+        if !Self::is_o1_model(model) && !reasoning {
             if let Some(temp) = options.temperature {
                 request_body["temperature"] = json!(temp);
             }
@@ -198,10 +225,11 @@ impl OpenAiClient {
                 "stream": true,
             });
 
-            if !Self::is_o1_model(model) {
-                if let Some(max_tokens) = options.max_tokens {
-                    request_body["max_tokens"] = json!(max_tokens);
-                }
+            let reasoning = Self::is_reasoning_model(model);
+            if let Some(max_tokens) = options.max_tokens {
+                request_body[Self::max_tokens_param_name(model)] = json!(max_tokens);
+            }
+            if !Self::is_o1_model(model) && !reasoning {
                 if let Some(temp) = options.temperature {
                     request_body["temperature"] = json!(temp);
                 }

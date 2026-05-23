@@ -387,24 +387,32 @@ impl AnthropicClient {
 
                 buffer.push_str(&String::from_utf8_lossy(&chunk));
 
-                // Process complete events (delimited by \n\n)
+                // Process complete events (delimited by \n\n). Anthropic
+                // SSE events use the full `event: <type>\ndata: {...}` shape,
+                // so scan each block for the `data:` line rather than
+                // requiring `data:` at position 0.
                 while let Some(pos) = buffer.find("\n\n") {
                     let event_data = buffer[..pos].to_string();
                     buffer = buffer[pos + 2..].to_string();
 
-                    // Parse SSE event
-                    if let Some(data) = event_data.strip_prefix("data: ") {
-                        if data == "[DONE]" {
-                            continue;
-                        }
+                    let Some(data) = event_data
+                        .lines()
+                        .find_map(|l| l.strip_prefix("data: ").or_else(|| l.strip_prefix("data:")))
+                    else {
+                        continue;
+                    };
+                    let data = data.trim_start();
 
-                        match serde_json::from_str::<AnthropicStreamEvent>(data) {
-                            Ok(event) => {
-                                yield Ok(event);
-                            }
-                            Err(e) => {
-                                tracing::warn!("Failed to parse stream event: {}", e);
-                            }
+                    if data == "[DONE]" {
+                        continue;
+                    }
+
+                    match serde_json::from_str::<AnthropicStreamEvent>(data) {
+                        Ok(event) => {
+                            yield Ok(event);
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to parse stream event: {}", e);
                         }
                     }
                 }

@@ -22,6 +22,7 @@ use brainwires_eval::EvaluationCase;
 
 pub mod assemblies;
 pub mod cases;
+pub mod live;
 pub mod manifest;
 pub mod registry;
 
@@ -78,7 +79,18 @@ pub fn tier_c_suite() -> Vec<Arc<dyn EvaluationCase>> {
     assemblies::all()
 }
 
-/// Convenience: every case across all three tiers.
+/// Tier-D suite: live-provider integration cases. Each case self-skips
+/// when its required `BRAINWIRES_LIVE_*` env vars are absent, so opting
+/// in is a matter of exporting the keys before invoking the harness.
+///
+/// Excluded from [`all_cases`] so the default `cargo xtask test-harness run`
+/// stays offline and free. Reach with `--tier=d`.
+pub fn tier_d_suite() -> Vec<Arc<dyn EvaluationCase>> {
+    registry::all_live_cases()
+}
+
+/// Convenience: every Tier A/B/C case (offline + deterministic). Tier-D
+/// is opt-in and not included here.
 pub fn all_cases() -> Vec<Arc<dyn EvaluationCase>> {
     let mut v = tier_a_suite();
     v.extend(tier_b_suite());

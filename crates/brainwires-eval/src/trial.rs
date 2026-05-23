@@ -17,9 +17,16 @@ pub struct TrialResult {
     pub trial_id: usize,
     /// Whether the trial succeeded.
     pub success: bool,
+    /// `true` if the case opted out before running (e.g. live-provider
+    /// integration case with no API key in the environment). Skipped trials
+    /// still count as `success == true` so they don't tank the success rate
+    /// of a tier, but reporters surface them distinctly.
+    #[serde(default)]
+    pub skipped: bool,
     /// Wall-clock duration of the trial in milliseconds.
     pub duration_ms: u64,
-    /// Error message when `success == false`.
+    /// Error message when `success == false`, or skip reason when
+    /// `skipped == true`.
     pub error: Option<String>,
     /// Arbitrary key-value metadata emitted by the case (e.g. iteration count,
     /// token usage, tool names used).
@@ -32,6 +39,7 @@ impl TrialResult {
         Self {
             trial_id,
             success: true,
+            skipped: false,
             duration_ms,
             error: None,
             metadata: HashMap::new(),
@@ -43,8 +51,22 @@ impl TrialResult {
         Self {
             trial_id,
             success: false,
+            skipped: false,
             duration_ms,
             error: Some(error.into()),
+            metadata: HashMap::new(),
+        }
+    }
+
+    /// Create a skipped trial result. `reason` is surfaced via `error` so
+    /// reporters and JSON consumers can read it without a separate field.
+    pub fn skipped(trial_id: usize, reason: impl Into<String>) -> Self {
+        Self {
+            trial_id,
+            success: true,
+            skipped: true,
+            duration_ms: 0,
+            error: Some(reason.into()),
             metadata: HashMap::new(),
         }
     }

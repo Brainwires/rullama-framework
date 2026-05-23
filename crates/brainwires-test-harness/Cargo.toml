@@ -28,10 +28,12 @@ brainwires-mcp-server = { workspace = true }
 brainwires-agent = { workspace = true }
 brainwires-inference = { workspace = true }
 brainwires-tool-builtins = { workspace = true }
+brainwires-provider = { workspace = true }
 chrono = { workspace = true }
 semver = { workspace = true }
 
 async-trait = { workspace = true }
+futures = { workspace = true }
 inventory = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
