@@ -24,7 +24,7 @@ use wgpu::{Buffer, BufferDescriptor, BufferUsages};
 use crate::backend::WgpuCtx;
 use crate::error::{Result, RullamaError};
 use crate::model::config::Gemma4Config;
-use crate::reference::forward_chained::{LayerLoraSlots, LoraSlot};
+use crate::reference::forward_chained::{GlobalLoraSlots, LayerLoraSlots, LoraSlot};
 
 /// Identifies one LoRA wrapper.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -51,10 +51,16 @@ pub struct InferenceLoraLayer {
     pub scale: f32,
     /// A matrix, `[rank, in_dim]` row-major, f32.
     pub a: Buffer,
-    /// B matrix, `[out_dim, rank]` row-major, f32.
+    /// B matrix, `[out_dim, rank]` row-major. f32 by default; when
+    /// `b_is_f16` is true the buffer is half-sized and holds packed
+    /// f16 pairs (two elements per `u32`).
     pub b: Buffer,
     /// `[rank]` scratch holding `A·x` from the forward correction.
     pub z: Buffer,
+    /// `true` iff `b` is packed f16. Currently set only for the
+    /// `lm_head` global LoRA slot to halve bandwidth on the
+    /// `vocab × rank` matmul. Requires `rank` to be even.
+    pub b_is_f16: bool,
 }
 
 /// Loaded inference adapter — a collection of `InferenceLoraLayer`
@@ -112,14 +118,22 @@ impl InferenceAdapter {
             .map_err(|e| RullamaError::Inference(format!("safetensors parse: {e}")))?;
 
         // Allocate shape-matched slots for every (layer, projection).
+        // `lm_head` and `embed_tokens` are "global" — allocated once at
+        // layer=0 by convention; matches the training-side keying in
+        // `rullama-finetune::session::build_lora_state`.
         let mut layers: BTreeMap<LoraKey, InferenceLoraLayer> = BTreeMap::new();
         let d_model = cfg.d_model;
+        let vocab = cfg.vocab_size;
+        const GLOBAL_TARGETS: &[&str] = &["lm_head", "embed_tokens"];
         for li in 0..cfg.n_layers {
             let head_dim = cfg.head_dim(li);
             let n_heads_dim = cfg.n_heads * head_dim;
             let n_kv_dim = cfg.n_kv_heads(li) * head_dim;
             let ffn_n = cfg.ffn(li);
             for proj in &target_modules {
+                if GLOBAL_TARGETS.contains(&proj.as_str()) {
+                    continue; // global pass below
+                }
                 let (in_dim, out_dim) = match proj.as_str() {
                     "attn_q" => (d_model, n_heads_dim),
                     "attn_k" => (d_model, n_kv_dim),
@@ -134,9 +148,28 @@ impl InferenceAdapter {
                         )));
                     }
                 };
-                let layer = InferenceLoraLayer::alloc(&ctx, in_dim, rank, out_dim, alpha);
+                let layer = InferenceLoraLayer::alloc(&ctx, in_dim, rank, out_dim, alpha, false);
                 layers.insert(LoraKey::new(li, proj.clone()), layer);
             }
+        }
+        // Global targets — allocate once each (keyed at layer=0).
+        for proj in &target_modules {
+            if !GLOBAL_TARGETS.contains(&proj.as_str()) {
+                continue;
+            }
+            let (in_dim, out_dim) = match proj.as_str() {
+                "lm_head" => (d_model, vocab),
+                "embed_tokens" => (vocab, d_model),
+                _ => unreachable!("filter above admits only GLOBAL_TARGETS"),
+            };
+            // Only `lm_head` enables f16-packed B: its [vocab, rank]
+            // matrix (~16 MB at f32 for Gemma 4 vocab=262 144, rank=16)
+            // dominates LoRA bandwidth per token; quantizing halves the
+            // phase-2 B·z read. embed_tokens uses the column-indexed
+            // path, not the fused kernel — leave it f32.
+            let b_is_f16 = proj == "lm_head" && rank.is_multiple_of(2);
+            let layer = InferenceLoraLayer::alloc(&ctx, in_dim, rank, out_dim, alpha, b_is_f16);
+            layers.insert(LoraKey::new(0, proj.clone()), layer);
         }
 
         // Upload every matching tensor from the file.
@@ -162,25 +195,42 @@ impl InferenceAdapter {
                 Some(l) => l,
                 None => continue,
             };
-            let buf = match ab {
-                "A" => &layer.a,
-                "B" => &layer.b,
+            let (buf, target_packed_f16) = match ab {
+                "A" => (&layer.a, false),
+                "B" => (&layer.b, layer.b_is_f16),
                 _ => continue,
             };
             let data = tensor.data();
+            // Element count of the LoRA tensor regardless of buffer-side
+            // packing. `buf.size()` is in BYTES — f32 is 4/elem, packed
+            // f16 is 2/elem.
+            let n_elems = if target_packed_f16 {
+                (buf.size() / 2) as usize
+            } else {
+                (buf.size() / 4) as usize
+            };
             let upload_bytes: Vec<u8> = match tensor.dtype() {
                 Dtype::F32 => {
-                    if data.len() != buf.size() as usize {
+                    if data.len() != n_elems * 4 {
                         return Err(RullamaError::Inference(format!(
                             "tensor {name} f32 size mismatch: file={} expected={}",
                             data.len(),
-                            buf.size()
+                            n_elems * 4
                         )));
                     }
-                    data.to_vec()
+                    if target_packed_f16 {
+                        // f32 -> f16 quantize, then memcpy. The kernel
+                        // reads each u32 as two consecutive f16 elements
+                        // via unpack2x16float (little-endian: .x = low 16
+                        // bits → even index).
+                        let src: &[f32] = bytemuck::cast_slice(data);
+                        let packed = pack_f32_to_f16_pairs(src);
+                        bytemuck::cast_slice::<u32, u8>(&packed).to_vec()
+                    } else {
+                        data.to_vec()
+                    }
                 }
                 Dtype::F16 => {
-                    let n_elems = (buf.size() / 4) as usize;
                     if data.len() != n_elems * 2 {
                         return Err(RullamaError::Inference(format!(
                             "tensor {name} f16 size mismatch: file={} expected={}",
@@ -188,9 +238,14 @@ impl InferenceAdapter {
                             n_elems * 2
                         )));
                     }
-                    let h: &[half::f16] = bytemuck::cast_slice(data);
-                    let f: Vec<f32> = h.iter().map(|&x| x.to_f32()).collect();
-                    bytemuck::cast_slice::<f32, u8>(&f).to_vec()
+                    if target_packed_f16 {
+                        // Already f16 on disk; reinterpret as u32 pairs.
+                        data.to_vec()
+                    } else {
+                        let h: &[half::f16] = bytemuck::cast_slice(data);
+                        let f: Vec<f32> = h.iter().map(|&x| x.to_f32()).collect();
+                        bytemuck::cast_slice::<f32, u8>(&f).to_vec()
+                    }
                 }
                 other => {
                     return Err(RullamaError::Inference(format!(
@@ -226,6 +281,19 @@ impl InferenceAdapter {
             .collect()
     }
 
+    /// Build the model-global `GlobalLoraSlots` view (lm_head + embed_tokens).
+    /// Either slot is `None` when the adapter doesn't include that target.
+    /// Returns `GlobalLoraSlots::default()` if neither was loaded.
+    pub fn global_slots(&self) -> GlobalLoraSlots<'_> {
+        GlobalLoraSlots {
+            embed_tokens: self
+                .layers
+                .get(&LoraKey::new(0, "embed_tokens"))
+                .map(slot_view),
+            lm_head: self.layers.get(&LoraKey::new(0, "lm_head")).map(slot_view),
+        }
+    }
+
     /// Number of LoRA slots loaded.
     pub fn len(&self) -> usize {
         self.layers.len()
@@ -238,11 +306,22 @@ impl InferenceAdapter {
 }
 
 impl InferenceLoraLayer {
-    fn alloc(ctx: &WgpuCtx, in_dim: u32, rank: u32, out_dim: u32, alpha: f32) -> Self {
+    fn alloc(
+        ctx: &WgpuCtx,
+        in_dim: u32,
+        rank: u32,
+        out_dim: u32,
+        alpha: f32,
+        b_is_f16: bool,
+    ) -> Self {
         let scale = alpha / rank as f32;
         let device = &ctx.device;
         let a_bytes = (in_dim as usize * rank as usize * 4) as u64;
-        let b_bytes = (out_dim as usize * rank as usize * 4) as u64;
+        // B is half-size in bytes when packed f16. Total element count
+        // stays `out_dim * rank`; storage layout is `(out_dim * rank) / 2`
+        // u32 words. Requires even rank.
+        let b_elem_bytes = if b_is_f16 { 2 } else { 4 };
+        let b_bytes = (out_dim as usize * rank as usize * b_elem_bytes) as u64;
         let usage = BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC;
         let a = device.create_buffer(&BufferDescriptor {
             label: Some("infer.lora.A"),
@@ -251,7 +330,11 @@ impl InferenceLoraLayer {
             mapped_at_creation: false,
         });
         let b = device.create_buffer(&BufferDescriptor {
-            label: Some("infer.lora.B"),
+            label: if b_is_f16 {
+                Some("infer.lora.B.f16")
+            } else {
+                Some("infer.lora.B")
+            },
             size: b_bytes,
             usage,
             mapped_at_creation: false,
@@ -272,6 +355,7 @@ impl InferenceLoraLayer {
             a,
             b,
             z,
+            b_is_f16,
         }
     }
 }
@@ -283,5 +367,20 @@ fn slot_view(l: &InferenceLoraLayer) -> LoraSlot<'_> {
         z: &l.z,
         rank: l.rank,
         scale: l.scale,
+        b_is_f16: l.b_is_f16,
     }
+}
+
+/// Quantize f32 → f16 and pack two consecutive elements per `u32` for
+/// the f16-B fused kernel. `src.len()` must be even (kernel constraint
+/// is even `rank`; `out_dim * rank` is therefore always even).
+fn pack_f32_to_f16_pairs(src: &[f32]) -> Vec<u32> {
+    debug_assert!(src.len().is_multiple_of(2));
+    let mut out = Vec::with_capacity(src.len() / 2);
+    for pair in src.chunks_exact(2) {
+        let lo = half::f16::from_f32(pair[0]).to_bits() as u32;
+        let hi = half::f16::from_f32(pair[1]).to_bits() as u32;
+        out.push((hi << 16) | lo);
+    }
+    out
 }

@@ -107,6 +107,7 @@ async fn run_one_step(
         alpha: 8.0,
         dropout: 0.0,
         target_modules: vec!["attn_q".into(), "attn_o".into()],
+        target_layers: None,
     };
     // Use the same seed for LoRA A init in both runs so the only
     // input difference is the scratch layout.

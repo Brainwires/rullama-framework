@@ -53,6 +53,7 @@ fn main() -> ExitCode {
         r_arc,
         ctx.device.clone(),
         ctx.queue.clone(),
+        Arc::clone(&ctx.bind_cache),
     ));
     let mut fwd =
         pollster::block_on(Forward::new(cfg, ctx, pipes, weights, wcache)).expect("Forward::new");

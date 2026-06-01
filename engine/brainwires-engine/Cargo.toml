@@ -1,6 +1,6 @@
 [package]
 name             = "rullama"
-version          = "0.3.0"
+version          = "0.4.0"
 edition.workspace      = true
 rust-version.workspace = true
 license.workspace      = true
@@ -48,6 +48,14 @@ web-sys = { workspace = true, features = [
     "Navigator",
     "Window",
     "WorkerGlobalScope",
+    # `DedicatedWorkerGlobalScope` enables the typed
+    # `set_timeout_with_callback_and_timeout_and_arguments_0` used by
+    # the head→backward yield in `forward_chained.rs`. The previous
+    # `js_sys::Reflect::get(global, "setTimeout")` path was silently
+    # not awaiting on iOS Safari (the `bwd.post_yield` beacon never
+    # fired on real device) — switching to the typed Worker scope
+    # gives a guaranteed Promise-resolving yield.
+    "DedicatedWorkerGlobalScope",
     "WorkerNavigator",
     "Gpu",
     "GpuAdapter",

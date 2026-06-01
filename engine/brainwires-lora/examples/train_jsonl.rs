@@ -35,6 +35,13 @@
 //!   - `RULLAMA_TRAIN_GRAD_CLIP` — max grad L2 norm (default 0 = off)
 //!   - `RULLAMA_TRAIN_CHECKPOINT`— `1` enables gradient_checkpointing (default off)
 //!   - `RULLAMA_TRAIN_MIXED_PRECISION` — `1` saves adapter in f16     (default off)
+//!   - `RULLAMA_TRAIN_APPLY_CHAT_TEMPLATE` — `1` wraps prompts in the
+//!     Gemma 4 chat template before tokenizing (default off). This is
+//!     what the browser PWA does via `client.renderChat([...], false)`;
+//!     set this when training an adapter that will be applied in the
+//!     PWA, so train-time tokens match inference-time tokens. Without
+//!     it, native and browser see different token sequences and the
+//!     adapter won't transfer.
 //!   - `RULLAMA_ADAPTER_PATH`    — write adapter here when done     (default unset)
 //!   - plus the backward-side knobs honored by `Forward::backward_step`
 //!     (`RULLAMA_CLIP_DHIDDEN`, `RULLAMA_DEBUG_GRADS`,
@@ -45,7 +52,7 @@ use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 
-use rullama::api::Model;
+use rullama::api::{ChatMessage, ChatRole, Model};
 use rullama_finetune::TrainingSession;
 use rullama_finetune::dataset_loader::TrainingDataset;
 use rullama_finetune::shared::config::{LoraConfig, LossMode, LrScheduler, TrainingHyperparams};
@@ -125,6 +132,13 @@ async fn run() -> Result<(), BoxError> {
     let grad_clip = env_f32("RULLAMA_TRAIN_GRAD_CLIP", 0.0);
     let checkpointing = env::var("RULLAMA_TRAIN_CHECKPOINT").is_ok();
     let mixed_precision = env::var("RULLAMA_TRAIN_MIXED_PRECISION").is_ok();
+    let apply_chat_template = env::var("RULLAMA_TRAIN_APPLY_CHAT_TEMPLATE").is_ok();
+    // Newly exposed knobs to match Unsloth's recommended Gemma 4 recipe:
+    //   weight_decay = 0.01, lora_dropout = 0.05.
+    // Without these, training is brittle — the user's earlier iter
+    // runs diverged after ~80 steps because there was no regularization.
+    let weight_decay = env_f32("RULLAMA_TRAIN_WEIGHT_DECAY", 0.0) as f64;
+    let dropout = env_f32("RULLAMA_TRAIN_DROPOUT", 0.0);
 
     eprintln!("[load] gguf = {}", gguf_path.display());
     let bytes = fs::read(&gguf_path)?;
@@ -154,9 +168,60 @@ async fn run() -> Result<(), BoxError> {
     let mut tokenized_per: Vec<(Vec<u32>, Vec<u32>)> = Vec::new();
     let mut max_seq_len = 0usize;
     let mut max_prompt_len = 0usize;
+    // When chat template is on, append the model's actual EOS TOKEN
+    // (not a text marker) to the tokenized completion. Without an EOS
+    // training signal, per_position loss has nothing to predict after
+    // the last completion token, so greedy decoding loops on whatever
+    // token had the highest activation last ("Berlin Berlin Berlin..."
+    // when the only Germany example was " Berlin."). The earlier
+    // iteration appended the *text* `<turn|>\n` returned by
+    // `gemma4_small::end_of_turn()` — but that string tokenizes into
+    // ordinary tokens (`<`, `turn`, `|`, `>`, `\n`), NOT the model's
+    // EOS token. The model then learned to emit literal "<turn|>"
+    // characters after answers, which `eval_adapter::is_eos_native`
+    // does NOT recognize, so generation kept looping anyway.
+    //
+    // Correct fix: take the first ID from `cfg.eos_ids` and push it
+    // onto the completion token vector. That ID is exactly what
+    // `is_eos_native` checks for at eval time, so the adapter learns
+    // to emit the same token greedy decoding actually stops on.
+    let eot_token: Option<u32> = if apply_chat_template {
+        model.forward().cfg().eos_ids.first().copied()
+    } else {
+        None
+    };
+    if apply_chat_template {
+        eprintln!(
+            "[tok] applying Gemma 4 chat template to prompts (RULLAMA_TRAIN_APPLY_CHAT_TEMPLATE set); \
+             appending EOS token {:?} to completions for stop-training",
+            eot_token
+        );
+    }
     for ex in &dataset.examples {
-        let prompt = model.encode_tokens(&ex.prompt);
-        let completion = model.encode_tokens(&ex.completion);
+        // When `apply_chat_template` is set, wrap the prompt in the same
+        // `<start_of_turn>user\n...<end_of_turn>\n<start_of_turn>model\n`
+        // sequence the PWA emits via `client.renderChat([...], false)`.
+        // Mirrors `examples/web/src/components/FineTunePanel.tsx`'s
+        // pre-tokenize pass so the adapter trains on the exact tokens
+        // it'll see at inference time in the browser.
+        let prompt_text = if apply_chat_template {
+            model.render_chat_native(
+                &[ChatMessage {
+                    role: ChatRole::User,
+                    content: ex.prompt.clone(),
+                }],
+                false,
+            )
+        } else {
+            ex.prompt.clone()
+        };
+        let prompt = model.encode_tokens(&prompt_text);
+        let mut completion = model.encode_tokens(&ex.completion);
+        // Append the model's actual EOS token id so training has an
+        // explicit "stop here" position.
+        if let Some(eot) = eot_token {
+            completion.push(eot);
+        }
         if prompt.is_empty() || completion.is_empty() {
             continue;
         }
@@ -209,11 +274,30 @@ async fn run() -> Result<(), BoxError> {
             ]
         });
     eprintln!("[hp] targets = {:?}", targets);
+    // Optional per-layer targeting. Set RULLAMA_TRAIN_LAYERS="5" or
+    // "3,7,9" to restrict LoRA wrapping to specific layers — the
+    // ROME pipeline uses this to install a single-layer rank-1 LoRA.
+    // Unset = all layers (the standard fine-tune behavior).
+    let target_layers: Option<Vec<u32>> = env::var("RULLAMA_TRAIN_LAYERS")
+        .ok()
+        .map(|s| {
+            s.split(',')
+                .filter_map(|t| t.trim().parse().ok())
+                .collect::<Vec<u32>>()
+        })
+        .filter(|v| !v.is_empty());
+    if let Some(layers) = &target_layers {
+        eprintln!(
+            "[hp] target_layers = {:?} (other layers stay frozen)",
+            layers
+        );
+    }
     let lora_cfg = LoraConfig {
         rank,
         alpha,
-        dropout: 0.0,
+        dropout,
         target_modules: targets,
+        target_layers,
     };
     // PerPosition forwards run over prompt+completion; NextToken only
     // ever sees prompt tokens. Size scratch for the longest possible.
@@ -223,7 +307,7 @@ async fn run() -> Result<(), BoxError> {
     };
     let mut hp = TrainingHyperparams {
         learning_rate: lr,
-        weight_decay: 0.0,
+        weight_decay,
         max_seq_len: max_seq_len_for_hp,
         seed,
         loss_mode,

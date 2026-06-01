@@ -22,8 +22,8 @@ use rullama::backend::dispatch::{
     AdamConfig, adam_step_chained, scale_chained, sum_of_squares_chained,
 };
 use rullama::reference::forward_chained::{
-    BackwardScratchView, LayerCaptureBuffers, LayerLoraGrads, LayerLoraSlots, LoraGradPair,
-    LoraSlot,
+    BackwardScratchView, GlobalLoraGrads, GlobalLoraSlots, LayerCaptureBuffers, LayerLoraGrads,
+    LayerLoraSlots, LoraGradPair, LoraSlot,
 };
 
 use crate::lora::{LoraKey, LoraState};
@@ -95,14 +95,44 @@ pub struct TrainingSession {
     /// in this revision; full bf16 kernel variants are a future
     /// optimization.
     mixed_precision: bool,
+    /// Truncated backward floor — only train layers >= this index.
+    /// 0 means "backprop every layer" (default). Threaded into every
+    /// `backward_step_with_progress` call. See
+    /// `TrainingHyperparams::backward_layer_floor`.
+    backward_layer_floor: u32,
     /// 1-based step counter used by Adam's bias correction. Increments
     /// at the end of every successful `step()` call.
     step_num: u32,
+    /// Patch 7 — backward-kernel warmup flag. Pre-warm runs once on the
+    /// FIRST call to `step_with_progress` / `step_per_position_with_progress`
+    /// (not in `new()` because warmup is async and `new()` is sync to
+    /// support wasm-bindgen's constructor). After warmup, every
+    /// backward kernel has been executed once with throwaway buffers,
+    /// triggering Metal's first-use state setup BEFORE the 1.4 GiB
+    /// weight set tips iOS jetsam.
+    warmed_up: bool,
+    /// Mirror of `hp.memory_tight` saved at session construction.
+    /// Used to gate the backward-kernel warmup call (warmup itself is
+    /// an iOS-specific Metal-state setup; on desktops the pipelines
+    /// are compiled at Pipelines::new and the warmup is pure overhead).
+    memory_tight: bool,
 }
+
+/// Names of the two "global" LoRA targets — i.e. targets whose state is
+/// allocated ONCE per model, not per layer. Allocated with `layer = 0`
+/// by convention; the forward/backward paths look them up by projection
+/// name only.
+pub const LM_HEAD: &str = "lm_head";
+pub const EMBED_TOKENS: &str = "embed_tokens";
+pub const GLOBAL_TARGETS: &[&str] = &[LM_HEAD, EMBED_TOKENS];
 
 /// Shape table the LoRA inserter walks. Pulled out so [`build_lora_state`]
 /// and the probe path see the same per-layer shapes without duplicating
 /// the match arms.
+///
+/// For the two global targets (`lm_head`, `embed_tokens`) the `layer`
+/// parameter is unused — surface a clear error if a caller passes a
+/// non-zero layer (catches misuse from the per-layer allocation loop).
 fn lora_projection_dims(
     cfg: &rullama::model::config::Gemma4Config,
     layer: u32,
@@ -113,6 +143,7 @@ fn lora_projection_dims(
     let n_heads_dim = cfg.n_heads * head_dim;
     let n_kv_dim = cfg.n_kv_heads(layer) * head_dim;
     let ffn_n = cfg.ffn(layer);
+    let vocab = cfg.vocab_size;
     Ok(match proj {
         "attn_q" => (d_model, n_heads_dim),
         "attn_k" => (d_model, n_kv_dim),
@@ -121,9 +152,25 @@ fn lora_projection_dims(
         "ffn_gate" => (d_model, ffn_n),
         "ffn_up" => (d_model, ffn_n),
         "ffn_down" => (ffn_n, d_model),
+        LM_HEAD => {
+            if layer != 0 {
+                return Err(TrainingError::Config(format!(
+                    "lm_head LoRA is global; expected layer=0, got layer={layer}"
+                )));
+            }
+            (d_model, vocab)
+        }
+        EMBED_TOKENS => {
+            if layer != 0 {
+                return Err(TrainingError::Config(format!(
+                    "embed_tokens LoRA is global; expected layer=0, got layer={layer}"
+                )));
+            }
+            (vocab, d_model)
+        }
         other => {
             return Err(TrainingError::Config(format!(
-                "supported LoRA targets: attn_q/k/v/o + ffn_gate/up/down, got {other}"
+                "supported LoRA targets: attn_q/k/v/o + ffn_gate/up/down + lm_head + embed_tokens, got {other}"
             )));
         }
     })
@@ -139,8 +186,16 @@ fn build_lora_state(
     seed_base: u64,
 ) -> Result<LoraState, TrainingError> {
     let mut loras = LoraState::new(ctx);
+    // Pass 1 — per-layer targets. Global targets (lm_head, embed_tokens)
+    // are skipped here and allocated exactly once below.
     for layer in 0..cfg.n_layers {
+        if !lora_cfg.includes_layer(layer) {
+            continue;
+        }
         for proj in &lora_cfg.target_modules {
+            if GLOBAL_TARGETS.contains(&proj.as_str()) {
+                continue;
+            }
             let (in_dim, out_dim) = lora_projection_dims(cfg, layer, proj)?;
             // Deterministic seed per (layer, proj) so reruns are
             // reproducible without an extra RNG.
@@ -155,6 +210,37 @@ fn build_lora_state(
                 .wrapping_add(proj_idx * 17);
             loras.insert(
                 LoraKey::new(layer, proj.clone()),
+                in_dim,
+                lora_cfg.rank,
+                out_dim,
+                lora_cfg.alpha,
+                seed,
+            )?;
+        }
+    }
+    // Pass 2 — global targets. Keyed at layer=0; seeded with a distinct
+    // offset so the init RNG doesn't collide with layer-0 attn seeds.
+    // Skipped entirely if the layer filter excludes the global layer
+    // (which is unusual but supported via `includes_layer(0)`).
+    if lora_cfg.includes_layer(0) {
+        for proj in &lora_cfg.target_modules {
+            if !GLOBAL_TARGETS.contains(&proj.as_str()) {
+                continue;
+            }
+            let (in_dim, out_dim) = lora_projection_dims(cfg, 0, proj)?;
+            // Distinct seed offsets per global target to keep their
+            // initial A matrices uncorrelated. The constants are
+            // arbitrary primes chosen to be far from any per-layer
+            // (layer * 7919 + proj_idx * 17) value, so global LoRA
+            // init is reproducible but doesn't reuse a per-layer slot.
+            let proj_offset: u64 = match proj.as_str() {
+                LM_HEAD => 0x4C4D_4845_4144_u64,      // "LMHEAD"
+                EMBED_TOKENS => 0x454D_4254_4F4B_u64, // "EMBTOK"
+                _ => unreachable!("filter above admits only GLOBAL_TARGETS"),
+            };
+            let seed = seed_base.wrapping_add(proj_offset);
+            loras.insert(
+                LoraKey::new(0, proj.clone()),
                 in_dim,
                 lora_cfg.rank,
                 out_dim,
@@ -179,12 +265,35 @@ pub fn estimate_training_bytes(
     let d_model = cfg.d_model as u64;
     let mut bytes: u64 = 0;
     // LoRA state — A, B, dA, dB, m_A, v_A, m_B, v_B (= 4× A + 4× B).
+    // Per-layer pass; global targets handled separately below to mirror
+    // build_lora_state's two-pass allocation.
     for layer in 0..cfg.n_layers {
+        if !lora_cfg.includes_layer(layer) {
+            continue;
+        }
         for proj in &lora_cfg.target_modules {
+            if GLOBAL_TARGETS.contains(&proj.as_str()) {
+                continue;
+            }
             if let Ok((in_dim, out_dim)) = lora_projection_dims(cfg, layer, proj) {
                 let a_elems = (in_dim as u64) * (lora_cfg.rank as u64);
                 let b_elems = (out_dim as u64) * (lora_cfg.rank as u64);
                 bytes += 4 * a_elems * 4 + 4 * b_elems * 4; // 4-buffer set ×4 bytes f32
+            }
+        }
+    }
+    // Global targets — allocated once each. At rank=16, vocab=262144:
+    // each is ~16·d_model + vocab·16 ≈ 4.2M f32 trainable params,
+    // ~16 MiB per buffer × 8 buffers ≈ 128 MiB GPU per target.
+    if lora_cfg.includes_layer(0) {
+        for proj in &lora_cfg.target_modules {
+            if !GLOBAL_TARGETS.contains(&proj.as_str()) {
+                continue;
+            }
+            if let Ok((in_dim, out_dim)) = lora_projection_dims(cfg, 0, proj) {
+                let a_elems = (in_dim as u64) * (lora_cfg.rank as u64);
+                let b_elems = (out_dim as u64) * (lora_cfg.rank as u64);
+                bytes += 4 * a_elems * 4 + 4 * b_elems * 4;
             }
         }
     }
@@ -232,12 +341,70 @@ impl TrainingSession {
     /// - One `TrainingScratch` sized for `hp.max_seq_len`.
     /// - An `AdamConfig` initialised from `hp` (lr, weight decay, etc.).
     pub fn new(
-        model: Model,
+        mut model: Model,
         lora_cfg: LoraConfig,
         hp: TrainingHyperparams,
     ) -> Result<Self, TrainingError> {
         let cfg = model.forward().cfg().clone();
         let ctx = Arc::new(model.forward().ctx().clone());
+
+        // **MeBP per-layer destroy ON.** Tested OFF first because
+        // the recompute alloc churn caused crashes — but that was with
+        // Patches 1+2 only. With the full stack (bind_cache + eager
+        // invalidate + Hash-based buf_id + per-layer flush_backward_phase
+        // collapse + tiled outproj + backward-kernel warmup), the
+        // recompute's per-layer alloc churn is heavily reduced (cache
+        // hits, no first-compile cost, fewer IPC round-trips). The
+        // 1417 MiB resident peak (without MeBP) was iPhone's actual
+        // wall — running iPhone tests showed jetsam firing at the
+        // forward→head transition where 1417 MiB resident + Metal's
+        // forward-end transient state exceeded GPUProcess ceiling.
+        //
+        // Per-layer destroy holds the cache at ~40 MiB throughout
+        // (one layer at a time during prefill, one at a time during
+        // backward recompute). iOS can't jetsam at 40 MiB.
+        // **Gated on `hp.memory_tight`.** All the iOS-Safari-WebGPU
+        // survival workarounds (MeBP per-layer destroy, tiled
+        // outproj, per-step yields, chunked destroy, kernel warmup)
+        // are pure overhead on Mac browsers / native — they trade
+        // ~3-5× extra compute time for the iPhone GPUProcess memory
+        // pressure relief that desktops simply don't need. When the
+        // user's "Memory-tight" toggle in the PWA's Fine-tune panel
+        // is off (auto-applied based on UA — defaults true on mobile,
+        // false on desktop), this gate disables all of them and
+        // restores the fast-path. See the equivalent flag on
+        // `Forward::mobile_mode`.
+        model
+            .forward_mut()
+            .set_forward_destroy_per_layer(hp.memory_tight);
+        model.forward_mut().set_mobile_mode(hp.memory_tight);
+        // Critical: tell Forward NOT to destroy blk.{floor..N-1} during
+        // the per-layer forward destroy. Those layers are walked by
+        // backward — their recompute does buffer_async fetches that
+        // hit the WeightCache when the weights stayed cached, OR
+        // re-uploads from OPFS when they didn't. The re-upload alloc
+        // churn was killing the iPhone page right after
+        // `bwd.post_yield` (real-device data point: the YIELD wasn't
+        // the issue once we removed it — the very next instruction,
+        // recompute's encode_layer, was). Without this floor, MeBP
+        // destroys every layer; with it, prefill peak is ~400 MiB
+        // (10 cached backward layers + token_embd at head) instead of
+        // ~38 MiB, but the recompute no longer thrashes.
+        // Real-device test result: floor==backward_layer_floor kept 10
+        // layers cached (~400 MiB) + token_embd (~315 MiB) = ~730 MiB
+        // peak during prefill. iOS jetsam fired at the forward→head
+        // transition. Bumping forward-destroy floor 5 above the
+        // backward-walk floor cuts cached layers to 5 (~200 MiB),
+        // dropping prefill peak to ~515 MiB. The 5 layers
+        // (`backward_layer_floor`..`+5`) recompute-refetches from OPFS
+        // during backward — accepting bounded alloc churn (5 layers
+        // worth, paced by the per-layer encoder submit) to keep prefill
+        // peak under the wall.
+        let fwd_destroy_floor =
+            (hp.backward_layer_floor.saturating_add(5)).min(model.forward().cfg().n_layers);
+        model
+            .forward_mut()
+            .set_forward_destroy_layer_floor(fwd_destroy_floor);
         let max_seq_len = hp.max_seq_len as u32;
         // `gradient_checkpointing=true` collapses the per-layer scratch
         // to one shared `LayerActivations` (cloned references) +
@@ -267,6 +434,8 @@ impl TrainingSession {
             loras,
             scratch,
             adam_cfg,
+            warmed_up: false,
+            memory_tight: hp.memory_tight,
             loss_mode: hp.loss_mode,
             lr_schedule: None,
             base_lr: hp.learning_rate,
@@ -275,6 +444,7 @@ impl TrainingSession {
             max_grad_norm: hp.max_grad_norm as f32,
             gradient_checkpointing: hp.gradient_checkpointing,
             mixed_precision: hp.mixed_precision,
+            backward_layer_floor: hp.backward_layer_floor,
             step_num: 1,
         })
     }
@@ -613,6 +783,17 @@ impl TrainingSession {
             })
             .collect();
 
+        // Model-global LoRA slots (lm_head, embed_tokens). Each keyed
+        // at layer=0 by convention; absent if the user didn't include
+        // the target in their `RULLAMA_TRAIN_TARGETS`.
+        let global_slots = GlobalLoraSlots {
+            embed_tokens: self
+                .loras
+                .get(&LoraKey::new(0, EMBED_TOKENS))
+                .map(slot_view),
+            lm_head: self.loras.get(&LoraKey::new(0, LM_HEAD)).map(slot_view),
+        };
+
         // Per-layer capture views into TrainingScratch.layers.
         let capture: Vec<LayerCaptureBuffers> = self
             .scratch
@@ -649,19 +830,23 @@ impl TrainingSession {
         for (i, &tok) in input_ids[..input_ids.len() - 1].iter().enumerate() {
             self.model
                 .forward_mut()
-                .step_with_lora_seqcap(tok, &lora_slots, &capture)
+                .step_with_lora_seqcap(tok, &lora_slots, &capture, Some(&global_slots))
                 .await
                 .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
             if let Some(cb) = progress_cb {
                 cb("prefill", (i + 1) as u32, prefill_total);
             }
+            // (Intra-prefill yields were tested on iPhone, didn't move
+            // the wall, and the run with them died earlier than without
+            // — possibly each yield exposes the Worker to iOS's
+            // suspended-process reaper. Removed.)
         }
         // Final position — capture activations + compute logits.
         let final_tok = *input_ids.last().unwrap();
         let _logits = self
             .model
             .forward_mut()
-            .step_capture(final_tok, &capture, Some(&lora_slots))
+            .step_capture(final_tok, &capture, Some(&lora_slots), Some(&global_slots))
             .await
             .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
         if let Some(cb) = progress_cb {
@@ -701,6 +886,14 @@ impl TrainingSession {
                     .map(grad_view),
             })
             .collect();
+        // Global LoRA grads (lm_head, embed_tokens). Keyed at layer=0.
+        let global_grads = GlobalLoraGrads {
+            embed_tokens: self
+                .loras
+                .get(&LoraKey::new(0, EMBED_TOKENS))
+                .map(grad_view),
+            lm_head: self.loras.get(&LoraKey::new(0, LM_HEAD)).map(grad_view),
+        };
         let s = &self.scratch;
         // `d_attn_out` aliases `d_q_pre_rope`: the latter is never
         // written by `backward_layer` (`rope_neox_backward` modifies
@@ -761,11 +954,18 @@ impl TrainingSession {
                 &capture,
                 &lora_slots,
                 &grads,
+                Some(&global_slots),
+                Some(&global_grads),
+                // Backward's d_hidden at layer-0 input corresponds to
+                // the FINAL position's embedding lookup — that's the
+                // position whose logits the loss is measured against.
+                input_ids.last().copied(),
                 &scratch_view,
                 history_len,
                 pos,
                 self.gradient_checkpointing,
                 progress_cb,
+                self.backward_layer_floor,
             )
             .await
             .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
@@ -807,6 +1007,27 @@ impl TrainingSession {
         target_id: u32,
         progress_cb: Option<&'cb TrainingProgressCb<'cb>>,
     ) -> Result<f32, TrainingError> {
+        // Patch 7: pre-warm backward kernels on first step — but only
+        // in memory-tight mode. The warmup runs ~15 throwaway dispatches
+        // to trigger iOS Metal's per-pipeline first-use state setup
+        // (argument buffer staging, threadgroup memory reservation)
+        // before the 1.4 GiB weight set is built. Desktop browsers /
+        // native already have those costs paid at Pipelines::new and
+        // the warmup is pure overhead.
+        if self.memory_tight && !self.warmed_up {
+            if let Some(cb) = progress_cb {
+                cb("warmup.bwd.start", 0, 1);
+            }
+            self.model
+                .forward_mut()
+                .warmup_backward_pipelines()
+                .await
+                .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
+            self.warmed_up = true;
+            if let Some(cb) = progress_cb {
+                cb("warmup.bwd.done", 1, 1);
+            }
+        }
         self.zero_grads();
         let loss = self
             .forward_backward_with_progress(input_ids, target_id, progress_cb)
@@ -821,6 +1042,12 @@ impl TrainingSession {
         if let Some(cb) = progress_cb {
             cb("optimizer", 0, 1);
         }
+        // **Patch 5: end-of-step bind-cache clear.** Drops every cached
+        // (uniform, bind_group) so cross-step entries don't accumulate
+        // in WebKit's GPUProcess bind-group table. Cost is ~50 cache
+        // misses at the start of next step — negligible vs the ~5K
+        // hits/step the cache absorbs once warm.
+        self.model.forward().clear_bind_cache();
         Ok(loss)
     }
 
@@ -914,6 +1141,13 @@ impl TrainingSession {
                     .map(slot_view),
             })
             .collect();
+        let global_slots = GlobalLoraSlots {
+            embed_tokens: self
+                .loras
+                .get(&LoraKey::new(0, EMBED_TOKENS))
+                .map(slot_view),
+            lm_head: self.loras.get(&LoraKey::new(0, LM_HEAD)).map(slot_view),
+        };
         let capture: Vec<LayerCaptureBuffers> = self
             .scratch
             .layers
@@ -948,7 +1182,7 @@ impl TrainingSession {
         for (idx, &tok) in input_ids.iter().enumerate() {
             self.model
                 .forward_mut()
-                .step_with_lora_seqcap(tok, &lora_slots, &capture)
+                .step_with_lora_seqcap(tok, &lora_slots, &capture, Some(&global_slots))
                 .await
                 .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
             let pos_just_finished = (self.model.forward().pos() as u64).saturating_sub(1);
@@ -968,6 +1202,12 @@ impl TrainingSession {
             if let Some(cb) = progress_cb {
                 cb("prefill", (idx + 1) as u32, prefill_total);
             }
+            // (Intra-prefill yields were tested on iPhone, didn't move
+            // the wall, and may have made it worse by exposing the
+            // Worker to iOS's suspended-process reaper at each yield.
+            // Removed. Forward::wasm_yield_zero is kept for the
+            // recompute→backward_layer yield where it demonstrably
+            // helped.)
         }
 
         // 2. Build grad views + scratch view (mirrors `forward_backward`).
@@ -1003,6 +1243,14 @@ impl TrainingSession {
                     .map(grad_view),
             })
             .collect();
+        // Global LoRA grads (lm_head, embed_tokens). Keyed at layer=0.
+        let global_grads = GlobalLoraGrads {
+            embed_tokens: self
+                .loras
+                .get(&LoraKey::new(0, EMBED_TOKENS))
+                .map(grad_view),
+            lm_head: self.loras.get(&LoraKey::new(0, LM_HEAD)).map(grad_view),
+        };
         let s = &self.scratch;
         let scratch_view = BackwardScratchView {
             d_logits: &s.d_logits,
@@ -1072,11 +1320,18 @@ impl TrainingSession {
                     &capture,
                     &lora_slots,
                     &grads,
+                    Some(&global_slots),
+                    Some(&global_grads),
+                    // PerPosition path: each backward sees position p's
+                    // hidden, so the embed_tokens grad scatters into the
+                    // column for input_ids[p].
+                    Some(input_ids[p]),
                     &scratch_view,
                     (p + 1) as u32,
                     p as u32,
                     false,
                     progress_cb,
+                    self.backward_layer_floor,
                 )
                 .await
                 .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
@@ -1106,6 +1361,22 @@ impl TrainingSession {
         targets: &[u32],
         progress_cb: Option<&'cb TrainingProgressCb<'cb>>,
     ) -> Result<f32, TrainingError> {
+        // Patch 7: pre-warm backward kernels on first step — gated on
+        // memory_tight (see step_with_progress for rationale).
+        if self.memory_tight && !self.warmed_up {
+            if let Some(cb) = progress_cb {
+                cb("warmup.bwd.start", 0, 1);
+            }
+            self.model
+                .forward_mut()
+                .warmup_backward_pipelines()
+                .await
+                .map_err(|e| TrainingError::Backend(format!("{e:?}")))?;
+            self.warmed_up = true;
+            if let Some(cb) = progress_cb {
+                cb("warmup.bwd.done", 1, 1);
+            }
+        }
         self.zero_grads();
         let loss = self
             .forward_backward_per_position_with_progress(input_ids, targets, progress_cb)
@@ -1120,6 +1391,9 @@ impl TrainingSession {
         if let Some(cb) = progress_cb {
             cb("optimizer", 0, 1);
         }
+        // **Patch 5: end-of-step bind-cache clear.** See
+        // `step_with_progress` for the rationale.
+        self.model.forward().clear_bind_cache();
         Ok(loss)
     }
 
@@ -1145,6 +1419,13 @@ impl TrainingSession {
     /// `step()` / `step_per_position()` call.
     pub fn step_num(&self) -> u32 {
         self.step_num
+    }
+
+    /// Current GPU weight-cache size in bytes. Diagnostic: lets the
+    /// browser log the resident weight VRAM at each training phase to
+    /// pin down the iOS peak-memory ceiling.
+    pub fn cached_weight_bytes(&self) -> u64 {
+        self.model.cached_weight_bytes_native()
     }
 
     /// Consume the session and hand the wrapped `Model` back to the
@@ -1441,6 +1722,8 @@ fn slot_view(l: &crate::lora::LoraLayer) -> LoraSlot<'_> {
         z: &l.z,
         rank: l.rank,
         scale: l.scale,
+        // Training keeps B in f32 — backward kernels read it directly.
+        b_is_f16: false,
     }
 }
 

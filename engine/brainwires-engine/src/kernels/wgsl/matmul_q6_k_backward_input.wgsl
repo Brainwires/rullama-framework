@@ -13,11 +13,25 @@
 // block-row, loops over j ∈ [0, n), and accumulates dy[j] · W[j, i]
 // dequantized on the fly. W is frozen — no weight gradient.
 
+// **Vocab-axis tiling (Patch 6).** `j_start..j_end` bounds the sum-axis
+// loop so the kernel can be dispatched as N tiles, each consuming only
+// `(j_end-j_start)/n` of the dequantized weight working set per
+// command buffer. Non-tiled callers pass `j_start=0, j_end=n,
+// accumulate=0` and behave exactly as before. Tiled callers set
+// `accumulate=1` for tiles 1..N (tile 0 still writes) to add into the
+// running `dx` instead of overwriting. This breaks up iOS Safari's
+// per-dispatch Metal heap working set for the big head outproj matmul
+// (vocab=262144) — a single dispatch was bringing ~400 MB of f32
+// dequant through Metal's execution path; 8 tiles bring ~50 MB each.
 struct Params {
     k: u32,
     n: u32,
+    j_start: u32,
+    j_end: u32,
+    accumulate: u32,
     _pad0: u32,
     _pad1: u32,
+    _pad2: u32,
 }
 
 @group(0) @binding(0) var<uniform>             params: Params;
@@ -92,11 +106,15 @@ fn main(
     let row_bytes: u32 = n_blocks * BLOCK_BYTES;
 
     var acc: f32 = 0.0;
-    for (var j: u32 = 0u; j < params.n; j = j + 1u) {
+    for (var j: u32 = params.j_start; j < params.j_end; j = j + 1u) {
         let block_off: u32 = j * row_bytes + block_row * BLOCK_BYTES;
         let w_ji: f32      = dequant_q6_at(block_off, tid);
         acc = acc + w_ji * dy[j];
     }
 
-    dx[i] = acc;
+    if (params.accumulate == 0u) {
+        dx[i] = acc;
+    } else {
+        dx[i] = dx[i] + acc;
+    }
 }

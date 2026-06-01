@@ -28,8 +28,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use rullama::api::Model;
-use rullama::reference::forward_chained::{LayerLoraSlots, LoraSlot};
+use rullama::api::{ChatMessage, ChatRole, Model};
+use rullama::reference::forward_chained::{GlobalLoraSlots, LayerLoraSlots, LoraSlot};
 use rullama_finetune::load_adapter_into_state;
 use rullama_finetune::lora::{LoraKey, LoraLayer, LoraState};
 use safetensors::SafeTensors;
@@ -62,6 +62,30 @@ async fn run() -> Result<(), BoxError> {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(12);
+    // Wrap each prompt in the Gemma 4 chat template before tokenizing.
+    // Mirrors RULLAMA_TRAIN_APPLY_CHAT_TEMPLATE in train_jsonl.rs;
+    // both must match for the adapter to fire on the same tokens it
+    // was trained on. The browser PWA always applies the template at
+    // both train AND chat time, so this should be ON for any adapter
+    // intended for browser use.
+    let apply_chat_template = env::var("RULLAMA_EVAL_APPLY_CHAT_TEMPLATE").is_ok();
+    // Repetition penalty applied to greedy logits before argmax. Mirrors
+    // the formula in crates/rullama/src/sampling.rs:109-119 used by the
+    // chat sampler. For each token that already appeared in the recent
+    // history window, positive logits are divided by the penalty and
+    // negative logits are multiplied — both effects push the model away
+    // from re-emitting the same token. 1.0 = off (default, preserves
+    // prior eval behavior); 1.3 = light (recommended for adapters that
+    // tend to loop); 1.5 = aggressive.
+    let repetition_penalty: f32 = env::var("RULLAMA_EVAL_REP_PENALTY")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1.0);
+    if repetition_penalty != 1.0 {
+        eprintln!(
+            "[eval] repetition_penalty = {repetition_penalty} (applied to greedy logits over the last 64 emitted tokens)"
+        );
+    }
 
     eprintln!("[load] reading {} …", gguf_path.display());
     let bytes = fs::read(&gguf_path)?;
@@ -79,11 +103,34 @@ async fn run() -> Result<(), BoxError> {
         target_modules.join(",")
     );
 
+    // Pre-render all prompts once. When `apply_chat_template` is set,
+    // each prompt becomes the full
+    // `<start_of_turn>user\n...<end_of_turn>\n<start_of_turn>model\n`
+    // sequence the PWA emits. Both base and adapted generation use
+    // the same rendered prompt so the comparison is apples-to-apples.
+    let rendered_prompts: Vec<String> = if apply_chat_template {
+        eprintln!("[eval] applying Gemma 4 chat template to prompts");
+        prompts
+            .iter()
+            .map(|p| {
+                model.render_chat_native(
+                    &[ChatMessage {
+                        role: ChatRole::User,
+                        content: p.clone(),
+                    }],
+                    false,
+                )
+            })
+            .collect()
+    } else {
+        prompts.clone()
+    };
+
     // 1. Baseline generation (no adapter).
-    let mut baselines: Vec<String> = Vec::with_capacity(prompts.len());
-    for prompt in &prompts {
+    let mut baselines: Vec<String> = Vec::with_capacity(rendered_prompts.len());
+    for prompt in &rendered_prompts {
         model.reset_native();
-        let out = greedy_generate(&mut model, prompt, max_new, None).await?;
+        let out = greedy_generate(&mut model, prompt, max_new, None, repetition_penalty).await?;
         baselines.push(out);
     }
 
@@ -96,11 +143,18 @@ async fn run() -> Result<(), BoxError> {
         .map_err(|e| -> BoxError { format!("{e:?}").into() })?;
     eprintln!("[adapter] loaded {loaded} tensors into LoraState");
 
-    // 3. Adapter-applied generation.
-    let mut adapted: Vec<String> = Vec::with_capacity(prompts.len());
-    for prompt in &prompts {
+    // 3. Adapter-applied generation. Same rendered prompts as baseline.
+    let mut adapted: Vec<String> = Vec::with_capacity(rendered_prompts.len());
+    for prompt in &rendered_prompts {
         model.reset_native();
-        let out = greedy_generate(&mut model, prompt, max_new, Some(&state)).await?;
+        let out = greedy_generate(
+            &mut model,
+            prompt,
+            max_new,
+            Some(&state),
+            repetition_penalty,
+        )
+        .await?;
         adapted.push(out);
     }
 
@@ -125,11 +179,16 @@ async fn run() -> Result<(), BoxError> {
 /// `Forward::step_with_lora` when an adapter is supplied, else via
 /// the model's default `step_native`. Returns a single concatenated
 /// decoded string of the newly-generated tokens.
+///
+/// `repetition_penalty > 1.0` activates a sliding 64-token history-based
+/// penalty applied to logits before argmax — exactly mirrors the chat
+/// sampler's behavior in `crates/rullama/src/sampling.rs`.
 async fn greedy_generate(
     model: &mut Model,
     prompt: &str,
     max_new: u32,
     adapter: Option<&LoraState>,
+    repetition_penalty: f32,
 ) -> Result<String, BoxError> {
     let prompt_tokens = model.encode_tokens(prompt);
     if prompt_tokens.is_empty() {
@@ -151,20 +210,40 @@ async fn greedy_generate(
             })
             .collect()
     });
+    // Build GlobalLoraSlots (lm_head, embed_tokens) if the adapter has them.
+    let globals_owned: Option<GlobalLoraSlots<'_>> = adapter.map(|st| GlobalLoraSlots {
+        embed_tokens: st.get(&LoraKey::new(0, "embed_tokens")).map(slot_view),
+        lm_head: st.get(&LoraKey::new(0, "lm_head")).map(slot_view),
+    });
 
     let mut logits: Vec<f32> = Vec::new();
     for &tok in &prompt_tokens {
-        logits = step_one(model, tok, slots_owned.as_deref()).await?;
+        logits = step_one(model, tok, slots_owned.as_deref(), globals_owned.as_ref()).await?;
     }
+
+    // Rolling history of GENERATED tokens for the repetition penalty.
+    // Matches sampling.rs exactly — only generated tokens go in the
+    // history, NOT prompt tokens. Pre-populating with the prompt
+    // penalizes English question words and causes the LoRA to leak
+    // into multilingual / template-only completions at decode time.
+    let mut history: Vec<u32> = Vec::new();
 
     let mut out_tokens: Vec<u32> = Vec::with_capacity(max_new as usize);
     for _ in 0..max_new {
+        if repetition_penalty > 1.0 {
+            apply_repetition_penalty(&mut logits, &history, repetition_penalty);
+        }
         let next = argmax(&logits);
         if model.is_eos_native(next) {
             break;
         }
         out_tokens.push(next);
-        logits = step_one(model, next, slots_owned.as_deref()).await?;
+        history.push(next);
+        if history.len() > 64 {
+            let drop = history.len() - 64;
+            history.drain(0..drop);
+        }
+        logits = step_one(model, next, slots_owned.as_deref(), globals_owned.as_ref()).await?;
     }
 
     // Decode token-by-token; the GGUF BPE round-trips spaces via its own
@@ -184,11 +263,12 @@ async fn step_one(
     model: &mut Model,
     token_id: u32,
     slots: Option<&[LayerLoraSlots<'_>]>,
+    globals: Option<&GlobalLoraSlots<'_>>,
 ) -> Result<Vec<f32>, BoxError> {
     let fwd = model.forward_mut();
     match slots {
         Some(s) => fwd
-            .step_with_lora(token_id, s)
+            .step_with_lora(token_id, s, globals)
             .await
             .map_err(|e| -> BoxError { format!("{e:?}").into() }),
         None => fwd
@@ -205,6 +285,9 @@ fn slot_view(l: &LoraLayer) -> LoraSlot<'_> {
         z: &l.z,
         rank: l.rank,
         scale: l.scale,
+        // Training-side LoraLayer always carries f32 B — only the
+        // inference adapter loader opts into packed f16 for lm_head.
+        b_is_f16: false,
     }
 }
 
@@ -220,6 +303,24 @@ fn argmax(v: &[f32]) -> u32 {
     best
 }
 
+/// Mirrors `crates/rullama/src/sampling.rs:109-119`. For each unique
+/// token id present in `history`, divides positive logits by `penalty`
+/// and multiplies negative logits by `penalty` — both effects reduce
+/// the relative probability of re-emitting that token.
+fn apply_repetition_penalty(logits: &mut [f32], history: &[u32], penalty: f32) {
+    for &tok in history {
+        let idx = tok as usize;
+        if idx >= logits.len() {
+            continue;
+        }
+        if logits[idx] > 0.0 {
+            logits[idx] /= penalty;
+        } else {
+            logits[idx] *= penalty;
+        }
+    }
+}
+
 /// Mirror of the allocation loop inside `TrainingSession::new` — builds
 /// one `LoraLayer` per `(layer, projection)` with shapes derived from
 /// the model config. The shapes have to match exactly or
@@ -232,12 +333,20 @@ fn allocate_lora_slots(
     target_modules: &[String],
 ) -> Result<(), BoxError> {
     let d_model = cfg.d_model;
+    let vocab = cfg.vocab_size;
+    // `lm_head` and `embed_tokens` are global (model-wide, keyed at
+    // layer=0) — match the convention used by the training-side
+    // allocator in `rullama-finetune::session::build_lora_state`.
+    const GLOBAL_TARGETS: &[&str] = &["lm_head", "embed_tokens"];
     for layer in 0..cfg.n_layers {
         let head_dim = cfg.head_dim(layer);
         let n_heads_dim = cfg.n_heads * head_dim;
         let n_kv_dim = cfg.n_kv_heads(layer) * head_dim;
         let ffn_n = cfg.ffn(layer);
         for proj in target_modules {
+            if GLOBAL_TARGETS.contains(&proj.as_str()) {
+                continue; // global pass below
+            }
             let (in_dim, out_dim) = match proj.as_str() {
                 "attn_q" => (d_model, n_heads_dim),
                 "attn_k" => (d_model, n_kv_dim),
@@ -259,6 +368,27 @@ fn allocate_lora_slots(
                 )
                 .map_err(|e| -> BoxError { format!("{e:?}").into() })?;
         }
+    }
+    // Global targets: allocate once each at layer=0.
+    for proj in target_modules {
+        if !GLOBAL_TARGETS.contains(&proj.as_str()) {
+            continue;
+        }
+        let (in_dim, out_dim) = match proj.as_str() {
+            "lm_head" => (d_model, vocab),
+            "embed_tokens" => (vocab, d_model),
+            _ => unreachable!("filter above admits only GLOBAL_TARGETS"),
+        };
+        state
+            .insert(
+                LoraKey::new(0, proj.clone()),
+                in_dim,
+                rank,
+                out_dim,
+                alpha,
+                0,
+            )
+            .map_err(|e| -> BoxError { format!("{e:?}").into() })?;
     }
     Ok(())
 }

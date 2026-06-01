@@ -57,6 +57,7 @@ fn main() -> ExitCode {
         r_arc,
         ctx.device.clone(),
         ctx.queue.clone(),
+        Arc::clone(&ctx.bind_cache),
     ));
 
     let mut fwd =

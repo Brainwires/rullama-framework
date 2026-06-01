@@ -1,13 +1,15 @@
-//! Integration test: short overfit-one run must show clear loss drop.
+//! Integration test: truncated backward (training only the top layers)
+//! must still drop loss meaningfully, even if not as fast as full backward.
 //!
-//! The 200-step ≥90% drop acceptance lives in the `overfit_one` example
-//! and isn't appropriate for `cargo test` (multi-minute runtime). This
-//! smoke runs 20 steps and asserts ≥50% drop — fast enough for CI,
-//! strong enough to catch a broken backward path.
+//! The full backward proves `overfit_one_smoke` halves the loss in 20
+//! steps. Truncated backward at `floor = n_layers - 5` (last 5 layers
+//! only) is the iPhone-safe configuration. The adapter can no longer
+//! re-shape the bottom of the network, so we expect a smaller but
+//! still positive drop. Acceptance bar: 20% relative drop in 20 steps.
+//! Anything less suggests the floor gate is broken (e.g. accidentally
+//! freezing all layers, or seeding garbage gradients).
 //!
-//! Requires a GGUF blob. Skipped (with a printed message) when
-//! `RULLAMA_TEST_GGUF` is unset, so the test suite stays green on
-//! machines without a model checked out.
+//! Same skip-on-missing-fixture pattern as the other smoke tests.
 
 use std::env;
 use std::fs;
@@ -19,15 +21,19 @@ use rullama_finetune::shared::config::{LoraConfig, TrainingHyperparams};
 const PROMPT: &str = "The quick brown fox";
 const TARGET: &str = " jumps";
 const N_STEPS: u32 = 20;
-const REQUIRED_DROP: f32 = 0.50;
+// Looser acceptance than the full-backward smoke (which requires 50%)
+// because only the top 5 layers have trainable LoRA grads. Empirically
+// the top layers carry most task-specific signal, so 20% is reachable
+// in 20 steps; if this fails it's a real regression in the floor logic.
+const REQUIRED_DROP: f32 = 0.20;
 
 #[test]
-fn overfit_one_smoke_drops_loss_by_half() {
+fn truncated_backward_smoke_still_drops_loss() {
     let gguf_path = match env::var("RULLAMA_TEST_GGUF") {
         Ok(p) => p,
         Err(_) => {
             eprintln!(
-                "[skip] overfit_one_smoke: RULLAMA_TEST_GGUF unset \
+                "[skip] truncated_backward_smoke: RULLAMA_TEST_GGUF unset \
                  (point at a gemma4 e2b/e4b blob to enable)"
             );
             return;
@@ -53,11 +59,18 @@ fn overfit_one_smoke_drops_loss_by_half() {
             ],
             target_layers: None,
         };
+        // Floor 30 leaves the top 5 layers trainable on gemma4:e2b
+        // (35 layers). The backward path saturate-clamps floor to
+        // n_layers so over-large values are harmless. For other model
+        // sizes the test runs with whatever effective top-N this
+        // produces.
+        let floor: u32 = 30;
         let hp = TrainingHyperparams {
             learning_rate: 1e-3,
             weight_decay: 0.0,
             max_seq_len: input_tokens.len().max(32),
             seed: 0xC0FFEE,
+            backward_layer_floor: floor,
             ..Default::default()
         };
 
@@ -83,9 +96,14 @@ fn overfit_one_smoke_drops_loss_by_half() {
         let ratio = last_loss / first_loss.max(1e-6);
         assert!(
             ratio <= 1.0 - REQUIRED_DROP,
-            "loss did not drop enough: first={first_loss:.4} last={last_loss:.4} \
-             ratio={ratio:.3} (need ≤ {:.3})",
+            "truncated backward (floor={floor}) did not drop loss enough: \
+             first={first_loss:.4} last={last_loss:.4} ratio={ratio:.3} \
+             (need ≤ {:.3})",
             1.0 - REQUIRED_DROP
+        );
+        eprintln!(
+            "truncated_backward_smoke: floor={floor} \
+             first={first_loss:.4} last={last_loss:.4} ratio={ratio:.3}"
         );
     });
 }

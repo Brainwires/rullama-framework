@@ -251,12 +251,15 @@ impl TrainingScratch {
         let usage = BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC;
 
         let make = |label: &'static str, elems: u64| -> Buffer {
-            device.create_buffer(&BufferDescriptor {
+            let size = (elems * 4).max(4);
+            let b = device.create_buffer(&BufferDescriptor {
                 label: Some(label),
-                size: (elems * 4).max(4),
+                size,
                 usage,
                 mapped_at_creation: false,
-            })
+            });
+            rullama::backend::gpu_mem::record_alloc(label, size);
+            b
         };
 
         let d_model_e = cfg.d_model as u64;

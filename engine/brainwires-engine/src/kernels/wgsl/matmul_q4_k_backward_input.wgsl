@@ -17,11 +17,18 @@
 //
 // W is frozen (LoRA convention) — there is no weight gradient.
 
+// **Vocab-axis tiling (Patch 6).** See the matching q6_k_backward_input
+// kernel for the rationale. Non-tiled callers pass `j_start=0,
+// j_end=n, accumulate=0` and behave exactly as before.
 struct Params {
     k: u32,
     n: u32,
+    j_start: u32,
+    j_end: u32,
+    accumulate: u32,
     _pad0: u32,
     _pad1: u32,
+    _pad2: u32,
 }
 
 @group(0) @binding(0) var<uniform>             params: Params;
@@ -69,7 +76,7 @@ fn main(
     let qs_local_off: u32 = 16u + c * 32u + l;
 
     var acc: f32 = 0.0;
-    for (var j: u32 = 0u; j < params.n; j = j + 1u) {
+    for (var j: u32 = params.j_start; j < params.j_end; j = j + 1u) {
         let block_off: u32 = j * row_bytes + block_row * BLOCK_BYTES;
 
         let d:    f32 = read_f16_as_f32(block_off + 0u);
@@ -99,5 +106,9 @@ fn main(
         acc = acc + w_ij * dy[j];
     }
 
-    dx[i] = acc;
+    if (params.accumulate == 0u) {
+        dx[i] = acc;
+    } else {
+        dx[i] = dx[i] + acc;
+    }
 }

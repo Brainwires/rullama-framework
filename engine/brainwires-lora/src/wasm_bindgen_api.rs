@@ -44,6 +44,23 @@ struct ProbeReport {
 /// if (!probe.ok) { showError(probe.reason); return; }
 /// const session = new TrainingSession(model, loraJson, hpJson);
 /// ```
+/// Queryable GPU-memory monitor — returns the current tracked GPU
+/// buffer breakdown as `tot=N w=N s=N kv=N lora=N o=N` (MiB). Free
+/// function so the test harness / worker can call it any time (incl.
+/// re-entrantly from a training progress callback) without touching a
+/// borrowed `TrainingSession`. See `rullama::backend::gpu_mem`.
+#[wasm_bindgen(js_name = gpuMemBreakdown)]
+pub fn gpu_mem_breakdown_js() -> String {
+    rullama::backend::gpu_mem::breakdown_str()
+}
+
+/// Just the total tracked GPU MiB (cheap; for folding into per-layer
+/// beacons to capture the on-device memory trajectory).
+#[wasm_bindgen(js_name = gpuMemTotalMib)]
+pub fn gpu_mem_total_mib_js() -> f64 {
+    rullama::backend::gpu_mem::snapshot_mib().0 as f64
+}
+
 #[wasm_bindgen(js_name = probeTrainingFit)]
 pub async fn probe_training_fit_js(
     model: &Model,
@@ -232,12 +249,50 @@ impl TrainingSession {
     /// `Blob` download, etc.). Metadata sidecar carries
     /// rank/alpha/target_modules so `Model.loadAdapter` can reconstruct
     /// the shape table.
+    ///
+    /// IMPORTANT: callers that want to also `finish()` after save MUST
+    /// use [`save_adapter_and_finish_js`] instead. wasm-bindgen's
+    /// borrow-tracking for async methods (even `&mut self`) does NOT
+    /// reliably release across awaits in the way we'd want — a
+    /// subsequent `finish_js(self)` call will intermittently fail with
+    /// "attempted to take ownership of Rust value while it was
+    /// borrowed". The combined method takes `self` synchronously,
+    /// avoiding the borrow conflict entirely.
     #[wasm_bindgen(js_name = saveAdapter)]
-    pub async fn save_adapter_js(&self) -> std::result::Result<Vec<u8>, JsError> {
+    pub async fn save_adapter_js(&mut self) -> std::result::Result<Vec<u8>, JsError> {
         self.inner
             .save_adapter_to_bytes()
             .await
             .map_err(|e| JsError::new(&format!("{e}")))
+    }
+
+    /// Save the adapter AND return the wrapped `Model` to JS in a single
+    /// call. Takes `self` (consumes the TrainingSession), which makes
+    /// the wasm-bindgen JS-side handle invalid immediately on call —
+    /// no `&self` / `&mut self` borrow is tracked across the await,
+    /// so the await-then-consume sequence is deterministic. This is
+    /// the right path for "Save + apply to chat" and "Save (then
+    /// release session)" UI flows; only the rare save-without-
+    /// finishing case should use [`save_adapter_js`] alone.
+    ///
+    /// Returns a [`SaveAndFinishResult`] whose `bytes` getter yields
+    /// the safetensors bytes (consumed on read) and whose
+    /// `takeModel()` yields the `Model` handle for chat. Call both
+    /// before dropping the result; either can throw if called twice.
+    #[wasm_bindgen(js_name = saveAdapterAndFinish)]
+    pub async fn save_adapter_and_finish_js(
+        self,
+    ) -> std::result::Result<SaveAndFinishResult, JsError> {
+        let bytes = self
+            .inner
+            .save_adapter_to_bytes()
+            .await
+            .map_err(|e| JsError::new(&format!("{e}")))?;
+        let model = self.inner.into_model();
+        Ok(SaveAndFinishResult {
+            model: Some(model),
+            bytes: Some(bytes),
+        })
     }
 
     /// 1-based step counter — bumped after each `step()` /
@@ -245,6 +300,14 @@ impl TrainingSession {
     #[wasm_bindgen(js_name = stepNum, getter)]
     pub fn step_num_js(&self) -> u32 {
         self.inner.step_num()
+    }
+
+    /// GPU weight-cache size in bytes — diagnostic for iOS peak-memory
+    /// debugging. Beacon this at each training phase to see the
+    /// resident weight VRAM trajectory.
+    #[wasm_bindgen(js_name = cachedWeightBytes, getter)]
+    pub fn cached_weight_bytes_js(&self) -> f64 {
+        self.inner.cached_weight_bytes() as f64
     }
 
     /// Consume the session and return the wrapped `Model` to JS so
@@ -311,5 +374,37 @@ impl TrainingSession {
         };
         serde_wasm_bindgen::to_value(&report)
             .map_err(|e| JsError::new(&format!("serialize step report: {e}")))
+    }
+}
+
+/// Return value from `TrainingSession.saveAdapterAndFinish`. Holds the
+/// serialized adapter bytes and the returned `Model` handle. Each
+/// inner value is consumed on first read (`bytes` getter and
+/// `takeModel()`) so the JS-side caller has to claim them once.
+#[wasm_bindgen]
+pub struct SaveAndFinishResult {
+    model: Option<Model>,
+    bytes: Option<Vec<u8>>,
+}
+
+#[wasm_bindgen]
+impl SaveAndFinishResult {
+    /// Adapter bytes (safetensors). Consumed on first read; calling
+    /// the getter twice throws "bytes already taken". JS callers should
+    /// read this into a typed-array immediately and pipe it to OPFS.
+    #[wasm_bindgen(getter)]
+    pub fn bytes(&mut self) -> std::result::Result<Vec<u8>, JsError> {
+        self.bytes
+            .take()
+            .ok_or_else(|| JsError::new("SaveAndFinishResult: bytes already taken"))
+    }
+
+    /// Returns the `Model` handle for the chat-side worker to resume
+    /// inference against. Consumed on first call; calling twice throws.
+    #[wasm_bindgen(js_name = takeModel)]
+    pub fn take_model(&mut self) -> std::result::Result<Model, JsError> {
+        self.model
+            .take()
+            .ok_or_else(|| JsError::new("SaveAndFinishResult: model already taken"))
     }
 }

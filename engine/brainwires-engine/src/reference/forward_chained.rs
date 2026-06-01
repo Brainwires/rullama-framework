@@ -25,8 +25,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::backend::dispatch::{
     attention_backward_dkv_chained, attention_backward_dq_chained, attention_chained,
     attention_probs_chained, cross_entropy_backward_chained, geglu_backward_chained, geglu_chained,
-    lora_matmul_col_chained, lora_matmul_row_chained, lora_outer_add_chained, make_dummy_storage,
-    matmul_q4_k_backward_input_chained, matmul_q4_k_chained, matmul_q6_k_backward_input_chained,
+    lora_matmul_col_chained, lora_matmul_fused_chained, lora_matmul_row_chained,
+    lora_outer_add_chained, make_dummy_storage, matmul_q4_k_backward_input_chained,
+    matmul_q4_k_backward_input_tile_chained, matmul_q4_k_chained,
+    matmul_q6_k_backward_input_chained, matmul_q6_k_backward_input_tile_chained,
     matmul_q6_k_chained, residual_add_chained, rmsnorm_backward_chained, rmsnorm_chained,
     rmsnorm_per_row_backward_chained, rmsnorm_per_row_chained, rope_neox_backward_chained,
     rope_neox_chained, scale_chained, softcap_chained,
@@ -86,10 +88,16 @@ pub struct LayerCaptureBuffers<'a> {
 /// backward can build `dB = scale · dy ⊗ z`.
 pub struct LoraSlot<'a> {
     pub a: &'a wgpu::Buffer, // [rank, in_dim]
-    pub b: &'a wgpu::Buffer, // [out_dim, rank]
+    pub b: &'a wgpu::Buffer, // [out_dim, rank]; packed f16 pairs in u32 if `b_is_f16`
     pub z: &'a wgpu::Buffer, // [rank] scratch
     pub rank: u32,
     pub scale: f32, // alpha / rank
+    /// When true, `b` is stored as packed f16 (two elements per u32)
+    /// and the forward-correction dispatch routes through
+    /// `lora_matmul_fused_f16b` instead of `lora_matmul_fused`.
+    /// Currently set only for the lm_head global LoRA slot, where the
+    /// `vocab × rank` matrix dominates LoRA bandwidth.
+    pub b_is_f16: bool,
 }
 
 /// Per-layer progress callback fired between encoder submits during
@@ -102,6 +110,25 @@ pub struct LoraSlot<'a> {
 /// a 30 s pipeline-compile + first step grinds in silence.
 pub type LayerProgressCb<'a> = dyn Fn(&str, u32, u32) + 'a;
 
+/// ROME residual-stream perturbation injection point. When passed to
+/// [`Forward::step_capture_with_rome_delta`], the running `hidden`
+/// state is incremented by `delta_buf` (shape `[d_model]`)
+/// immediately after `target_layer` writes its contribution to the
+/// residual stream, before `target_layer + 1` (or the final norm)
+/// reads `hidden`.
+///
+/// Equivalent to kmeng01/rome's `edit_output_fn` hook: at the
+/// subject-last token's position, the optimizer-controlled δ vector
+/// is added to the MLP output of the target layer so the model
+/// behaves as if `ffn_out[L, subject_last_pos]` had been substituted
+/// to produce the target token. Caller is responsible for invoking
+/// the perturbed step only on the subject-last position; all other
+/// positions use the plain `step_capture`.
+pub struct RomeDeltaInjection<'a> {
+    pub delta_buf: &'a wgpu::Buffer,
+    pub target_layer: u32,
+}
+
 /// Per-layer LoRA slots for the four attention projections + three
 /// FFN projections. Pass `None` for any projection that isn't
 /// LoRA-wrapped.
@@ -113,6 +140,29 @@ pub struct LayerLoraSlots<'a> {
     pub ffn_gate: Option<LoraSlot<'a>>,
     pub ffn_up: Option<LoraSlot<'a>>,
     pub ffn_down: Option<LoraSlot<'a>>,
+}
+
+/// Model-global LoRA slots — not keyed per layer. Pass `None` for any
+/// target that isn't LoRA-wrapped.
+///
+/// `embed_tokens` injects after the input embedding lookup:
+/// `hidden += scale · B_emb · A_emb[:, token_id]` where A_emb has shape
+/// `[rank, vocab]` and B_emb has shape `[d_model, rank]`.
+///
+/// `lm_head` injects after the tiled output projection but before
+/// softcap: `logits += scale · B_lmh · (A_lmh · norm_x_final)` where
+/// A_lmh has shape `[rank, d_model]` and B_lmh has shape `[vocab, rank]`.
+///
+/// Even though Gemma 4 uses tied weights (`token_embd.weight` is shared
+/// between input embedding and output projection), `embed_tokens` and
+/// `lm_head` are two separate LoRA pairs — matches PEFT's
+/// `modules_to_save` semantics so input and output distributions can be
+/// steered independently. Google's QLoRA Gemma recipe is the canonical
+/// reference for this pattern (`ai.google.dev/gemma/docs/core/huggingface_text_finetune_qlora`).
+#[derive(Default)]
+pub struct GlobalLoraSlots<'a> {
+    pub embed_tokens: Option<LoraSlot<'a>>,
+    pub lm_head: Option<LoraSlot<'a>>,
 }
 use crate::backend::{Pipelines, WeightCache, WgpuCtx};
 use crate::error::{Result, RullamaError};
@@ -202,6 +252,41 @@ pub struct Forward {
     /// 1 s on browser) instead of one full step (10-30 s). Mirrors
     /// the `Model::encode_cancel` pattern used for multimodal.
     cancel_flag: Arc<AtomicBool>,
+
+    /// **MeBP-inspired memory mode.** When true, the per-layer forward
+    /// loop drains GPU and destroys each layer's weight tiles after its
+    /// submit, so peak weight memory during forward = ~1 layer worth
+    /// (~40 MiB on e2b) instead of ~all 35 layers (~1417 MiB). Backward's
+    /// gradient-checkpointing recompute re-fetches via `buffer_async`
+    /// (decompress per block, matching MeBP arxiv 2510.03425's lazy
+    /// load). Set true by `TrainingSession::new` on iPhone targets;
+    /// false for chat-side inference where the weights need to stay
+    /// cached across tokens (per-token re-fetch destroys generation
+    /// perf). Costs ~32-42% extra forward time (per MeBP §4.2) in
+    /// exchange for fitting under the iOS WebContent jetsam ceiling.
+    forward_destroy_per_layer: bool,
+
+    /// Lower bound for backward_layer iteration. Layers `i < floor`
+    /// are NOT walked in backward (no LoRA gradient, no recompute).
+    /// When `forward_destroy_per_layer` is on, we destroy blk.i's
+    /// weights only for `i < floor` — layers at or above the floor
+    /// stay cached so backward's recompute hits the WeightCache
+    /// instead of re-uploading from OPFS (the re-upload was what
+    /// killed iPhone after we removed the head→backward yield).
+    /// Set by `TrainingSession::new` from
+    /// `TrainingHyperparams::backward_layer_floor`.
+    forward_destroy_layer_floor: u32,
+
+    /// **Mobile mode switch** — when true, all the iOS Safari WebGPU
+    /// survival workarounds are active: 0 ms event-loop yields at
+    /// recompute→backward_layer + backward_layer→epilogue boundaries,
+    /// vocab-axis tiling of head_outproj backward matmul, chunked
+    /// destroy with yields between chunks, backward-kernel pre-warm
+    /// at session start. When false, all of those are no-ops and
+    /// training runs the native-fast path (3-5× faster wall time).
+    /// Set by `TrainingSession::new` from
+    /// `TrainingHyperparams::memory_tight`.
+    mobile_mode: bool,
 
     // Cached scale factor for the final logits softcap dispatch.
     pos: u32,
@@ -399,6 +484,12 @@ impl Forward {
             dummy,
             max_context,
             cancel_flag: Arc::new(AtomicBool::new(false)),
+            forward_destroy_per_layer: false,
+            // u32::MAX = no floor restriction (every layer destroyed
+            // when forward_destroy_per_layer is on). TrainingSession::new
+            // overrides this to the actual backward_layer_floor.
+            forward_destroy_layer_floor: u32::MAX,
+            mobile_mode: false,
             pos: 0,
         })
     }
@@ -429,6 +520,405 @@ impl Forward {
         }
     }
 
+    /// Enable MeBP-style per-layer weight destroy during forward. See
+    /// the field doc on `forward_destroy_per_layer`. Call once after
+    /// constructing `Forward` for training; never set for chat-side
+    /// inference.
+    pub fn set_forward_destroy_per_layer(&mut self, on: bool) {
+        self.forward_destroy_per_layer = on;
+    }
+
+    /// Set the floor used by per-layer forward destroy. Only layers
+    /// `i < floor` are destroyed during forward — layers at or above
+    /// the floor stay cached so backward's recompute hits the
+    /// `WeightCache` instead of re-uploading from OPFS. Pass the
+    /// training session's `backward_layer_floor`; for inference (which
+    /// never sets `forward_destroy_per_layer = true`) this is a no-op.
+    pub fn set_forward_destroy_layer_floor(&mut self, floor: u32) {
+        self.forward_destroy_layer_floor = floor;
+    }
+
+    /// Toggle the mobile-mode workaround stack. See the field doc on
+    /// `mobile_mode` for what this gates. Off by default; the
+    /// `TrainingSession` flips it on when
+    /// `TrainingHyperparams::memory_tight` is true.
+    pub fn set_mobile_mode(&mut self, on: bool) {
+        self.mobile_mode = on;
+    }
+
+    /// Drop every cached `(uniform, bind_group)` entry in the shared
+    /// `BindGroupCache`. Called at end-of-step in training to prevent
+    /// cross-step accumulation: `invalidate_buffers` eagerly evicts
+    /// entries whose underlying buffer was destroyed, but entries that
+    /// still reference live scratch / LoRA / KV buffers accumulate
+    /// monotonically (no buffer dies → no invalidation → entry lives
+    /// forever). Each entry is small (~32-byte uniform + bind-group
+    /// descriptor) but the GPUProcess bind-group table tracks all of
+    /// them, and after many steps the table is large enough to
+    /// pressure WebKit's bookkeeping. Clearing once per step costs
+    /// ~50 cache misses (re-build bind groups for the next step's
+    /// first dispatches) which is negligible vs the ~5K hits/step
+    /// the cache absorbs.
+    ///
+    /// Chat-side inference does NOT call this — the cache is meant
+    /// to stay warm across tokens.
+    pub fn clear_bind_cache(&self) {
+        self.ctx.bind_cache.clear();
+    }
+
+    /// **0 ms JS event-loop yield (mobile-mode + wasm32 only).** Used
+    /// by training callers between bursts of GPU submits
+    /// (recompute→backward_layer, backward_layer→epilogue) to let iOS
+    /// Safari's GPUProcess message pipe drain a tick of pending IPCs
+    /// before the next burst lands. On native this is a no-op `await`;
+    /// on Mac browsers (wasm32 but `mobile_mode` off) it's also a
+    /// no-op — the GPUProcess can keep up without the assistance and
+    /// the yields cost ~5-10 ms each.
+    ///
+    /// 0 ms specifically (not >0): real-device data showed
+    /// `setTimeout(500)` at the head→backward boundary was killing
+    /// the Worker (iOS reaped the suspended process). 0 ms releases
+    /// the event loop for one tick without exposing us to the
+    /// suspended-process reaper.
+    pub async fn wasm_yield_zero(&self) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            if !self.mobile_mode {
+                return;
+            }
+            use wasm_bindgen::JsCast;
+            let scope: web_sys::DedicatedWorkerGlobalScope = js_sys::global()
+                .dyn_into()
+                .expect("training session runs inside a DedicatedWorkerGlobalScope");
+            let promise = js_sys::Promise::new(&mut |resolve, _reject| {
+                let resolve_fn: js_sys::Function = resolve.into();
+                let _ = scope.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve_fn, 0);
+            });
+            let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+        }
+    }
+
+    /// **Pre-warm every backward kernel at session start (Patch 7).**
+    ///
+    /// Dispatches each backward + optimizer + lora kernel ONCE against
+    /// tiny throwaway scratch buffers, all in one submit, then awaits a
+    /// readback to force GPU completion before returning. Purpose: any
+    /// first-execution Metal state setup (argument-buffer staging,
+    /// threadgroup memory reservation, intermediate compilation) happens
+    /// HERE — when the GPU process has plenty of headroom and no
+    /// weights resident — instead of mid-step 2 when 1.4 GiB of weights
+    /// are already loaded and iOS jetsam is one resident-set increment
+    /// away.
+    ///
+    /// Inputs to the warmup are garbage (zero-initialised buffers); the
+    /// outputs are discarded. We just need Metal to EXECUTE each kernel
+    /// once.
+    ///
+    /// Cost: ~15 throwaway dispatches in one submit + one tiny
+    /// readback. ~50 ms wall time, one-shot at session start.
+    ///
+    /// The throwaway buffers go out of scope at function end, but the
+    /// `BindGroupCache` would otherwise hold them alive via the
+    /// CachedDispatch's bind_group strong-refs. We `clear()` at the
+    /// end to drop those entries so the throwaway buffers actually die.
+    pub async fn warmup_backward_pipelines(&mut self) -> Result<()> {
+        use crate::backend::dispatch::*;
+
+        let device = &self.ctx.device;
+        let mk = |size: u64, label: &str| -> wgpu::Buffer {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size: size.max(4),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        };
+
+        // Distinct throwaway buffer pool. Within one compute dispatch
+        // the same wgpu::Buffer cannot be bound as both read and
+        // read_write (wgpu validation error: "conflicting usages").
+        // Allocate enough distinct buffers that every kernel's binding
+        // slots can each take a unique buffer. Each kernel call below
+        // explicitly picks distinct buffers per binding.
+        //
+        // Sizes:
+        //   small (4 elements)  — uniforms / scalars / loss_out / Adam state
+        //   row   (256 elements) — vector-sized scratch / matmul out / vocab vec
+        //   big   (4 k elements) — generously sized buffer for larger output writes
+        //   q4k/q6k — single super-block of quantized weight bytes
+        let s0 = mk(16, "warmup.small.0");
+        let s1 = mk(16, "warmup.small.1");
+        let s2 = mk(16, "warmup.small.2");
+        let s3 = mk(16, "warmup.small.3");
+        let r0 = mk(1024, "warmup.row.0");
+        let r1 = mk(1024, "warmup.row.1");
+        let r2 = mk(1024, "warmup.row.2");
+        let r3 = mk(1024, "warmup.row.3");
+        let r4 = mk(1024, "warmup.row.4");
+        let r5 = mk(1024, "warmup.row.5");
+        let r6 = mk(1024, "warmup.row.6");
+        let b0 = mk(16 * 1024, "warmup.big.0");
+        let b1 = mk(16 * 1024, "warmup.big.1");
+        let q4k = mk(256, "warmup.q4k");
+        let q6k = mk(256, "warmup.q6k");
+        let dummy = mk(4, "warmup.dummy");
+
+        // Each kernel goes in its own command encoder + submit so wgpu's
+        // per-command-buffer usage tracker doesn't pessimise. Cost is 15
+        // submits at session start — one-shot, no real wall-time impact
+        // (each submit is a 1-dispatch tiny command buffer).
+        macro_rules! one_submit {
+            ($label:expr, |$enc:ident| $body:block) => {{
+                let mut $enc = device.create_command_encoder(
+                    &wgpu::CommandEncoderDescriptor { label: Some($label) },
+                );
+                $body
+                self.ctx.queue.submit(Some($enc.finish()));
+            }};
+        }
+
+        // cross_entropy_backward(logits=read, d_logits=read_write,
+        // loss_out=read_write).
+        one_submit!("warmup.xent_bwd", |enc| {
+            cross_entropy_backward_chained(&self.ctx, &self.pipes, &mut enc, &r0, &r1, &s0, 256, 0);
+        });
+        // matmul_q4_k_backward_input(weight=read, dy=read, dx=read_write).
+        one_submit!("warmup.q4k_bwd", |enc| {
+            matmul_q4_k_backward_input_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                &q4k,
+                &s1,
+                &r2,
+                256,
+                1,
+            );
+        });
+        // matmul_q6_k_backward_input — same shape.
+        one_submit!("warmup.q6k_bwd", |enc| {
+            matmul_q6_k_backward_input_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                &q6k,
+                &s2,
+                &r3,
+                256,
+                1,
+            );
+        });
+        // rmsnorm_backward(x=read, w=read, dy=read, dx=read_write).
+        one_submit!("warmup.rms_bwd", |enc| {
+            rmsnorm_backward_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                &s0,
+                &s1,
+                &s2,
+                &s3,
+                4,
+                1e-5,
+                true,
+            );
+        });
+        // rmsnorm_per_row_backward — same role pattern.
+        one_submit!("warmup.rms_pr_bwd", |enc| {
+            rmsnorm_per_row_backward_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                &r0,
+                &r1,
+                &r2,
+                &r3,
+                1,
+                16,
+                1e-5,
+                true,
+            );
+        });
+        // geglu_backward(gate=read, up=read, dy=read, d_gate=read_write,
+        // d_up=read_write).
+        one_submit!("warmup.geglu_bwd", |enc| {
+            geglu_backward_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                &r0,
+                &r1,
+                &r2,
+                &r3,
+                &r4,
+                16,
+            );
+        });
+        // rope_neox_backward(x=read_write, factors=read|None, dummy).
+        one_submit!("warmup.rope_bwd", |enc| {
+            rope_neox_backward_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                &r0,
+                None,
+                &dummy,
+                128,
+                1,
+                0,
+                128,
+                10000.0,
+            );
+        });
+        // attention_backward_dq — 6 distinct buffers needed.
+        one_submit!("warmup.attn_bwd_dq", |enc| {
+            attention_backward_dq_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                &r0,
+                &r1,
+                &s0,
+                &r2,
+                &s1,
+                &r3,
+                64,
+                1,
+                1,
+                1,
+            );
+        });
+        // attention_backward_dkv — 6 distinct.
+        one_submit!("warmup.attn_bwd_dkv", |enc| {
+            attention_backward_dkv_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                &r4,
+                &s2,
+                &r5,
+                &s3,
+                &r6,
+                &b0,
+                64,
+                1,
+                1,
+                1,
+            );
+        });
+        // attention_probs(q=read, k_hist=read, probs=read_write).
+        one_submit!("warmup.attn_probs", |enc| {
+            attention_probs_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                &r0,
+                &r1,
+                &b1,
+                64,
+                1,
+                1,
+                0,
+                1,
+                0,
+            );
+        });
+        // lora_outer_add(dy=read, z=read, dB=read_write).
+        one_submit!("warmup.lora_outer", |enc| {
+            lora_outer_add_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                &s0,
+                &s1,
+                &r0,
+                4,
+                4,
+                1.0,
+                true,
+            );
+        });
+        // lora_matmul_col(W=read, x=read, y=read_write).
+        one_submit!("warmup.lora_mm_col", |enc| {
+            lora_matmul_col_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                &r1,
+                &s2,
+                &s3,
+                4,
+                4,
+                1.0,
+                false,
+            );
+        });
+        // lora_matmul_row.
+        one_submit!("warmup.lora_mm_row", |enc| {
+            lora_matmul_row_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                &r2,
+                &s0,
+                &s1,
+                4,
+                4,
+                1.0,
+                false,
+            );
+        });
+        // adam_step(grad=read, param=read_write, m=read_write, v=read_write).
+        let adam_cfg = AdamConfig::default();
+        one_submit!("warmup.adam", |enc| {
+            adam_step_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                &s0,
+                &s1,
+                &s2,
+                &s3,
+                4,
+                adam_cfg,
+            );
+        });
+        // sum_of_squares(input=read, output=read_write).
+        one_submit!("warmup.sos", |enc| {
+            sum_of_squares_chained(&self.ctx, &self.pipes, &mut enc, &r0, &s0, 16, 1.0);
+        });
+
+        // Force GPU to actually run everything before we return.
+        // `read_buf_stats` issues a `copy_buffer_to_buffer` from the
+        // source buffer into a MAP_READ staging buffer; the source
+        // needs `COPY_SRC` usage, which our STORAGE-only warmup pool
+        // doesn't have. Use a dedicated drain buffer with the right
+        // usage flag; the warmup dispatches above will have queued
+        // their work, and one `queue.submit` for this drain buffer's
+        // ensuing copy is enough to fence them.
+        let drain_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("warmup.drain"),
+            size: 16,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let _drain = read_buf_stats(&self.ctx, &drain_buf, 1).await?;
+
+        // Drop bind-cache entries created against the throwaway
+        // buffers — otherwise the cache holds them alive via bind_group
+        // strong refs and they never die.
+        self.ctx.bind_cache.clear();
+
+        // Use the buffer handles explicitly so they live across the
+        // submits above (the dispatchers only borrow them).
+        let _ = (
+            &s0, &s1, &s2, &s3, &r0, &r1, &r2, &r3, &r4, &r5, &r6, &b0, &b1, &q4k, &q6k, &dummy,
+        );
+        Ok(())
+    }
+
     /// Shared cancel-flag handle so `TrainingSession::cancel` can
     /// reach the flag without taking a `&mut` borrow on the model.
     pub fn cancel_flag(&self) -> Arc<AtomicBool> {
@@ -457,6 +947,12 @@ impl Forward {
     /// but exposing it keeps the surface symmetric for future test code.
     pub fn pipes(&self) -> &std::sync::Arc<Pipelines> {
         &self.pipes
+    }
+    /// Borrow the (CPU-side) weights handle. MEMIT uses this to
+    /// dequantize ffn_down at each layer for the `R = V − W·K`
+    /// residual computation.
+    pub fn weights(&self) -> &Weights {
+        &self.weights
     }
     /// Read-only handle on the model's logits buffer (post-forward).
     /// `TrainingSession::step` uses this to feed
@@ -563,6 +1059,82 @@ impl Forward {
         for l in self.kv_lens.iter_mut() {
             *l = 0;
         }
+    }
+
+    /// Re-allocate the per-layer KV cache buffers at a smaller `max_context`.
+    /// Discards any cached content (kv_lens reset to 0, pos = 0) and returns
+    /// the previous `max_context` so the caller can restore on demand.
+    ///
+    /// Use case: chat sessions reserve `max_context` positions (~600 MB at
+    /// 4096 on gemma4:e2b) which training's NextToken loss only needs 1
+    /// position of. Calling `shrink_kv(seq_len + 1)` before `TrainingSession::new`
+    /// frees the bulk of that allocation back to the WebGPU device for the
+    /// training scratch / LoRA / Adam buffers. `trainingFinish` calls
+    /// `shrink_kv(original_max)` to put chat back to its full cache.
+    ///
+    /// Returns an error if `new_max_context` is 0 or larger than the
+    /// hardware-cap `MAX_CONTEXT`. Larger-than-current values are allowed
+    /// (used by the restore path on `trainingFinish`).
+    pub fn shrink_kv(&mut self, new_max_context: u32) -> Result<u32> {
+        if new_max_context == 0 || new_max_context > MAX_CONTEXT {
+            return Err(RullamaError::Inference(format!(
+                "shrink_kv: new_max_context={new_max_context} out of range (1..={MAX_CONTEXT})"
+            )));
+        }
+        let device = &self.ctx.device;
+        let n_layers = self.cfg.n_layers as usize;
+        let prev = self.max_context;
+
+        // Re-allocate non-donor K/V buffers at the new size, then re-build
+        // the donor aliasing the same way the constructor does. Any stale
+        // KV content is dropped — that's the contract of shrink (callers
+        // call reset implicitly).
+        let mut kv_k_opt: Vec<Option<Arc<wgpu::Buffer>>> = vec![None; n_layers];
+        let mut kv_v_opt: Vec<Option<Arc<wgpu::Buffer>>> = vec![None; n_layers];
+        for i in 0..n_layers {
+            if self.donor_map[i].is_none() {
+                let n_kv = self.cfg.n_kv_heads(i as u32) as usize;
+                let hd = self.cfg.head_dim(i as u32) as usize;
+                let bytes = (new_max_context as usize * n_kv * hd * 4) as u64;
+                kv_k_opt[i] = Some(Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some(&format!("fwd.kv_k.{i}")),
+                    size: bytes,
+                    usage: wgpu::BufferUsages::STORAGE
+                        | wgpu::BufferUsages::COPY_DST
+                        | wgpu::BufferUsages::COPY_SRC,
+                    mapped_at_creation: false,
+                })));
+                kv_v_opt[i] = Some(Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some(&format!("fwd.kv_v.{i}")),
+                    size: bytes,
+                    usage: wgpu::BufferUsages::STORAGE
+                        | wgpu::BufferUsages::COPY_DST
+                        | wgpu::BufferUsages::COPY_SRC,
+                    mapped_at_creation: false,
+                })));
+            }
+        }
+        for i in 0..n_layers {
+            if let Some(d) = self.donor_map[i] {
+                kv_k_opt[i] = kv_k_opt[d as usize].clone();
+                kv_v_opt[i] = kv_v_opt[d as usize].clone();
+            }
+        }
+        self.kv_k = kv_k_opt.into_iter().map(|x| x.unwrap()).collect();
+        self.kv_v = kv_v_opt.into_iter().map(|x| x.unwrap()).collect();
+        for l in self.kv_lens.iter_mut() {
+            *l = 0;
+        }
+        self.pos = 0;
+        self.max_context = new_max_context;
+        Ok(prev)
+    }
+
+    /// Current `max_context` — the cap on how many tokens the per-layer
+    /// K/V buffers can hold. Useful for snapshotting before `shrink_kv`
+    /// so the caller can restore.
+    pub fn max_context(&self) -> u32 {
+        self.max_context
     }
 
     /// Hash of the per-layer KV geometry. Used to refuse a `load_kv` from a
@@ -816,7 +1388,44 @@ impl Forward {
     /// Run one forward step from a token id. Looks up the token's embedding row,
     /// uploads it to the hidden buffer, then runs the rest of the forward.
     pub async fn step(&mut self, token_id: u32) -> Result<Vec<f32>> {
-        self.step_inner(token_id, None, None).await
+        self.step_inner(token_id, None, None, None).await
+    }
+
+    /// Run one forward step **with ROME residual perturbation**.
+    ///
+    /// After layer `rome_delta.target_layer` has finished writing into
+    /// `self.hidden`, this function appends a `residual_add` of
+    /// `rome_delta.delta_buf` (shape `[d_model]`) to the running
+    /// hidden state — *only* on the step that processes the
+    /// subject-last token. The caller is responsible for invoking this
+    /// method only at the subject-last position; for every other
+    /// prompt position, use the plain [`Forward::step_capture`].
+    ///
+    /// This is ROME Phase 2.b's δ-injection path. Mirrors the
+    /// `edit_output_fn` hook in kmeng01/rome's `compute_v.py` where
+    /// the optimized residual delta is added at the MLP output of the
+    /// target layer for the fact-lookup position.
+    pub async fn step_capture_with_rome_delta<'a>(
+        &mut self,
+        token_id: u32,
+        capture: &'a [LayerCaptureBuffers<'a>],
+        rome_delta: RomeDeltaInjection<'a>,
+    ) -> Result<Vec<f32>> {
+        if capture.len() != self.cfg.n_layers as usize {
+            return Err(RullamaError::Inference(format!(
+                "step_capture_with_rome_delta: got {} capture layers, expected {}",
+                capture.len(),
+                self.cfg.n_layers
+            )));
+        }
+        if rome_delta.target_layer >= self.cfg.n_layers {
+            return Err(RullamaError::Inference(format!(
+                "step_capture_with_rome_delta: target_layer {} >= n_layers {}",
+                rome_delta.target_layer, self.cfg.n_layers
+            )));
+        }
+        self.step_inner_with_progress(token_id, Some(capture), None, None, None, Some(rome_delta))
+            .await
     }
 
     /// Run one forward step **with per-layer activation capture** into
@@ -833,6 +1442,7 @@ impl Forward {
         token_id: u32,
         capture: &'a [LayerCaptureBuffers<'a>],
         loras: Option<&'a [LayerLoraSlots<'a>]>,
+        globals: Option<&'a GlobalLoraSlots<'a>>,
     ) -> Result<Vec<f32>> {
         if capture.len() != self.cfg.n_layers as usize {
             return Err(RullamaError::Inference(format!(
@@ -850,7 +1460,286 @@ impl Forward {
                 self.cfg.n_layers
             )));
         }
-        self.step_inner(token_id, Some(capture), loras).await
+        self.step_inner(token_id, Some(capture), loras, globals)
+            .await
+    }
+
+    /// **ROME Phase 2.b auxiliary backward at a non-loss position.**
+    ///
+    /// Mirrors the K/V projection backward in `backward_layer` but at
+    /// `target_pos` (e.g., the subject-last token) instead of the
+    /// loss position. Required because the main backward's `d_hidden`
+    /// holds gradient only at `hidden_input[target_layer+1, loss_pos]`,
+    /// not at `hidden_input[target_layer+1, target_pos]` — and ROME
+    /// edits at the subject's residual cell, not the loss-position
+    /// residual cell.
+    ///
+    /// Inputs (all already populated by a prior `backward_step_with_progress`
+    /// with `backward_layer_floor = target_layer + 1`):
+    ///   * `scratch.d_k_hist` / `scratch.d_v_hist` — gradients at layer
+    ///     `target_layer + 1`'s K/V at every history position
+    ///   * `captures[target_layer + 1].{k_pre_norm, v_pre_norm,
+    ///     norm_x_attn, hidden_in}` — seq-shaped activations from the
+    ///     forward
+    ///
+    /// Writes `∂loss/∂hidden_input[target_layer+1, target_pos]` into
+    /// `out_d_hidden` (shape `[d_model]`).
+    ///
+    /// MVP: only single-layer (target_layer + 1) contribution. Multi-
+    /// layer cross-position chain is dropped (an approximation). Donor
+    /// (KV-shared) layers fall back to zero. Sufficient as a first
+    /// gradient routing improvement; per-history-d_hidden across all
+    /// layers above L+1 is a future refinement.
+    pub async fn rome_aux_backward_at_position<'a>(
+        &mut self,
+        captures: &'a [LayerCaptureBuffers<'a>],
+        scratch: &BackwardScratchView<'a>,
+        target_layer: u32,
+        target_pos: u32,
+        out_d_hidden: &wgpu::Buffer,
+    ) -> Result<()> {
+        let i_plus_one = target_layer + 1;
+        if i_plus_one >= self.cfg.n_layers {
+            return Err(RullamaError::Inference(format!(
+                "rome_aux_backward: target_layer+1 = {i_plus_one} >= n_layers = {}",
+                self.cfg.n_layers
+            )));
+        }
+        let i_idx = i_plus_one as usize;
+        let prefix = format!("blk.{i_plus_one}.");
+        let d_model = self.cfg.d_model as usize;
+        let n_kv_heads = self.cfg.n_kv_heads(i_plus_one) as usize;
+        let head_dim = self.cfg.head_dim(i_plus_one) as usize;
+        let kind = self.cfg.kind(i_plus_one);
+        let eps = self.cfg.rms_norm_eps;
+        let donor = self.donor_map[i_idx];
+
+        // Donor layers don't own K/V — for MVP we just zero the
+        // gradient (skipping the auxiliary contribution from this
+        // layer). Future: route through the donor's K/V chain.
+        if donor.is_some() {
+            let zeros = vec![0.0f32; d_model];
+            self.ctx
+                .queue
+                .write_buffer(out_d_hidden, 0, bytemuck::cast_slice(&zeros));
+            return Ok(());
+        }
+
+        let cap = &captures[i_idx];
+        let wc = &self.wcache;
+
+        let k_w = wc.buffer_async(&format!("{prefix}attn_k.weight")).await?;
+        let k_norm_w = wc
+            .buffer_async(&format!("{prefix}attn_k_norm.weight"))
+            .await?;
+        let v_w_name = format!("{prefix}attn_v.weight");
+        let v_w = wc.buffer_async(&v_w_name).await?;
+        let v_w_dtype = wc.dtype(&v_w_name)?;
+        let attn_norm_w = wc
+            .buffer_async(&format!("{prefix}attn_norm.weight"))
+            .await?;
+        let factors_w = if matches!(kind, LayerKind::Global) {
+            wc.buffer_opt_async("rope_freqs.weight").await?
+        } else {
+            None
+        };
+
+        let (rope_base, rope_dims) = match kind {
+            LayerKind::SlidingWindow => {
+                (self.cfg.rope_freq_base_swa, self.cfg.rope_dim_swa as usize)
+            }
+            LayerKind::Global => (self.cfg.rope_freq_base, self.cfg.rope_dim_global as usize),
+        };
+
+        let mut enc = self
+            .ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("rome.aux_backward"),
+            });
+
+        let kv_row_bytes = (n_kv_heads * head_dim * 4) as u64;
+        let d_model_bytes = (d_model * 4) as u64;
+        let p_kv_off = (target_pos as u64) * kv_row_bytes;
+        let p_dm_off = (target_pos as u64) * d_model_bytes;
+
+        // Window captures at target_pos (overwrites whatever the main
+        // backward left in the *_window scratch buffers).
+        enc.copy_buffer_to_buffer(
+            cap.norm_x_attn,
+            p_dm_off,
+            scratch.norm_x_attn_window,
+            0,
+            d_model_bytes,
+        );
+        enc.copy_buffer_to_buffer(
+            cap.k_pre_norm,
+            p_kv_off,
+            scratch.k_pre_norm_window,
+            0,
+            kv_row_bytes,
+        );
+        enc.copy_buffer_to_buffer(
+            cap.v_pre_norm,
+            p_kv_off,
+            scratch.v_pre_norm_window,
+            0,
+            kv_row_bytes,
+        );
+        enc.copy_buffer_to_buffer(
+            cap.hidden_in,
+            p_dm_off,
+            scratch.hidden_in_window,
+            0,
+            d_model_bytes,
+        );
+
+        // ---- K backward at target_pos ----
+        enc.copy_buffer_to_buffer(
+            scratch.d_k_hist,
+            p_kv_off,
+            scratch.d_k_pre_rope,
+            0,
+            kv_row_bytes,
+        );
+        rope_neox_backward_chained(
+            &self.ctx,
+            &self.pipes,
+            &mut enc,
+            scratch.d_k_pre_rope,
+            factors_w.as_ref(),
+            &self.dummy,
+            head_dim,
+            n_kv_heads,
+            target_pos as usize,
+            rope_dims,
+            rope_base,
+        );
+        rmsnorm_per_row_backward_chained(
+            &self.ctx,
+            &self.pipes,
+            &mut enc,
+            scratch.k_pre_norm_window,
+            &k_norm_w,
+            scratch.d_k_pre_rope,
+            scratch.d_k_pre_norm,
+            n_kv_heads,
+            head_dim,
+            eps,
+            true,
+        );
+        matmul_q4_k_backward_input_chained(
+            &self.ctx,
+            &self.pipes,
+            &mut enc,
+            &k_w,
+            scratch.d_k_pre_norm,
+            scratch.d_hidden_tmp,
+            d_model,
+            n_kv_heads * head_dim,
+        );
+
+        // ---- V backward at target_pos ----
+        // d_v at target_pos → temporarily into d_k_pre_norm (K's window
+        // is free after K backward completed) to feed rmsnorm_back's dy
+        // without aliasing the dx output buffer (mirrors the main
+        // backward's pattern).
+        enc.copy_buffer_to_buffer(
+            scratch.d_v_hist,
+            p_kv_off,
+            scratch.d_k_pre_norm,
+            0,
+            kv_row_bytes,
+        );
+        rmsnorm_per_row_backward_chained(
+            &self.ctx,
+            &self.pipes,
+            &mut enc,
+            scratch.v_pre_norm_window,
+            &self.dummy,
+            scratch.d_k_pre_norm,
+            scratch.d_v_pre_norm,
+            n_kv_heads,
+            head_dim,
+            eps,
+            false,
+        );
+        match v_w_dtype {
+            GgmlDtype::Q6_K => matmul_q6_k_backward_input_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                &v_w,
+                scratch.d_v_pre_norm,
+                scratch.d_hidden_tmp2,
+                d_model,
+                n_kv_heads * head_dim,
+            ),
+            GgmlDtype::Q4_K => matmul_q4_k_backward_input_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                &v_w,
+                scratch.d_v_pre_norm,
+                scratch.d_hidden_tmp2,
+                d_model,
+                n_kv_heads * head_dim,
+            ),
+            other => {
+                return Err(RullamaError::Inference(format!(
+                    "rome_aux_backward: attn_v dtype {other:?} unsupported"
+                )));
+            }
+        }
+
+        // K + V sum → d_hidden_tmp
+        residual_add_chained(
+            &self.ctx,
+            &self.pipes,
+            &mut enc,
+            scratch.d_hidden_tmp,
+            scratch.d_hidden_tmp2,
+            d_model,
+        );
+
+        // attn-norm rmsnorm backward → out_d_hidden
+        // The forward applied rmsnorm to hidden[L+1, target_pos] to
+        // produce norm_x_attn[L+1, target_pos]. The K/V matmul-back
+        // gave us d_norm_x_attn (in scratch.d_hidden_tmp); now we walk
+        // back through that rmsnorm to recover gradient on the input
+        // (hidden_in at target_pos with δ already applied).
+        rmsnorm_backward_chained(
+            &self.ctx,
+            &self.pipes,
+            &mut enc,
+            scratch.hidden_in_window,
+            &attn_norm_w,
+            scratch.d_hidden_tmp,
+            out_d_hidden,
+            d_model,
+            eps,
+            true,
+        );
+
+        self.ctx.queue.submit(Some(enc.finish()));
+        Ok(())
+    }
+
+    /// ROME δ-injection: adds `delta_buf` (shape `[d_model]`) to
+    /// `self.hidden` immediately after the named layer completes, on
+    /// exactly the step this is passed to. Used by the iterative v\*
+    /// loop (Phase 2.b) to apply the optimizer's current residual
+    /// perturbation at the subject-last token's position.
+    pub fn rome_delta_buf_alloc(&self) -> wgpu::Buffer {
+        let d_model = self.cfg.d_model as u64;
+        self.ctx.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rome.delta"),
+            size: d_model * 4,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        })
     }
 
     /// Run a forward step with LoRA correction enabled but **without**
@@ -861,6 +1750,7 @@ impl Forward {
         &mut self,
         token_id: u32,
         loras: &'a [LayerLoraSlots<'a>],
+        globals: Option<&'a GlobalLoraSlots<'a>>,
     ) -> Result<Vec<f32>> {
         if loras.len() != self.cfg.n_layers as usize {
             return Err(RullamaError::Inference(format!(
@@ -869,7 +1759,7 @@ impl Forward {
                 self.cfg.n_layers
             )));
         }
-        self.step_inner(token_id, None, Some(loras)).await
+        self.step_inner(token_id, None, Some(loras), globals).await
     }
 
     /// Same as [`step_with_lora`] but ALSO captures the per-position
@@ -888,8 +1778,9 @@ impl Forward {
         token_id: u32,
         loras: &'a [LayerLoraSlots<'a>],
         capture: &'a [LayerCaptureBuffers<'a>],
+        globals: Option<&'a GlobalLoraSlots<'a>>,
     ) -> Result<Vec<f32>> {
-        self.step_with_lora_seqcap_with_progress(token_id, loras, capture, None)
+        self.step_with_lora_seqcap_with_progress(token_id, loras, capture, globals, None)
             .await
     }
 
@@ -903,6 +1794,7 @@ impl Forward {
         token_id: u32,
         loras: &'a [LayerLoraSlots<'a>],
         capture: &'a [LayerCaptureBuffers<'a>],
+        globals: Option<&'a GlobalLoraSlots<'a>>,
         progress_cb: Option<&LayerProgressCb<'_>>,
     ) -> Result<Vec<f32>> {
         if loras.len() != self.cfg.n_layers as usize {
@@ -919,8 +1811,15 @@ impl Forward {
                 self.cfg.n_layers
             )));
         }
-        self.step_inner_with_progress(token_id, Some(capture), Some(loras), progress_cb)
-            .await
+        self.step_inner_with_progress(
+            token_id,
+            Some(capture),
+            Some(loras),
+            globals,
+            progress_cb,
+            None,
+        )
+        .await
     }
 
     async fn step_inner<'a>(
@@ -928,8 +1827,9 @@ impl Forward {
         token_id: u32,
         capture: Option<&'a [LayerCaptureBuffers<'a>]>,
         loras: Option<&'a [LayerLoraSlots<'a>]>,
+        globals: Option<&'a GlobalLoraSlots<'a>>,
     ) -> Result<Vec<f32>> {
-        self.step_inner_with_progress(token_id, capture, loras, None)
+        self.step_inner_with_progress(token_id, capture, loras, globals, None, None)
             .await
     }
 
@@ -938,7 +1838,9 @@ impl Forward {
         token_id: u32,
         capture: Option<&'a [LayerCaptureBuffers<'a>]>,
         loras: Option<&'a [LayerLoraSlots<'a>]>,
+        globals: Option<&'a GlobalLoraSlots<'a>>,
         progress_cb: Option<&LayerProgressCb<'_>>,
+        rome_delta: Option<RomeDeltaInjection<'a>>,
     ) -> Result<Vec<f32>> {
         if (token_id as u64) >= self.cfg.vocab_size as u64 {
             return Err(RullamaError::Inference(format!(
@@ -984,7 +1886,49 @@ impl Forward {
             drop(ple_in);
         }
 
-        self.run_forward_from_hidden_with_progress(capture, loras, progress_cb)
+        // ---- embed_tokens LoRA forward inject ----
+        // `hidden += scale · B_emb · A_emb[:, token_id]`. With the input
+        // being effectively one_hot(token_id), the matmul `A_emb @ one_hot`
+        // reduces to a column extract from A_emb. We capture the column in
+        // slot.z so the backward pass can reconstruct the same `z` vector
+        // without re-running the column read.
+        if let Some(g) = globals
+            && let Some(embed) = g.embed_tokens.as_ref()
+        {
+            let vocab = self.cfg.vocab_size;
+            let mut enc = self
+                .ctx
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("fwd.embed_tokens_lora"),
+                });
+            crate::backend::dispatch::lora_embed_col_read_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                embed.a,
+                embed.z,
+                embed.rank,
+                vocab,
+                token_id,
+            );
+            // hidden += scale · B_emb · z, where B_emb has shape [d_model, rank].
+            crate::backend::dispatch::lora_matmul_row_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                embed.b,
+                embed.z,
+                &self.hidden,
+                embed.rank as usize,
+                d_model,
+                embed.scale,
+                true, // accumulate into hidden
+            );
+            self.ctx.queue.submit(Some(enc.finish()));
+        }
+
+        self.run_forward_from_hidden_with_progress(capture, loras, globals, progress_cb, rome_delta)
             .await
     }
 
@@ -999,7 +1943,7 @@ impl Forward {
     /// Ollama's behaviour: multimodal soft tokens flow through the LM as frozen
     /// inputs and don't get PLE injection.
     pub async fn step_with_embedding(&mut self, embedding: &[f32]) -> Result<Vec<f32>> {
-        self.step_with_embedding_inner(embedding, None).await
+        self.step_with_embedding_inner(embedding, None, None).await
     }
 
     /// Variant of [`step_with_embedding`] that applies a LoRA adapter
@@ -1008,10 +1952,16 @@ impl Forward {
     /// adapter is active — without this, image and audio soft-token
     /// steps would silently bypass the loaded adapter while pure-text
     /// steps respect it.
+    ///
+    /// `globals.lm_head` is honored (logit correction after the tiled
+    /// output projection). `globals.embed_tokens` is ignored: this
+    /// path bypasses the `token_embd` lookup, so there's no input-
+    /// embedding distribution for the embed_tokens LoRA to perturb.
     pub async fn step_with_embedding_with_lora<'a>(
         &mut self,
         embedding: &[f32],
         loras: &'a [LayerLoraSlots<'a>],
+        globals: Option<&'a GlobalLoraSlots<'a>>,
     ) -> Result<Vec<f32>> {
         if loras.len() != self.cfg.n_layers as usize {
             return Err(RullamaError::Inference(format!(
@@ -1020,13 +1970,15 @@ impl Forward {
                 self.cfg.n_layers
             )));
         }
-        self.step_with_embedding_inner(embedding, Some(loras)).await
+        self.step_with_embedding_inner(embedding, Some(loras), globals)
+            .await
     }
 
     async fn step_with_embedding_inner<'a>(
         &mut self,
         embedding: &[f32],
         loras: Option<&'a [LayerLoraSlots<'a>]>,
+        globals: Option<&'a GlobalLoraSlots<'a>>,
     ) -> Result<Vec<f32>> {
         let d_model = self.cfg.d_model as usize;
         if embedding.len() != d_model {
@@ -1055,7 +2007,7 @@ impl Forward {
                 .write_buffer(&self.per_layer_residual, 0, bytemuck::cast_slice(&zeros));
         }
 
-        self.run_forward_from_hidden(None, loras).await
+        self.run_forward_from_hidden(None, loras, globals).await
     }
 
     /// Forward pass starting from `self.hidden` already populated. Shared by
@@ -1064,8 +2016,9 @@ impl Forward {
         &mut self,
         capture: Option<&'a [LayerCaptureBuffers<'a>]>,
         loras: Option<&'a [LayerLoraSlots<'a>]>,
+        globals: Option<&'a GlobalLoraSlots<'a>>,
     ) -> Result<Vec<f32>> {
-        self.run_forward_from_hidden_with_progress(capture, loras, None)
+        self.run_forward_from_hidden_with_progress(capture, loras, globals, None, None)
             .await
     }
 
@@ -1073,11 +2026,24 @@ impl Forward {
     /// `progress_cb(layer_index, total_layers, "forward")` between
     /// per-layer encoder submits. Used by training; chat-side
     /// inference passes `None`.
+    ///
+    /// `rome_delta`: optional ROME residual-stream perturbation.
+    /// When `Some(..)`, after the layer matching `target_layer`
+    /// completes, `delta_buf` is added to `self.hidden` before the
+    /// next layer (or final norm) consumes it.
+    ///
+    /// `globals`: optional `lm_head` / `embed_tokens` LoRA slots. The
+    /// `lm_head` slot is consumed here (added to logits after the
+    /// tiled output projection). The `embed_tokens` slot must have
+    /// been applied by the caller before populating `self.hidden`
+    /// (see `step_inner_with_progress`).
     async fn run_forward_from_hidden_with_progress<'a>(
         &mut self,
         capture: Option<&'a [LayerCaptureBuffers<'a>]>,
         loras: Option<&'a [LayerLoraSlots<'a>]>,
+        globals: Option<&'a GlobalLoraSlots<'a>>,
         progress_cb: Option<&LayerProgressCb<'_>>,
+        rome_delta: Option<RomeDeltaInjection<'a>>,
     ) -> Result<Vec<f32>> {
         // Clear any stale cancel flag from a previous step so this
         // call starts fresh; the per-layer loop below checks it after
@@ -1192,6 +2158,32 @@ impl Forward {
             // this submission strategy. Bounded latency: one layer
             // (~300 ms - 1 s on browser) instead of one full step.
             self.check_cancelled()?;
+            // **MeBP-inspired per-layer weight destroy.** When enabled
+            // (training mode on memory-tight targets — see
+            // forward_destroy_per_layer field doc), drain the GPU
+            // (force the just-submitted layer's commands to complete
+            // so no bind group still references blk.{i}.* buffers),
+            // then destroy this layer's weight tiles. Peak weight cache
+            // during forward drops from ~1417 MiB (all 35 layers) to
+            // ~40 MiB (one layer at a time). Backward's
+            // gradient-checkpointing recompute re-fetches via the same
+            // lazy buffer_async path the forward used originally —
+            // identical correctness, ~32-42% extra forward time (per
+            // MeBP arxiv 2510.03425 §4.2). This is the smallest-change
+            // approximation of MeBP's per-block lazy-load architecture
+            // adapted to wgpu + OPFS (our analog to their mmap).
+            // Only destroy below the backward floor — layers at or above
+            // the floor are walked in backward and their weights stay
+            // cached so the recompute hits the WeightCache instead of
+            // re-uploading. (iPhone real-device test confirmed: with
+            // unconditional destroy, recompute alloc churn killed the
+            // page immediately after `bwd.post_yield`. With the floor
+            // gating, backward layer 34's recompute finds blk.34 still
+            // in cache.)
+            if self.forward_destroy_per_layer && i < self.forward_destroy_layer_floor {
+                let _drain = read_buf_stats(&self.ctx, &self.hidden, 1).await?;
+                let _ = self.wcache.drop_blk_layer_range_destroy(i, i + 1);
+            }
             // Per-layer progress beacon — fired AFTER the submit so
             // the caller's "layer N done" message correlates with the
             // GPU having actually finished it. `i + 1` is 1-based for
@@ -1205,6 +2197,25 @@ impl Forward {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("fwd.token_encoder.cont"),
                 });
+
+            // ROME δ injection: append `hidden += delta_buf` to the
+            // fresh encoder immediately after `target_layer` settles
+            // on the GPU. The next iteration's `encode_layer(i+1)`
+            // (or the final norm, if this was the last layer) reads
+            // the perturbed hidden. Cross-submit ordering guarantees
+            // the previous submit's write to `self.hidden` is visible.
+            if let Some(rd) = rome_delta.as_ref()
+                && i == rd.target_layer
+            {
+                residual_add_chained(
+                    &self.ctx,
+                    &self.pipes,
+                    &mut enc,
+                    &self.hidden,
+                    rd.delta_buf,
+                    d_model,
+                );
+            }
         }
 
         // ---- final norm (in-place into hidden via norm_y as scratch) ----
@@ -1273,6 +2284,66 @@ impl Forward {
                 .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("fwd.out_proj_encoder.cont"),
+                });
+        }
+
+        // ---- lm_head LoRA forward inject ----
+        // `logits += scale · B_lmh · (A_lmh · norm_x)` where A_lmh has
+        // shape [rank, d_model] and B_lmh has shape [vocab, rank]. We
+        // capture `z = A_lmh · norm_x` into slot.z so the backward pass
+        // can reuse it without re-running the matmul. Injected AFTER the
+        // tiled output projection (so the base logits exist) but BEFORE
+        // softcap (so the correction sees the same softcap as the base).
+        if let Some(g) = globals
+            && let Some(lmh) = g.lm_head.as_ref()
+        {
+            let vocab = self.cfg.vocab_size as usize;
+            // Fused: z = A_lmh · norm_x; logits += scale · B_lmh · z.
+            // One dispatch instead of two; slot.z is still written for
+            // the backward path to consume. When the inference adapter
+            // packed B as f16 (vocab × rank ≈ 16 MB → 8 MB), route
+            // through the packed-f16 kernel; otherwise use the f32
+            // variant. Training never sets `b_is_f16` so the backward
+            // path (which reads B as f32) stays correct by construction.
+            if lmh.b_is_f16 {
+                crate::backend::dispatch::lora_matmul_fused_f16b_chained(
+                    &self.ctx,
+                    &self.pipes,
+                    &mut enc,
+                    lmh.a,
+                    lmh.b,
+                    &self.norm_x,
+                    &self.logits,
+                    lmh.z,
+                    d_model,
+                    vocab,
+                    lmh.rank as usize,
+                    lmh.scale,
+                    true,
+                );
+            } else {
+                lora_matmul_fused_chained(
+                    &self.ctx,
+                    &self.pipes,
+                    &mut enc,
+                    lmh.a,
+                    lmh.b,
+                    &self.norm_x,
+                    &self.logits,
+                    lmh.z,
+                    d_model,
+                    vocab,
+                    lmh.rank as usize,
+                    lmh.scale,
+                    true,
+                );
+            }
+            self.ctx.queue.submit(Some(enc.finish()));
+            enc = self
+                .ctx
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("fwd.out_proj_encoder.cont2"),
                 });
         }
 
@@ -1466,31 +2537,22 @@ impl Forward {
             n_heads * head_dim,
         );
 
-        // ---- LoRA forward correction (q): self.q += scale · B · (A · norm_x) ----
+        // ---- LoRA forward correction (q) — fused ----
+        // Fused into ONE dispatch: z=A·norm_x AND self.q+=scale·B·z.
+        // slot.z is still written by the kernel for the backward path.
         if let Some(slot) = loras.and_then(|l| l.q.as_ref()) {
-            // z = A · norm_x  ([rank] = [rank, d_model] @ [d_model])
-            lora_matmul_row_chained(
+            lora_matmul_fused_chained(
                 &self.ctx,
                 &self.pipes,
                 enc,
                 slot.a,
+                slot.b,
                 &self.norm_x,
+                &self.q,
                 slot.z,
                 d_model,
-                slot.rank as usize,
-                1.0,
-                false,
-            );
-            // self.q += scale · B · z  ([n_heads*head_dim] += [n_heads*head_dim, rank] @ [rank])
-            lora_matmul_row_chained(
-                &self.ctx,
-                &self.pipes,
-                enc,
-                slot.b,
-                slot.z,
-                &self.q,
-                slot.rank as usize,
                 n_heads * head_dim,
+                slot.rank as usize,
                 slot.scale,
                 true,
             );
@@ -1569,29 +2631,20 @@ impl Forward {
                 n_kv_heads * head_dim,
             );
 
-            // ---- LoRA forward correction (k) ----
+            // ---- LoRA forward correction (k) — fused ----
             if let Some(slot) = loras.and_then(|l| l.k.as_ref()) {
-                lora_matmul_row_chained(
+                lora_matmul_fused_chained(
                     &self.ctx,
                     &self.pipes,
                     enc,
                     slot.a,
+                    slot.b,
                     &self.norm_x,
+                    &self.k,
                     slot.z,
                     d_model,
-                    slot.rank as usize,
-                    1.0,
-                    false,
-                );
-                lora_matmul_row_chained(
-                    &self.ctx,
-                    &self.pipes,
-                    enc,
-                    slot.b,
-                    slot.z,
-                    &self.k,
-                    slot.rank as usize,
                     n_kv_heads * head_dim,
+                    slot.rank as usize,
                     slot.scale,
                     true,
                 );
@@ -1663,29 +2716,20 @@ impl Forward {
                 }
             }
 
-            // ---- LoRA forward correction (v) ----
+            // ---- LoRA forward correction (v) — fused ----
             if let Some(slot) = loras.and_then(|l| l.v.as_ref()) {
-                lora_matmul_row_chained(
+                lora_matmul_fused_chained(
                     &self.ctx,
                     &self.pipes,
                     enc,
                     slot.a,
+                    slot.b,
                     &self.norm_x,
+                    &self.v,
                     slot.z,
                     d_model,
-                    slot.rank as usize,
-                    1.0,
-                    false,
-                );
-                lora_matmul_row_chained(
-                    &self.ctx,
-                    &self.pipes,
-                    enc,
-                    slot.b,
-                    slot.z,
-                    &self.v,
-                    slot.rank as usize,
                     n_kv_heads * head_dim,
+                    slot.rank as usize,
                     slot.scale,
                     true,
                 );
@@ -1786,29 +2830,20 @@ impl Forward {
             d_model,
         );
 
-        // ---- LoRA forward correction (o): self.attn_proj += scale · B · (A · attn_out_buf) ----
+        // ---- LoRA forward correction (o) — fused ----
         if let Some(slot) = loras.and_then(|l| l.o.as_ref()) {
-            lora_matmul_row_chained(
+            lora_matmul_fused_chained(
                 &self.ctx,
                 &self.pipes,
                 enc,
                 slot.a,
+                slot.b,
                 &self.attn_out_buf,
+                &self.attn_proj,
                 slot.z,
                 n_heads * head_dim,
-                slot.rank as usize,
-                1.0,
-                false,
-            );
-            lora_matmul_row_chained(
-                &self.ctx,
-                &self.pipes,
-                enc,
-                slot.b,
-                slot.z,
-                &self.attn_proj,
-                slot.rank as usize,
                 d_model,
+                slot.rank as usize,
                 slot.scale,
                 true,
             );
@@ -1893,29 +2928,20 @@ impl Forward {
             ffn_n,
         );
 
-        // ---- LoRA forward correction (ffn_gate): ffn_gate += scale · B · (A · norm_x) ----
+        // ---- LoRA forward correction (ffn_gate) — fused ----
         if let Some(slot) = loras.and_then(|l| l.ffn_gate.as_ref()) {
-            lora_matmul_row_chained(
+            lora_matmul_fused_chained(
                 &self.ctx,
                 &self.pipes,
                 enc,
                 slot.a,
+                slot.b,
                 &self.norm_x,
+                &self.ffn_gate,
                 slot.z,
                 d_model,
-                slot.rank as usize,
-                1.0,
-                false,
-            );
-            lora_matmul_row_chained(
-                &self.ctx,
-                &self.pipes,
-                enc,
-                slot.b,
-                slot.z,
-                &self.ffn_gate,
-                slot.rank as usize,
                 ffn_n,
+                slot.rank as usize,
                 slot.scale,
                 true,
             );
@@ -1932,29 +2958,20 @@ impl Forward {
             ffn_n,
         );
 
-        // ---- LoRA forward correction (ffn_up): ffn_up += scale · B · (A · norm_x) ----
+        // ---- LoRA forward correction (ffn_up) — fused ----
         if let Some(slot) = loras.and_then(|l| l.ffn_up.as_ref()) {
-            lora_matmul_row_chained(
+            lora_matmul_fused_chained(
                 &self.ctx,
                 &self.pipes,
                 enc,
                 slot.a,
+                slot.b,
                 &self.norm_x,
+                &self.ffn_up,
                 slot.z,
                 d_model,
-                slot.rank as usize,
-                1.0,
-                false,
-            );
-            lora_matmul_row_chained(
-                &self.ctx,
-                &self.pipes,
-                enc,
-                slot.b,
-                slot.z,
-                &self.ffn_up,
-                slot.rank as usize,
                 ffn_n,
+                slot.rank as usize,
                 slot.scale,
                 true,
             );
@@ -2022,29 +3039,20 @@ impl Forward {
             }
         }
 
-        // ---- LoRA forward correction (ffn_down): ffn_out += scale · B · (A · ffn_act) ----
+        // ---- LoRA forward correction (ffn_down) — fused ----
         if let Some(slot) = loras.and_then(|l| l.ffn_down.as_ref()) {
-            lora_matmul_row_chained(
+            lora_matmul_fused_chained(
                 &self.ctx,
                 &self.pipes,
                 enc,
                 slot.a,
+                slot.b,
                 &self.ffn_act,
+                &self.ffn_out,
                 slot.z,
                 ffn_n,
-                slot.rank as usize,
-                1.0,
-                false,
-            );
-            lora_matmul_row_chained(
-                &self.ctx,
-                &self.pipes,
-                enc,
-                slot.b,
-                slot.z,
-                &self.ffn_out,
-                slot.rank as usize,
                 d_model,
+                slot.rank as usize,
                 slot.scale,
                 true,
             );
@@ -2401,6 +3409,19 @@ pub struct LayerLoraGrads<'a> {
     pub ffn_down: Option<LoraGradPair<'a>>,
 }
 
+/// Model-global LoRA gradient accumulators. The `embed_tokens` pair
+/// is updated by a single-column scatter add (since the input is
+/// one-hot at the position of the current token). The `lm_head` pair
+/// is updated by full matmul backward against d_logits, and feeds an
+/// additional `d_norm_x_lmh_tmp` contribution that gets added into
+/// the trunk gradient stream (so the per-layer backward sees a
+/// d_hidden that already accounts for the lm_head LoRA's chain rule).
+#[derive(Default)]
+pub struct GlobalLoraGrads<'a> {
+    pub embed_tokens: Option<LoraGradPair<'a>>,
+    pub lm_head: Option<LoraGradPair<'a>>,
+}
+
 /// All scratch buffers the backward orchestration writes into. Sized
 /// at construction time and reused across steps. Allocated by
 /// `rullama-finetune::TrainingScratch`.
@@ -2532,11 +3553,80 @@ impl Forward {
             capture,
             loras,
             grads,
+            None, // no global LoRA slots from this convenience wrapper
+            None, // no global LoRA grads from this convenience wrapper
+            None, // no embed_token_id; not needed when globals are None
             scratch,
             history_len,
             pos,
             recompute_captures,
             None,
+            0, // backward_layer_floor = 0 → backprop all layers (default)
+        )
+        .await
+    }
+
+    /// Backward pass starting from CALLER-PROVIDED `d_logits` (instead
+    /// of computing them from a hard-label target via cross-entropy).
+    ///
+    /// Used by ROME's iterative v\* loop to backpropagate the KL term
+    /// `kl_factor · KL(P_base ‖ P_edited)` whose gradient at the edited
+    /// logits is `kl_factor · (softmax(edited) − softmax(base))` — a
+    /// soft-label CE-like gradient our hard-label kernel can't produce.
+    ///
+    /// `custom_d_logits` is a length-`vocab_size` f32 slice written
+    /// directly into `scratch.d_logits`, after which the rest of the
+    /// backward chain (output-proj-back → final-norm-back → layer walk)
+    /// runs identically to `backward_step_with_progress`.
+    ///
+    /// The scalar in `scratch.loss` is NOT populated by this path — the
+    /// caller is responsible for computing the loss value on CPU.
+    /// Returns 0.0 as a placeholder.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn backward_step_from_d_logits_with_progress<'a>(
+        &mut self,
+        custom_d_logits: &[f32],
+        capture: &'a [LayerCaptureBuffers<'a>],
+        loras: &'a [LayerLoraSlots<'a>],
+        grads: &'a [LayerLoraGrads<'a>],
+        globals: Option<&'a GlobalLoraSlots<'a>>,
+        global_grads: Option<&'a GlobalLoraGrads<'a>>,
+        embed_token_id: Option<u32>,
+        scratch: &'a BackwardScratchView<'a>,
+        history_len: u32,
+        pos: u32,
+        recompute_captures: bool,
+        progress_cb: Option<&LayerProgressCb<'_>>,
+        backward_layer_floor: u32,
+    ) -> Result<f32> {
+        // Upload caller's d_logits into scratch.d_logits, then call the
+        // shared inner backward with `target_id = u32::MAX` as a sentinel
+        // that means "skip the CE step, d_logits is already populated".
+        let vocab = self.cfg.vocab_size as usize;
+        if custom_d_logits.len() != vocab {
+            return Err(RullamaError::Inference(format!(
+                "backward_step_from_d_logits: custom_d_logits len {} != vocab {vocab}",
+                custom_d_logits.len()
+            )));
+        }
+        self.ctx
+            .queue
+            .write_buffer(scratch.d_logits, 0, bytemuck::cast_slice(custom_d_logits));
+        self.backward_step_inner(
+            u32::MAX,
+            capture,
+            loras,
+            grads,
+            globals,
+            global_grads,
+            embed_token_id,
+            scratch,
+            history_len,
+            pos,
+            recompute_captures,
+            progress_cb,
+            backward_layer_floor,
+            true, // skip CE
         )
         .await
     }
@@ -2555,11 +3645,65 @@ impl Forward {
         capture: &'a [LayerCaptureBuffers<'a>],
         loras: &'a [LayerLoraSlots<'a>],
         grads: &'a [LayerLoraGrads<'a>],
+        globals: Option<&'a GlobalLoraSlots<'a>>,
+        global_grads: Option<&'a GlobalLoraGrads<'a>>,
+        // The token id whose embedding row this backward step corresponds
+        // to — required when `globals.embed_tokens` and
+        // `global_grads.embed_tokens` are both Some, because the embed
+        // gradient is a single-column scatter into `d_A[:, embed_token_id]`.
+        // Pass `None` if the embed_tokens LoRA is not in use.
+        embed_token_id: Option<u32>,
         scratch: &'a BackwardScratchView<'a>,
         history_len: u32,
         pos: u32,
         recompute_captures: bool,
         progress_cb: Option<&LayerProgressCb<'_>>,
+        // **Truncated backward.** When > 0, exit the per-layer
+        // reverse walk early once `li < backward_layer_floor`. Layers
+        // below the floor get no gradient updates, saving compute +
+        // memory transients. 0 keeps every layer trainable (the
+        // production default). See `TrainingHyperparams::backward_layer_floor`.
+        backward_layer_floor: u32,
+    ) -> Result<f32> {
+        self.backward_step_inner(
+            target_id,
+            capture,
+            loras,
+            grads,
+            globals,
+            global_grads,
+            embed_token_id,
+            scratch,
+            history_len,
+            pos,
+            recompute_captures,
+            progress_cb,
+            backward_layer_floor,
+            false, // run CE step
+        )
+        .await
+    }
+
+    /// Shared inner backward, with `skip_ce` toggling whether to call
+    /// `cross_entropy_backward_chained` (false → hard-label CE, target_id
+    /// drives d_logits) or use pre-populated `scratch.d_logits` (true).
+    #[allow(clippy::too_many_arguments)]
+    async fn backward_step_inner<'a>(
+        &mut self,
+        target_id: u32,
+        capture: &'a [LayerCaptureBuffers<'a>],
+        loras: &'a [LayerLoraSlots<'a>],
+        grads: &'a [LayerLoraGrads<'a>],
+        globals: Option<&'a GlobalLoraSlots<'a>>,
+        global_grads: Option<&'a GlobalLoraGrads<'a>>,
+        embed_token_id: Option<u32>,
+        scratch: &'a BackwardScratchView<'a>,
+        history_len: u32,
+        pos: u32,
+        recompute_captures: bool,
+        progress_cb: Option<&LayerProgressCb<'_>>,
+        backward_layer_floor: u32,
+        skip_ce: bool,
     ) -> Result<f32> {
         // Clear any stale cancel flag from a previous step; the layer
         // walk below checks it after each `backward_layer` submit.
@@ -2576,61 +3720,360 @@ impl Forward {
 
         // Fetch top-level frozen weights.
         let wc = self.wcache.clone();
+
+        // **iOS peak-memory cut at the forward→backward boundary.** The
+        // forward pass caches every one of the 35 layers' dequantized
+        // f32 weight tiles (`blk.{i}.*`) in the GPU WeightCache, and the
+        // cache never evicts. By the time backward starts, that resident
+        // set + KV cache + per-layer activation captures + the backward
+        // scratch/pipelines crosses iOS Safari's ~3-4 GB WebContent
+        // ceiling, and jetsam kills the tab during the very first
+        // backward dispatch (observed live: forward prefill completes,
+        // then the tab dies before the first `head_ce` beacon).
+        //
+        // Destroy the layer weights now — and this MUST be a real
+        // `destroy()`, not a handle-drop. A plain `drop_prefix("blk.")`
+        // only releases the Rust `wgpu::Buffer` handles; on iOS Safari
+        // WebGPU the ~1417 MiB of `GPUBuffer` memory stays physically
+        // resident until GC, which never runs inside a synchronous
+        // training step. The on-device beacon trail proved it: forward
+        // peaked at gpuMiB=1417, the head then fetched `token_embd`
+        // (~637 MiB) on top of those un-reclaimed buffers, and the tab
+        // jetsam'd at the head section (~2 GB real RSS) — even though our
+        // *tracked* counter had dropped to 668. Handle-drop lies to the
+        // accountant; it doesn't free iOS RSS.
+        //
+        // `destroy()` here is safe specifically because we're at a
+        // GPU-idle point: the forward's final act was
+        // `read_back_f32(&self.logits_read).await` (logits readback),
+        // whose `map_async` only resolves after every prior submit —
+        // including the last layer — has completed. No in-flight command
+        // references `blk.*` at this instant. (The use-after-destroy we
+        // hit before was destroying at the *head→backward* transition,
+        // where the just-submitted head dispatches were still pending;
+        // that's a different, later point. The head reads `token_embd` /
+        // `output_norm` / `per_layer_*` — none match `blk.` — so
+        // destroying the block weights here cannot pull a buffer out from
+        // under a pending head submit.)
+        //
+        // **Targeted destroy: drop ONLY layers BELOW the backward floor,
+        // keep layers IN the backward walk cached.** Real-device trail
+        // showed the page still jetsam'd at the head→backward transition
+        // with the original "destroy all blk" strategy because the
+        // backward immediately re-fetched (re-allocated) blk.{floor..N-1}
+        // — those allocations on top of the head's in-flight Metal state
+        // tripped jetsam. Layers 0..floor are never touched in backward
+        // (no recompute, no dispatch); destroying them frees the bulk of
+        // the forward heap (25 × ~40 MiB = ~1000 MiB on e2b with floor=25).
+        // Layers floor..n_layers stay cached so recompute + backward are
+        // cache HITS — no re-allocation, no Metal-heap churn at the
+        // head→backward boundary.
+        let n_layers_u32 = self.cfg.n_layers;
+        let floor_u32 = backward_layer_floor.min(n_layers_u32);
+        // Single-pass destroy of blk.{0..floor}.*  — replaces a per-layer
+        // loop that fired ~floor × HashMap-traversals + ~floor × ~7
+        // GPUBuffer.destroy() IPC dispatches on iOS Safari (real-device
+        // trail: `forward 35/35 gpuMiB=1417` → jetsam in the gap before
+        // head_ce). One traversal, one batch of destroys.
+        //
+        // **No drain needed here.** Patch 2's BindGroupCache invalidation
+        // hooks into `drop_blk_layer_range_destroy` and evicts any
+        // cached bind group whose key references one of the buffers
+        // about to be destroyed BEFORE the underlying `Buffer::destroy()`
+        // runs (see `BindGroupCache::invalidate_buffers` and the call in
+        // `WeightCache::drop_blk_layer_range_destroy`). That removes the
+        // class of use-after-destroy that an earlier wasm32 drain was
+        // guarding against. WebGPU spec §3.4.3.1: commands already
+        // encoded using a destroyed buffer continue to execute normally.
+        // **Chunked destroy with JS yields between (Patch 8).** The
+        // single `drop_blk_layer_range_destroy(0, floor_u32)` call was
+        // firing ~floor × ~7 = ~168 `Buffer::destroy()` IPCs in one
+        // synchronous burst, right at the moment GPUProcess RSS is at
+        // its peak from the just-finished forward. iOS jetsam was
+        // killing the WebContent process inside this burst — observed:
+        // `forward 35/35 gpuMiB=1417` was the last beacon, with
+        // `head_ce` never firing.
+        //
+        // Split the destroy into chunks of CHUNK_LAYERS layers, with a
+        // JS event-loop yield (setTimeout 0) between each chunk. Each
+        // chunk fires ~CHUNK_LAYERS × ~7 = ~35 destroys; iOS Metal can
+        // process each batch's IPCs before the next batch lands.
+        // No-op on native (the yield is wasm32-only).
+        // Chunk size is 1 (= a single all-at-once destroy) when mobile
+        // mode is off — the chunked-with-yields pattern only buys
+        // anything when iOS Metal needs the IPC backlog to drain. On
+        // Mac browsers / native the GPUProcess keeps up fine, so the
+        // yields are pure latency.
+        let chunk_layers: u32 = if self.mobile_mode {
+            5
+        } else {
+            floor_u32.max(1)
+        };
+        let mut dropped: usize = 0;
+        let mut chunk_start = 0u32;
+        while chunk_start < floor_u32 {
+            let chunk_end = (chunk_start + chunk_layers).min(floor_u32);
+            dropped += wc.drop_blk_layer_range_destroy(chunk_start, chunk_end);
+            chunk_start = chunk_end;
+            // Mobile-mode-only: yield to JS event loop so iOS Metal can
+            // drain the destroy IPCs from this chunk before the next
+            // batch. On desktop browsers this would just be wasted ms.
+            #[cfg(target_arch = "wasm32")]
+            if self.mobile_mode && chunk_start < floor_u32 {
+                use wasm_bindgen::JsCast;
+                let scope: web_sys::DedicatedWorkerGlobalScope = js_sys::global()
+                    .dyn_into()
+                    .expect("training session runs inside a DedicatedWorkerGlobalScope");
+                let promise = js_sys::Promise::new(&mut |resolve, _reject| {
+                    let resolve_fn: js_sys::Function = resolve.into();
+                    let _ =
+                        scope.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve_fn, 0);
+                });
+                let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        if dropped > 0 {
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+                "[bwd] evicted {dropped} layer weight tiles before backward (chunked, iOS peak-memory cut)"
+            )));
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if dropped > 0 && std::env::var("RULLAMA_TRACE_EVICT").is_ok() {
+            eprintln!("[bwd] evicted {dropped} layer weight tiles before backward (chunked)");
+        }
+
         let final_norm = wc.buffer_async("output_norm.weight").await?;
         let token_embd = wc.buffer_async("token_embd.weight").await?;
         let token_embd_dtype = wc.dtype("token_embd.weight")?;
 
-        // ===== Head: CE → output_proj_back → final norm back =====
+        // ===== Head: CE → output_proj_back → lm_head LoRA → final norm =====
+        //
+        // **iOS-tight invariant: one CommandEncoder per kernel group, with
+        // submit() boundaries between groups.** iOS Safari's Metal driver
+        // does lazy pipeline codegen — the kernel binary is compiled the
+        // first time the pipeline is bound for execution, not when
+        // `create_compute_pipeline` returns. If we pack 7+ never-before-
+        // dispatched training kernels into ONE submit, Metal must compile
+        // all of them before the GPU queue can run, and the transient
+        // memory spike on iOS WebContent is enough to trip jetsam (we
+        // observed this crash live: prefill completed cleanly but the
+        // first head-section dispatch hard-killed the tab).
+        //
+        // Splitting into per-group submits with `progress_cb` beacons in
+        // between gives Metal a chance to compile + reclaim transient
+        // memory one pipeline at a time, and gives the post-crash log
+        // a phase trail that pinpoints any future regression.
+
+        // **Head section keeps its 4 sub-submits (Patch 4 partial revert).**
+        // The first iPhone real-device test of the head-collapse variant
+        // died at `step 2 forward 35/35` — earlier than the pre-collapse
+        // wall — because the single collapsed head submit packed the
+        // 262K × 1536 outproj matmul together with CE_back, the 4
+        // lm_head LoRA dispatches, and rmsnorm_back. That single
+        // monster submit overflowed iOS Metal's heap reservation
+        // window. The OLD 4-submit shape gave each sub-phase (especially
+        // the giant outproj) its own command buffer, which Metal handles
+        // fine.
+        //
+        // `backward_layer` per-phase collapse (which removes 5 submits
+        // per layer × 10 layers = 50 IPCs/step) is kept — `backward_layer`
+        // doesn't have a single-dispatch monster like outproj, just many
+        // medium dispatches that benefit from batching into one submit.
+        //
+        // `token_embd` destroy stays inline after head_outproj (early
+        // destroy), restoring the prior shape that reached bwd.loop.enter
+        // consistently before this patch.
+
+        // ─── (1) Cross-entropy backward ──────────────────────────────
         let mut enc = self
             .ctx
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("bwd.head"),
+                label: Some("bwd.head.ce"),
             });
-
-        // d_logits + scalar loss
-        cross_entropy_backward_chained(
-            &self.ctx,
-            &self.pipes,
-            &mut enc,
-            &self.logits,
-            scratch.d_logits,
-            scratch.loss,
-            vocab,
-            target_id,
-        );
-
-        // d_norm_x_final = embedᵀ @ d_logits → write into scratch.d_hidden_final
-        match token_embd_dtype {
-            GgmlDtype::Q6_K => matmul_q6_k_backward_input_chained(
+        // d_logits + scalar loss — unless caller pre-populated
+        // scratch.d_logits (e.g. for KL preservation in ROME).
+        if !skip_ce {
+            cross_entropy_backward_chained(
                 &self.ctx,
                 &self.pipes,
                 &mut enc,
-                &token_embd,
+                &self.logits,
                 scratch.d_logits,
-                scratch.d_hidden_final,
-                d_model,
+                scratch.loss,
                 vocab,
-            ),
-            GgmlDtype::Q4_K => matmul_q4_k_backward_input_chained(
-                &self.ctx,
-                &self.pipes,
-                &mut enc,
-                &token_embd,
-                scratch.d_logits,
-                scratch.d_hidden_final,
-                d_model,
-                vocab,
-            ),
-            other => {
-                return Err(RullamaError::Inference(format!(
-                    "backward_step: token_embd dtype {other:?} unsupported"
-                )));
+                target_id,
+            );
+        }
+        self.ctx.queue.submit(Some(enc.finish()));
+        if let Some(cb) = progress_cb {
+            cb("head_ce", 1, 4);
+        }
+
+        // ─── (2) Output projection backward (embedᵀ · d_logits) ──────
+        // **Vocab-axis tiled (Patch 6).** The non-tiled dispatch was the
+        // largest single instruction in a training step: at vocab=262144
+        // it brought ~400 MB of dequantized f32 through Metal's
+        // execution path in ONE command buffer, and was the most likely
+        // single cause of iOS jetsam in the head section. Tile along
+        // the vocab axis: each tile dispatches over j ∈
+        // [t*vocab/N, (t+1)*vocab/N), gets its OWN command encoder +
+        // submit, so each Metal command buffer carries ~1/N of the
+        // working set. arxiv 2604.02344 confirms Safari Metal prefers
+        // tiled matmul (2× speedup on the same total work).
+        //
+        // Math is identical: `Σ_{j=0..n} dy[j] · W[j,i] = Σ_t Σ ...`.
+        // Tile 0 writes (accumulate=false); tiles 1..N add into
+        // scratch.d_hidden_final.
+        // Tile count: 8 in mobile mode (the iOS Metal heap working-set
+        // win), 1 on desktop browsers / native (one big command buffer
+        // is faster — fewer queue.submit IPCs and the GPU runs at
+        // its natural throughput).
+        let vocab_tiles: u32 = if self.mobile_mode { 8 } else { 1 };
+        let vocab_u32 = vocab as u32;
+        let tile_size = vocab_u32.div_ceil(vocab_tiles);
+        for t in 0..vocab_tiles {
+            let j_start = t * tile_size;
+            let j_end = (j_start + tile_size).min(vocab_u32);
+            if j_start >= j_end {
+                break;
+            }
+            let mut enc = self
+                .ctx
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("bwd.head.outproj.tile"),
+                });
+            let accumulate = t > 0;
+            match token_embd_dtype {
+                GgmlDtype::Q6_K => matmul_q6_k_backward_input_tile_chained(
+                    &self.ctx,
+                    &self.pipes,
+                    &mut enc,
+                    &token_embd,
+                    scratch.d_logits,
+                    scratch.d_hidden_final,
+                    d_model,
+                    vocab,
+                    j_start,
+                    j_end,
+                    accumulate,
+                ),
+                GgmlDtype::Q4_K => matmul_q4_k_backward_input_tile_chained(
+                    &self.ctx,
+                    &self.pipes,
+                    &mut enc,
+                    &token_embd,
+                    scratch.d_logits,
+                    scratch.d_hidden_final,
+                    d_model,
+                    vocab,
+                    j_start,
+                    j_end,
+                    accumulate,
+                ),
+                other => {
+                    return Err(RullamaError::Inference(format!(
+                        "backward_step: token_embd dtype {other:?} unsupported"
+                    )));
+                }
+            }
+            self.ctx.queue.submit(Some(enc.finish()));
+        }
+        if let Some(cb) = progress_cb {
+            cb("head_outproj", 2, 4);
+        }
+
+        // Destroy token_embd inline after the outproj submit. Patch 2's
+        // bind_cache.invalidate_buffers fires inside drop_prefix_destroy
+        // BEFORE Buffer::destroy(), so the outproj submit (still being
+        // consumed by Metal) keeps its bind-group reference safely.
+        // Mac fast path keeps token_embd resident — saves re-fetch.
+        if self.mobile_mode {
+            let _embd_dropped_early = wc.drop_prefix_destroy("token_embd");
+            if let Some(cb) = progress_cb {
+                cb("bwd.head.early_destroy_embd", 0, 1);
             }
         }
 
-        // d_hidden (running, top-of-stack) = rmsnorm_back(self.hidden,
-        // output_norm.weight, d_norm_x_final).
+        // ─── (3) lm_head LoRA backward (optional) ────────────────────
+        if let (Some(g), Some(gg)) = (globals, global_grads)
+            && let (Some(slot), Some(d_pair)) = (g.lm_head.as_ref(), gg.lm_head.as_ref())
+        {
+            let mut enc = self
+                .ctx
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("bwd.head.lm_head_lora"),
+                });
+            let r = slot.rank as usize;
+            let s = slot.scale;
+            // dB += s · d_logits ⊗ z (shape [vocab, rank])
+            lora_outer_add_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                scratch.d_logits,
+                slot.z,
+                d_pair.d_b,
+                vocab,
+                r,
+                s,
+                true,
+            );
+            // z = Bᵀ · d_logits (rank floats; overwrites the forward-captured z)
+            lora_matmul_col_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                slot.b,
+                scratch.d_logits,
+                slot.z,
+                vocab,
+                r,
+                1.0,
+                false,
+            );
+            // d_hidden_final += s · Aᵀ · u
+            lora_matmul_col_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                slot.a,
+                slot.z,
+                scratch.d_hidden_final,
+                r,
+                d_model,
+                s,
+                true,
+            );
+            // dA += s · u ⊗ norm_x_final
+            lora_outer_add_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                slot.z,
+                &self.norm_x,
+                d_pair.d_a,
+                r,
+                d_model,
+                s,
+                true,
+            );
+            self.ctx.queue.submit(Some(enc.finish()));
+        }
+        if let Some(cb) = progress_cb {
+            cb("head_lm_head_lora", 3, 4);
+        }
+
+        // ─── (4) Final rmsnorm backward ──────────────────────────────
+        let mut enc = self
+            .ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("bwd.head.rmsnorm"),
+            });
         rmsnorm_backward_chained(
             &self.ctx,
             &self.pipes,
@@ -2643,8 +4086,30 @@ impl Forward {
             eps,
             true,
         );
-
         self.ctx.queue.submit(Some(enc.finish()));
+        if let Some(cb) = progress_cb {
+            cb("head_rmsnorm", 4, 4);
+        }
+
+        // **No drain at head→backward boundary.** Earlier versions of
+        // this code did a read_buf_stats(scratch.d_hidden, ...) here to
+        // force iOS Metal to settle pending head submits before backward
+        // started. Real-device beacon trail proved that drain itself was
+        // the jetsam trigger — `head_rmsnorm 4/4 gpuMiB=38` fires (our
+        // tracked memory is tiny by then), then 💥. The drain forces a
+        // map_async + await on a GPU process that's at the pipeline-
+        // compile RSS limit, and the sync push tips it past jetsam.
+        //
+        // Without the drain, the head's submits and the next layer's
+        // recompute submit interleave naturally — Metal handles the
+        // queuing. The MeBP per-layer destroy during forward + the early
+        // token_embd destroy after head_outproj already keep the
+        // *tracked* memory low; the residual jetsam pressure is iOS
+        // pipeline-compile RSS, which a drain only makes worse.
+        //
+        // The late destroy_embd is also gone: token_embd was already
+        // destroyed inline after head_outproj's submit (see ~30 lines
+        // above), so any further destroy("token_embd") is a no-op.
 
         let trace_hidden = std::env::var("RULLAMA_TRACE_DHIDDEN").is_ok();
         // Adaptive max-abs clip on d_hidden between layers. Defaults to
@@ -2672,8 +4137,60 @@ impl Forward {
         }
         // ===== Walk layers top-down =====
         let d_model_bytes = (self.cfg.d_model as u64) * 4;
+        // Saturate-clamp the floor so an oversized value just means
+        // "skip everything" rather than panic; a value of n_layers
+        // or larger short-circuits the entire backward sweep.
+        let floor = (backward_layer_floor as usize).min(n_layers);
         for li in (0..n_layers).rev() {
+            // **Truncated backward gate.** Once `li` drops below the
+            // configured floor, no more LoRA grads accumulate. The
+            // forward pass already ran every layer (to populate the
+            // captures up to the floor); we just stop walking the
+            // gradient back. Layers below the floor stay frozen for
+            // this step.
+            if li < floor {
+                break;
+            }
             let i = li as u32;
+            // **Diagnostic at the absolute top of each iteration** —
+            // bracketed by head_rmsnorm (last head beacon) and
+            // bwd.layer.recompute. If this fires for layer N but
+            // bwd.layer.recompute doesn't, death is in the
+            // gradient-checkpointing replay's encode_layer submit
+            // (the recompute fetches blk.N.* weights again and
+            // submits ~10 forward dispatches). If THIS itself doesn't
+            // fire after `head_rmsnorm 4/4`, death is in the trivial
+            // env_var / loop-setup code between head end and loop
+            // body — which would mean iOS jetsam'd from the head's
+            // accumulated Metal state, not from anything we do.
+            if let Some(cb) = progress_cb {
+                let logical = (n_layers as u32) - i;
+                cb("bwd.loop.enter", logical, n_layers as u32);
+            }
+            // **JS yield REMOVED (Patch 9 diagnostic).** Across all
+            // prior iPhone runs `bwd.post_yield` NEVER fired — the
+            // page consistently died right at `bwd.loop.enter 1/35`,
+            // before this cb could emit. Both 0 ms and 500 ms typed
+            // setTimeouts produced the same wall. Tracked memory at
+            // crash was 38 MiB (MeBP on) or 415 MiB (MeBP off) —
+            // memory is NOT the trigger.
+            //
+            // If the page now reaches `bwd.post_yield` (with the
+            // setTimeout gone), the yield itself was the killer:
+            // iOS Safari is jetsam'ing the WebContent process while
+            // the Worker is suspended in setTimeout, OR the keepalive
+            // beacons from bwd.loop.enter are stacking and pushing
+            // a per-request limit.
+            //
+            // If `bwd.post_yield` still doesn't fire, the issue is
+            // immediately downstream — most likely the recompute's
+            // first `wcache.buffer_async` call against a freshly-
+            // destroyed (MeBP on) blk.N weight, triggering the alloc
+            // churn we saw before.
+            if let Some(cb) = progress_cb {
+                let logical = (n_layers as u32) - i;
+                cb("bwd.post_yield", logical, n_layers as u32);
+            }
             let cap = &capture[li];
             let lora = &loras[li];
             let grad = &grads[li];
@@ -2711,6 +4228,49 @@ impl Forward {
                     "replay should leave kv_lens unchanged for layer {li}"
                 );
                 self.ctx.queue.submit(Some(renc.finish()));
+                // Diagnostic: recompute (gradient-checkpointing replay)
+                // is the last work between layers. If
+                // `bwd.layer.recompute` fires but the next per-layer
+                // beacon (bwd.layer.entry) doesn't, the recompute submit
+                // killed the tab — i.e. encode_layer's forward dispatches
+                // tripped jetsam, NOT the backward kernels.
+                if let Some(cb) = progress_cb {
+                    let logical = (n_layers as u32) - i;
+                    cb("bwd.layer.recompute", logical, n_layers as u32);
+                }
+            }
+
+            // **wasm32: 0 ms yield between recompute submit and
+            // backward_layer encoding.** The recompute submit just
+            // landed on Metal's command queue — its 10-12 forward
+            // dispatches are processing asynchronously. backward_layer
+            // is about to encode 16 copy_buffer_to_buffer ops + ~7
+            // phases of dispatches on top. Without a yield iOS
+            // Safari's GPUProcess is hit with the second-burst
+            // immediately, and the cumulative pressure tripped jetsam
+            // (last seen beacon was bwd.layer.recompute 1/35, never
+            // bwd.layer.entry). A setTimeout(0) releases the event
+            // loop for one tick — Metal absorbs the recompute submit
+            // before backward_layer floods it.
+            //
+            // 0 ms (not 500): the 500 ms variant at the head→backward
+            // boundary killed the Worker by giving iOS jetsam too
+            // much time to reclaim a "suspended" process. The 0 ms
+            // tick gives the GPUProcess message-pipe one drain pass
+            // without exposing us to suspended-process reaper.
+            // Mobile-mode-gated: see Forward::wasm_yield_zero for rationale.
+            #[cfg(target_arch = "wasm32")]
+            if self.mobile_mode {
+                use wasm_bindgen::JsCast;
+                let scope: web_sys::DedicatedWorkerGlobalScope = js_sys::global()
+                    .dyn_into()
+                    .expect("training session runs inside a DedicatedWorkerGlobalScope");
+                let promise = js_sys::Promise::new(&mut |resolve, _reject| {
+                    let resolve_fn: js_sys::Function = resolve.into();
+                    let _ =
+                        scope.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve_fn, 0);
+                });
+                let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
             }
 
             let mut lenc =
@@ -2719,8 +4279,23 @@ impl Forward {
                     .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                         label: Some("bwd.layer"),
                     });
-            self.backward_layer(&mut lenc, i, history_len, pos, cap, lora, grad, scratch)
-                .await?;
+            self.backward_layer(
+                &mut lenc,
+                i,
+                history_len,
+                pos,
+                cap,
+                lora,
+                grad,
+                scratch,
+                progress_cb,
+            )
+            .await?;
+            // Caller's submit handles the FINAL phase (attn_norm rmsnorm +
+            // residual_add) — backward_layer flushed phases 1..=4
+            // internally. Phase 5's last beacon is the outer
+            // "backward N/35" fired below; we don't add a "bwd.attn.merge"
+            // beacon to keep the trail compact.
             self.ctx.queue.submit(Some(lenc.finish()));
             // Per-layer cancel check — same boundary the forward loop
             // uses. Cancellation latency is bounded by one
@@ -2735,6 +4310,23 @@ impl Forward {
                 let logical = (n_layers as u32) - i;
                 cb("backward", logical, n_layers as u32);
             }
+
+            // **0 ms yield between backward_layer submit and the rest
+            // of the per-layer epilogue.** Real-device data: with the
+            // floor+5 patch we got bwd.ple/ffn.down/ffn.gateup/
+            // attn.proj/attn.qkv all fired (an ENTIRE backward layer
+            // ran), then died right after `backward 1/35` cb — before
+            // `bwd.layer.end`. The just-submitted backward_layer
+            // command buffer was still in Metal's pipeline; the
+            // clip's read_buf_stats drain + drop_prefix_destroy
+            // racing against it tripped jetsam.
+            //
+            // Same fix as the head→recompute and recompute→
+            // backward_layer transitions: a 1-tick event-loop release
+            // lets Metal absorb the backward_layer submit before the
+            // epilogue's drain + destroy IPCs land.
+            #[cfg(target_arch = "wasm32")]
+            self.wasm_yield_zero().await;
 
             // Adaptive renorm of d_hidden — if max-abs exceeds the
             // configured ceiling, scale d_hidden in-place to bring
@@ -2771,6 +4363,106 @@ impl Forward {
                     "[trace] after layer {li} bwd: d_hidden max_abs={max_abs:.3e} nan={nans}"
                 );
             }
+
+            // **Per-layer weight reclaim at the inter-layer GPU-idle
+            // point.** Without this, every backward_layer re-fetches its
+            // weight tiles but the prior layer's stay resident — by the
+            // end of a 10-layer walk we have ~10 layers × ~40 MiB
+            // stacked on top of the un-reclaimed forward heap, and the
+            // real-device beacon trail shows the second backward layer
+            // never completing. Per Apple's Metal-heap doc, destroy
+            // makes memory aliasable (good) but stacked-up allocations
+            // stress the heap geometry; bounding the backward weight
+            // set at "one layer at a time" eliminates that stress.
+            //
+            // Safe by construction:
+            //  • `read_buf_stats` above synced the GPU so all of
+            //    backward_layer's submits have drained; nothing in-flight
+            //    references `blk.{i}.*`.
+            //  • The next iteration's `encode_layer(i-1)` recompute
+            //    fetches its OWN prefix (`blk.{i-1}.*`), so destroying
+            //    `blk.{i}.*` doesn't pull from the next layer's setup.
+            //  • Any in-flight renorm-scale submit reads only
+            //    `scratch.d_hidden` (not blk weights).
+            //
+            // **Mac fast path skips this.** On `mobile_mode = false`
+            // GPU heap pressure isn't the bottleneck — keeping the
+            // 35 backward-layer weight sets resident across the walk
+            // saves ~35 re-fetches per step and ~1 GiB of churn.
+            if self.mobile_mode {
+                let _destroyed_layer = self.wcache.drop_prefix_destroy(&format!("blk.{i}."));
+            }
+            // Diagnostic: marks per-layer completion. If this fires for
+            // layer N but no `bwd.layer.recompute` for layer N-1 does,
+            // the death is in the inter-layer transition AFTER destroy
+            // (unlikely — destroy is sync, doesn't dispatch).
+            if let Some(cb) = progress_cb {
+                let logical = (n_layers as u32) - i;
+                cb("bwd.layer.end", logical, n_layers as u32);
+            }
+        }
+
+        // ---- embed_tokens LoRA backward ----
+        // After the layer walk, `scratch.d_hidden` holds the gradient at
+        // the start of the residual stream (= gradient feeding the input
+        // embedding lookup). The embed_tokens LoRA's forward inject was:
+        //   hidden += scale · B_emb · A_emb[:, token_id]
+        // So:
+        //   u = Bᵀ · d_hidden            (rank floats; overwrites slot.z)
+        //   d_B += s · d_hidden ⊗ z      (where z was A_emb[:, token_id])
+        //   d_A[:, token_id] += s · u    (single-column scatter)
+        // The frozen embedding weight has no gradient (one-hot input).
+        if let (Some(g), Some(gg), Some(tok)) = (globals, global_grads, embed_token_id)
+            && let (Some(slot), Some(d_pair)) = (g.embed_tokens.as_ref(), gg.embed_tokens.as_ref())
+        {
+            let vocab_u32 = self.cfg.vocab_size;
+            let r = slot.rank as usize;
+            let s = slot.scale;
+            let mut eenc =
+                self.ctx
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("bwd.embed_tokens_lora"),
+                    });
+            // dB += s · d_hidden ⊗ z  (z still holds A_emb[:, token_id] from fwd)
+            lora_outer_add_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut eenc,
+                scratch.d_hidden,
+                slot.z,
+                d_pair.d_b,
+                d_model,
+                r,
+                s,
+                true,
+            );
+            // u = Bᵀ · d_hidden  (overwrites slot.z with u, freeing z's prior role)
+            lora_matmul_col_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut eenc,
+                slot.b,
+                scratch.d_hidden,
+                slot.z,
+                d_model,
+                r,
+                1.0,
+                false,
+            );
+            // dA[:, tok] += s · u  (single-column scatter)
+            crate::backend::dispatch::lora_embed_col_scatter_add_chained(
+                &self.ctx,
+                &self.pipes,
+                &mut eenc,
+                slot.z,
+                d_pair.d_a,
+                slot.rank,
+                vocab_u32,
+                tok,
+                s,
+            );
+            self.ctx.queue.submit(Some(eenc.finish()));
         }
 
         // ===== Loss readback =====
@@ -2789,6 +4481,47 @@ impl Forward {
         renc.copy_buffer_to_buffer(scratch.loss, 0, &loss_read, 0, 4);
         self.ctx.queue.submit(Some(renc.finish()));
         let loss_vec = read_back_f32(&self.ctx.device, &loss_read).await?;
+
+        // **iOS multi-step stability — destroy layer weights at GPU-idle.**
+        // The `read_back_f32` above maps the loss buffer, which forces the
+        // GPU to drain ALL prior commands (the entire backward sweep is
+        // complete and no command references the layer weights anymore).
+        // This is the one safe point to call destroy(): doing it earlier
+        // (at backward start) is a use-after-destroy because the forward's
+        // commands are still in flight, and crashed the tab at the
+        // head→backward transition. Here, with the GPU idle, we force
+        // prompt VRAM reclaim of every `blk.*` tile so the NEXT step's
+        // forward re-cache starts from genuinely freed memory instead of
+        // stacking on the previous step's not-yet-GC'd buffers and
+        // crossing the iOS WebContent ceiling. The backward-start
+        // `drop_prefix` (no destroy) already unreferenced them for in-step
+        // reuse; this is the cross-step reclaim. Next step's `buffer_async`
+        // re-fetches fresh. Native frees immediately either way.
+        // Empty prefix = destroy the ENTIRE weight cache, not just
+        // `blk.*`. The on-device trajectory showed step 2 starting at
+        // weightCacheMB=637 — that residue is `token_embd` (~637 MiB
+        // vocab embed/output weight used by the backward head), not a
+        // `blk.` tensor, so the old `blk.`-only eviction left it resident
+        // across steps; the next forward stacked on top and tipped iOS
+        // over. Destroying everything makes step N start from the same
+        // empty cache step 1 had; the next forward re-fetches what it
+        // needs. GPU is idle (post loss-readback) so destroy() is safe.
+        // Mac fast path: skip — keep the full cache resident across
+        // steps. Mac has the RAM and this saves ~1 GiB of re-fetch.
+        let dropped_end = if self.mobile_mode {
+            self.wcache.drop_prefix_destroy("")
+        } else {
+            0
+        };
+        #[cfg(target_arch = "wasm32")]
+        if dropped_end > 0 {
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+                "[bwd] destroyed {dropped_end} layer weight tiles at GPU-idle (cross-step reclaim)"
+            )));
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = dropped_end;
+
         Ok(loss_vec[0])
     }
 
@@ -2800,6 +4533,52 @@ impl Forward {
     /// the gradient leakage through `inp_gate_w` is dropped — an M0
     /// approximation, documented in `MIGRATION-REPORT.md`).
     #[allow(clippy::too_many_arguments)]
+    /// **iOS Metal lazy-compile mitigation.** End the current backward
+    /// phase's encoder, submit it, fire a per-phase beacon, open a
+    /// fresh encoder for the next phase. Mirrors the per-group submit
+    /// pattern in `backward_step_inner`'s head section (see the
+    /// "iOS-tight invariant" comment near the head). Background: iOS
+    /// Safari WebGPU lazily compiles each kernel's Metal binary at
+    /// first dispatch; packing all ~13 distinct backward kernels per
+    /// layer into one submit jetsam'd the WebContent process at the
+    /// head→backward transition (real-device beacon trail:
+    /// `head_rmsnorm 4/4` fires, `backward 1/35` never does, tab dies).
+    /// Splitting into per-phase submits gives Metal a beat to compile +
+    /// reclaim one phase at a time; per-phase beacons localize any
+    /// future regression to the exact phase.
+    /// **Beacon-only since Patch 4** — the per-phase `queue.submit` +
+    /// `CommandEncoder::finish` pair was REMOVED.
+    ///
+    /// History: this helper originally split `backward_layer` into 5
+    /// per-phase submits under the theory that iOS Metal lazy-compiles
+    /// kernels per submit and batched compiles spike GPUProcess RSS.
+    /// Verification at `Pipelines::new()` (line ~240) showed that ALL
+    /// pipelines are eagerly built at session start, so per-phase
+    /// submits cost ~5 × `queue.submit` + 5 × `CommandEncoder::finish`
+    /// IPC round-trips per `backward_layer` call (×10 backward layers
+    /// = 50 extra IPCs/step) for no measurable RSS benefit. The
+    /// WebGPU Dispatch Overhead paper (arxiv 2604.02344) also shows
+    /// Safari Metal per-dispatch cost is FAST (31.7 μs); IPC volume
+    /// is the GPUProcess bottleneck.
+    ///
+    /// `enc` and the `new_enc` swap are gone — all phase work
+    /// accumulates into the caller's single encoder, submitted once
+    /// at end of `backward_layer`. The per-phase `cb(label, ...)`
+    /// beacon is preserved so the post-crash log still localizes any
+    /// future regression.
+    fn flush_backward_phase(
+        &self,
+        _enc: &mut wgpu::CommandEncoder,
+        progress_cb: Option<&LayerProgressCb<'_>>,
+        label: &'static str,
+        phase_idx: u32,
+        total_phases: u32,
+    ) {
+        if let Some(cb) = progress_cb {
+            cb(label, phase_idx, total_phases);
+        }
+    }
+
     async fn backward_layer<'a>(
         &mut self,
         enc: &mut wgpu::CommandEncoder,
@@ -2810,6 +4589,7 @@ impl Forward {
         lora: &LayerLoraSlots<'a>,
         grad: &LayerLoraGrads<'a>,
         scratch: &BackwardScratchView<'a>,
+        progress_cb: Option<&LayerProgressCb<'_>>,
     ) -> Result<()> {
         let prefix = format!("blk.{i}.");
         let d_model = self.cfg.d_model as usize;
@@ -2856,6 +4636,16 @@ impl Forward {
         } else {
             None
         };
+
+        // Diagnostic: pinpoint inter-layer death. If `bwd.layer.entry`
+        // fires for layer N but no later beacon (bwd.ffn.down /
+        // bwd.ffn.gateup / bwd.attn.proj / bwd.attn.qkv / backward N/35)
+        // does, death is between buffer_async fetches and phase 1's
+        // submit — i.e. capture pre-copies or the PLE backward block.
+        if let Some(cb) = progress_cb {
+            let logical = self.cfg.n_layers - i;
+            cb("bwd.layer.entry", logical, self.cfg.n_layers);
+        }
 
         // Undo per-layer output scale.
         if let Some(s) = self.layer_scalars[i as usize] {
@@ -3095,6 +4885,13 @@ impl Forward {
                 scratch.d_hidden_tmp,
                 d_model,
             );
+            // ── flush phase 0/6: PLE backward (Gemma 4 PLE injection
+            // gradient). Adds rmsnorm_backward (NEW), matmul_q4_k_backward_input
+            // (NEW), geglu_backward (NEW) to Metal's compile queue —
+            // 3 new kernels in their own submit so they don't stack with
+            // ffn_down's matmul_q6_k_backward_input compile in phase 1.
+            // Only fires when the model has a PLE block (Gemma 4 family).
+            self.flush_backward_phase(enc, progress_cb, "bwd.ple", 0, 6);
         }
 
         // ----- FFN block backward -----
@@ -3199,6 +4996,13 @@ impl Forward {
                 true,
             );
         }
+
+        // ── flush phase 1/5: PLE + post_ffw rmsnorm + ffn_down (matmul + LoRA).
+        // First batch of NEW-to-Metal kernels (rmsnorm_backward,
+        // matmul_q*_backward_input, plus LoRA kernels iff any LoRA targets
+        // include ffn_down). Submit before geglu_backward triggers another
+        // Metal compile so they don't bundle and spike RSS at once.
+        self.flush_backward_phase(enc, progress_cb, "bwd.ffn.down", 1, 6);
 
         // geglu backward → d_ffn_gate (d_ffn_b), d_ffn_up (d_ffn_c).
         geglu_backward_chained(
@@ -3376,6 +5180,12 @@ impl Forward {
             d_model,
         );
 
+        // ── flush phase 2/5: FFN gate/up matmul + LoRA + ffn_norm merge.
+        // geglu_backward (NEW) + matmul + LoRA + rmsnorm_backward (already
+        // compiled in phase 1). Submit before the attention block triggers
+        // attention_probs / attention_backward_* compiles.
+        self.flush_backward_phase(enc, progress_cb, "bwd.ffn.gateup", 2, 6);
+
         // ----- Attention block backward -----
         // residual_add backward (attn): d_norm_y_attn = d_hidden (alias).
         //
@@ -3483,6 +5293,12 @@ impl Forward {
             history_len as usize,
             window,
         );
+
+        // ── flush phase 3/5: post_attn rmsnorm + o matmul + o LoRA + attention_probs.
+        // attention_probs (NEW) just compiled. Submit before the heavy
+        // attention-backward-dq/dkv + rope_neox_backward + rmsnorm_per_row_backward
+        // wave triggers 3+ more NEW Metal compiles.
+        self.flush_backward_phase(enc, progress_cb, "bwd.attn.proj", 3, 6);
 
         // Attn backward pass 1: d_q + d_scores (staged).
         attention_backward_dq_chained(
@@ -4061,6 +5877,14 @@ impl Forward {
                 }
             }
         }
+
+        // ── flush phase 4/5: attn dq/dkv/rope/q_norm + q/k/v matmul + LoRAs + K/V branches.
+        // Final block of NEW-to-Metal compiles for backward
+        // (attention_backward_dq, attention_backward_dkv,
+        // rope_neox_backward, rmsnorm_per_row_backward). Phase 5
+        // (attn_norm rmsnorm + residual_add) is only already-compiled
+        // kernels and rides in the caller's per-layer submit.
+        self.flush_backward_phase(enc, progress_cb, "bwd.attn.qkv", 4, 6);
 
         // After the per-history loop, the windows hold the LAST
         // history position's values. Restore them to the `pos`-slice

@@ -34,7 +34,12 @@ fn main() -> ExitCode {
     let t0 = Instant::now();
     let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
     let pipes = Pipelines::new(&ctx.device);
-    let wcache = WeightCache::new(r_arc.clone(), ctx.device.clone(), ctx.queue.clone());
+    let wcache = WeightCache::new(
+        r_arc.clone(),
+        ctx.device.clone(),
+        ctx.queue.clone(),
+        std::sync::Arc::clone(&ctx.bind_cache),
+    );
     println!("  done in {:?}", t0.elapsed());
 
     println!("CPU forward at pos=0, token={bos} ...");

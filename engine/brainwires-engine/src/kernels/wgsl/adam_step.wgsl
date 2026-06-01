@@ -13,10 +13,15 @@
 //
 // In-place over `param`, `m`, `v`. `grad` is read-only.
 
+// `offset` lets the dispatcher chunk a single logical Adam step across
+// multiple `dispatch_workgroups` calls so large parameter buffers
+// (lm_head / embed_tokens LoRA B matrices = vocab × rank ≈ 4.2M f32s)
+// don't exceed wgpu's per-dimension cap of 65_535 workgroups.
+
 struct Params {
     n:            u32,
     step:         u32,
-    _pad0:        u32,
+    offset:       u32,
     _pad1:        u32,
     lr:           f32,
     beta1:        f32,
@@ -36,7 +41,7 @@ struct Params {
 
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+    let i = gid.x + params.offset;
     if (i >= params.n) { return; }
     let g = grad[i];
     let m_new = params.beta1 * m[i] + (1.0 - params.beta1) * g;

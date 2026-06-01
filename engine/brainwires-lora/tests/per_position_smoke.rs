@@ -74,6 +74,7 @@ fn per_position_smoke_drops_loss_sharply() {
                 "attn_v".into(),
                 "attn_o".into(),
             ],
+            target_layers: None,
         };
         let hp = TrainingHyperparams {
             learning_rate: 1e-3,
