@@ -83,6 +83,13 @@ def main():
 
     np.savez(os.path.join(OUT, "tensors.npz"), **caps)
 
+    # also dump raw little-endian f32 .bin per tensor so the Rust oracle's parity
+    # tests can read fixtures self-contained (no npz/zip parsing in Rust).
+    bindir = os.path.join(OUT, "bin")
+    os.makedirs(bindir, exist_ok=True)
+    for k, v in caps.items():
+        v.astype("<f4").tofile(os.path.join(bindir, f"{k}.bin"))
+
     # 24 kHz mono WAV
     try:
         import soundfile as sf
