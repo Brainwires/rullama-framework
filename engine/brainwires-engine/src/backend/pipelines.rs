@@ -22,6 +22,7 @@ pub struct Pipelines {
     pub scale: wgpu::ComputePipeline,
     pub rmsnorm_per_row: wgpu::ComputePipeline,
     pub layernorm_affine: wgpu::ComputePipeline,
+    pub conv1d: wgpu::ComputePipeline,
     pub q4_k_matmul_tiled: wgpu::ComputePipeline,
     pub q6_k_matmul_tiled: wgpu::ComputePipeline,
     /// f16-LDS variants of the Q4_K / Q6_K dequant matmul. Inner loop uses
@@ -303,6 +304,7 @@ impl Pipelines {
             scale: build(device, "scale", kernels::SCALE),
             rmsnorm_per_row: build(device, "rmsnorm_per_row", kernels::RMSNORM_PER_ROW),
             layernorm_affine: build(device, "layernorm_affine", kernels::LAYERNORM_AFFINE),
+            conv1d: build(device, "conv1d", kernels::CONV1D),
             q4_k_matmul_tiled: build(
                 device,
                 "q4_k_matmul_tiled",

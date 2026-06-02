@@ -3360,6 +3360,65 @@ pub fn rmsnorm_per_row_chained(
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct Conv1dParams {
+    cin: u32,
+    tin: u32,
+    cout: u32,
+    tout: u32,
+    k: u32,
+    stride: u32,
+    pad: u32,
+    dilation: u32,
+    groups: u32,
+    has_bias: u32,
+    _p0: u32,
+    _p1: u32,
+}
+
+/// General channel-major 1-D conv. Returns `tout`. Buffers: x, w, bias, y.
+/// Caller must size `y` to `cout * tout` where tout = (tin+2pad-dil*(k-1)-1)/stride+1.
+#[allow(clippy::too_many_arguments)]
+pub fn conv1d_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer,
+    w: &wgpu::Buffer,
+    bias: Option<&wgpu::Buffer>,
+    dummy: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    cin: usize,
+    tin: usize,
+    cout: usize,
+    k: usize,
+    stride: usize,
+    pad: usize,
+    dilation: usize,
+    groups: usize,
+) -> usize {
+    let tout = (tin + 2 * pad - dilation * (k - 1) - 1) / stride + 1;
+    let params = Conv1dParams {
+        cin: cin as u32,
+        tin: tin as u32,
+        cout: cout as u32,
+        tout: tout as u32,
+        k: k as u32,
+        stride: stride as u32,
+        pad: pad as u32,
+        dilation: dilation as u32,
+        groups: groups as u32,
+        has_bias: bias.is_some() as u32,
+        _p0: 0,
+        _p1: 0,
+    };
+    let b = bias.unwrap_or(dummy);
+    let total = (cout * tout) as u32;
+    cached_dispatch(ctx, enc, &p.conv1d, "conv1d", &[x, w, b, y], &params, (total.div_ceil(64), 1, 1));
+    tout
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct LayerNormAffineParams {
     n_rows: u32,
     row_dim: u32,
@@ -4910,6 +4969,44 @@ pub async fn attention_cached(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conv1d_gpu_vs_cpu() {
+        use crate::reference::kokoro::convblocks::conv1d as cpu_conv1d;
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let dummy = make_dummy_storage(device, "dummy");
+
+        // (cin, tin, cout, k, stride, pad, dilation, groups): same-len k5, downsample
+        // stride-2, dilated, and depthwise-grouped — the Kokoro conv shapes.
+        let cases = [
+            (4usize, 20usize, 6usize, 5usize, 1usize, 2usize, 1usize, 1usize),
+            (3, 31, 1, 3, 2, 1, 1, 1),
+            (8, 17, 8, 3, 1, 2, 2, 1),
+            (6, 13, 6, 3, 1, 1, 1, 6),
+        ];
+        for (ci, (cin, tin, cout, k, stride, pad, dil, groups)) in cases.into_iter().enumerate() {
+            let xs: Vec<f32> = (0..cin * tin).map(|i| ((i as i32 % 19 - 9) as f32) * 0.07).collect();
+            let ws: Vec<f32> = (0..cout * (cin / groups) * k).map(|i| (i as f32 * 0.11).sin() * 0.4).collect();
+            let bs: Vec<f32> = (0..cout).map(|i| (i as f32) * 0.05 - 0.1).collect();
+            let (cpu, tout) = cpu_conv1d(&xs, cin, tin, &ws, Some(&bs), cout, k, stride, pad, dil, groups);
+
+            let xb = write_storage_f32(device, queue, "x", &xs);
+            let wb = write_storage_f32(device, queue, "w", &ws);
+            let bb = write_storage_f32(device, queue, "b", &bs);
+            let (yb, yr) = make_output_pair(device, "y", (cout * tout * 4) as u64);
+            let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("c1d") });
+            let gt = conv1d_chained(&ctx, &p, &mut enc, &xb, &wb, Some(&bb), &dummy, &yb, cin, tin, cout, k, stride, pad, dil, groups);
+            enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (cout * tout * 4) as u64);
+            queue.submit(Some(enc.finish()));
+            let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("readback");
+            assert_eq!(gt, tout, "case {ci} tout");
+            let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
+            assert!(md < 1e-4, "conv1d case {ci} max_diff = {md}");
+        }
+    }
 
     #[test]
     fn layernorm_affine_gpu_vs_cpu() {
