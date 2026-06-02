@@ -104,6 +104,11 @@ fn main() {
         diff(&format!("adainblk {prefix}"), &gpu_b, &cpu_b);
     }
 
+    // ---- full GPU sub-network: prosody F0/N stack vs fixtures ----
+    let (f0_gpu, n_gpu) = pollster::block_on(model.f0_n_gpu(&ctx, &pipes, &en, f, style_pros));
+    diff("F0_GPU", &f0_gpu, &read_bin_f32(&format!("{fixtures}/bin/F0.bin")));
+    diff("N_GPU", &n_gpu, &read_bin_f32(&format!("{fixtures}/bin/N.bin")));
+
     // ---- Stage 7: Decoder encode + decode stack (timbre style = ref_s[:128]) ----
     let style_timbre = &ref_s[0..128];
     let (dec_encode, x_dec, _f0d, _nd) = model.decoder_features(&t_en, &f0, &n, &pred_dur, style_timbre);

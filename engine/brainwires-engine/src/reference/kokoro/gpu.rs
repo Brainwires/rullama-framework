@@ -100,6 +100,68 @@ impl KokoroModel {
     }
 }
 
+impl KokoroModel {
+    /// Slice-in/Vec-out GPU conv1d (upload → dispatch → readback). For stage glue.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn conv1d_gpu(
+        &self, ctx: &WgpuCtx, p: &Pipelines, x: &[f32], cin: usize, t: usize,
+        w: &[f32], b: Option<&[f32]>, cout: usize, k: usize, stride: usize, pad: usize, dil: usize, groups: usize,
+    ) -> Vec<f32> {
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let dummy = make_dummy_storage(device, "d");
+        let tout = (t + 2 * pad - dil * (k - 1) - 1) / stride + 1;
+        let xb = write_storage_f32(device, queue, "x", x);
+        let wb = write_storage_f32(device, queue, "w", w);
+        let bb = b.map(|bb| write_storage_f32(device, queue, "b", bb));
+        let out = make_storage_rw(device, "o", cout * tout);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("c1d") });
+        conv1d_chained(ctx, p, &mut enc, &xb, &wb, bb.as_ref(), &dummy, &out, cin, t, cout, k, stride, pad, dil, groups);
+        let staging = read_staging(device, cout * tout);
+        enc.copy_buffer_to_buffer(&out, 0, &staging, 0, (cout * tout * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        read_back_f32(device, &staging).await.expect("conv1d_gpu rb")
+    }
+
+    /// One F0/N branch on GPU: 3× AdainResBlk1d (with a 2× upsample) + 1×1 proj.
+    async fn adain_stack_proj_gpu(&self, ctx: &WgpuCtx, p: &Pipelines, which: &str, x_cm: &[f32], f: usize, style: &[f32]) -> Vec<f32> {
+        let hid = self.cfg.hidden_dim;
+        let half = hid / 2;
+        let h = self.adain_resblk1d_gpu(ctx, p, &format!("k.predictor.{which}.0"), x_cm, hid, f, hid, false, style).await;
+        let h = self.adain_resblk1d_gpu(ctx, p, &format!("k.predictor.{which}.1"), &h, hid, f, half, true, style).await;
+        let h = self.adain_resblk1d_gpu(ctx, p, &format!("k.predictor.{which}.2"), &h, half, 2 * f, half, false, style).await;
+        let pw = self.t(&format!("k.predictor.{which}_proj.weight"));
+        let pb = self.t(&format!("k.predictor.{which}_proj.bias"));
+        self.conv1d_gpu(ctx, p, &h, half, 2 * f, &pw, Some(&pb), 1, 1, 1, 0, 1, 1).await
+    }
+
+    /// GPU ProsodyPredictor.F0Ntrain: shared BiLSTM (CPU) + F0/N adain stacks (GPU).
+    /// `en [640, F]` channel-major; returns (F0, N) each `[2F]`.
+    pub async fn f0_n_gpu(&self, ctx: &WgpuCtx, p: &Pipelines, en: &[f32], f: usize, style: &[f32]) -> (Vec<f32>, Vec<f32>) {
+        let cat = self.cfg.hidden_dim + self.cfg.style_dim;
+        let hid = self.cfg.hidden_dim;
+        let half = hid / 2;
+        // shared BiLSTM (CPU): en^T [F,640] -> [F,512] -> channel-major [512,F]
+        let mut x_rm = vec![0.0f32; f * cat];
+        for ff in 0..f {
+            for c in 0..cat {
+                x_rm[ff * cat + c] = en[c * f + ff];
+            }
+        }
+        let sw = self.load_bilstm("k.predictor.shared");
+        let xs = self.run_bilstm(&sw, &x_rm, f, cat, half);
+        let mut x_cm = vec![0.0f32; hid * f];
+        for ff in 0..f {
+            for c in 0..hid {
+                x_cm[c * f + ff] = xs[ff * hid + c];
+            }
+        }
+        let f0 = self.adain_stack_proj_gpu(ctx, p, "F0", &x_cm, f, style).await;
+        let n = self.adain_stack_proj_gpu(ctx, p, "N", &x_cm, f, style).await;
+        (f0, n)
+    }
+}
+
 fn read_staging(device: &wgpu::Device, n_floats: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("kokoro.read"),
