@@ -27,6 +27,7 @@ pub struct Pipelines {
     pub leaky_relu: wgpu::ComputePipeline,
     pub snake: wgpu::ComputePipeline,
     pub adain: wgpu::ComputePipeline,
+    pub istft: wgpu::ComputePipeline,
     pub q4_k_matmul_tiled: wgpu::ComputePipeline,
     pub q6_k_matmul_tiled: wgpu::ComputePipeline,
     /// f16-LDS variants of the Q4_K / Q6_K dequant matmul. Inner loop uses
@@ -313,6 +314,7 @@ impl Pipelines {
             leaky_relu: build(device, "leaky_relu", kernels::LEAKY_RELU),
             snake: build(device, "snake", kernels::SNAKE),
             adain: build(device, "adain", kernels::ADAIN),
+            istft: build(device, "istft", kernels::ISTFT),
             q4_k_matmul_tiled: build(
                 device,
                 "q4_k_matmul_tiled",

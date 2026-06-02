@@ -133,7 +133,7 @@ impl KokoroModel {
 
 /// Exact iSTFT (onesided, center, COLA-normalized) — matches torch.istft.
 /// `spec`/`phase` are `[nbins, F]` channel-major (magnitude, angle).
-fn istft(spec: &[f32], phase: &[f32], nbins: usize, frames: usize, nfft: usize, hop: usize) -> Vec<f32> {
+pub(crate) fn istft(spec: &[f32], phase: &[f32], nbins: usize, frames: usize, nfft: usize, hop: usize) -> Vec<f32> {
     // Hann window, periodic
     let win: Vec<f32> = (0..nfft).map(|n| 0.5 - 0.5 * (2.0 * PI * n as f32 / nfft as f32).cos()).collect();
     // DFT tables

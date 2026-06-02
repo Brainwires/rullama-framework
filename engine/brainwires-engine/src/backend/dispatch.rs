@@ -3526,6 +3526,50 @@ pub fn adain_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncode
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct IstftParams {
+    nbins: u32,
+    frames: u32,
+    nfft: u32,
+    hop: u32,
+    pad: u32,
+    out_len: u32,
+    _p0: u32,
+    _p1: u32,
+}
+
+/// Exact iSTFT (gather form). spec/phase are `[nbins, frames]` channel-major;
+/// writes `y[out_len]`. Returns out_len. Buffers: spec, phase, y.
+#[allow(clippy::too_many_arguments)]
+pub fn istft_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    spec: &wgpu::Buffer,
+    phase: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    nbins: usize,
+    frames: usize,
+    nfft: usize,
+    hop: usize,
+) -> usize {
+    let pad = nfft / 2;
+    let out_len = (frames - 1) * hop + nfft - 2 * pad;
+    let params = IstftParams {
+        nbins: nbins as u32,
+        frames: frames as u32,
+        nfft: nfft as u32,
+        hop: hop as u32,
+        pad: pad as u32,
+        out_len: out_len as u32,
+        _p0: 0,
+        _p1: 0,
+    };
+    cached_dispatch(ctx, enc, &p.istft, "istft", &[spec, phase, y], &params, ((out_len as u32).div_ceil(64), 1, 1));
+    out_len
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct LayerNormAffineParams {
     n_rows: u32,
     row_dim: u32,
@@ -5247,6 +5291,30 @@ mod tests {
         let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("rb");
         let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
         assert!(md < 1e-4, "adain max_diff = {md}");
+    }
+
+    #[test]
+    fn istft_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let (nbins, frames, nfft, hop) = (11usize, 30usize, 20usize, 5usize);
+        let spec: Vec<f32> = (0..nbins * frames).map(|i| ((i * 7 % 13) as f32) * 0.1 + 0.05).collect();
+        let phase: Vec<f32> = (0..nbins * frames).map(|i| (i as f32 * 0.37).sin() * 3.0).collect();
+        let cpu = crate::reference::kokoro::generator::istft(&spec, &phase, nbins, frames, nfft, hop);
+
+        let sb = write_storage_f32(device, queue, "spec", &spec);
+        let pb = write_storage_f32(device, queue, "phase", &phase);
+        let (yb, yr) = make_output_pair(device, "y", (cpu.len() * 4) as u64);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("istft") });
+        let ol = istft_chained(&ctx, &p, &mut enc, &sb, &pb, &yb, nbins, frames, nfft, hop);
+        enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (cpu.len() * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("rb");
+        assert_eq!(ol, cpu.len());
+        let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
+        assert!(md < 1e-3, "istft max_diff = {md}");
     }
 
     #[test]

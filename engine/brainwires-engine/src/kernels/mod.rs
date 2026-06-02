@@ -10,6 +10,7 @@ pub const ADAIN: &str = include_str!("wgsl/adain.wgsl");
 pub const CONV1D: &str = include_str!("wgsl/conv1d.wgsl");
 pub const CONV_TRANSPOSE1D: &str = include_str!("wgsl/conv_transpose1d.wgsl");
 pub const CONV2D: &str = include_str!("wgsl/conv2d.wgsl");
+pub const ISTFT: &str = include_str!("wgsl/istft.wgsl");
 pub const LAYERNORM_AFFINE: &str = include_str!("wgsl/layernorm_affine.wgsl");
 pub const LEAKY_RELU: &str = include_str!("wgsl/leaky_relu.wgsl");
 pub const SNAKE: &str = include_str!("wgsl/snake.wgsl");
