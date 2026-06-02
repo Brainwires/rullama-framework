@@ -71,6 +71,16 @@ def main():
     model.decoder.encode.register_forward_hook(cap("dec_encode"))
     model.decoder.generator.register_forward_hook(cap("dec_generator"))
 
+    # generator-isolation fixtures: its input x, and the harmonic source `har`
+    # (har is non-deterministic — random phase+noise — so inject it for parity).
+    def cap_pre(name, idx=0):
+        def hook(_m, inp):
+            caps[name] = inp[idx].detach().cpu().float().numpy()
+        return hook
+
+    model.decoder.generator.register_forward_pre_hook(cap_pre("gen_x", 0))
+    model.decoder.generator.noise_convs[0].register_forward_pre_hook(cap_pre("gen_har", 0))
+
     torch.manual_seed(SEED)  # re-seed right before forward so source noise is reproducible
     with torch.no_grad():
         out = model(phonemes, ref_s, speed=1, return_output=True)
