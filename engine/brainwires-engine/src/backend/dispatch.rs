@@ -3360,6 +3360,50 @@ pub fn rmsnorm_per_row_chained(
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct LayerNormAffineParams {
+    n_rows: u32,
+    row_dim: u32,
+    eps: f32,
+    has_affine: u32,
+}
+
+/// Per-row LayerNorm (mean-subtraction + bias) with optional (gamma, beta) affine.
+/// Buffers: x, gamma, beta, y. Pass `None` affine (with a dummy) for plain LN.
+#[allow(clippy::too_many_arguments)]
+pub fn layernorm_affine_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer,
+    gamma: Option<&wgpu::Buffer>,
+    beta: Option<&wgpu::Buffer>,
+    dummy: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    n_rows: usize,
+    row_dim: usize,
+    eps: f32,
+) {
+    let params = LayerNormAffineParams {
+        n_rows: n_rows as u32,
+        row_dim: row_dim as u32,
+        eps,
+        has_affine: gamma.is_some() as u32,
+    };
+    let g = gamma.unwrap_or(dummy);
+    let b = beta.unwrap_or(dummy);
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.layernorm_affine,
+        "ln_affine",
+        &[x, g, b, y],
+        &params,
+        (n_rows as u32, 1, 1),
+    );
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct AdamParams {
     n: u32,
     step: u32,
@@ -4866,6 +4910,37 @@ pub async fn attention_cached(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn layernorm_affine_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let n_rows = 7usize;
+        let dim = 53usize;
+        let total = n_rows * dim;
+        let eps = 1e-5f32;
+        let x: Vec<f32> = (0..total).map(|i| ((i as i32 - 100) as f32) * 0.013).collect();
+        let gamma: Vec<f32> = (0..dim).map(|i| (i as f32 * 0.2).sin() * 0.5 + 1.0).collect();
+        let beta: Vec<f32> = (0..dim).map(|i| (i as f32 * 0.1).cos() * 0.3).collect();
+
+        let cpu = crate::reference::kokoro::ops::layer_norm(&x, n_rows, dim, &gamma, &beta, eps);
+
+        let x_buf = write_storage_f32(device, queue, "x", &x);
+        let g_buf = write_storage_f32(device, queue, "g", &gamma);
+        let b_buf = write_storage_f32(device, queue, "b", &beta);
+        let (y_buf, y_read) = make_output_pair(device, "y", (total * 4) as u64);
+        let dummy = make_dummy_storage(device, "dummy");
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("ln") });
+        layernorm_affine_chained(&ctx, &p, &mut enc, &x_buf, Some(&g_buf), Some(&b_buf), &dummy, &y_buf, n_rows, dim, eps);
+        enc.copy_buffer_to_buffer(&y_buf, 0, &y_read, 0, (total * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &y_read)).expect("readback");
+
+        let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
+        assert!(md < 1e-4, "layernorm_affine max_diff = {md}");
+    }
 
     /// GPU vs CPU parity for `cross_entropy_backward` on a vocab vector with a
     /// real (non-masked) target. Verifies both the gradient and the scalar

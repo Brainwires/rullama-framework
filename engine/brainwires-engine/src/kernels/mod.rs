@@ -7,6 +7,7 @@ pub const ATTENTION: &str = include_str!("wgsl/attention.wgsl");
 pub const AVG_POOL2D: &str = include_str!("wgsl/avg_pool2d.wgsl");
 pub const CLAMP: &str = include_str!("wgsl/clamp.wgsl");
 pub const CONV2D: &str = include_str!("wgsl/conv2d.wgsl");
+pub const LAYERNORM_AFFINE: &str = include_str!("wgsl/layernorm_affine.wgsl");
 pub const F16_MATMUL: &str = include_str!("wgsl/f16_matmul.wgsl");
 pub const F16_MATMUL_BATCHED: &str = include_str!("wgsl/f16_matmul_batched.wgsl");
 pub const F16_MATMUL_BATCHED_TILED: &str = include_str!("wgsl/f16_matmul_batched_tiled.wgsl");
