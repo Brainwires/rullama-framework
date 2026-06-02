@@ -77,6 +77,12 @@ fn main() {
         println!("    got      {pred_dur:?}");
         println!("    expected {EXPECTED_DUR:?}");
     }
+
+    // ---- Stage 5: F0 / N (length-regulator + shared BiLSTM + AdainResBlk1d stacks) ----
+    let (en, f) = model.expand_by_dur_cm(&d, t, 640, &pred_dur);
+    let (f0, n) = model.f0_n(&en, f, style_pros);
+    diff("F0", &f0, &read_bin_f32(&format!("{fixtures}/bin/F0.bin")));
+    diff("N", &n, &read_bin_f32(&format!("{fixtures}/bin/N.bin")));
 }
 
 const EXPECTED_DUR: [usize; 25] = [

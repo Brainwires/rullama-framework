@@ -7,6 +7,7 @@
 #![allow(dead_code)]
 
 pub mod bert;
+pub mod convblocks;
 pub mod ops;
 pub mod prosody;
 
@@ -102,6 +103,12 @@ impl KokoroModel {
     /// Load+dequant a tensor to f32, panicking with the name on error (oracle convenience).
     pub(crate) fn t(&self, name: &str) -> Vec<f32> {
         self.w.load(name).unwrap_or_else(|e| panic!("kokoro tensor {name}: {e:?}"))
+    }
+
+    /// Optional tensor — `None` if absent. Used for InstanceNorm affine params, which
+    /// the checkpoint omits (StyleTTS2 trained AdaIN with affine=False → identity 1/0).
+    pub(crate) fn t_opt(&self, name: &str) -> Option<Vec<f32>> {
+        self.w.load_opt(name).ok().flatten()
     }
 
     /// Map a phoneme string to input_ids, wrapped with BOS/EOS (id 0), dropping OOV.

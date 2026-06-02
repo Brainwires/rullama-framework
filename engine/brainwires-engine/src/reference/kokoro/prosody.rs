@@ -2,6 +2,7 @@
 //! (BiLSTM + AdaLayerNorm stack), and duration prediction. Mirrors modules.py.
 #![allow(dead_code)]
 
+use super::convblocks::conv1d;
 use super::ops::{bilstm, layer_norm_plain, linear, sigmoid};
 use super::KokoroModel;
 
@@ -88,5 +89,56 @@ impl KokoroModel {
             pred_dur[ti] = s.round().max(1.0) as usize;
         }
         (logits, pred_dur)
+    }
+
+    /// Length regulator: expand row-major `feat [T, C]` to channel-major `[C, F]`
+    /// by repeating token t for `dur[t]` frames. `F = sum(dur)`.
+    pub fn expand_by_dur_cm(&self, feat: &[f32], t: usize, c: usize, dur: &[usize]) -> (Vec<f32>, usize) {
+        let f: usize = dur.iter().sum();
+        let mut out = vec![0.0f32; c * f];
+        let mut fi = 0;
+        for ti in 0..t {
+            for _ in 0..dur[ti] {
+                for cc in 0..c {
+                    out[cc * f + fi] = feat[ti * c + cc];
+                }
+                fi += 1;
+            }
+        }
+        (out, f)
+    }
+
+    /// ProsodyPredictor.F0Ntrain: shared BiLSTM then the F0 and N AdainResBlk1d
+    /// stacks (with a 2× upsample). `en [640, F]` channel-major; returns (F0, N) each `[2F]`.
+    pub fn f0_n(&self, en: &[f32], f: usize, style: &[f32]) -> (Vec<f32>, Vec<f32>) {
+        let cat = self.cfg.hidden_dim + self.cfg.style_dim; // 640
+        let hid = self.cfg.hidden_dim; // 512
+        // shared BiLSTM over en^T [F,640] -> [F,512]
+        let mut x_rm = vec![0.0f32; f * cat];
+        for ff in 0..f {
+            for c in 0..cat {
+                x_rm[ff * cat + c] = en[c * f + ff];
+            }
+        }
+        let sw = self.load_bilstm("k.predictor.shared");
+        let xs = self.run_bilstm(&sw, &x_rm, f, cat, hid / 2); // [F,512]
+        // to channel-major [512, F]
+        let mut x_cm = vec![0.0f32; hid * f];
+        for ff in 0..f {
+            for c in 0..hid {
+                x_cm[c * f + ff] = xs[ff * hid + c];
+            }
+        }
+
+        let half = hid / 2; // 256
+        let run_stack = |which: &str| -> Vec<f32> {
+            let (h, t1) = self.adain_resblk1d(&format!("k.predictor.{which}.0"), &x_cm, hid, f, hid, false, style);
+            let (h, t2) = self.adain_resblk1d(&format!("k.predictor.{which}.1"), &h, hid, t1, half, true, style);
+            let (h, t3) = self.adain_resblk1d(&format!("k.predictor.{which}.2"), &h, half, t2, half, false, style);
+            let pw = self.t(&format!("k.predictor.{which}_proj.weight"));
+            let pb = self.t(&format!("k.predictor.{which}_proj.bias"));
+            conv1d(&h, half, t3, &pw, Some(&pb), 1, 1, 1, 0, 1, 1).0 // [2F]
+        };
+        (run_stack("F0"), run_stack("N"))
     }
 }
