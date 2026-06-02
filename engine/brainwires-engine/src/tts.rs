@@ -8,7 +8,8 @@ use std::sync::Arc;
 use crate::backend::{Pipelines, WgpuCtx};
 use crate::error::Result;
 use crate::gguf::GgufReader;
-use crate::reference::kokoro::g2p::Lexicon;
+use crate::reference::kokoro::g2p::{g2p, Lexicon};
+use crate::reference::kokoro::gpu_fast::WeightCache;
 use crate::reference::kokoro::KokoroModel;
 
 #[cfg(target_arch = "wasm32")]
@@ -22,6 +23,8 @@ pub struct KokoroTts {
     ctx: WgpuCtx,
     pipes: Arc<Pipelines>,
     lex: Option<Lexicon>,
+    /// Persistent GPU weight cache — warm synths skip re-dequant + re-upload.
+    wc: WeightCache,
 }
 
 impl KokoroTts {
@@ -31,7 +34,7 @@ impl KokoroTts {
         let model = KokoroModel::new(reader)?;
         let ctx = WgpuCtx::new().await?;
         let pipes = Arc::new(Pipelines::new(&ctx.device));
-        Ok(Self { model, ctx, pipes, lex: None })
+        Ok(Self { model, ctx, pipes, lex: None, wc: WeightCache::new() })
     }
 
     /// Provide the G2P lexicon (misaki us_gold + optional us_silver JSON bytes).
@@ -40,16 +43,21 @@ impl KokoroTts {
     }
 
     /// Text → PCM. Returns (pcm, oov words). Requires the lexicon to be set.
-    pub async fn synthesize_native(&self, text: &str, voice: &str) -> (Vec<f32>, Vec<String>) {
-        let lex = self.lex.as_ref().expect("lexicon not set");
-        self.model.synthesize_text_gpu(&self.ctx, &self.pipes, text, voice, lex).await
+    /// Uses the buffer-chained, weight-cached fast path (warm after the first synth).
+    pub async fn synthesize_native(&mut self, text: &str, voice: &str) -> (Vec<f32>, Vec<String>) {
+        let (phonemes, oov) = {
+            let lex = self.lex.as_ref().expect("lexicon not set");
+            g2p(text, lex)
+        };
+        let audio = self.synthesize_phonemes_native(&phonemes, voice).await;
+        (audio, oov)
     }
 
     /// Phoneme string → PCM (skips G2P).
-    pub async fn synthesize_phonemes_native(&self, phonemes: &str, voice: &str) -> Vec<f32> {
+    pub async fn synthesize_phonemes_native(&mut self, phonemes: &str, voice: &str) -> Vec<f32> {
         let ids = self.model.phonemes_to_ids(phonemes);
         let ref_s = self.model.load_voice(voice, ids.len());
-        self.model.synthesize_gpu(&self.ctx, &self.pipes, &ids, &ref_s).await
+        self.model.synthesize_gpu_fast(&self.ctx, &self.pipes, &mut self.wc, &ids, &ref_s).await
     }
 }
 
@@ -70,13 +78,13 @@ impl KokoroTts {
 
     /// Synthesize text → Float32Array PCM (24 kHz mono).
     #[wasm_bindgen(js_name = synthesize)]
-    pub async fn synthesize_js(&self, text: String, voice: String) -> Vec<f32> {
+    pub async fn synthesize_js(&mut self, text: String, voice: String) -> Vec<f32> {
         self.synthesize_native(&text, &voice).await.0
     }
 
     /// Synthesize a phoneme string → Float32Array PCM (skips G2P).
     #[wasm_bindgen(js_name = synthesizePhonemes)]
-    pub async fn synthesize_phonemes_js(&self, phonemes: String, voice: String) -> Vec<f32> {
+    pub async fn synthesize_phonemes_js(&mut self, phonemes: String, voice: String) -> Vec<f32> {
         self.synthesize_phonemes_native(&phonemes, &voice).await
     }
 

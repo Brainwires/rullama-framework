@@ -3557,6 +3557,13 @@ pub fn nearest_upsample2x_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::
     cached_dispatch(ctx, enc, &p.nearest_upsample2x, "nearest2x", &[x, y], &params, (((c * 2 * t) as u32).div_ceil(64), 1, 1));
 }
 
+/// ISTFTNet spectral split: post[2*nbins, t] → spec=exp(post[:nbins]), phase=sin(post[nbins:]).
+/// Buffers: post, spec, phase.
+pub fn spec_phase_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder, post: &wgpu::Buffer, spec: &wgpu::Buffer, phase: &wgpu::Buffer, nbins: usize, t: usize) {
+    let params = Transpose2dParams { rows: nbins as u32, cols: t as u32, _p0: 0, _p1: 0 };
+    cached_dispatch(ctx, enc, &p.spec_phase, "spec_phase", &[post, spec, phase], &params, (((nbins * t) as u32).div_ceil(64), 1, 1));
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct IstftParams {

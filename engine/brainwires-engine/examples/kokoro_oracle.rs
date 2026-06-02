@@ -190,6 +190,35 @@ fn main() {
     let syn = model.synthesize("həlˈO, hˌW ɑɹ ju tədˈA?", "af_heart");
     diff("synthesize(full)", &syn, &audio_std);
 
+    // ---- stage timing (where does synth time go? informs buffer-chaining) ----
+    {
+        use std::time::Instant;
+        let t = Instant::now();
+        let _ = pollster::block_on(model.text_encoder_gpu(&ctx, &pipes, &INPUT_IDS));
+        println!("[timing] text_encoder_gpu  {:>7.1} ms", t.elapsed().as_secs_f32() * 1e3);
+        let t = Instant::now();
+        let _ = pollster::block_on(model.f0_n_gpu(&ctx, &pipes, &en, f, style_pros));
+        println!("[timing] f0_n_gpu          {:>7.1} ms", t.elapsed().as_secs_f32() * 1e3);
+        let t = Instant::now();
+        let (_de, xd) = pollster::block_on(model.decoder_features_gpu(&ctx, &pipes, &t_en, &f0, &n, &pred_dur, &ref_s[0..128]));
+        println!("[timing] decoder_features  {:>7.1} ms", t.elapsed().as_secs_f32() * 1e3);
+        let t = Instant::now();
+        let _ = pollster::block_on(model.generator_gpu(&ctx, &pipes, &xd, 156, &read_bin_f32(&format!("{fixtures}/bin/gen_har.bin")), 9361, &ref_s[0..128]));
+        println!("[timing] generator_gpu     {:>7.1} ms", t.elapsed().as_secs_f32() * 1e3);
+        // head-to-head: full slice forward vs full buffer-chained forward (same inputs)
+        let t = Instant::now();
+        let _ = pollster::block_on(model.synthesize_gpu(&ctx, &pipes, &INPUT_IDS, &ref_s));
+        println!("[timing] synthesize_gpu (slice, full)  {:>7.1} ms", t.elapsed().as_secs_f32() * 1e3);
+        let mut wc = rullama::reference::kokoro::gpu_fast::WeightCache::new();
+        let t = Instant::now();
+        let fast1 = pollster::block_on(model.synthesize_gpu_fast(&ctx, &pipes, &mut wc, &INPUT_IDS, &ref_s));
+        println!("[timing] synth_fast cold (cache build)  {:>7.1} ms", t.elapsed().as_secs_f32() * 1e3);
+        let t = Instant::now();
+        let _ = pollster::block_on(model.synthesize_gpu_fast(&ctx, &pipes, &mut wc, &INPUT_IDS, &ref_s));
+        println!("[timing] synth_fast warm (cache reuse)  {:>7.1} ms  ({} weights cached)", t.elapsed().as_secs_f32() * 1e3, wc.len());
+        corr_report("synth_fast vs synth_gpu", &fast1, &model.synthesize_ids(&INPUT_IDS, &ref_s));
+    }
+
     // ---- full hybrid GPU forward, end-to-end (deterministic source). The GPU computes
     //      its own F0 (2.8e-4 vs CPU), which the phase-sensitive harmonic source amplifies,
     //      so correlation (not max-abs) is the right metric — same as the source path. ----

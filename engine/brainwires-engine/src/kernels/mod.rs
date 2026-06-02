@@ -15,6 +15,7 @@ pub const LAYERNORM_AFFINE: &str = include_str!("wgsl/layernorm_affine.wgsl");
 pub const LEAKY_RELU: &str = include_str!("wgsl/leaky_relu.wgsl");
 pub const NEAREST_UPSAMPLE2X: &str = include_str!("wgsl/nearest_upsample2x.wgsl");
 pub const SNAKE: &str = include_str!("wgsl/snake.wgsl");
+pub const SPEC_PHASE: &str = include_str!("wgsl/spec_phase.wgsl");
 pub const TRANSPOSE2D: &str = include_str!("wgsl/transpose2d.wgsl");
 pub const F16_MATMUL: &str = include_str!("wgsl/f16_matmul.wgsl");
 pub const F16_MATMUL_BATCHED: &str = include_str!("wgsl/f16_matmul_batched.wgsl");

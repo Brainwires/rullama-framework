@@ -12,6 +12,7 @@ pub mod decoder;
 pub mod g2p;
 pub mod generator;
 pub mod gpu;
+pub mod gpu_fast;
 pub mod ops;
 pub mod prosody;
 pub mod source;

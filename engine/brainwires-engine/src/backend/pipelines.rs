@@ -30,6 +30,7 @@ pub struct Pipelines {
     pub istft: wgpu::ComputePipeline,
     pub transpose2d: wgpu::ComputePipeline,
     pub nearest_upsample2x: wgpu::ComputePipeline,
+    pub spec_phase: wgpu::ComputePipeline,
     pub q4_k_matmul_tiled: wgpu::ComputePipeline,
     pub q6_k_matmul_tiled: wgpu::ComputePipeline,
     /// f16-LDS variants of the Q4_K / Q6_K dequant matmul. Inner loop uses
@@ -319,6 +320,7 @@ impl Pipelines {
             istft: build(device, "istft", kernels::ISTFT),
             transpose2d: build(device, "transpose2d", kernels::TRANSPOSE2D),
             nearest_upsample2x: build(device, "nearest_upsample2x", kernels::NEAREST_UPSAMPLE2X),
+            spec_phase: build(device, "spec_phase", kernels::SPEC_PHASE),
             q4_k_matmul_tiled: build(
                 device,
                 "q4_k_matmul_tiled",
