@@ -190,6 +190,13 @@ fn main() {
     let syn = model.synthesize("həlˈO, hˌW ɑɹ ju tədˈA?", "af_heart");
     diff("synthesize(full)", &syn, &audio_std);
 
+    // ---- full hybrid GPU forward, end-to-end (deterministic source). The GPU computes
+    //      its own F0 (2.8e-4 vs CPU), which the phase-sensitive harmonic source amplifies,
+    //      so correlation (not max-abs) is the right metric — same as the source path. ----
+    let syn_gpu = pollster::block_on(model.synthesize_gpu(&ctx, &pipes, &INPUT_IDS, &ref_s));
+    corr_report("synthesize_GPU vs CPU", &syn_gpu, &syn_ids);
+    corr_report("synthesize_GPU vs WAV", &syn_gpu, &read_bin_f32(&format!("{fixtures}/bin/audio_det.bin")));
+
     // write WAVs to listen (standalone + seeded reference-x reconstruction)
     write_wav(&format!("{fixtures}/oracle_standalone.wav"), &audio_std, 24000);
     write_wav(&format!("{fixtures}/oracle_seeded.wav"), &audio_full, 24000);

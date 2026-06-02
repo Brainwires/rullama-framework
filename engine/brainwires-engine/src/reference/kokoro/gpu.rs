@@ -164,6 +164,31 @@ impl KokoroModel {
     }
 }
 
+impl KokoroModel {
+    /// Hybrid GPU forward: heavy stages (TextEncoder, F0/N, decoder, generator) on GPU,
+    /// the rest (ALBERT, bert_encoder, DurationEncoder, duration, source) on CPU — chained
+    /// via the slice helpers. Deterministic source. Mirrors `synthesize_ids`.
+    /// (ALBERT moves to GPU in #7; this validates the GPU forward composition end-to-end.)
+    pub async fn synthesize_gpu(&self, ctx: &WgpuCtx, p: &Pipelines, ids: &[i64], ref_s: &[f32]) -> Vec<f32> {
+        let t = ids.len();
+        let sd = self.cfg.style_dim;
+        let (timbre, prosodic) = (&ref_s[..sd], &ref_s[sd..2 * sd]);
+        let cat = self.cfg.hidden_dim + sd;
+
+        let bert = self.bert(ids);
+        let be = self.bert_encoder(&bert, t);
+        let d = self.duration_encode(&be, t, prosodic);
+        let (_logits, dur) = self.predict_duration(&d, t);
+        let (en, f) = self.expand_by_dur_cm(&d, t, cat, &dur);
+
+        let (f0, n) = self.f0_n_gpu(ctx, p, &en, f, prosodic).await;
+        let t_en = self.text_encoder_gpu(ctx, p, ids).await;
+        let (_de, x_dec) = self.decoder_features_gpu(ctx, p, &t_en, &f0, &n, &dur, timbre).await;
+        let (har, frames) = self.generator_source(&f0);
+        self.generator_gpu(ctx, p, &x_dec, x_dec.len() / self.cfg.hidden_dim, &har, frames, timbre).await
+    }
+}
+
 /// Channel-major concat along the channel axis. For `[Ci, T]` row-major buffers this
 /// is literal append (each is Ci rows of T), so no GPU kernel is needed.
 fn concat_cm(parts: &[&[f32]]) -> Vec<f32> {
