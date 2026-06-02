@@ -4,6 +4,7 @@
 #![allow(dead_code)]
 
 use super::convblocks::reflection_pad_left1;
+use super::g2p::{g2p, Lexicon};
 use super::ops::{leaky_relu, linear};
 use super::KokoroModel;
 use crate::backend::dispatch::{
@@ -186,6 +187,16 @@ impl KokoroModel {
         let (_de, x_dec) = self.decoder_features_gpu(ctx, p, &t_en, &f0, &n, &dur, timbre).await;
         let (har, frames) = self.generator_source(&f0);
         self.generator_gpu(ctx, p, &x_dec, x_dec.len() / self.cfg.hidden_dim, &har, frames, timbre).await
+    }
+
+    /// Text → 24 kHz waveform on GPU: G2P (lexicon) → ids → voice → `synthesize_gpu`.
+    /// Returns (audio, OOV words). The product entry point.
+    pub async fn synthesize_text_gpu(&self, ctx: &WgpuCtx, p: &Pipelines, text: &str, voice_id: &str, lex: &Lexicon) -> (Vec<f32>, Vec<String>) {
+        let (phonemes, oov) = g2p(text, lex);
+        let ids = self.phonemes_to_ids(&phonemes);
+        let ref_s = self.load_voice(voice_id, ids.len());
+        let audio = self.synthesize_gpu(ctx, p, &ids, &ref_s).await;
+        (audio, oov)
     }
 }
 
