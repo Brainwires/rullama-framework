@@ -10,6 +10,7 @@ pub mod bert;
 pub mod convblocks;
 pub mod decoder;
 pub mod generator;
+pub mod gpu;
 pub mod ops;
 pub mod prosody;
 pub mod source;

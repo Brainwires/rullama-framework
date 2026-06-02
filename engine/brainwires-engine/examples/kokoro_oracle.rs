@@ -86,7 +86,14 @@ fn main() {
 
     // ---- Stage 6: TextEncoder (embedding + conv stack + BiLSTM) ----
     let t_en = model.text_encoder(&INPUT_IDS);
-    diff("text_encoder_ten", &t_en, &read_bin_f32(&format!("{fixtures}/bin/text_encoder_ten.bin")));
+    let ten_ref = read_bin_f32(&format!("{fixtures}/bin/text_encoder_ten.bin"));
+    diff("text_encoder_ten", &t_en, &ten_ref);
+
+    // ---- Stage 6-GPU: same TextEncoder via WGSL kernels (conv1d/transpose/LN/leaky + CPU BiLSTM) ----
+    let ctx = pollster::block_on(rullama::backend::WgpuCtx::new()).expect("wgpu");
+    let pipes = rullama::backend::Pipelines::new(&ctx.device);
+    let t_en_gpu = pollster::block_on(model.text_encoder_gpu(&ctx, &pipes, &INPUT_IDS));
+    diff("text_encoder_GPU", &t_en_gpu, &ten_ref);
 
     // ---- Stage 7: Decoder encode + decode stack (timbre style = ref_s[:128]) ----
     let style_timbre = &ref_s[0..128];

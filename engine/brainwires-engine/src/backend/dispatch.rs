@@ -354,13 +354,25 @@ fn write_storage(
     buf
 }
 
-fn write_storage_f32(
+pub(crate) fn write_storage_f32(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     label: &str,
     x: &[f32],
 ) -> wgpu::Buffer {
     write_storage(device, queue, label, bytemuck::cast_slice(x))
+}
+
+/// Read-write storage buffer (STORAGE | COPY_SRC | COPY_DST), zero-initialized.
+/// For intermediate activations that are written by one kernel and read by the next
+/// (and optionally copied out for readback).
+pub(crate) fn make_storage_rw(device: &wgpu::Device, label: &str, n_floats: usize) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: (n_floats * 4) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
 }
 
 fn make_output_pair(
@@ -383,7 +395,7 @@ fn make_output_pair(
     (out, read)
 }
 
-async fn read_back_f32(device: &wgpu::Device, read_buf: &wgpu::Buffer) -> Result<Vec<f32>> {
+pub(crate) async fn read_back_f32(device: &wgpu::Device, read_buf: &wgpu::Buffer) -> Result<Vec<f32>> {
     let slice = read_buf.slice(..);
     let (sender, receiver) = oneshot::channel();
     slice.map_async(wgpu::MapMode::Read, move |r| {
