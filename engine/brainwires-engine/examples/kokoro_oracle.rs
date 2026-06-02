@@ -105,11 +105,106 @@ fn main() {
     // (b) full chain: our decode-stack x + reference har
     let audio_full = model.generator(&x_dec, 156, &gen_har, 9361, style_timbre);
     diff("audio[our x]", &audio_full, &ref_audio);
+
+    // ---- Stage 9: standalone HnNSF source (deterministic, zeroed randomness) ----
+    let src_sig = model.source_signal(&f0);
+    diff("har_source_det", &src_sig, &read_bin_f32(&format!("{fixtures}/bin/har_source_det.bin")));
+    let (har_src, frames_src) = model.generator_source(&f0);
+    let ref_hd = read_bin_f32(&format!("{fixtures}/bin/gen_har_det.bin"));
+    // har phase is arbitrary at low-energy bins (model trained on random source
+    // phase) → correlation, not max-abs, is the right metric here.
+    corr_report("gen_har_det(source)", &har_src, &ref_hd);
+    // mag/phase split diagnostic (har = [11 mag; 11 phase], channel-major)
+    {
+        let nb = 11;
+        let frames = frames_src;
+        let (mut mag_d, mut ph_d, mut flips) = (0.0f32, 0.0f32, 0usize);
+        for k in 0..22 {
+            for f in 0..frames {
+                let dd = (har_src[k * frames + f] - ref_hd[k * frames + f]).abs();
+                if k < nb {
+                    mag_d = mag_d.max(dd);
+                } else {
+                    ph_d = ph_d.max(dd);
+                    if dd > 1.0 {
+                        flips += 1;
+                    }
+                }
+            }
+        }
+        println!("    split: mag_max={mag_d:.3e}  phase_max={ph_d:.3e}  phase_flips(>1)={flips}/{}", nb * frames);
+        // one voiced frame: is the phase error a k-linear ramp (shift) or random (branch flip)?
+        let f0r = 100;
+        print!("    frame100 dphase[k]: ");
+        for k in 0..nb {
+            let d = har_src[(k + nb) * frames + f0r] - ref_hd[(k + nb) * frames + f0r];
+            print!("{:+.2} ", d);
+        }
+        println!();
+    }
+
+    let audio_std = model.generator(&x_dec, 156, &har_src, frames_src, style_timbre);
+    corr_report("audio_det(standalone)", &audio_std, &read_bin_f32(&format!("{fixtures}/bin/audio_det.bin")));
+
+    // write WAVs to listen (standalone + seeded reference-x reconstruction)
+    write_wav(&format!("{fixtures}/oracle_standalone.wav"), &audio_std, 24000);
+    write_wav(&format!("{fixtures}/oracle_seeded.wav"), &audio_full, 24000);
+    println!("wrote oracle_standalone.wav / oracle_seeded.wav to {fixtures}");
+}
+
+fn write_wav(path: &str, samples: &[f32], sr: u32) {
+    let n = samples.len() as u32;
+    let byte_rate = sr * 2;
+    let data_len = n * 2;
+    let mut b = Vec::with_capacity(44 + data_len as usize);
+    b.extend_from_slice(b"RIFF");
+    b.extend_from_slice(&(36 + data_len).to_le_bytes());
+    b.extend_from_slice(b"WAVEfmt ");
+    b.extend_from_slice(&16u32.to_le_bytes());
+    b.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    b.extend_from_slice(&1u16.to_le_bytes()); // mono
+    b.extend_from_slice(&sr.to_le_bytes());
+    b.extend_from_slice(&byte_rate.to_le_bytes());
+    b.extend_from_slice(&2u16.to_le_bytes());
+    b.extend_from_slice(&16u16.to_le_bytes());
+    b.extend_from_slice(b"data");
+    b.extend_from_slice(&data_len.to_le_bytes());
+    for &s in samples {
+        let v = (s.clamp(-1.0, 1.0) * 32767.0) as i16;
+        b.extend_from_slice(&v.to_le_bytes());
+    }
+    std::fs::write(path, b).unwrap();
 }
 
 const EXPECTED_DUR: [usize; 25] = [
     14, 2, 3, 2, 5, 5, 1, 2, 1, 2, 1, 1, 1, 1, 2, 2, 1, 2, 1, 2, 2, 4, 12, 8, 1,
 ];
+
+/// Pearson correlation + relative RMSE — the right metric for the harmonic-source
+/// path, whose phase is arbitrary at low-energy bins (model trained on random phase).
+fn corr_report(name: &str, got: &[f32], reference: &[f32]) {
+    let n = got.len().min(reference.len());
+    let (a, b) = (&got[..n], &reference[..n]);
+    let ma = a.iter().sum::<f32>() / n as f32;
+    let mb = b.iter().sum::<f32>() / n as f32;
+    let mut cov = 0.0f64;
+    let mut va = 0.0f64;
+    let mut vb = 0.0f64;
+    let mut se = 0.0f64;
+    let mut sr = 0.0f64;
+    for i in 0..n {
+        let (da, db) = ((a[i] - ma) as f64, (b[i] - mb) as f64);
+        cov += da * db;
+        va += da * da;
+        vb += db * db;
+        se += ((a[i] - b[i]) as f64).powi(2);
+        sr += (b[i] as f64).powi(2);
+    }
+    let corr = cov / (va.sqrt() * vb.sqrt() + 1e-20);
+    let rel = (se / sr.max(1e-20)).sqrt();
+    let ok = if corr > 0.99 { "OK (phase-arbitrary)" } else { "*** LOW CORR ***" };
+    println!("[{name:<18}] shape {:>7}  corr = {corr:.5}  rel_rmse = {:.2}%  {ok}", n, rel * 100.0);
+}
 
 fn diff(name: &str, got: &[f32], reference: &[f32]) {
     let d = max_abs_diff(got, reference);

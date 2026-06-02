@@ -12,6 +12,7 @@ pub mod decoder;
 pub mod generator;
 pub mod ops;
 pub mod prosody;
+pub mod source;
 pub mod text_encoder;
 
 use std::collections::HashMap;
