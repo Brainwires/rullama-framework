@@ -126,4 +126,41 @@ impl KokoroModel {
         ids.push(0);
         ids
     }
+
+    /// Voice/style vector `ref_s [256]` for `n_tokens`, selected from the voicepack
+    /// `[510, 1, 256]` by token length (row = n_tokens - 1).
+    pub fn load_voice(&self, voice_id: &str, n_tokens: usize) -> Vec<f32> {
+        let row = 2 * self.cfg.style_dim; // 256
+        let vp = self.t(&format!("k.voice.{voice_id}"));
+        let r = (n_tokens - 1).min(vp.len() / row - 1);
+        vp[r * row..(r + 1) * row].to_vec()
+    }
+
+    /// Full pipeline: phoneme string + voice id → 24 kHz waveform. Deterministic
+    /// (zeroed source randomness). The single composed reference for the WGSL port.
+    pub fn synthesize(&self, phonemes: &str, voice_id: &str) -> Vec<f32> {
+        let ids = self.phonemes_to_ids(phonemes);
+        let ref_s = self.load_voice(voice_id, ids.len());
+        self.synthesize_ids(&ids, &ref_s)
+    }
+
+    /// Pipeline driven by explicit input_ids + voice vector (`ref_s[:128]`=timbre,
+    /// `ref_s[128:]`=prosodic).
+    pub fn synthesize_ids(&self, ids: &[i64], ref_s: &[f32]) -> Vec<f32> {
+        let t = ids.len();
+        let sd = self.cfg.style_dim;
+        let (timbre, prosodic) = (&ref_s[..sd], &ref_s[sd..2 * sd]);
+        let cat = self.cfg.hidden_dim + sd;
+
+        let bert = self.bert(ids);
+        let be = self.bert_encoder(&bert, t);
+        let d = self.duration_encode(&be, t, prosodic);
+        let (_logits, dur) = self.predict_duration(&d, t);
+        let (en, f) = self.expand_by_dur_cm(&d, t, cat, &dur);
+        let (f0, n) = self.f0_n(&en, f, prosodic);
+        let t_en = self.text_encoder(ids);
+        let (_de, x_dec, _f0d, _nd) = self.decoder_features(&t_en, &f0, &n, &dur, timbre);
+        let (har, frames) = self.generator_source(&f0);
+        self.generator(&x_dec, x_dec.len() / self.cfg.hidden_dim, &har, frames, timbre)
+    }
 }

@@ -146,6 +146,15 @@ fn main() {
     let audio_std = model.generator(&x_dec, 156, &har_src, frames_src, style_timbre);
     corr_report("audio_det(standalone)", &audio_std, &read_bin_f32(&format!("{fixtures}/bin/audio_det.bin")));
 
+    // ---- Stage 10: composed synthesize() must reproduce the staged pipeline ----
+    let syn_ids = model.synthesize_ids(&INPUT_IDS, &ref_s);
+    diff("synthesize_ids", &syn_ids, &audio_std);
+    let ids = model.phonemes_to_ids("həlˈO, hˌW ɑɹ ju tədˈA?");
+    let ids_ok = ids == INPUT_IDS;
+    println!("[phonemes_to_ids ]  {}  ({} ids)", if ids_ok { "matches fixture  OK" } else { "*** MISMATCH ***" }, ids.len());
+    let syn = model.synthesize("həlˈO, hˌW ɑɹ ju tədˈA?", "af_heart");
+    diff("synthesize(full)", &syn, &audio_std);
+
     // write WAVs to listen (standalone + seeded reference-x reconstruction)
     write_wav(&format!("{fixtures}/oracle_standalone.wav"), &audio_std, 24000);
     write_wav(&format!("{fixtures}/oracle_seeded.wav"), &audio_full, 24000);
