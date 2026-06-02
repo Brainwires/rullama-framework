@@ -14,6 +14,7 @@ pub const ISTFT: &str = include_str!("wgsl/istft.wgsl");
 pub const LAYERNORM_AFFINE: &str = include_str!("wgsl/layernorm_affine.wgsl");
 pub const LEAKY_RELU: &str = include_str!("wgsl/leaky_relu.wgsl");
 pub const SNAKE: &str = include_str!("wgsl/snake.wgsl");
+pub const TRANSPOSE2D: &str = include_str!("wgsl/transpose2d.wgsl");
 pub const F16_MATMUL: &str = include_str!("wgsl/f16_matmul.wgsl");
 pub const F16_MATMUL_BATCHED: &str = include_str!("wgsl/f16_matmul_batched.wgsl");
 pub const F16_MATMUL_BATCHED_TILED: &str = include_str!("wgsl/f16_matmul_batched_tiled.wgsl");

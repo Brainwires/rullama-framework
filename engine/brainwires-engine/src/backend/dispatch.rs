@@ -3526,6 +3526,21 @@ pub fn adain_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncode
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct Transpose2dParams {
+    rows: u32,
+    cols: u32,
+    _p0: u32,
+    _p1: u32,
+}
+
+/// 2-D transpose: x[rows, cols] row-major → y[cols, rows]. Buffers: x, y.
+pub fn transpose2d_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder, x: &wgpu::Buffer, y: &wgpu::Buffer, rows: usize, cols: usize) {
+    let params = Transpose2dParams { rows: rows as u32, cols: cols as u32, _p0: 0, _p1: 0 };
+    cached_dispatch(ctx, enc, &p.transpose2d, "transpose2d", &[x, y], &params, (((rows * cols) as u32).div_ceil(64), 1, 1));
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct IstftParams {
     nbins: u32,
     frames: u32,
@@ -5291,6 +5306,30 @@ mod tests {
         let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("rb");
         let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
         assert!(md < 1e-4, "adain max_diff = {md}");
+    }
+
+    #[test]
+    fn transpose2d_gpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let (rows, cols) = (5usize, 7usize);
+        let x: Vec<f32> = (0..rows * cols).map(|i| i as f32).collect();
+        let mut cpu = vec![0.0f32; rows * cols];
+        for r in 0..rows {
+            for c in 0..cols {
+                cpu[c * rows + r] = x[r * cols + c];
+            }
+        }
+        let xb = write_storage_f32(device, queue, "x", &x);
+        let (yb, yr) = make_output_pair(device, "y", (rows * cols * 4) as u64);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("tr") });
+        transpose2d_chained(&ctx, &p, &mut enc, &xb, &yb, rows, cols);
+        enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (rows * cols * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("rb");
+        assert_eq!(cpu, gpu);
     }
 
     #[test]
