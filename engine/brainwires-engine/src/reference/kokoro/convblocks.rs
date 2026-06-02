@@ -40,6 +40,65 @@ pub fn conv1d(
     (out, tout)
 }
 
+/// General (groups=1) ConvTranspose1d. `w [Cin, Cout, K]`, `b [Cout]`.
+/// Out length `(T-1)*stride - 2*pad + (K-1) + output_padding + 1`.
+#[allow(clippy::too_many_arguments)]
+pub fn conv_transpose1d(
+    inp: &[f32], cin: usize, t: usize, w: &[f32], b: Option<&[f32]>, cout: usize,
+    k: usize, stride: usize, pad: usize, output_padding: usize,
+) -> (Vec<f32>, usize) {
+    let tout = (t - 1) * stride + (k - 1) + output_padding + 1 - 2 * pad;
+    let mut out = vec![0.0f32; cout * tout];
+    for ci in 0..cin {
+        for i in 0..t {
+            let v = inp[ci * t + i];
+            for co in 0..cout {
+                let wv = &w[(ci * cout + co) * k..(ci * cout + co) * k + k];
+                for kk in 0..k {
+                    let opos = i as isize * stride as isize + kk as isize - pad as isize;
+                    if opos >= 0 && (opos as usize) < tout {
+                        out[co * tout + opos as usize] += v * wv[kk];
+                    }
+                }
+            }
+        }
+    }
+    if let Some(bb) = b {
+        for co in 0..cout {
+            for to in 0..tout {
+                out[co * tout + to] += bb[co];
+            }
+        }
+    }
+    (out, tout)
+}
+
+/// ReflectionPad1d((1, 0)) — pad 1 on the left by reflection. `[C, T] → [C, T+1]`.
+pub fn reflection_pad_left1(inp: &[f32], c: usize, t: usize) -> Vec<f32> {
+    let tout = t + 1;
+    let mut out = vec![0.0f32; c * tout];
+    for ch in 0..c {
+        out[ch * tout] = inp[ch * t + 1]; // reflect: new[0] = x[1]
+        for i in 0..t {
+            out[ch * tout + i + 1] = inp[ch * t + i];
+        }
+    }
+    out
+}
+
+/// Snake1D activation: `x + (1/alpha_c) * sin(alpha_c * x)^2`, per-channel alpha.
+pub fn snake(x: &mut [f32], c: usize, t: usize, alpha: &[f32]) {
+    for ch in 0..c {
+        let a = alpha[ch];
+        let inv = 1.0 / a;
+        for ti in 0..t {
+            let v = x[ch * t + ti];
+            let s = (a * v).sin();
+            x[ch * t + ti] = v + inv * s * s;
+        }
+    }
+}
+
 /// Depthwise ConvTranspose1d (groups == channels), `w [C, 1, K]`, `b [C]`.
 /// Used as StyleTTS2's upsampling "pool": stride=2, pad=1, output_padding=1, K=3 → 2×T.
 pub fn conv_transpose1d_depthwise(

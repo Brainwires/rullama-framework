@@ -90,8 +90,21 @@ fn main() {
 
     // ---- Stage 7: Decoder encode + decode stack (timbre style = ref_s[:128]) ----
     let style_timbre = &ref_s[0..128];
-    let (dec_encode, _x_dec, _f0d, _nd) = model.decoder_features(&t_en, &f0, &n, &pred_dur, style_timbre);
+    let (dec_encode, x_dec, _f0d, _nd) = model.decoder_features(&t_en, &f0, &n, &pred_dur, style_timbre);
     diff("dec_encode", &dec_encode, &read_bin_f32(&format!("{fixtures}/bin/dec_encode.bin")));
+    diff("gen_x(decode)", &x_dec, &read_bin_f32(&format!("{fixtures}/bin/gen_x.bin")));
+
+    // ---- Stage 8: ISTFTNet generator + exact iSTFT ----
+    // har is non-deterministic upstream (random source) → inject the reference.
+    let gen_har = read_bin_f32(&format!("{fixtures}/bin/gen_har.bin"));
+    let ref_audio = read_bin_f32(&format!("{fixtures}/bin/audio.bin"));
+    // (a) isolated: reference x + reference har
+    let gen_x = read_bin_f32(&format!("{fixtures}/bin/gen_x.bin"));
+    let audio_iso = model.generator(&gen_x, 156, &gen_har, 9361, style_timbre);
+    diff("audio[ref x]", &audio_iso, &ref_audio);
+    // (b) full chain: our decode-stack x + reference har
+    let audio_full = model.generator(&x_dec, 156, &gen_har, 9361, style_timbre);
+    diff("audio[our x]", &audio_full, &ref_audio);
 }
 
 const EXPECTED_DUR: [usize; 25] = [
