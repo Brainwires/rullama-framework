@@ -95,6 +95,15 @@ fn main() {
     let t_en_gpu = pollster::block_on(model.text_encoder_gpu(&ctx, &pipes, &INPUT_IDS));
     diff("text_encoder_GPU", &t_en_gpu, &ten_ref);
 
+    // ---- GPU AdainResBlk1d vs CPU oracle (real weights, synthetic input):
+    //      plain block + the upsample/learned-shortcut block ----
+    for (prefix, di, dout, up) in [("k.predictor.F0.0", 512usize, 512usize, false), ("k.predictor.F0.1", 512, 256, true)] {
+        let xs: Vec<f32> = (0..di * f).map(|i| ((i % 23) as f32 - 11.0) * 0.05).collect();
+        let (cpu_b, _) = model.adain_resblk1d(prefix, &xs, di, f, dout, up, style_pros);
+        let gpu_b = pollster::block_on(model.adain_resblk1d_gpu(&ctx, &pipes, prefix, &xs, di, f, dout, up, style_pros));
+        diff(&format!("adainblk {prefix}"), &gpu_b, &cpu_b);
+    }
+
     // ---- Stage 7: Decoder encode + decode stack (timbre style = ref_s[:128]) ----
     let style_timbre = &ref_s[0..128];
     let (dec_encode, x_dec, _f0d, _nd) = model.decoder_features(&t_en, &f0, &n, &pred_dur, style_timbre);

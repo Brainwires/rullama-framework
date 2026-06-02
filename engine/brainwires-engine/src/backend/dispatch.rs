@@ -3551,6 +3551,12 @@ pub fn transpose2d_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::Command
     cached_dispatch(ctx, enc, &p.transpose2d, "transpose2d", &[x, y], &params, (((rows * cols) as u32).div_ceil(64), 1, 1));
 }
 
+/// Nearest ×2 upsample (channel-major): x[c, t] → y[c, 2t]. Buffers: x, y.
+pub fn nearest_upsample2x_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder, x: &wgpu::Buffer, y: &wgpu::Buffer, c: usize, t: usize) {
+    let params = Transpose2dParams { rows: c as u32, cols: t as u32, _p0: 0, _p1: 0 };
+    cached_dispatch(ctx, enc, &p.nearest_upsample2x, "nearest2x", &[x, y], &params, (((c * 2 * t) as u32).div_ceil(64), 1, 1));
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct IstftParams {
