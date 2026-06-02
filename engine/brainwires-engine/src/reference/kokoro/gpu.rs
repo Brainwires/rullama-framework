@@ -162,6 +162,63 @@ impl KokoroModel {
     }
 }
 
+/// Channel-major concat along the channel axis. For `[Ci, T]` row-major buffers this
+/// is literal append (each is Ci rows of T), so no GPU kernel is needed.
+fn concat_cm(parts: &[&[f32]]) -> Vec<f32> {
+    parts.iter().flat_map(|s| s.iter().copied()).collect()
+}
+
+impl KokoroModel {
+    /// GPU Decoder front (istftnet.Decoder up to the generator). Returns
+    /// (`dec_encode [1024, F]`, `x_after_decode [512, 2F]`). `s` = timbre half.
+    pub async fn decoder_features_gpu(
+        &self, ctx: &WgpuCtx, p: &Pipelines, t_en: &[f32], f0_curve: &[f32], n_curve: &[f32], dur: &[usize], style: &[f32],
+    ) -> (Vec<f32>, Vec<f32>) {
+        let c = self.cfg.hidden_dim; // 512
+        let t = dur.len();
+        // asr = expand t_en [512,T] by dur → [512, F] (transpose to row-major, expand)
+        let mut t_en_rm = vec![0.0f32; t * c];
+        for ch in 0..c {
+            for ti in 0..t {
+                t_en_rm[ti * c + ch] = t_en[ch * t + ti];
+            }
+        }
+        let (asr, f) = self.expand_by_dur_cm(&t_en_rm, t, c, dur);
+
+        // F0/N stride-2 downsample convs: [2F] → [F]
+        let f0d = self
+            .conv1d_gpu(ctx, p, f0_curve, 1, f0_curve.len(), &self.t("k.decoder.F0_conv.weight"), Some(&self.t("k.decoder.F0_conv.bias")), 1, 3, 2, 1, 1, 1)
+            .await;
+        let nd = self
+            .conv1d_gpu(ctx, p, n_curve, 1, n_curve.len(), &self.t("k.decoder.N_conv.weight"), Some(&self.t("k.decoder.N_conv.bias")), 1, 3, 2, 1, 1, 1)
+            .await;
+
+        // encode: AdainResBlk1d(cat([asr,F0,N]) = 514 → 1024)
+        let cat0 = concat_cm(&[&asr, &f0d, &nd]);
+        let dec_encode = self.adain_resblk1d_gpu(ctx, p, "k.decoder.encode", &cat0, c + 2, f, 1024, false, style).await;
+
+        // asr_res = Conv1d(512→64, k1)
+        let asr_res = self
+            .conv1d_gpu(ctx, p, &asr, c, f, &self.t("k.decoder.asr_res.0.weight"), Some(&self.t("k.decoder.asr_res.0.bias")), 64, 1, 1, 0, 1, 1)
+            .await;
+
+        // decode stack: cat([x, asr_res, F0, N]) before each block; last upsamples ×2
+        let mut x = dec_encode.clone();
+        let mut tcur = f;
+        for i in 0..4 {
+            let xin = concat_cm(&[&x, &asr_res, &f0d, &nd]);
+            let dim_in = x.len() / tcur + 64 + 2; // 1090
+            let upsample = i == 3;
+            let dim_out = if i < 3 { 1024 } else { 512 };
+            x = self.adain_resblk1d_gpu(ctx, p, &format!("k.decoder.decode.{i}"), &xin, dim_in, tcur, dim_out, upsample, style).await;
+            if upsample {
+                tcur *= 2;
+            }
+        }
+        (dec_encode, x)
+    }
+}
+
 fn read_staging(device: &wgpu::Device, n_floats: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("kokoro.read"),

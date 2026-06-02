@@ -109,6 +109,11 @@ fn main() {
     diff("F0_GPU", &f0_gpu, &read_bin_f32(&format!("{fixtures}/bin/F0.bin")));
     diff("N_GPU", &n_gpu, &read_bin_f32(&format!("{fixtures}/bin/N.bin")));
 
+    // ---- GPU decoder cat-stack vs fixtures ----
+    let (dec_enc_g, x_dec_g) = pollster::block_on(model.decoder_features_gpu(&ctx, &pipes, &t_en, &f0, &n, &pred_dur, &ref_s[0..128]));
+    diff("dec_encode_GPU", &dec_enc_g, &read_bin_f32(&format!("{fixtures}/bin/dec_encode.bin")));
+    diff("gen_x_GPU", &x_dec_g, &read_bin_f32(&format!("{fixtures}/bin/gen_x.bin")));
+
     // ---- Stage 7: Decoder encode + decode stack (timbre style = ref_s[:128]) ----
     let style_timbre = &ref_s[0..128];
     let (dec_encode, x_dec, _f0d, _nd) = model.decoder_features(&t_en, &f0, &n, &pred_dur, style_timbre);
