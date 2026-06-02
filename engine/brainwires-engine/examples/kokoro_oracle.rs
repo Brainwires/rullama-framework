@@ -114,6 +114,15 @@ fn main() {
     diff("dec_encode_GPU", &dec_enc_g, &read_bin_f32(&format!("{fixtures}/bin/dec_encode.bin")));
     diff("gen_x_GPU", &x_dec_g, &read_bin_f32(&format!("{fixtures}/bin/gen_x.bin")));
 
+    // ---- GPU generator (ISTFTNet: snake resblocks + ups + iSTFT) vs fixture, injected har ----
+    let audio_gpu = pollster::block_on(model.generator_gpu(
+        &ctx, &pipes,
+        &read_bin_f32(&format!("{fixtures}/bin/gen_x.bin")), 156,
+        &read_bin_f32(&format!("{fixtures}/bin/gen_har.bin")), 9361,
+        &ref_s[0..128],
+    ));
+    diff("generator_GPU", &audio_gpu, &read_bin_f32(&format!("{fixtures}/bin/audio.bin")));
+
     // ---- Stage 7: Decoder encode + decode stack (timbre style = ref_s[:128]) ----
     let style_timbre = &ref_s[0..128];
     let (dec_encode, x_dec, _f0d, _nd) = model.decoder_features(&t_en, &f0, &n, &pred_dur, style_timbre);

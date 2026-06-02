@@ -3,12 +3,14 @@
 //! toward a full `GpuKokoroForward` (mirroring `multimodal/audio_gpu.rs`).
 #![allow(dead_code)]
 
-use super::ops::linear;
+use super::convblocks::reflection_pad_left1;
+use super::ops::{leaky_relu, linear};
 use super::KokoroModel;
 use crate::backend::dispatch::{
-    adain_chained, conv1d_chained, conv_transpose1d_chained, layernorm_affine_chained,
-    leaky_relu_chained, make_dummy_storage, make_storage_rw, nearest_upsample2x_chained,
-    read_back_f32, residual_add_chained, scale_chained, transpose2d_chained, write_storage_f32,
+    adain_chained, conv1d_chained, conv_transpose1d_chained, istft_chained,
+    layernorm_affine_chained, leaky_relu_chained, make_dummy_storage, make_storage_rw,
+    nearest_upsample2x_chained, read_back_f32, residual_add_chained, scale_chained, snake_chained,
+    transpose2d_chained, write_storage_f32,
 };
 use crate::backend::{Pipelines, WgpuCtx};
 
@@ -166,6 +168,167 @@ impl KokoroModel {
 /// is literal append (each is Ci rows of T), so no GPU kernel is needed.
 fn concat_cm(parts: &[&[f32]]) -> Vec<f32> {
     parts.iter().flat_map(|s| s.iter().copied()).collect()
+}
+
+impl KokoroModel {
+    /// Slice-in/Vec-out GPU ConvTranspose1d. For stage glue (ISTFTNet ups).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn conv_transpose1d_gpu(
+        &self, ctx: &WgpuCtx, p: &Pipelines, x: &[f32], cin: usize, t: usize,
+        w: &[f32], b: Option<&[f32]>, cout: usize, k: usize, stride: usize, pad: usize, output_padding: usize, groups: usize,
+    ) -> (Vec<f32>, usize) {
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let dummy = make_dummy_storage(device, "d");
+        let tout = (t - 1) * stride + (k - 1) + output_padding + 1 - 2 * pad;
+        let xb = write_storage_f32(device, queue, "x", x);
+        let wb = write_storage_f32(device, queue, "w", w);
+        let bb = b.map(|bb| write_storage_f32(device, queue, "b", bb));
+        let out = make_storage_rw(device, "o", cout * tout);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("cT") });
+        conv_transpose1d_chained(ctx, p, &mut enc, &xb, &wb, bb.as_ref(), &dummy, &out, cin, t, cout, k, stride, pad, output_padding, groups);
+        let staging = read_staging(device, cout * tout);
+        enc.copy_buffer_to_buffer(&out, 0, &staging, 0, (cout * tout * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        (read_back_f32(device, &staging).await.expect("cT rb"), tout)
+    }
+
+    /// Slice-in/Vec-out GPU exact iSTFT. spec/phase `[nbins, frames]` channel-major.
+    pub async fn istft_gpu(&self, ctx: &WgpuCtx, p: &Pipelines, spec: &[f32], phase: &[f32], nbins: usize, frames: usize, nfft: usize, hop: usize) -> Vec<f32> {
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let sb = write_storage_f32(device, queue, "spec", spec);
+        let pb = write_storage_f32(device, queue, "phase", phase);
+        let out_len = (frames - 1) * hop + nfft - 2 * (nfft / 2);
+        let yb = make_storage_rw(device, "y", out_len);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("istft") });
+        istft_chained(ctx, p, &mut enc, &sb, &pb, &yb, nbins, frames, nfft, hop);
+        let staging = read_staging(device, out_len);
+        enc.copy_buffer_to_buffer(&yb, 0, &staging, 0, (out_len * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        read_back_f32(device, &staging).await.expect("istft rb")
+    }
+
+    /// GPU AdaINResBlock1 (ISTFTNet generator resblock): 3 dilated conv pairs with
+    /// Snake activation and AdaIN before each. `x [C, T]` → `[C, T]` (same length).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn adain_resblock1_gpu(&self, ctx: &WgpuCtx, p: &Pipelines, prefix: &str, x: &[f32], c: usize, t: usize, k: usize, dil: [usize; 3], style: &[f32]) -> Vec<f32> {
+        let sd = self.cfg.style_dim;
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let upload_gb = |grp: usize, j: usize| {
+            let fw = self.t(&format!("{prefix}.adain{grp}.{j}.fc.weight"));
+            let fb = self.t(&format!("{prefix}.adain{grp}.{j}.fc.bias"));
+            let gb = linear(style, 1, sd, &fw, Some(&fb), 2 * c);
+            let (g, b) = gb.split_at(c);
+            (write_storage_f32(device, queue, "g", g), write_storage_f32(device, queue, "b", b))
+        };
+        let xacc = make_storage_rw(device, "xacc", c * t);
+        queue.write_buffer(&xacc, 0, bytemuck::cast_slice(x));
+        for j in 0..3 {
+            let (g1, b1) = upload_gb(1, j);
+            let (g2, b2) = upload_gb(2, j);
+            let a1 = write_storage_f32(device, queue, "a1", &self.t(&format!("{prefix}.alpha1.{j}")));
+            let a2 = write_storage_f32(device, queue, "a2", &self.t(&format!("{prefix}.alpha2.{j}")));
+            let c1w = write_storage_f32(device, queue, "c1w", &self.t(&format!("{prefix}.convs1.{j}.weight")));
+            let c1b = write_storage_f32(device, queue, "c1b", &self.t(&format!("{prefix}.convs1.{j}.bias")));
+            let c2w = write_storage_f32(device, queue, "c2w", &self.t(&format!("{prefix}.convs2.{j}.weight")));
+            let c2b = write_storage_f32(device, queue, "c2b", &self.t(&format!("{prefix}.convs2.{j}.bias")));
+            let (h1, h2, h3, h4, h5, rb) = (
+                make_storage_rw(device, "h1", c * t),
+                make_storage_rw(device, "h2", c * t),
+                make_storage_rw(device, "h3", c * t),
+                make_storage_rw(device, "h4", c * t),
+                make_storage_rw(device, "h5", c * t),
+                make_storage_rw(device, "rb", c * t),
+            );
+            let pad1 = (k * dil[j] - dil[j]) / 2;
+            let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("arb1") });
+            adain_chained(ctx, p, &mut enc, &xacc, &g1, &b1, &h1, c, t, 1e-5);
+            snake_chained(ctx, p, &mut enc, &h1, &a1, &h2, c, t);
+            conv1d_chained(ctx, p, &mut enc, &h2, &c1w, Some(&c1b), &make_dummy_storage(device, "d"), &h3, c, t, c, k, 1, pad1, dil[j], 1);
+            adain_chained(ctx, p, &mut enc, &h3, &g2, &b2, &h4, c, t, 1e-5);
+            snake_chained(ctx, p, &mut enc, &h4, &a2, &h5, c, t);
+            conv1d_chained(ctx, p, &mut enc, &h5, &c2w, Some(&c2b), &make_dummy_storage(device, "d"), &rb, c, t, c, k, 1, (k - 1) / 2, 1, 1);
+            residual_add_chained(ctx, p, &mut enc, &xacc, &rb, c * t); // xacc += rb
+            queue.submit(Some(enc.finish()));
+        }
+        let staging = read_staging(device, c * t);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("arb1.read") });
+        enc.copy_buffer_to_buffer(&xacc, 0, &staging, 0, (c * t * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        read_back_f32(device, &staging).await.expect("arb1 rb")
+    }
+
+    /// GPU ISTFTNet generator. `x [512, Tx]`, injected `har [22, Th]`, timbre `style`.
+    /// Returns the 24 kHz waveform. GPU kernels (conv/adain/snake/convT/istft) with CPU
+    /// glue (leaky, concat-free add, reflection-pad, exp/sin split, resblock avg).
+    pub async fn generator_gpu(&self, ctx: &WgpuCtx, p: &Pipelines, x: &[f32], xt_len: usize, har: &[f32], har_len: usize, style: &[f32]) -> Vec<f32> {
+        let rates = self.cfg.upsample_rates.clone();
+        let rkernels = self.cfg.resblock_kernel_sizes.clone();
+        let rdil = self.cfg.resblock_dilation_sizes.clone();
+        let nfft = self.cfg.gen_istft_n_fft;
+        let nbins = nfft / 2 + 1;
+
+        let mut cur = x.to_vec();
+        let mut cin = self.cfg.upsample_initial_channel;
+        let mut tcur = xt_len;
+
+        for i in 0..rates.len() {
+            leaky_relu(&mut cur, 0.1);
+            let cout = cin / 2;
+            let ncw = self.t(&format!("k.decoder.generator.noise_convs.{i}.weight"));
+            let ncb = self.t(&format!("k.decoder.generator.noise_convs.{i}.bias"));
+            let (xsrc, nres_k) = if i + 1 < rates.len() {
+                let stride_f0: usize = rates[i + 1..].iter().product();
+                (self.conv1d_gpu(ctx, p, har, nfft + 2, har_len, &ncw, Some(&ncb), cout, stride_f0 * 2, stride_f0, (stride_f0 + 1) / 2, 1, 1).await, 7usize)
+            } else {
+                (self.conv1d_gpu(ctx, p, har, nfft + 2, har_len, &ncw, Some(&ncb), cout, 1, 1, 0, 1, 1).await, 11usize)
+            };
+            let xsrc_t = xsrc.len() / cout;
+            let xsrc = self.adain_resblock1_gpu(ctx, p, &format!("k.decoder.generator.noise_res.{i}"), &xsrc, cout, xsrc_t, nres_k, [1, 3, 5], style).await;
+
+            let uw = self.t(&format!("k.decoder.generator.ups.{i}.weight"));
+            let ub = self.t(&format!("k.decoder.generator.ups.{i}.bias"));
+            let kk = self.cfg.upsample_kernel_sizes[i];
+            let (mut up, mut tup) = self.conv_transpose1d_gpu(ctx, p, &cur, cin, tcur, &uw, Some(&ub), cout, kk, rates[i], (kk - rates[i]) / 2, 0, 1).await;
+            if i == rates.len() - 1 {
+                up = reflection_pad_left1(&up, cout, tup);
+                tup += 1;
+            }
+            for idx in 0..cout * tup {
+                up[idx] += xsrc[idx];
+            }
+            let mut acc = vec![0.0f32; cout * tup];
+            for (j, (&rk, rd)) in rkernels.iter().zip(rdil.iter()).enumerate() {
+                let rb = self.adain_resblock1_gpu(ctx, p, &format!("k.decoder.generator.resblocks.{}", i * rkernels.len() + j), &up, cout, tup, rk, [rd[0], rd[1], rd[2]], style).await;
+                for idx in 0..cout * tup {
+                    acc[idx] += rb[idx];
+                }
+            }
+            for v in acc.iter_mut() {
+                *v /= rkernels.len() as f32;
+            }
+            cur = acc;
+            cin = cout;
+            tcur = tup;
+        }
+
+        leaky_relu(&mut cur, 0.01);
+        let cpw = self.t("k.decoder.generator.conv_post.weight");
+        let cpb = self.t("k.decoder.generator.conv_post.bias");
+        let post = self.conv1d_gpu(ctx, p, &cur, cin, tcur, &cpw, Some(&cpb), nfft + 2, 7, 1, 3, 1, 1).await;
+        let tpost = post.len() / (nfft + 2);
+        let mut spec = vec![0.0f32; nbins * tpost];
+        let mut phase = vec![0.0f32; nbins * tpost];
+        for b in 0..nbins {
+            for ti in 0..tpost {
+                spec[b * tpost + ti] = post[b * tpost + ti].exp();
+                phase[b * tpost + ti] = post[(b + nbins) * tpost + ti].sin();
+            }
+        }
+        self.istft_gpu(ctx, p, &spec, &phase, nbins, tpost, nfft, self.cfg.gen_istft_hop).await
+    }
 }
 
 impl KokoroModel {
