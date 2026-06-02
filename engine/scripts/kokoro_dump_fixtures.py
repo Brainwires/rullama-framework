@@ -78,8 +78,8 @@ def main():
             caps[name] = inp[idx].detach().cpu().float().numpy()
         return hook
 
-    model.decoder.generator.register_forward_pre_hook(cap_pre("gen_x", 0))
-    model.decoder.generator.noise_convs[0].register_forward_pre_hook(cap_pre("gen_har", 0))
+    h_gx = model.decoder.generator.register_forward_pre_hook(cap_pre("gen_x", 0))
+    h_gh = model.decoder.generator.noise_convs[0].register_forward_pre_hook(cap_pre("gen_har", 0))
 
     torch.manual_seed(SEED)  # re-seed right before forward so source noise is reproducible
     with torch.no_grad():
@@ -90,6 +90,32 @@ def main():
     caps["pred_dur"] = pred_dur.astype(np.int64)
     caps["ref_s"] = ref_s.cpu().float().numpy()
     caps["input_ids"] = np.array(input_ids, dtype=np.int64)
+
+    # ---- deterministic pass: zero the SineGen randomness (rand_ini + noise) so the
+    # harmonic source is reproducible, for validating the standalone Rust source port.
+    h_gx.remove()  # stop the seeded gen_x/gen_har hooks from clobbering on the 2nd forward
+    h_gh.remove()
+    cap_har_det = []
+    h_det = model.decoder.generator.noise_convs[0].register_forward_pre_hook(
+        lambda _m, inp: cap_har_det.append(inp[0].detach().cpu().float().numpy())
+    )
+    cap_src = []
+    h_src = model.decoder.generator.m_source.register_forward_hook(
+        lambda _m, _i, out: cap_src.append(out[0].squeeze().detach().cpu().float().numpy())
+    )
+    orig_rand, orig_randn_like = torch.rand, torch.randn_like
+    torch.rand = lambda *s, **k: torch.zeros(*s, dtype=torch.float32)
+    torch.randn_like = lambda x, **k: torch.zeros_like(x)
+    try:
+        with torch.no_grad():
+            out_det = model(phonemes, ref_s, speed=1, return_output=True)
+    finally:
+        torch.rand, torch.randn_like = orig_rand, orig_randn_like
+        h_det.remove()
+        h_src.remove()
+    caps["audio_det"] = out_det.audio.cpu().float().numpy()
+    caps["gen_har_det"] = cap_har_det[-1]
+    caps["har_source_det"] = cap_src[-1]
 
     np.savez(os.path.join(OUT, "tensors.npz"), **caps)
 
