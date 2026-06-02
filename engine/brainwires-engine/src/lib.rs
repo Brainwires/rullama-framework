@@ -41,6 +41,7 @@ pub mod model;
 pub mod multimodal;
 #[doc(hidden)]
 pub mod reference;
+pub mod tts;
 #[doc(hidden)]
 pub mod template;
 #[doc(hidden)]
