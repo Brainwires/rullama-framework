@@ -9,6 +9,7 @@
 pub mod bert;
 pub mod convblocks;
 pub mod decoder;
+pub mod g2p;
 pub mod generator;
 pub mod gpu;
 pub mod ops;
