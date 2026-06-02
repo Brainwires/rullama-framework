@@ -8,8 +8,10 @@
 
 pub mod bert;
 pub mod convblocks;
+pub mod decoder;
 pub mod ops;
 pub mod prosody;
+pub mod text_encoder;
 
 use std::collections::HashMap;
 use std::sync::Arc;

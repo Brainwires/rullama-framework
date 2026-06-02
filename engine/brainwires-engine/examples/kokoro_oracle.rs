@@ -83,6 +83,15 @@ fn main() {
     let (f0, n) = model.f0_n(&en, f, style_pros);
     diff("F0", &f0, &read_bin_f32(&format!("{fixtures}/bin/F0.bin")));
     diff("N", &n, &read_bin_f32(&format!("{fixtures}/bin/N.bin")));
+
+    // ---- Stage 6: TextEncoder (embedding + conv stack + BiLSTM) ----
+    let t_en = model.text_encoder(&INPUT_IDS);
+    diff("text_encoder_ten", &t_en, &read_bin_f32(&format!("{fixtures}/bin/text_encoder_ten.bin")));
+
+    // ---- Stage 7: Decoder encode + decode stack (timbre style = ref_s[:128]) ----
+    let style_timbre = &ref_s[0..128];
+    let (dec_encode, _x_dec, _f0d, _nd) = model.decoder_features(&t_en, &f0, &n, &pred_dur, style_timbre);
+    diff("dec_encode", &dec_encode, &read_bin_f32(&format!("{fixtures}/bin/dec_encode.bin")));
 }
 
 const EXPECTED_DUR: [usize; 25] = [

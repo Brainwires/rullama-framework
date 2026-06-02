@@ -10,7 +10,7 @@ use super::KokoroModel;
 type Bilstm = [Vec<f32>; 8];
 
 impl KokoroModel {
-    fn load_bilstm(&self, prefix: &str) -> Bilstm {
+    pub(crate) fn load_bilstm(&self, prefix: &str) -> Bilstm {
         [
             self.t(&format!("{prefix}.weight_ih_l0")),
             self.t(&format!("{prefix}.weight_hh_l0")),
@@ -23,7 +23,7 @@ impl KokoroModel {
         ]
     }
 
-    fn run_bilstm(&self, w: &Bilstm, x: &[f32], t: usize, in_dim: usize, hidden: usize) -> Vec<f32> {
+    pub(crate) fn run_bilstm(&self, w: &Bilstm, x: &[f32], t: usize, in_dim: usize, hidden: usize) -> Vec<f32> {
         bilstm(x, t, in_dim, hidden, &w[0], &w[1], &w[2], &w[3], &w[4], &w[5], &w[6], &w[7])
     }
 
