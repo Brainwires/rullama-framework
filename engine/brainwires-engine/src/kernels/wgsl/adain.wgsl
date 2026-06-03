@@ -35,14 +35,15 @@ fn main(
     let n = params.t;
     let base = ch * n;
 
+    // Pass 1: mean. (The one-pass E[x²]-mean² formula suffers catastrophic f32
+    // cancellation for large T + small-variance signals — var_c goes slightly negative
+    // → sqrt(neg) = NaN. Use the stable two-pass mean((x-mean)²) instead; it matches the
+    // CPU oracle and is always ≥ 0.)
     var ls: f32 = 0.0;
-    var lss: f32 = 0.0;
     var i: u32 = tid;
     loop {
         if (i >= n) { break; }
-        let v = x[base + i];
-        ls = ls + v;
-        lss = lss + v * v;
+        ls = ls + x[base + i];
         i = i + WG;
     }
     tile[tid] = ls;
@@ -50,10 +51,20 @@ fn main(
     reduce_sum(tid);
     let mean = tile[0] / f32(n);
     workgroupBarrier();
+
+    // Pass 2: variance = mean((x-mean)²).
+    var lss: f32 = 0.0;
+    var j: u32 = tid;
+    loop {
+        if (j >= n) { break; }
+        let d = x[base + j] - mean;
+        lss = lss + d * d;
+        j = j + WG;
+    }
     tile[tid] = lss;
     workgroupBarrier();
     reduce_sum(tid);
-    let var_c = tile[0] / f32(n) - mean * mean;
+    let var_c = tile[0] / f32(n);
     let inv = 1.0 / sqrt(var_c + params.eps);
 
     let g = 1.0 + gamma[ch];

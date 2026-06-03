@@ -79,6 +79,21 @@ fn main() {
     // the same F0-phase sensitivity documented for the Kokoro path).
     assert!(c > 0.999, "full synthesis parity FAILED (corr {c:.6})");
 
+    // ---- full GPU synth: CPU acoustic graph + GPU hifigan decoder ----
+    {
+        use rullama::backend::{Pipelines, WgpuCtx};
+        use rullama::reference::styletts2::gpu::StyleTtsGpu;
+        let (asr_g, f0_g, n_g, r_g, fg) = ac.acoustic_features(&tokens, &ref_s, None);
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let pipes = Pipelines::new(&ctx.device);
+        let mut wc = HashMap::new();
+        let gpu_audio = pollster::block_on(StyleTtsGpu::new(&w, &ctx, &pipes, &mut wc).decode(&asr_g, fg, &f0_g, &n_g, &r_g));
+        let cg = corr(&gpu_audio, audio_ref);
+        println!("GPU full synth   corr = {cg:.6}  (len {} vs {})", gpu_audio.len(), audio_ref.len());
+        assert!(cg > 0.999, "GPU full synthesis parity FAILED (corr {cg:.6})");
+        println!("✅ StyleTTS2 GPU synthesis matches PyTorch end-to-end");
+    }
+
     // write the Rust-side cloned WAV (16-bit PCM) for listening
     let out = PathBuf::from(std::env::var("HOME").unwrap()).join(".cache/styletts2/fixtures/synth/cloned_rust.wav");
     let n = audio.len();

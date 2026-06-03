@@ -9,9 +9,11 @@
 
 use std::collections::HashMap;
 
+use crate::backend::{Pipelines, WgpuCtx};
 use crate::error::Result;
 use crate::gguf::GgufReader;
 use crate::reference::kokoro::g2p::{g2p, Lexicon};
+use crate::reference::styletts2::gpu::GpuWeightCache;
 use crate::reference::styletts2::StyleTtsModel;
 
 #[cfg(target_arch = "wasm32")]
@@ -27,15 +29,20 @@ pub struct StyleTtsClone {
     model: StyleTtsModel,
     lex: Option<Lexicon>,
     vocab: HashMap<char, i64>,
+    ctx: WgpuCtx,
+    pipes: Pipelines,
+    wc: GpuWeightCache,
 }
 
 impl StyleTtsClone {
-    /// Load from in-memory GGUF bytes (the PWA reads the OPFS-cached file and passes them).
-    pub fn load_native(bytes: Vec<u8>) -> Result<Self> {
+    /// Load from in-memory GGUF bytes + init a GPU context (synthesis runs on the GPU).
+    pub async fn load_native(bytes: Vec<u8>) -> Result<Self> {
         let reader = GgufReader::new(bytes)?;
         let model = StyleTtsModel::load(&reader)?; // dequant into the weight map; reader dropped after
         let vocab = VOCAB.chars().enumerate().map(|(i, c)| (c, i as i64)).collect();
-        Ok(Self { model, lex: None, vocab })
+        let ctx = WgpuCtx::new().await?;
+        let pipes = Pipelines::new(&ctx.device);
+        Ok(Self { model, lex: None, vocab, ctx, pipes, wc: GpuWeightCache::new() })
     }
 
     pub fn set_lexicon_native(&mut self, gold: &[u8], silver: &[u8]) {
@@ -58,27 +65,29 @@ impl StyleTtsClone {
         self.model.encode_voice(pcm24k, progress)
     }
 
-    /// Text + voice vector → 24 kHz PCM. Requires the lexicon to be set.
-    pub fn synthesize_native(&self, text: &str, voice: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
-        let (ps, _oov) = {
+    /// Text + voice vector → 24 kHz PCM (GPU decoder). Requires the lexicon to be set.
+    pub async fn synthesize_native(&mut self, text: &str, voice: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
+        let ids = {
             let lex = self.lex.as_ref().expect("lexicon not set");
-            g2p(text, lex)
+            let (ps, _oov) = g2p(text, lex);
+            self.phonemes_to_ids(&ps)
         };
-        self.model.synthesize(&self.phonemes_to_ids(&ps), voice, progress)
+        self.model.synthesize_gpu(&self.ctx, &self.pipes, &mut self.wc, &ids, voice, progress).await
     }
 
-    pub fn synthesize_phonemes_native(&self, phonemes: &str, voice: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
-        self.model.synthesize(&self.phonemes_to_ids(phonemes), voice, progress)
+    pub async fn synthesize_phonemes_native(&mut self, phonemes: &str, voice: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
+        let ids = self.phonemes_to_ids(phonemes);
+        self.model.synthesize_gpu(&self.ctx, &self.pipes, &mut self.wc, &ids, voice, progress).await
     }
 }
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 impl StyleTtsClone {
-    /// Load from GGUF bytes (StyleTTS2-LibriTTS f32).
+    /// Load from GGUF bytes (StyleTTS2-LibriTTS f32) + init the GPU.
     #[wasm_bindgen(js_name = load)]
-    pub fn load_js(bytes: Vec<u8>) -> std::result::Result<StyleTtsClone, JsError> {
-        Self::load_native(bytes).map_err(|e| JsError::new(&format!("{e:?}")))
+    pub async fn load_js(bytes: Vec<u8>) -> std::result::Result<StyleTtsClone, JsError> {
+        Self::load_native(bytes).await.map_err(|e| JsError::new(&format!("{e:?}")))
     }
 
     /// Set the G2P lexicon (misaki us_gold + optional us_silver JSON bytes).
@@ -100,17 +109,17 @@ impl StyleTtsClone {
 
     /// Synthesize text in a voice → 24 kHz PCM (Float32Array). `onProgress(fraction, stage)`.
     #[wasm_bindgen(js_name = synthesize)]
-    pub fn synthesize_js(&self, text: String, voice: Vec<f32>, on_progress: &js_sys::Function) -> Vec<f32> {
+    pub async fn synthesize_js(&mut self, text: String, voice: Vec<f32>, on_progress: js_sys::Function) -> Vec<f32> {
         let cb = |frac: f32, stage: &str| {
             let _ = on_progress.call2(&JsValue::NULL, &JsValue::from_f64(frac as f64), &JsValue::from_str(stage));
         };
-        self.synthesize_native(&text, &voice, Some(&cb))
+        self.synthesize_native(&text, &voice, Some(&cb)).await
     }
 
     /// Synthesize a phoneme string in a voice → 24 kHz PCM (skips G2P).
     #[wasm_bindgen(js_name = synthesizePhonemes)]
-    pub fn synthesize_phonemes_js(&self, phonemes: String, voice: Vec<f32>) -> Vec<f32> {
-        self.synthesize_phonemes_native(&phonemes, &voice, None)
+    pub async fn synthesize_phonemes_js(&mut self, phonemes: String, voice: Vec<f32>) -> Vec<f32> {
+        self.synthesize_phonemes_native(&phonemes, &voice, None).await
     }
 
     #[wasm_bindgen(js_name = sampleRate, getter)]

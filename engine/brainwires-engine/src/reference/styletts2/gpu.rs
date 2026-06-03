@@ -45,6 +45,19 @@ impl<'a> StyleTtsGpu<'a> {
         self.w.get(n).unwrap_or_else(|| panic!("missing gpu weight: {n}"))
     }
 
+    /// Debug: readback a buffer + report NaN count / range (env ST2DBG gates the call site).
+    async fn dbg(&self, label: &str, buf: &wgpu::Buffer, n: usize) {
+        let read = self.ctx.device.create_buffer(&wgpu::BufferDescriptor { label: Some("dbg"), size: (n * 4) as u64, usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let mut e = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("dbg") });
+        e.copy_buffer_to_buffer(buf, 0, &read, 0, (n * 4) as u64);
+        self.ctx.queue.submit(Some(e.finish()));
+        let v = read_back_f32(&self.ctx.device, &read).await.expect("dbg");
+        let nan = v.iter().filter(|x| x.is_nan()).count();
+        let inf = v.iter().filter(|x| x.is_infinite()).count();
+        let (mn, mx) = v.iter().filter(|x| x.is_finite()).fold((f32::MAX, f32::MIN), |(a, b), &x| (a.min(x), b.max(x)));
+        eprintln!("[ST2DBG] {label}: n={n} nan={nan} inf={inf} min={mn:.3} max={mx:.3}");
+    }
+
     /// Cached weight buffer (uploaded once).
     fn wt(&mut self, name: &str) -> wgpu::Buffer {
         if let Some(b) = self.wc.get(name) {
@@ -167,20 +180,32 @@ impl<'a> StyleTtsGpu<'a> {
         out
     }
 
+    fn enc(&self) -> wgpu::CommandEncoder {
+        self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("st2.gpu") })
+    }
+    fn submit(&self, e: wgpu::CommandEncoder) {
+        self.ctx.queue.submit(Some(e.finish()));
+    }
+
     /// hifigan Generator on GPU. `x` buffer [512, xt], `har` buffer [1, har_len]. Returns the
-    /// pre-tanh waveform buffer + length (caller reads back + tanh on CPU).
-    fn generator(&mut self, enc: &mut wgpu::CommandEncoder, x: wgpu::Buffer, xt: usize, har: &wgpu::Buffer, har_len: usize, style: &[f32]) -> (wgpu::Buffer, usize) {
+    /// pre-tanh waveform buffer + length. **One submit per upsample stage** (project rule —
+    /// keeps each command buffer small so large sequences don't trip a GPU timeout).
+    async fn generator(&mut self, x: wgpu::Buffer, xt: usize, har: &wgpu::Buffer, har_len: usize, style: &[f32]) -> (wgpu::Buffer, usize) {
         const RATES: [usize; 4] = [10, 5, 3, 2];
         const KERNELS: [usize; 4] = [20, 10, 6, 4];
         const RK: [usize; 3] = [3, 7, 11];
         let rdil = [[1usize, 3, 5]; 3];
+        let dbg = std::env::var("ST2DBG").is_ok();
+        if dbg {
+            self.dbg("gen.har", har, har_len).await;
+        }
         let mut cur = x;
         let (mut cin, mut tcur) = (512usize, xt);
         for i in 0..4 {
+            let mut enc = self.enc();
             let a = self.wt(&format!("generator.alphas.{i}"));
             let sn = self.alloc(cin * tcur);
-            snake_chained(self.ctx, self.p, enc, &cur, &a, &sn, cin, tcur);
-            cur = sn;
+            snake_chained(self.ctx, self.p, &mut enc, &cur, &a, &sn, cin, tcur);
             let cout = cin / 2;
             let ncw = self.wt(&format!("generator.noise_convs.{i}.weight"));
             let ncb = self.wt(&format!("generator.noise_convs.{i}.bias"));
@@ -188,14 +213,14 @@ impl<'a> StyleTtsGpu<'a> {
                 let sf: usize = RATES[i + 1..].iter().product();
                 let ts = (har_len + 2 * ((sf + 1) / 2) - sf * 2) / sf + 1;
                 let o = self.alloc(cout * ts);
-                conv1d_chained(self.ctx, self.p, enc, har, &ncw, Some(&ncb), &self.dummy, &o, 1, har_len, cout, sf * 2, sf, (sf + 1) / 2, 1, 1);
+                conv1d_chained(self.ctx, self.p, &mut enc, har, &ncw, Some(&ncb), &self.dummy, &o, 1, har_len, cout, sf * 2, sf, (sf + 1) / 2, 1, 1);
                 (o, 7usize, ts)
             } else {
                 let o = self.alloc(cout * har_len);
-                conv1d_chained(self.ctx, self.p, enc, har, &ncw, Some(&ncb), &self.dummy, &o, 1, har_len, cout, 1, 1, 0, 1, 1);
+                conv1d_chained(self.ctx, self.p, &mut enc, har, &ncw, Some(&ncb), &self.dummy, &o, 1, har_len, cout, 1, 1, 0, 1, 1);
                 (o, 11usize, har_len)
             };
-            let xsrc = self.adain_resblock1(enc, &xsrc, cout, ts, nres_k, [1, 3, 5], &format!("generator.noise_res.{i}"), style);
+            let xsrc = self.adain_resblock1(&mut enc, &xsrc, cout, ts, nres_k, [1, 3, 5], &format!("generator.noise_res.{i}"), style);
             let uw = self.wt(&format!("generator.ups.{i}.weight"));
             let ub = self.wt(&format!("generator.ups.{i}.bias"));
             let u = RATES[i];
@@ -203,36 +228,43 @@ impl<'a> StyleTtsGpu<'a> {
             let pad = u / 2 + u % 2;
             let tup = (tcur - 1) * u + (kk - 1) + (u % 2) + 1 - 2 * pad;
             let up = self.alloc(cout * tup);
-            conv_transpose1d_chained(self.ctx, self.p, enc, &cur, &uw, Some(&ub), &self.dummy, &up, cin, tcur, cout, kk, u, pad, u % 2, 1);
+            conv_transpose1d_chained(self.ctx, self.p, &mut enc, &sn, &uw, Some(&ub), &self.dummy, &up, cin, tcur, cout, kk, u, pad, u % 2, 1);
             debug_assert_eq!(tup, ts, "stage {i}: up {tup} != src {ts}");
-            residual_add_chained(self.ctx, self.p, enc, &up, &xsrc, cout * tup);
+            residual_add_chained(self.ctx, self.p, &mut enc, &up, &xsrc, cout * tup);
             let acc = self.alloc(cout * tup);
             for (j, (&rk, rd)) in RK.iter().zip(rdil.iter()).enumerate() {
-                let rb = self.adain_resblock1(enc, &up, cout, tup, rk, [rd[0], rd[1], rd[2]], &format!("generator.resblocks.{}", i * 3 + j), style);
-                residual_add_chained(self.ctx, self.p, enc, &acc, &rb, cout * tup);
+                let rb = self.adain_resblock1(&mut enc, &up, cout, tup, rk, [rd[0], rd[1], rd[2]], &format!("generator.resblocks.{}", i * 3 + j), style);
+                residual_add_chained(self.ctx, self.p, &mut enc, &acc, &rb, cout * tup);
             }
-            scale_chained(self.ctx, self.p, enc, &acc, cout * tup, 1.0 / 3.0);
+            scale_chained(self.ctx, self.p, &mut enc, &acc, cout * tup, 1.0 / 3.0);
+            self.submit(enc);
             cur = acc;
             cin = cout;
             tcur = tup;
+            if dbg {
+                self.dbg(&format!("gen.stage{i}"), &cur, cin * tcur).await;
+            }
         }
+        let mut enc = self.enc();
         let a = self.wt("generator.alphas.4");
         let sn = self.alloc(cin * tcur);
-        snake_chained(self.ctx, self.p, enc, &cur, &a, &sn, cin, tcur);
+        snake_chained(self.ctx, self.p, &mut enc, &cur, &a, &sn, cin, tcur);
         let cpw = self.wt("generator.conv_post.weight");
         let cpb = self.wt("generator.conv_post.bias");
         let post = self.alloc(tcur);
-        conv1d_chained(self.ctx, self.p, enc, &sn, &cpw, Some(&cpb), &self.dummy, &post, cin, tcur, 1, 7, 1, 3, 1, 1);
+        conv1d_chained(self.ctx, self.p, &mut enc, &sn, &cpw, Some(&cpb), &self.dummy, &post, cin, tcur, 1, 7, 1, 3, 1, 1);
+        self.submit(enc);
         (post, tcur)
     }
 
     /// Full hifigan decoder on GPU: `asr [512,f]`, `f0`/`n [2f]` (CPU), `style [128]` → 24 kHz waveform.
     pub async fn decode(&mut self, asr: &[f32], f: usize, f0: &[f32], n: &[f32], style: &[f32]) -> Vec<f32> {
-        let mut enc = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("st2.dec") });
+        let dbg = std::env::var("ST2DBG").is_ok();
         let asr_buf = self.up(asr);
         let f0_buf = self.up(f0);
         let n_buf = self.up(n);
-        // F0_conv / N_conv: 1->1 k3 s2 p1 over [1, 2f] → [1, f]
+        // ---- decoder cat-stack (one submit; small tensors, t ≤ 2f) ----
+        let mut enc = self.enc();
         let f0w = self.wt("F0_conv.weight");
         let f0b = self.wt("F0_conv.bias");
         let f0d = self.alloc(f);
@@ -255,18 +287,24 @@ impl<'a> StyleTtsGpu<'a> {
             x = nx;
             tcur = nt;
         }
-        // har source on CPU, uploaded
+        self.submit(enc);
+        if dbg {
+            self.dbg("decode_x", &x, 512 * tcur).await;
+        }
+        // ---- har source (CPU) → generator (one submit per upsample stage) ----
         let lw = self.t("generator.m_source.l_linear.weight").to_vec();
         let lb = self.t("generator.m_source.l_linear.bias")[0];
         let har = source_signal(f0, 300, 9, &lw, lb);
         let har_buf = self.up(&har);
-        let (post, tpost) = self.generator(&mut enc, x, tcur, &har_buf, har.len(), style);
-        self.ctx.queue.submit(Some(enc.finish()));
-        // readback + tanh on CPU
+        let (post, tpost) = self.generator(x, tcur, &har_buf, har.len(), style).await;
+        if dbg {
+            self.dbg("post", &post, tpost).await;
+        }
+        // ---- readback + tanh on CPU ----
         let read = self.ctx.device.create_buffer(&wgpu::BufferDescriptor { label: Some("rd"), size: (tpost * 4) as u64, usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
-        let mut e2 = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("rd") });
+        let mut e2 = self.enc();
         e2.copy_buffer_to_buffer(&post, 0, &read, 0, (tpost * 4) as u64);
-        self.ctx.queue.submit(Some(e2.finish()));
+        self.submit(e2);
         let raw = read_back_f32(&self.ctx.device, &read).await.expect("readback");
         raw.iter().map(|v| v.tanh()).collect()
     }

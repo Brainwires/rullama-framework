@@ -9,7 +9,9 @@
 
 use std::collections::HashMap;
 
+use super::gpu::{GpuWeightCache, StyleTtsGpu};
 use super::{MelFrontend, StyleEncoder, StyleTtsAcoustic};
+use crate::backend::{Pipelines, WgpuCtx};
 use crate::error::Result;
 use crate::gguf::tensor::dequant_tensor_to_f32;
 use crate::gguf::GgufReader;
@@ -93,11 +95,26 @@ impl StyleTtsModel {
         a.into_iter().chain(pros).collect()
     }
 
-    /// Token ids + voice vector → 24 kHz waveform.
+    /// Token ids + voice vector → 24 kHz waveform (CPU decoder).
     pub fn synthesize(&self, ids: &[i64], voice: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
         let out = StyleTtsAcoustic::new(&self.w).synthesize(ids, voice, progress);
         if let Some(p) = progress {
             p(1.0, "done");
+        }
+        out
+    }
+
+    /// GPU synthesis: CPU acoustic graph (text_encoder/bert/predictor — small) then the
+    /// hifigan decoder + generator on the GPU (the dominant cost). `wc` caches uploaded
+    /// weights across calls.
+    pub async fn synthesize_gpu(&self, ctx: &WgpuCtx, p: &Pipelines, wc: &mut GpuWeightCache, ids: &[i64], voice: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
+        let (asr, f0, n, r, f) = StyleTtsAcoustic::new(&self.w).acoustic_features(ids, voice, progress);
+        if let Some(pp) = progress {
+            pp(0.36, "generating audio (GPU)");
+        }
+        let out = StyleTtsGpu::new(&self.w, ctx, p, wc).decode(&asr, f, &f0, &n, &r).await;
+        if let Some(pp) = progress {
+            pp(1.0, "done");
         }
         out
     }

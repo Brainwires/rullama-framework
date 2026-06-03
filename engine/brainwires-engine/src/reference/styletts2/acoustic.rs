@@ -243,12 +243,13 @@ impl<'a> StyleTtsAcoustic<'a> {
         (run("F0"), run("N"))
     }
 
-    /// Full zero-shot synthesis: token ids + reference style `ref_s [256]` → 24 kHz audio.
-    /// `progress(fraction, stage)` is invoked at stage boundaries (the worker forwards it to the UI).
-    pub fn synthesize(&self, ids: &[i64], ref_s: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
+    /// The CPU acoustic graph up to (not including) the hifigan decoder. Returns
+    /// `(asr_shifted [512,F], f0 [2F], n [2F], ref_acoustic [128], F)`. The decoder runs on
+    /// CPU (`synthesize`) or GPU (`StyleTtsGpu::decode`) from these features.
+    pub fn acoustic_features(&self, ids: &[i64], ref_s: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, usize) {
         let t = ids.len();
         let s = &ref_s[STYLE_DIM..]; // prosodic
-        let r = &ref_s[..STYLE_DIM]; // acoustic
+        let r = ref_s[..STYLE_DIM].to_vec(); // acoustic
         let t_en = self.text_encoder(ids); // [512,T] cm
         let bert_out = self.bert(ids, progress);
         if let Some(p) = progress {
@@ -278,6 +279,12 @@ impl<'a> StyleTtsAcoustic<'a> {
                 asr_s[c * f + fi] = asr[c * f + fi - 1];
             }
         }
-        StyleTtsDecoder::new(self.w).forward(&asr_s, HIDDEN, f, &f0, &n, r, progress)
+        (asr_s, f0, n, r, f)
+    }
+
+    /// Full zero-shot synthesis (CPU decoder). `progress(fraction, stage)` at stage boundaries.
+    pub fn synthesize(&self, ids: &[i64], ref_s: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
+        let (asr_s, f0, n, r, f) = self.acoustic_features(ids, ref_s, progress);
+        StyleTtsDecoder::new(self.w).forward(&asr_s, HIDDEN, f, &f0, &n, &r, progress)
     }
 }
