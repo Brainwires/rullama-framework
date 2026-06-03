@@ -12,9 +12,11 @@
 
 use crate::reference::kokoro::ops::leaky_relu;
 
+pub mod acoustic;
 pub mod decoder;
 pub mod mel;
 pub mod style_encoder;
+pub use acoustic::StyleTtsAcoustic;
 pub use mel::MelFrontend;
 pub use style_encoder::StyleEncoder;
 

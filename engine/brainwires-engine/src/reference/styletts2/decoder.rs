@@ -88,12 +88,12 @@ fn cat_channels(parts: &[(&[f32], usize)], t: usize) -> Vec<f32> {
 /// The hifigan Decoder: holds the folded weights (PyTorch state-dict names) and runs
 /// `(asr, F0_curve, N, style) → 24 kHz waveform`. AdaIN has `affine=False`, so the
 /// InstanceNorm has no learned weight/bias (t_opt returns None → pure instance norm).
-pub struct StyleTtsDecoder {
-    w: HashMap<String, Vec<f32>>,
+pub struct StyleTtsDecoder<'a> {
+    w: &'a HashMap<String, Vec<f32>>,
 }
 
-impl StyleTtsDecoder {
-    pub fn new(w: HashMap<String, Vec<f32>>) -> Self {
+impl<'a> StyleTtsDecoder<'a> {
+    pub fn new(w: &'a HashMap<String, Vec<f32>>) -> Self {
         Self { w }
     }
     fn t(&self, n: &str) -> &[f32] {
@@ -104,7 +104,8 @@ impl StyleTtsDecoder {
     }
 
     /// AdainResBlk1d (LeakyReLU 0.2). `upsample` doubles T via the depthwise pool.
-    fn adain_resblk1d(&self, p: &str, x: &[f32], dim_in: usize, t: usize, dim_out: usize, upsample: bool, s: &[f32]) -> (Vec<f32>, usize) {
+    /// `pub(crate)` so the predictor's F0/N stacks reuse it.
+    pub(crate) fn adain_resblk1d(&self, p: &str, x: &[f32], dim_in: usize, t: usize, dim_out: usize, upsample: bool, s: &[f32]) -> (Vec<f32>, usize) {
         let learned_sc = dim_in != dim_out;
         let mut h = adain1d(x, dim_in, t, self.t_opt(&format!("{p}.norm1.norm.weight")), self.t_opt(&format!("{p}.norm1.norm.bias")),
             self.t(&format!("{p}.norm1.fc.weight")), self.t(&format!("{p}.norm1.fc.bias")), s, STYLE_DIM);

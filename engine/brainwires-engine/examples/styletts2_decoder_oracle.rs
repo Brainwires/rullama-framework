@@ -53,7 +53,7 @@ fn main() {
     let style = w.get("in_style").unwrap().clone();
     let audio_ref = w.get("audio").expect("audio").clone(); // [1, 1, 24000]
 
-    let dec = StyleTtsDecoder::new(w);
+    let dec = StyleTtsDecoder::new(&w);
     let audio = dec.forward(&asr, 512, 40, &f0c, &nc, &style);
     let da = max_abs_diff(&audio, &audio_ref);
     let c = corr(&audio, &audio_ref);
