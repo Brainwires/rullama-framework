@@ -138,6 +138,25 @@ def main():
                 t_en=t_en, bert_dur=bert_dur, d_en=d_en, d=d, duration=duration, pred_dur=pred_dur,
                 en=en, F0=F0_pred, N=N_pred, asr=asr, audio=audio)
 
+    # ---- fold weight_norm and dump ALL module weights for the Rust port ----
+    for mod in (text_encoder, predictor, decoder):
+        for m in mod.modules():
+            if hasattr(m, "weight_g"):
+                torch.nn.utils.remove_weight_norm(m)
+    aw = {}
+    # decoder weights are dumped UNPREFIXED (StyleTtsDecoder looks them up raw, matching the
+    # isolation fixtures); no key collisions with the acoustic-module prefixes.
+    for pfx, mod in (("text_encoder", text_encoder), ("bert", bert), ("bert_encoder", bert_encoder), ("predictor", predictor), ("", decoder)):
+        for k, v in mod.state_dict().items():
+            if "num_batches_tracked" in k or k.endswith("position_ids"):
+                continue
+            aw[f"{pfx}.{k}" if pfx else k] = v
+    for k, v in aw.items():
+        v.detach().cpu().float().numpy().astype("<f4").tofile(os.path.join(OUT, "bin", f"{k}.bin"))
+    print("module weights dumped:", len(aw))
+    print("  text_encoder sample:", [k for k in aw if k.startswith("text_encoder")][:8])
+    print("  predictor sample:", [k for k in aw if k.startswith("predictor")][:10])
+
     shapes = {}
     for k, v in caps.items():
         arr = v.detach().cpu().numpy() if torch.is_tensor(v) else np.asarray(v)
