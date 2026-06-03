@@ -54,7 +54,7 @@ fn main() {
     let audio_ref = w.get("audio").expect("audio").clone(); // [1, 1, 24000]
 
     let dec = StyleTtsDecoder::new(&w);
-    let audio = dec.forward(&asr, 512, 40, &f0c, &nc, &style);
+    let audio = dec.forward(&asr, 512, 40, &f0c, &nc, &style, None);
     let da = max_abs_diff(&audio, &audio_ref);
     let c = corr(&audio, &audio_ref);
     println!("\naudio[{}]  max_abs_diff = {da:.3e}   corr = {c:.6}", audio.len());

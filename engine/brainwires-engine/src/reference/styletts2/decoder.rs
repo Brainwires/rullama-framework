@@ -147,7 +147,7 @@ impl<'a> StyleTtsDecoder<'a> {
 
     /// hifigan Generator: per-stage Snake (generator.alphas), 4 upsamples + single-channel
     /// HnNSF source branch + MRF, then conv_post + tanh → waveform.
-    fn generator(&self, x: &[f32], xt: usize, har: &[f32], s: &[f32]) -> Vec<f32> {
+    fn generator(&self, x: &[f32], xt: usize, har: &[f32], s: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
         const RATES: [usize; 4] = [10, 5, 3, 2];
         const KERNELS: [usize; 4] = [20, 10, 6, 4];
         const RK: [usize; 3] = [3, 7, 11];
@@ -156,6 +156,9 @@ impl<'a> StyleTtsDecoder<'a> {
         let mut cur = x.to_vec();
         let (mut cin, mut tcur) = (512usize, xt);
         for i in 0..4 {
+            if let Some(p) = progress {
+                p(0.45 + 0.45 * i as f32 / 4.0, "generating audio");
+            }
             snake(&mut cur, cin, tcur, self.t(&format!("generator.alphas.{i}")));
             let cout = cin / 2;
             let ncw = self.t(&format!("generator.noise_convs.{i}.weight"));
@@ -195,7 +198,10 @@ impl<'a> StyleTtsDecoder<'a> {
     }
 
     /// Full decoder: `asr [asr_c, asr_t]`, `f0_curve`/`n_curve [2·asr_t]`, `style [128]` → waveform.
-    pub fn forward(&self, asr: &[f32], asr_c: usize, asr_t: usize, f0_curve: &[f32], n_curve: &[f32], s: &[f32]) -> Vec<f32> {
+    pub fn forward(&self, asr: &[f32], asr_c: usize, asr_t: usize, f0_curve: &[f32], n_curve: &[f32], s: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
+        if let Some(p) = progress {
+            p(0.36, "building features");
+        }
         let (f0d, _) = conv1d(f0_curve, 1, f0_curve.len(), self.t("F0_conv.weight"), Some(self.t("F0_conv.bias")), 1, 3, 2, 1, 1, 1);
         let (nd, _) = conv1d(n_curve, 1, n_curve.len(), self.t("N_conv.weight"), Some(self.t("N_conv.bias")), 1, 3, 2, 1, 1, 1);
         let t = f0d.len(); // == asr_t
@@ -211,6 +217,6 @@ impl<'a> StyleTtsDecoder<'a> {
         let lw = self.t("generator.m_source.l_linear.weight");
         let lb = self.t("generator.m_source.l_linear.bias")[0];
         let har = source_signal(f0_curve, 300, 9, lw, lb);
-        self.generator(&x, tcur, &har, s)
+        self.generator(&x, tcur, &har, s, progress)
     }
 }

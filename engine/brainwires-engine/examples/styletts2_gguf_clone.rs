@@ -39,7 +39,7 @@ fn main() {
     // reference voice = the Kokoro clip we already have (24 kHz mono)
     let pcm = read_wav_24k(&fs::read(home.join(".cache/kokoro/tts_demo.wav")).unwrap());
     println!("ref pcm: {} samples", pcm.len());
-    let voice = model.encode_voice(&pcm); // [256]
+    let voice = model.encode_voice(&pcm, None); // [256]
 
     // synth-fixture references (f32) for parity comparison
     let fdir = home.join(".cache/styletts2/fixtures/synth/bin");
@@ -53,11 +53,11 @@ fn main() {
     println!("encode_voice vs fixture ref_s:  corr = {:.5}", corr(&voice, &ref_s_fix));
 
     // synth path through f16 GGUF, isolated by using the fixture's ref_s
-    let audio = model.synthesize(&tokens, &ref_s_fix);
+    let audio = model.synthesize(&tokens, &ref_s_fix, None);
     println!("f16-GGUF synth vs f32 fixture:  corr = {:.5}  (len {} vs {})", corr(&audio, &audio_fix), audio.len(), audio_fix.len());
 
     // full clone (encode + synth, all through the GGUF) → WAV
-    let full = model.synthesize(&tokens, &voice);
+    let full = model.synthesize(&tokens, &voice, None);
     let out = home.join(".cache/styletts2/fixtures/synth/gguf_clone.wav");
     let mut buf = Vec::with_capacity(44 + full.len() * 2);
     buf.extend_from_slice(b"RIFF");

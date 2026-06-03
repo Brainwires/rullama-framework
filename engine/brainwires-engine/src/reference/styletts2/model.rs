@@ -72,16 +72,33 @@ impl StyleTtsModel {
     }
 
     /// Reference 24 kHz mono PCM → 256-d voice vector (acoustic ‖ prosodic).
-    pub fn encode_voice(&self, pcm24k: &[f32]) -> Vec<f32> {
+    /// `progress(fraction, stage)` is invoked at stage boundaries.
+    pub fn encode_voice(&self, pcm24k: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
+        if let Some(p) = progress {
+            p(0.10, "computing spectrogram");
+        }
         let front = MelFrontend::new(self.w.get("mel.window").expect("mel.window"), self.w.get("mel.filterbank").expect("mel.filterbank"));
         let (mel, t) = front.compute(pcm24k);
+        if let Some(p) = progress {
+            p(0.35, "analyzing timbre");
+        }
         let a = StyleEncoder::from_weights(&self.w, "acoustic").forward(&mel, 80, t);
-        let p = StyleEncoder::from_weights(&self.w, "prosodic").forward(&mel, 80, t);
-        a.into_iter().chain(p).collect()
+        if let Some(p) = progress {
+            p(0.70, "analyzing prosody");
+        }
+        let pros = StyleEncoder::from_weights(&self.w, "prosodic").forward(&mel, 80, t);
+        if let Some(p) = progress {
+            p(1.0, "voice ready");
+        }
+        a.into_iter().chain(pros).collect()
     }
 
     /// Token ids + voice vector → 24 kHz waveform.
-    pub fn synthesize(&self, ids: &[i64], voice: &[f32]) -> Vec<f32> {
-        StyleTtsAcoustic::new(&self.w).synthesize(ids, voice)
+    pub fn synthesize(&self, ids: &[i64], voice: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
+        let out = StyleTtsAcoustic::new(&self.w).synthesize(ids, voice, progress);
+        if let Some(p) = progress {
+            p(1.0, "done");
+        }
+        out
     }
 }

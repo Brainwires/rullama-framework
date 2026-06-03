@@ -49,7 +49,7 @@ fn main() {
     println!("t_en           max_abs_diff = {:.3e}", max_abs_diff(&t_en, w.get("t_en").unwrap()));
 
     // ---- bert + bert_encoder → d_en [512,T] (transpose of [T,512]) ----
-    let be = ac.bert_encoder(&ac.bert(&tokens), t);
+    let be = ac.bert_encoder(&ac.bert(&tokens, None), t);
     let mut d_en = vec![0f32; 512 * t];
     for ti in 0..t {
         for c in 0..512 {
@@ -68,7 +68,7 @@ fn main() {
 
     // ---- full synthesis → audio ----
     let ref_s = w.get("ref_s").unwrap().clone();
-    let audio = ac.synthesize(&tokens, &ref_s);
+    let audio = ac.synthesize(&tokens, &ref_s, None);
     let audio_ref = w.get("audio").unwrap();
     let da = max_abs_diff(&audio, audio_ref);
     let c = corr(&audio, audio_ref);

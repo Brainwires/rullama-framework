@@ -89,7 +89,7 @@ impl<'a> StyleTtsAcoustic<'a> {
     }
 
     /// PL-BERT (ALBERT, shared 12 layers, gelu_new, eps 1e-12). Returns `[T, 768]` row-major.
-    pub fn bert(&self, ids: &[i64]) -> Vec<f32> {
+    pub fn bert(&self, ids: &[i64], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
         let t = ids.len();
         let (h, heads) = (PLBERT_HID, PLBERT_HEADS);
         let hd = h / heads;
@@ -116,7 +116,10 @@ impl<'a> StyleTtsAcoustic<'a> {
         let (flw, flb) = (self.t(&format!("{p}full_layer_layer_norm.weight")), self.t(&format!("{p}full_layer_layer_norm.bias")));
         let scale = 1.0 / (hd as f32).sqrt();
 
-        for _ in 0..PLBERT_LAYERS {
+        for layer in 0..PLBERT_LAYERS {
+            if let Some(p) = progress {
+                p(0.05 + 0.13 * layer as f32 / PLBERT_LAYERS as f32, "analyzing text");
+            }
             let q = linear(&hidden, t, h, qw, Some(qb), h);
             let k = linear(&hidden, t, h, kw, Some(kb), h);
             let v = linear(&hidden, t, h, vw, Some(vb), h);
@@ -241,16 +244,23 @@ impl<'a> StyleTtsAcoustic<'a> {
     }
 
     /// Full zero-shot synthesis: token ids + reference style `ref_s [256]` → 24 kHz audio.
-    pub fn synthesize(&self, ids: &[i64], ref_s: &[f32]) -> Vec<f32> {
+    /// `progress(fraction, stage)` is invoked at stage boundaries (the worker forwards it to the UI).
+    pub fn synthesize(&self, ids: &[i64], ref_s: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
         let t = ids.len();
         let s = &ref_s[STYLE_DIM..]; // prosodic
         let r = &ref_s[..STYLE_DIM]; // acoustic
         let t_en = self.text_encoder(ids); // [512,T] cm
-        let bert_out = self.bert(ids);
+        let bert_out = self.bert(ids, progress);
+        if let Some(p) = progress {
+            p(0.20, "predicting rhythm");
+        }
         let be = self.bert_encoder(&bert_out, t); // [T,512]
         let d = self.duration_encode(&be, t, s); // [T,640]
         let dur = self.predict_duration(&d, t);
         let (en, f) = Self::expand_by_dur_cm(&d, t, HIDDEN + STYLE_DIM, &dur); // [640,F]
+        if let Some(p) = progress {
+            p(0.28, "predicting pitch");
+        }
         let (f0, n) = self.f0_n(&en, f, s); // each [2F]
         // asr = expand t_en by dur → [512,F]; convert t_en cm→rm first
         let mut ten_rm = vec![0f32; t * HIDDEN];
@@ -268,6 +278,6 @@ impl<'a> StyleTtsAcoustic<'a> {
                 asr_s[c * f + fi] = asr[c * f + fi - 1];
             }
         }
-        StyleTtsDecoder::new(self.w).forward(&asr_s, HIDDEN, f, &f0, &n, r)
+        StyleTtsDecoder::new(self.w).forward(&asr_s, HIDDEN, f, &f0, &n, r, progress)
     }
 }
