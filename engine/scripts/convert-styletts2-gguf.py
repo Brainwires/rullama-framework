@@ -78,6 +78,22 @@ def main():
     dec.load_state_dict(strip(net["decoder"]))
     mods["decoder"] = dec
 
+    # Style-diffusion denoiser (StyleTransformer1d) — restores natural prosody via the
+    # alpha=0.3/beta=0.7 sampler. channels=style_dim*2=256, context_embedding=PLBERT(768),
+    # context_features=256. The checkpoint stores it under module.diffusion.net.* (with a
+    # duplicate module.diffusion.unet.* we skip). No weight/spectral norm → no folding.
+    from Modules.diffusion.modules import StyleTransformer1d
+    diff = StyleTransformer1d(channels=256, context_embedding_features=768, context_features=256,
+                              num_layers=3, num_heads=8, head_features=64, multiplier=2).eval()
+    dnet = {k[len("module.diffusion.net."):]: v for k, v in net["diffusion"].items()
+            if k.startswith("module.diffusion.net.")}
+    diff.load_state_dict(dnet)
+    mods["diffusion"] = diff
+
+    # sigma_data for the KDiffusion denoise_fn scale weights (config dist.sigma_data; the
+    # placeholder is what public inference uses since it isn't persisted in the checkpoint).
+    sigma_data = 0.2
+
     for m in mods.values():
         fold(m)
 
@@ -102,6 +118,12 @@ def main():
     w.add_uint32("styletts2.mel_win", 1200)
     w.add_uint32("styletts2.mel_n_mels", 80)
     w.add_uint32("styletts2.mel_sr", 16000)
+    # style-diffusion sampler params (ADPM2 + Karras schedule, empirical in the LibriTTS demo)
+    w.add_float32("styletts2.diff_sigma_data", sigma_data)
+    w.add_float32("styletts2.diff_sigma_min", 1e-4)
+    w.add_float32("styletts2.diff_sigma_max", 3.0)
+    w.add_float32("styletts2.diff_rho", 9.0)
+    w.add_uint32("styletts2.diff_steps", 5)
 
     n = 0
     for pfx, mod in mods.items():
