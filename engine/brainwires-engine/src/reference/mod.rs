@@ -13,6 +13,7 @@ pub mod forward_gpu;
 pub mod kokoro;
 pub mod ops;
 pub mod rome;
+pub mod styletts2;
 pub mod weights;
 
 pub use forward::{KvState, LayerKv, forward_token};
