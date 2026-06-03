@@ -15,9 +15,11 @@ use crate::reference::kokoro::ops::leaky_relu;
 pub mod acoustic;
 pub mod decoder;
 pub mod mel;
+pub mod model;
 pub mod style_encoder;
 pub use acoustic::StyleTtsAcoustic;
 pub use mel::MelFrontend;
+pub use model::StyleTtsModel;
 pub use style_encoder::StyleEncoder;
 
 /// A 2D feature map, NCHW with N=1: `data[c*h*w + y*w + x]`.
