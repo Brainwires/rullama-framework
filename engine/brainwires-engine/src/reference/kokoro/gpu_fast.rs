@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 
-use super::ops::{leaky_relu, linear};
+use super::ops::linear;
 use super::KokoroModel;
 use crate::backend::dispatch::{
     adain_chained, conv1d_chained, conv_transpose1d_chained, istft_chained, leaky_relu_chained,

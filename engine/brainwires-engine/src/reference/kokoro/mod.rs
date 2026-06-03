@@ -17,6 +17,7 @@ pub mod ops;
 pub mod prosody;
 pub mod source;
 pub mod text_encoder;
+pub mod voice_train;
 
 use std::collections::HashMap;
 use std::sync::Arc;
