@@ -8,7 +8,19 @@ use std::fs;
 use std::path::PathBuf;
 
 use rullama::reference::kokoro::ops::max_abs_diff;
-use rullama::reference::styletts2::decoder::source_signal;
+use rullama::reference::styletts2::decoder::{source_signal, StyleTtsDecoder};
+
+fn corr(a: &[f32], b: &[f32]) -> f32 {
+    let (ma, mb) = (a.iter().sum::<f32>() / a.len() as f32, b.iter().sum::<f32>() / b.len() as f32);
+    let mut num = 0.0;
+    let (mut da, mut db) = (0.0f32, 0.0f32);
+    for (x, y) in a.iter().zip(b) {
+        num += (x - ma) * (y - mb);
+        da += (x - ma) * (x - ma);
+        db += (y - mb) * (y - mb);
+    }
+    num / (da.sqrt() * db.sqrt() + 1e-12)
+}
 
 fn main() {
     let dir = PathBuf::from(std::env::var("HOME").unwrap()).join(".cache/styletts2/fixtures/decoder/bin");
@@ -33,4 +45,20 @@ fn main() {
     assert!(har.len() == har_ref.len(), "source length {} != ref {}", har.len(), har_ref.len());
     assert!(d < 2e-3, "HnNSF source parity FAILED ({d:.3e})");
     println!("✅ hifigan HnNSF source matches PyTorch");
+
+    // ---- full hifigan Decoder: (asr, F0_curve, N, style) → 24 kHz waveform ----
+    let asr = w.get("in_asr").expect("in_asr").clone(); // [1, 512, 40]
+    let f0c = w.get("in_F0_curve").unwrap().clone();
+    let nc = w.get("in_N").unwrap().clone();
+    let style = w.get("in_style").unwrap().clone();
+    let audio_ref = w.get("audio").expect("audio").clone(); // [1, 1, 24000]
+
+    let dec = StyleTtsDecoder::new(w);
+    let audio = dec.forward(&asr, 512, 40, &f0c, &nc, &style);
+    let da = max_abs_diff(&audio, &audio_ref);
+    let c = corr(&audio, &audio_ref);
+    println!("\naudio[{}]  max_abs_diff = {da:.3e}   corr = {c:.6}", audio.len());
+    assert!(audio.len() == audio_ref.len(), "audio len {} != {}", audio.len(), audio_ref.len());
+    assert!(c > 0.999 && da < 5e-3, "hifigan decoder parity FAILED (corr {c:.6}, max_abs {da:.3e})");
+    println!("✅ StyleTTS2 hifigan decoder matches PyTorch end-to-end");
 }
