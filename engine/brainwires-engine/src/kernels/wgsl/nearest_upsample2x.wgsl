@@ -8,8 +8,8 @@ struct Params { c: u32, t: u32, _p0: u32, _p1: u32 }
 @group(0) @binding(2) var<storage, read_write> y:      array<f32>;
 
 @compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let idx = gid.x;
+fn main(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+    let idx = gid.y * nwg.x * 64u + gid.x;
     let tout = params.t * 2u;
     if (idx >= params.c * tout) { return; }
     let ch = idx / tout;

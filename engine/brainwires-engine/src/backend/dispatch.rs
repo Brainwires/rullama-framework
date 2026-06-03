@@ -1022,6 +1022,20 @@ pub fn make_dummy_storage(device: &wgpu::Device, label: &str) -> wgpu::Buffer {
     })
 }
 
+/// Workgroup grid for `threads` elements at workgroup_size 64, split into 2D when the 1D
+/// count would exceed wgpu's 65535-per-dimension cap (large TTS sequences hit this). Kernels
+/// that use it reconstruct the linear index as `gid.y * num_workgroups.x * 64 + gid.x`
+/// (a no-op when y == 1, so existing 1D callers are unaffected).
+pub fn wg_grid(threads: usize) -> (u32, u32, u32) {
+    let wg = (threads as u32).div_ceil(64);
+    if wg <= 65535 {
+        (wg, 1, 1)
+    } else {
+        let y = wg.div_ceil(65535);
+        (wg.div_ceil(y), y, 1)
+    }
+}
+
 /// **The hot path for every chained dispatcher.** Looks up (or builds
 /// on first miss) the cached `(uniform, bind_group)` for this
 /// `pipeline` × `buffers` combo, writes the per-call `params` into the
@@ -3425,7 +3439,7 @@ pub fn conv1d_chained(
     };
     let b = bias.unwrap_or(dummy);
     let total = (cout * tout) as u32;
-    cached_dispatch(ctx, enc, &p.conv1d, "conv1d", &[x, w, b, y], &params, (total.div_ceil(64), 1, 1));
+    cached_dispatch(ctx, enc, &p.conv1d, "conv1d", &[x, w, b, y], &params, wg_grid(total as usize));
     tout
 }
 
@@ -3484,7 +3498,7 @@ pub fn conv_transpose1d_chained(
     };
     let b = bias.unwrap_or(dummy);
     let total = (cout * tout) as u32;
-    cached_dispatch(ctx, enc, &p.conv_transpose1d, "convT1d", &[x, w, b, y], &params, (total.div_ceil(64), 1, 1));
+    cached_dispatch(ctx, enc, &p.conv_transpose1d, "convT1d", &[x, w, b, y], &params, wg_grid(total as usize));
     tout
 }
 
@@ -3500,7 +3514,7 @@ struct LeakyReluParams {
 /// Elementwise LeakyReLU in-place on `y`.
 pub fn leaky_relu_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder, y: &wgpu::Buffer, n: usize, slope: f32) {
     let params = LeakyReluParams { n: n as u32, slope, _p0: 0, _p1: 0 };
-    cached_dispatch(ctx, enc, &p.leaky_relu, "leaky_relu", &[y], &params, ((n as u32).div_ceil(64), 1, 1));
+    cached_dispatch(ctx, enc, &p.leaky_relu, "leaky_relu", &[y], &params, wg_grid(n));
 }
 
 #[repr(C)]
@@ -3516,7 +3530,7 @@ struct SnakeParams {
 #[allow(clippy::too_many_arguments)]
 pub fn snake_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder, x: &wgpu::Buffer, alpha: &wgpu::Buffer, y: &wgpu::Buffer, c: usize, t: usize) {
     let params = SnakeParams { c: c as u32, t: t as u32, _p0: 0, _p1: 0 };
-    cached_dispatch(ctx, enc, &p.snake, "snake", &[x, alpha, y], &params, (((c * t) as u32).div_ceil(64), 1, 1));
+    cached_dispatch(ctx, enc, &p.snake, "snake", &[x, alpha, y], &params, wg_grid(c * t));
 }
 
 #[repr(C)]
@@ -3554,7 +3568,7 @@ pub fn transpose2d_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::Command
 /// Nearest ×2 upsample (channel-major): x[c, t] → y[c, 2t]. Buffers: x, y.
 pub fn nearest_upsample2x_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder, x: &wgpu::Buffer, y: &wgpu::Buffer, c: usize, t: usize) {
     let params = Transpose2dParams { rows: c as u32, cols: t as u32, _p0: 0, _p1: 0 };
-    cached_dispatch(ctx, enc, &p.nearest_upsample2x, "nearest2x", &[x, y], &params, (((c * 2 * t) as u32).div_ceil(64), 1, 1));
+    cached_dispatch(ctx, enc, &p.nearest_upsample2x, "nearest2x", &[x, y], &params, wg_grid(c * 2 * t));
 }
 
 /// ISTFTNet spectral split: post[2*nbins, t] → spec=exp(post[:nbins]), phase=sin(post[nbins:]).
@@ -4947,7 +4961,7 @@ pub fn residual_add_chained(
         "resadd_chain",
         &[x, y],
         &params,
-        ((n as u32).div_ceil(64), 1, 1),
+        wg_grid(n),
     );
 }
 

@@ -7,8 +7,8 @@ struct Params { n: u32, slope: f32, _p0: u32, _p1: u32 }
 @group(0) @binding(1) var<storage, read_write> y:      array<f32>;
 
 @compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+fn main(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+    let i = gid.y * nwg.x * 64u + gid.x;
     if (i >= params.n) { return; }
     let v = y[i];
     if (v < 0.0) { y[i] = v * params.slope; }

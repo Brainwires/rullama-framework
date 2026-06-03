@@ -75,4 +75,18 @@ fn main() {
     assert!(gpu_audio.len() == audio_ref.len(), "GPU audio len {} != {}", gpu_audio.len(), audio_ref.len());
     assert!(cg > 0.999, "GPU hifigan decoder parity FAILED (corr {cg:.6})");
     println!("✅ StyleTTS2 hifigan decoder GPU matches CPU/PyTorch");
+
+    // ---- 2D-dispatch path: large f (audio 180k samples) exceeds the 65535-workgroup
+    // per-dimension cap, so this exercises the 2D-grid kernels. No CPU ref — just assert
+    // it runs without a dispatch error and produces finite, correct-length audio. ----
+    let bigf = 300usize;
+    let asr_big: Vec<f32> = (0..512 * bigf).map(|i| ((i % 13) as f32 - 6.0) * 0.2).collect();
+    let f0_big: Vec<f32> = (0..2 * bigf).map(|i| 110.0 + (i % 40) as f32).collect();
+    let n_big: Vec<f32> = (0..2 * bigf).map(|i| ((i % 5) as f32 - 2.0) * 0.5).collect();
+    let mut wc2 = HashMap::new();
+    let big = pollster::block_on(StyleTtsGpu::new(&w, &ctx, &pipes, &mut wc2).decode(&asr_big, bigf, &f0_big, &n_big, &style));
+    let finite = big.iter().all(|x| x.is_finite());
+    println!("2D-dispatch (f={bigf}): {} samples, all-finite = {finite}", big.len());
+    assert!(big.len() == bigf * 2 * 300 && finite, "2D-dispatch path FAILED (len {}, finite {finite})", big.len());
+    println!("✅ 2D workgroup-grid path OK for long utterances");
 }
