@@ -60,9 +60,9 @@ impl StyleTtsClone {
         ids
     }
 
-    /// Reference 24 kHz mono PCM → 256-d voice vector.
-    pub fn encode_voice_native(&self, pcm24k: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
-        self.model.encode_voice(pcm24k, progress)
+    /// Reference 24 kHz mono PCM → 256-d voice vector (GPU encoder).
+    pub async fn encode_voice_native(&mut self, pcm24k: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
+        self.model.encode_voice_gpu(&self.ctx, &self.pipes, &mut self.wc, pcm24k, progress).await
     }
 
     /// Text + voice vector → 24 kHz PCM (GPU decoder). Requires the lexicon to be set.
@@ -100,11 +100,11 @@ impl StyleTtsClone {
     /// `onProgress(fraction, stage)` is called synchronously at each stage — the worker
     /// posts these out mid-computation so the UI gets a live progress bar + log.
     #[wasm_bindgen(js_name = encodeVoice)]
-    pub fn encode_voice_js(&self, pcm24k: Vec<f32>, on_progress: &js_sys::Function) -> Vec<f32> {
+    pub async fn encode_voice_js(&mut self, pcm24k: Vec<f32>, on_progress: js_sys::Function) -> Vec<f32> {
         let cb = |frac: f32, stage: &str| {
             let _ = on_progress.call2(&JsValue::NULL, &JsValue::from_f64(frac as f64), &JsValue::from_str(stage));
         };
-        self.encode_voice_native(&pcm24k, Some(&cb))
+        self.encode_voice_native(&pcm24k, Some(&cb)).await
     }
 
     /// Synthesize text in a voice → 24 kHz PCM (Float32Array). `onProgress(fraction, stage)`.

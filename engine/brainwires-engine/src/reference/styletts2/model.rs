@@ -104,6 +104,23 @@ impl StyleTtsModel {
         out
     }
 
+    /// GPU voice encode: CPU mel frontend → the StyleEncoder conv stack on the GPU.
+    pub async fn encode_voice_gpu(&self, ctx: &WgpuCtx, p: &Pipelines, wc: &mut GpuWeightCache, pcm24k: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
+        if let Some(pp) = progress {
+            pp(0.10, "computing spectrogram");
+        }
+        let front = MelFrontend::new(self.w.get("mel.window").expect("mel.window"), self.w.get("mel.filterbank").expect("mel.filterbank"));
+        let (mel, t) = front.compute(pcm24k);
+        if let Some(pp) = progress {
+            pp(0.30, "analyzing voice (GPU)");
+        }
+        let out = StyleTtsGpu::new(&self.w, ctx, p, wc).encode(&mel, 80, t).await;
+        if let Some(pp) = progress {
+            pp(1.0, "voice ready");
+        }
+        out
+    }
+
     /// GPU synthesis: CPU acoustic graph (text_encoder/bert/predictor — small) then the
     /// hifigan decoder + generator on the GPU (the dominant cost). `wc` caches uploaded
     /// weights across calls.

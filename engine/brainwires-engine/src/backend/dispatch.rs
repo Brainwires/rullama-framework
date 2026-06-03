@@ -1036,6 +1036,52 @@ pub fn wg_grid(threads: usize) -> (u32, u32, u32) {
     }
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct Conv2dChfParams {
+    in_c: u32, in_h: u32, in_w: u32,
+    out_c: u32, out_h: u32, out_w: u32,
+    kh: u32, kw: u32, sh: u32, sw: u32, ph: u32, pw: u32,
+    groups: u32, has_bias: u32, _p0: u32, _p1: u32,
+}
+
+/// Channel-first conv2d (StyleTTS2 style encoder): f32 weights, optional bias, groups
+/// (depthwise = groups == in_c). `w [out_c, in_c/groups, kh, kw]`, x/y channel-first.
+#[allow(clippy::too_many_arguments)]
+pub fn conv2d_chf_chained(
+    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
+    w: &wgpu::Buffer, x: &wgpu::Buffer, bias: Option<&wgpu::Buffer>, dummy: &wgpu::Buffer, y: &wgpu::Buffer,
+    in_c: usize, in_h: usize, in_w: usize, out_c: usize, out_h: usize, out_w: usize,
+    kh: usize, kw: usize, sh: usize, sw: usize, ph: usize, pw: usize, groups: usize,
+) {
+    let params = Conv2dChfParams {
+        in_c: in_c as u32, in_h: in_h as u32, in_w: in_w as u32,
+        out_c: out_c as u32, out_h: out_h as u32, out_w: out_w as u32,
+        kh: kh as u32, kw: kw as u32, sh: sh as u32, sw: sw as u32, ph: ph as u32, pw: pw as u32,
+        groups: groups as u32, has_bias: bias.is_some() as u32, _p0: 0, _p1: 0,
+    };
+    let b = bias.unwrap_or(dummy);
+    cached_dispatch(ctx, enc, &p.conv2d_chf, "conv2d_chf", &[w, x, b, y], &params, wg_grid(out_c * out_h * out_w));
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct AvgPoolHalfChfParams {
+    c: u32, in_h: u32, in_w: u32, out_h: u32, out_w: u32, _p0: u32, _p1: u32, _p2: u32,
+}
+
+/// Channel-first 2×2 average pool with odd-width last-column repeat (StyleTTS2 DownSample).
+#[allow(clippy::too_many_arguments)]
+pub fn avg_pool2d_half_chained(
+    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer, y: &wgpu::Buffer, c: usize, in_h: usize, in_w: usize, out_h: usize, out_w: usize,
+) {
+    let params = AvgPoolHalfChfParams {
+        c: c as u32, in_h: in_h as u32, in_w: in_w as u32, out_h: out_h as u32, out_w: out_w as u32, _p0: 0, _p1: 0, _p2: 0,
+    };
+    cached_dispatch(ctx, enc, &p.avg_pool2d_half_chf, "avgpool_chf", &[x, y], &params, wg_grid(c * out_h * out_w));
+}
+
 /// **The hot path for every chained dispatcher.** Looks up (or builds
 /// on first miss) the cached `(uniform, bind_group)` for this
 /// `pipeline` × `buffers` combo, writes the per-call `params` into the

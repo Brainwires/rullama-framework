@@ -81,4 +81,16 @@ fn main() {
     println!("\nworst max_abs_diff = {worst:.3e}");
     assert!(worst < 2e-3, "StyleTTS2 cloning-front parity FAILED (worst {worst:.3e})");
     println!("✅ StyleTTS2 style encoder + mel frontend match PyTorch (end-to-end)");
+
+    // ---- GPU StyleEncoder parity (both encoders) vs PyTorch ----
+    use rullama::backend::{Pipelines, WgpuCtx};
+    use rullama::reference::styletts2::gpu::StyleTtsGpu;
+    let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+    let pipes = Pipelines::new(&ctx.device);
+    let mut gwc = HashMap::new();
+    let gpu_vec = pollster::block_on(StyleTtsGpu::new(&w, &ctx, &pipes, &mut gwc).encode(&mel, n_mels, t));
+    let dgpu = max_abs_diff(&gpu_vec, w.get("concat256").unwrap());
+    println!("\nGPU encoder vs PyTorch  max_abs_diff = {dgpu:.3e}  (|v|={:.3})", (gpu_vec.iter().map(|v| v * v).sum::<f32>()).sqrt());
+    assert!(dgpu < 2e-3, "GPU StyleEncoder parity FAILED ({dgpu:.3e})");
+    println!("✅ GPU StyleEncoder matches PyTorch");
 }

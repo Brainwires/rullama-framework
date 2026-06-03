@@ -13,12 +13,12 @@ use std::collections::HashMap;
 
 use super::decoder::source_signal;
 use crate::backend::dispatch::{
-    adain_chained, conv1d_chained, conv_transpose1d_chained, leaky_relu_chained, make_dummy_storage,
-    make_storage_rw, nearest_upsample2x_chained, read_back_f32, residual_add_chained, scale_chained,
-    snake_chained, write_storage_f32,
+    adain_chained, avg_pool2d_half_chained, conv1d_chained, conv2d_chf_chained, conv_transpose1d_chained,
+    leaky_relu_chained, make_dummy_storage, make_storage_rw, nearest_upsample2x_chained, read_back_f32,
+    residual_add_chained, scale_chained, snake_chained, write_storage_f32,
 };
 use crate::backend::{Pipelines, WgpuCtx};
-use crate::reference::kokoro::ops::linear;
+use crate::reference::kokoro::ops::{leaky_relu as leaky_cpu, linear};
 
 const RSQRT2: f32 = 0.707_106_77;
 const STYLE_DIM: usize = 128;
@@ -255,6 +255,82 @@ impl<'a> StyleTtsGpu<'a> {
         conv1d_chained(self.ctx, self.p, &mut enc, &sn, &cpw, Some(&cpb), &self.dummy, &post, cin, tcur, 1, 7, 1, 3, 1, 1);
         self.submit(enc);
         (post, tcur)
+    }
+
+    async fn read(&self, buf: &wgpu::Buffer, n: usize) -> Vec<f32> {
+        let rd = self.ctx.device.create_buffer(&wgpu::BufferDescriptor { label: Some("rd"), size: (n * 4) as u64, usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let mut e = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("rd") });
+        e.copy_buffer_to_buffer(buf, 0, &rd, 0, (n * 4) as u64);
+        self.ctx.queue.submit(Some(e.finish()));
+        read_back_f32(&self.ctx.device, &rd).await.expect("readback")
+    }
+
+    /// GPU StyleEncoder: reference mel `[n_mels, t]` → 128-d style vector. `prefix` =
+    /// "acoustic" or "prosodic". The conv-heavy stack runs on GPU; the tiny adaptive-pool +
+    /// Linear tail (512→128) runs on CPU after a single readback.
+    async fn style_encoder(&mut self, mel_buf: &wgpu::Buffer, n_mels: usize, t: usize, prefix: &str) -> Vec<f32> {
+        const BLK: [(usize, usize); 4] = [(64, 128), (128, 256), (256, 512), (512, 512)];
+        let pn = |s: &str| format!("{prefix}.{s}");
+        let mut enc = self.enc();
+        // conv0: 1 → 64, k3 p1
+        let c0w = self.wt(&pn("conv0.weight"));
+        let c0b = self.wt(&pn("conv0.bias"));
+        let mut x = self.alloc(64 * n_mels * t);
+        conv2d_chf_chained(self.ctx, self.p, &mut enc, &c0w, mel_buf, Some(&c0b), &self.dummy, &x, 1, n_mels, t, 64, n_mels, t, 3, 3, 1, 1, 1, 1, 1);
+        let (mut h, mut w) = (n_mels, t);
+        for (i, &(din, dout)) in BLK.iter().enumerate() {
+            let (h2, w2) = (h / 2, (w + 1) / 2);
+            // shortcut: optional 1×1 conv (when channels change) then avg-pool
+            let sc = if din != dout {
+                let cw = self.wt(&pn(&format!("blk{i}.sc.weight")));
+                let o = self.alloc(dout * h * w);
+                conv2d_chf_chained(self.ctx, self.p, &mut enc, &cw, &x, None, &self.dummy, &o, din, h, w, dout, h, w, 1, 1, 1, 1, 0, 0, 1);
+                o
+            } else {
+                x.clone()
+            };
+            let sc_pool = self.alloc(dout * h2 * w2);
+            avg_pool2d_half_chained(self.ctx, self.p, &mut enc, &sc, &sc_pool, dout, h, w, h2, w2);
+            // residual: leaky → conv1(k3p1) → strided depthwise down → leaky → conv2(k3p1)
+            let r = self.alloc(din * h * w);
+            enc.copy_buffer_to_buffer(&x, 0, &r, 0, (din * h * w * 4) as u64);
+            leaky_relu_chained(self.ctx, self.p, &mut enc, &r, din * h * w, 0.2);
+            let (c1w, c1b) = (self.wt(&pn(&format!("blk{i}.conv1.weight"))), self.wt(&pn(&format!("blk{i}.conv1.bias"))));
+            let c1 = self.alloc(din * h * w);
+            conv2d_chf_chained(self.ctx, self.p, &mut enc, &c1w, &r, Some(&c1b), &self.dummy, &c1, din, h, w, din, h, w, 3, 3, 1, 1, 1, 1, 1);
+            let (dw, db) = (self.wt(&pn(&format!("blk{i}.down.weight"))), self.wt(&pn(&format!("blk{i}.down.bias"))));
+            let dn = self.alloc(din * h2 * w2);
+            conv2d_chf_chained(self.ctx, self.p, &mut enc, &dw, &c1, Some(&db), &self.dummy, &dn, din, h, w, din, h2, w2, 3, 3, 2, 2, 1, 1, din);
+            leaky_relu_chained(self.ctx, self.p, &mut enc, &dn, din * h2 * w2, 0.2);
+            let (c2w, c2b) = (self.wt(&pn(&format!("blk{i}.conv2.weight"))), self.wt(&pn(&format!("blk{i}.conv2.bias"))));
+            let c2 = self.alloc(dout * h2 * w2);
+            conv2d_chf_chained(self.ctx, self.p, &mut enc, &c2w, &dn, Some(&c2b), &self.dummy, &c2, din, h2, w2, dout, h2, w2, 3, 3, 1, 1, 1, 1, 1);
+            residual_add_chained(self.ctx, self.p, &mut enc, &c2, &sc_pool, dout * h2 * w2);
+            scale_chained(self.ctx, self.p, &mut enc, &c2, dout * h2 * w2, RSQRT2);
+            x = c2;
+            h = h2;
+            w = w2;
+        }
+        // leaky → conv_out (512→512, k5, no pad) → [512, h-4, w-4]
+        leaky_relu_chained(self.ctx, self.p, &mut enc, &x, 512 * h * w, 0.2);
+        let (oh, ow) = (h - 4, w - 4);
+        let (cow, cob) = (self.wt(&pn("conv_out.weight")), self.wt(&pn("conv_out.bias")));
+        let co = self.alloc(512 * oh * ow);
+        conv2d_chf_chained(self.ctx, self.p, &mut enc, &cow, &x, Some(&cob), &self.dummy, &co, 512, h, w, 512, oh, ow, 5, 5, 1, 1, 0, 0, 1);
+        self.submit(enc);
+        // adaptive avg pool (mean over oh·ow) + leaky + Linear(512→128) on CPU (tiny)
+        let feat = self.read(&co, 512 * oh * ow).await;
+        let mut pooled: Vec<f32> = (0..512).map(|c| feat[c * oh * ow..(c + 1) * oh * ow].iter().sum::<f32>() / (oh * ow) as f32).collect();
+        leaky_cpu(&mut pooled, 0.2);
+        linear(&pooled, 1, 512, self.t(&pn("linear.weight")), Some(self.t(&pn("linear.bias"))), 128)
+    }
+
+    /// Reference mel `[n_mels, t]` → 256-d voice vector (acoustic ‖ prosodic) on the GPU.
+    pub async fn encode(&mut self, mel: &[f32], n_mels: usize, t: usize) -> Vec<f32> {
+        let mel_buf = self.up(mel);
+        let a = self.style_encoder(&mel_buf, n_mels, t, "acoustic").await;
+        let pr = self.style_encoder(&mel_buf, n_mels, t, "prosodic").await;
+        a.into_iter().chain(pr).collect()
     }
 
     /// Full hifigan decoder on GPU: `asr [512,f]`, `f0`/`n [2f]` (CPU), `style [128]` → 24 kHz waveform.
