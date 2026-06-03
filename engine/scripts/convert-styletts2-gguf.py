@@ -81,8 +81,7 @@ def main():
     for m in mods.values():
         fold(m)
 
-    w = GGUFWriter(out, "styletts2")
-    w.add_string("general.architecture", "styletts2")
+    w = GGUFWriter(out, "styletts2")  # 2nd arg is general.architecture
     w.add_string("general.name", "StyleTTS2-LibriTTS")
     w.add_uint32("styletts2.n_token", 178)
     w.add_uint32("styletts2.hidden_dim", 512)
@@ -112,6 +111,14 @@ def main():
             arr = v.detach().cpu().float().numpy().astype(np_dtype)
             w.add_tensor(f"{pfx}.{k}", arr)
             n += 1
+
+    # bake the compute_style mel frontend (torchaudio Slaney filterbank + Hann window;
+    # the default-sr=16000 quirk) so the Rust encoder needs no mel construction.
+    import torchaudio
+    to_mel = torchaudio.transforms.MelSpectrogram(n_mels=80, n_fft=2048, win_length=1200, hop_length=300)
+    w.add_tensor("mel.filterbank", to_mel.mel_scale.fb.detach().numpy().astype(np.float32))  # [1025,80]
+    w.add_tensor("mel.window", to_mel.spectrogram.window.detach().numpy().astype(np.float32))  # [1200]
+    n += 2
 
     w.write_header_to_file()
     w.write_kv_data_to_file()
