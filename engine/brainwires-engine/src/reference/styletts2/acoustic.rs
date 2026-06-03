@@ -9,8 +9,50 @@
 use std::collections::HashMap;
 
 use super::decoder::StyleTtsDecoder;
+use super::diffusion::StyleDiffusion;
 use crate::reference::kokoro::convblocks::conv1d;
 use crate::reference::kokoro::ops::{bilstm, gelu_new, layer_norm, layer_norm_plain, leaky_relu, linear, sigmoid, softmax};
+
+/// Style-diffusion settings for synthesis. When present, the reference style is replaced by
+/// `blend(diffusion_sample, reference)` for natural, text-appropriate prosody (the StyleTTS2
+/// `alpha=0.3/beta=0.7` demo path). When `None`, synthesis uses the raw reference style
+/// (alpha=beta=0 — flatter, the original zero-shot port). `seed` makes output reproducible.
+#[derive(Clone, Copy, Debug)]
+pub struct DiffusionConfig {
+    pub alpha: f32, // acoustic mix: ref = alpha·diff + (1-alpha)·reference
+    pub beta: f32,  // prosodic mix: s   = beta·diff  + (1-beta)·reference
+    pub seed: u64,
+}
+
+impl Default for DiffusionConfig {
+    fn default() -> Self {
+        Self { alpha: 0.3, beta: 0.7, seed: 0x5111_e775 }
+    }
+}
+
+/// Deterministic standard-normal stream (SplitMix64 → Box-Muller). No `rand` dep, wasm-safe,
+/// reproducible per seed — so the sampler is deterministic for a given (voice, text, seed).
+fn gaussians(seed: u64, n: usize) -> Vec<f32> {
+    let mut state = seed;
+    let mut next_u64 = || {
+        state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    };
+    let unit = |u: u64| ((u >> 11) as f64) / ((1u64 << 53) as f64); // (0,1)
+    let mut out = Vec::with_capacity(n + 1);
+    while out.len() < n {
+        let u1 = unit(next_u64()).max(1e-12);
+        let u2 = unit(next_u64());
+        let r = (-2.0 * u1.ln()).sqrt();
+        out.push((r * (2.0 * std::f64::consts::PI * u2).cos()) as f32);
+        out.push((r * (2.0 * std::f64::consts::PI * u2).sin()) as f32);
+    }
+    out.truncate(n);
+    out
+}
 
 const HIDDEN: usize = 512;
 const N_LAYER: usize = 3;
@@ -246,12 +288,42 @@ impl<'a> StyleTtsAcoustic<'a> {
     /// The CPU acoustic graph up to (not including) the hifigan decoder. Returns
     /// `(asr_shifted [512,F], f0 [2F], n [2F], ref_acoustic [128], F)`. The decoder runs on
     /// CPU (`synthesize`) or GPU (`StyleTtsGpu::decode`) from these features.
-    pub fn acoustic_features(&self, ids: &[i64], ref_s: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, usize) {
+    /// Replace the reference style with the diffusion-sampled style (the `alpha/beta` prosody
+    /// path). `bert_dur` is the raw PLBERT output `[t,768]`. Returns the effective 256-d style
+    /// `[acoustic_blend(128) ‖ prosodic_blend(128)]` the rest of the graph consumes unchanged.
+    fn diffuse_style(&self, ref_s: &[f32], bert_dur: &[f32], t: usize, cfg: &DiffusionConfig) -> Vec<f32> {
+        let diff = StyleDiffusion::new(self.w);
+        let steps = 5usize; // matches the converter/oracle default
+        let g = gaussians(cfg.seed, steps * STYLE_DIM * 2);
+        let noise_init = &g[..STYLE_DIM * 2];
+        let noises: Vec<Vec<f32>> = (1..steps).map(|i| g[i * STYLE_DIM * 2..(i + 1) * STYLE_DIM * 2].to_vec()).collect();
+        let s_pred = diff.sample(noise_init, &noises, bert_dur, t, ref_s); // [256]
+        let mut eff = vec![0f32; 2 * STYLE_DIM];
+        for k in 0..STYLE_DIM {
+            // acoustic (decoder ref): alpha·diff + (1-alpha)·reference
+            eff[k] = cfg.alpha * s_pred[k] + (1.0 - cfg.alpha) * ref_s[k];
+            // prosodic (predictor s): beta·diff + (1-beta)·reference
+            eff[STYLE_DIM + k] = cfg.beta * s_pred[STYLE_DIM + k] + (1.0 - cfg.beta) * ref_s[STYLE_DIM + k];
+        }
+        eff
+    }
+
+    pub fn acoustic_features(&self, ids: &[i64], ref_s: &[f32], diffuse: Option<DiffusionConfig>, progress: Option<&dyn Fn(f32, &str)>) -> (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, usize) {
         let t = ids.len();
-        let s = &ref_s[STYLE_DIM..]; // prosodic
-        let r = ref_s[..STYLE_DIM].to_vec(); // acoustic
         let t_en = self.text_encoder(ids); // [512,T] cm
         let bert_out = self.bert(ids, progress);
+        // optional style diffusion (natural prosody) before splitting into prosodic/acoustic
+        let eff_s = match diffuse {
+            Some(cfg) => {
+                if let Some(p) = progress {
+                    p(0.16, "imagining delivery");
+                }
+                self.diffuse_style(ref_s, &bert_out, t, &cfg)
+            }
+            None => ref_s.to_vec(),
+        };
+        let s = &eff_s[STYLE_DIM..]; // prosodic
+        let r = eff_s[..STYLE_DIM].to_vec(); // acoustic
         if let Some(p) = progress {
             p(0.20, "predicting rhythm");
         }
@@ -283,8 +355,8 @@ impl<'a> StyleTtsAcoustic<'a> {
     }
 
     /// Full zero-shot synthesis (CPU decoder). `progress(fraction, stage)` at stage boundaries.
-    pub fn synthesize(&self, ids: &[i64], ref_s: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
-        let (asr_s, f0, n, r, f) = self.acoustic_features(ids, ref_s, progress);
+    pub fn synthesize(&self, ids: &[i64], ref_s: &[f32], diffuse: Option<DiffusionConfig>, progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
+        let (asr_s, f0, n, r, f) = self.acoustic_features(ids, ref_s, diffuse, progress);
         StyleTtsDecoder::new(self.w).forward(&asr_s, HIDDEN, f, &f0, &n, &r, progress)
     }
 }

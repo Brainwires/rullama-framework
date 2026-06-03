@@ -52,12 +52,12 @@ fn main() {
 
     println!("encode_voice vs fixture ref_s:  corr = {:.5}", corr(&voice, &ref_s_fix));
 
-    // synth path through f16 GGUF, isolated by using the fixture's ref_s
-    let audio = model.synthesize(&tokens, &ref_s_fix, None);
+    // synth path through f16 GGUF, isolated by using the fixture's ref_s (flat path = matches fixture)
+    let audio = model.synthesize(&tokens, &ref_s_fix, None, None);
     println!("f16-GGUF synth vs f32 fixture:  corr = {:.5}  (len {} vs {})", corr(&audio, &audio_fix), audio.len(), audio_fix.len());
 
-    // full clone (encode + synth, all through the GGUF) → WAV
-    let full = model.synthesize(&tokens, &voice, None);
+    // full clone (encode + synth, all through the GGUF) → WAV, with the natural-prosody diffusion
+    let full = model.synthesize(&tokens, &voice, Some(rullama::reference::styletts2::acoustic::DiffusionConfig::default()), None);
     let out = home.join(".cache/styletts2/fixtures/synth/gguf_clone.wav");
     let mut buf = Vec::with_capacity(44 + full.len() * 2);
     buf.extend_from_slice(b"RIFF");

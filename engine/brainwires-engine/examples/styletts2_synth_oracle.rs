@@ -68,7 +68,7 @@ fn main() {
 
     // ---- full synthesis → audio ----
     let ref_s = w.get("ref_s").unwrap().clone();
-    let audio = ac.synthesize(&tokens, &ref_s, None);
+    let audio = ac.synthesize(&tokens, &ref_s, None, None); // None = flat path (matches fixtures)
     let audio_ref = w.get("audio").unwrap();
     let da = max_abs_diff(&audio, audio_ref);
     let c = corr(&audio, audio_ref);
@@ -83,7 +83,7 @@ fn main() {
     {
         use rullama::backend::{Pipelines, WgpuCtx};
         use rullama::reference::styletts2::gpu::StyleTtsGpu;
-        let (asr_g, f0_g, n_g, r_g, fg) = ac.acoustic_features(&tokens, &ref_s, None);
+        let (asr_g, f0_g, n_g, r_g, fg) = ac.acoustic_features(&tokens, &ref_s, None, None);
         let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
         let pipes = Pipelines::new(&ctx.device);
         let mut wc = HashMap::new();

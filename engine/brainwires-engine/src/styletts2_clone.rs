@@ -13,6 +13,7 @@ use crate::backend::{Pipelines, WgpuCtx};
 use crate::error::Result;
 use crate::gguf::GgufReader;
 use crate::reference::kokoro::g2p::{g2p, Lexicon};
+use crate::reference::styletts2::acoustic::DiffusionConfig;
 use crate::reference::styletts2::gpu::GpuWeightCache;
 use crate::reference::styletts2::StyleTtsModel;
 
@@ -66,18 +67,19 @@ impl StyleTtsClone {
     }
 
     /// Text + voice vector → 24 kHz PCM (GPU decoder). Requires the lexicon to be set.
+    /// Uses the style-diffusion prosody path (alpha=0.3/beta=0.7) by default.
     pub async fn synthesize_native(&mut self, text: &str, voice: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
         let ids = {
             let lex = self.lex.as_ref().expect("lexicon not set");
             let (ps, _oov) = g2p(text, lex);
             self.phonemes_to_ids(&ps)
         };
-        self.model.synthesize_gpu(&self.ctx, &self.pipes, &mut self.wc, &ids, voice, progress).await
+        self.model.synthesize_gpu(&self.ctx, &self.pipes, &mut self.wc, &ids, voice, Some(DiffusionConfig::default()), progress).await
     }
 
     pub async fn synthesize_phonemes_native(&mut self, phonemes: &str, voice: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
         let ids = self.phonemes_to_ids(phonemes);
-        self.model.synthesize_gpu(&self.ctx, &self.pipes, &mut self.wc, &ids, voice, progress).await
+        self.model.synthesize_gpu(&self.ctx, &self.pipes, &mut self.wc, &ids, voice, Some(DiffusionConfig::default()), progress).await
     }
 }
 
