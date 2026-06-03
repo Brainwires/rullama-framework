@@ -60,5 +60,19 @@ fn main() {
     println!("\naudio[{}]  max_abs_diff = {da:.3e}   corr = {c:.6}", audio.len());
     assert!(audio.len() == audio_ref.len(), "audio len {} != {}", audio.len(), audio_ref.len());
     assert!(c > 0.999 && da < 5e-3, "hifigan decoder parity FAILED (corr {c:.6}, max_abs {da:.3e})");
-    println!("✅ StyleTTS2 hifigan decoder matches PyTorch end-to-end");
+    println!("✅ StyleTTS2 hifigan decoder (CPU) matches PyTorch end-to-end");
+
+    // ---- GPU hifigan decoder parity (same synthetic inputs → 24 kHz waveform) ----
+    use rullama::backend::{Pipelines, WgpuCtx};
+    use rullama::reference::styletts2::gpu::StyleTtsGpu;
+    let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+    let pipes = Pipelines::new(&ctx.device);
+    let mut wc = HashMap::new();
+    let gpu_audio = pollster::block_on(StyleTtsGpu::new(&w, &ctx, &pipes, &mut wc).decode(&asr, 40, &f0c, &nc, &style));
+    let dg = max_abs_diff(&gpu_audio, &audio_ref);
+    let cg = corr(&gpu_audio, &audio_ref);
+    println!("\nGPU decoder vs ref  max_abs_diff = {dg:.3e}  corr = {cg:.6}  (len {} vs {})", gpu_audio.len(), audio_ref.len());
+    assert!(gpu_audio.len() == audio_ref.len(), "GPU audio len {} != {}", gpu_audio.len(), audio_ref.len());
+    assert!(cg > 0.999, "GPU hifigan decoder parity FAILED (corr {cg:.6})");
+    println!("✅ StyleTTS2 hifigan decoder GPU matches CPU/PyTorch");
 }

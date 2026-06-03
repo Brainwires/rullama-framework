@@ -14,6 +14,7 @@ use crate::reference::kokoro::ops::leaky_relu;
 
 pub mod acoustic;
 pub mod decoder;
+pub mod gpu;
 pub mod mel;
 pub mod model;
 pub mod style_encoder;
