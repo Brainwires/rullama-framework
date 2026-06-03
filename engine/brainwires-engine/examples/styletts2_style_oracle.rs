@@ -13,7 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use rullama::reference::kokoro::ops::max_abs_diff;
-use rullama::reference::styletts2::StyleEncoder;
+use rullama::reference::styletts2::{MelFrontend, StyleEncoder};
 
 fn fixtures_dir() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap()).join(".cache/styletts2/fixtures/bin")
@@ -62,7 +62,23 @@ fn main() {
     println!("concat256        max_abs_diff = {dc:.3e}");
     worst = worst.max(dc);
 
+    // ---- mel frontend parity: audio → log-mel vs torchaudio reference ----
+    let audio = w.get("audio").expect("audio fixture");
+    let fb = w.get("mel_filterbank").expect("mel_filterbank");
+    let window = w.get("mel_window").expect("mel_window");
+    let front = MelFrontend::new(window, fb);
+    let (mel_got, n_frames) = front.compute(audio);
+    let dmel = max_abs_diff(&mel_got, &mel);
+    println!("\nmel frontend     max_abs_diff = {dmel:.3e}   ([80, {n_frames}] vs [80, {t}])");
+    worst = worst.max(dmel);
+
+    // ---- end-to-end: audio → our mel → our encoder → style vs reference ----
+    let e2e = StyleEncoder::from_weights(&w, "acoustic").forward(&mel_got, n_mels, n_frames);
+    let de2e = max_abs_diff(&e2e, w.get("acoustic.style").unwrap());
+    println!("end-to-end       max_abs_diff = {de2e:.3e}   (audio→mel→encoder)");
+    worst = worst.max(de2e);
+
     println!("\nworst max_abs_diff = {worst:.3e}");
-    assert!(worst < 2e-3, "style-encoder parity FAILED (worst {worst:.3e})");
-    println!("✅ StyleTTS2 style-encoder CPU oracle matches PyTorch");
+    assert!(worst < 2e-3, "StyleTTS2 cloning-front parity FAILED (worst {worst:.3e})");
+    println!("✅ StyleTTS2 style encoder + mel frontend match PyTorch (end-to-end)");
 }
