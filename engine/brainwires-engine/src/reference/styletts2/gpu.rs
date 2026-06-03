@@ -13,9 +13,11 @@ use std::collections::HashMap;
 
 use super::decoder::source_signal;
 use crate::backend::dispatch::{
-    adain_chained, avg_pool2d_half_chained, conv1d_chained, conv2d_chf_chained, conv_transpose1d_chained,
-    leaky_relu_chained, make_dummy_storage, make_storage_rw, nearest_upsample2x_chained, read_back_f32,
-    residual_add_chained, scale_chained, snake_chained, write_storage_f32,
+    adain_chained, add_bias_batched_chained, avg_pool2d_half_chained, conv1d_chained, conv2d_chf_chained,
+    conv_transpose1d_chained, gelu_exact_chained, layernorm_affine_chained, leaky_relu_chained,
+    make_dummy_storage, make_storage_rw, matmul_f16_batched_tiled_chained, nearest_upsample2x_chained,
+    read_back_f32, residual_add_chained, scale_chained, snake_chained, vision_attention_chained,
+    write_storage_f16, write_storage_f32,
 };
 use crate::backend::{Pipelines, WgpuCtx};
 use crate::reference::kokoro::ops::{leaky_relu as leaky_cpu, linear};
@@ -331,6 +333,200 @@ impl<'a> StyleTtsGpu<'a> {
         let a = self.style_encoder(&mel_buf, n_mels, t, "acoustic").await;
         let pr = self.style_encoder(&mel_buf, n_mels, t, "prosodic").await;
         a.into_iter().chain(pr).collect()
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Style-diffusion denoiser on GPU. Mirrors reference/styletts2/diffusion.rs (the validated
+    // CPU oracle) but runs the per-eval StyleTransformer1d on the GPU (f16-weight matmuls +
+    // layernorm-affine AdaLN + flash attention + exact GELU). The ADPM2 sampler's scalar
+    // arithmetic stays on CPU; only net() — the cost — is offloaded. f16 weights are safe here:
+    // s_pred is 70% damped by the reference blend before the (exact) decoder.
+    // ---------------------------------------------------------------------------------------
+
+    /// f16 weight buffer for a named tensor (cached under "f16:<name>").
+    fn wt16(&mut self, name: &str) -> wgpu::Buffer {
+        let key = format!("f16:{name}");
+        if let Some(b) = self.wc.get(&key) {
+            return b.clone();
+        }
+        let buf = write_storage_f16(&self.ctx.device, &self.ctx.queue, name, self.w.get(name).unwrap_or_else(|| panic!("missing diff weight {name}")));
+        self.wc.insert(key, buf.clone());
+        buf
+    }
+
+    /// f16 weight buffer from an explicit f32 slice (for the to_kv k/v split), cached under `key`.
+    fn wt16_slice(&mut self, key: &str, data: &[f32]) -> wgpu::Buffer {
+        if let Some(b) = self.wc.get(key) {
+            return b.clone();
+        }
+        let buf = write_storage_f16(&self.ctx.device, &self.ctx.queue, key, data);
+        self.wc.insert(key.to_string(), buf.clone());
+        buf
+    }
+
+    /// y[rows,nout] = x[rows,kin] @ w[nout,kin]ᵀ (+bias), f16 weights.
+    fn glin(&mut self, enc: &mut wgpu::CommandEncoder, x: &wgpu::Buffer, rows: usize, kin: usize, nout: usize, w: &wgpu::Buffer, bias: Option<&wgpu::Buffer>) -> wgpu::Buffer {
+        let y = self.alloc(rows * nout);
+        matmul_f16_batched_tiled_chained(self.ctx, self.p, enc, w, x, &y, kin, nout, rows);
+        if let Some(b) = bias {
+            add_bias_batched_chained(self.ctx, self.p, enc, &y, b, nout, rows);
+        }
+        y
+    }
+
+    /// Style-diffusion sample → s_pred[256] on GPU. `emb` = PLBERT bert_dur `[l,768]` (CPU).
+    /// `noise_init`/`noises` are the replayed RNG draws (deterministic given them).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn diffusion_sample(&mut self, emb: &[f32], l: usize, ref_s: &[f32], noise_init: &[f32], noises: &[Vec<f32>], sigma_data: f32, sigma_min: f32, sigma_max: f32, rho: f32, steps: usize) -> Vec<f32> {
+        // Karras schedule
+        let inv = 1.0 / rho;
+        let (a, b) = (sigma_max.powf(inv), sigma_min.powf(inv));
+        let mut sig: Vec<f32> = (0..steps).map(|i| (a + (i as f32 / (steps - 1) as f32) * (b - a)).powf(rho)).collect();
+        sig.push(0.0);
+        // ADPM2 (scalar math on CPU; the net eval on GPU)
+        let mut x: Vec<f32> = noise_init.iter().map(|v| sig[0] * v).collect();
+        for i in 0..steps - 1 {
+            let (s, sn) = (sig[i], sig[i + 1]);
+            let sigma_up = (sn * sn * (s * s - sn * sn) / (s * s)).sqrt();
+            let sigma_down = (sn * sn - sigma_up * sigma_up).sqrt();
+            let sigma_mid = (s + sigma_down) * 0.5;
+            let dn = self.diff_denoise(&x, s, sigma_data, emb, l, ref_s).await;
+            let d: Vec<f32> = (0..256).map(|k| (x[k] - dn[k]) / s).collect();
+            let x_mid: Vec<f32> = (0..256).map(|k| x[k] + d[k] * (sigma_mid - s)).collect();
+            let dn_mid = self.diff_denoise(&x_mid, sigma_mid, sigma_data, emb, l, ref_s).await;
+            let d_mid: Vec<f32> = (0..256).map(|k| (x_mid[k] - dn_mid[k]) / sigma_mid).collect();
+            let nz = &noises[i];
+            for k in 0..256 {
+                x[k] = x[k] + d_mid[k] * (sigma_down - s) + nz[k] * sigma_up;
+            }
+        }
+        x
+    }
+
+    /// KDiffusion denoise_fn: c_skip·x + c_out·net(c_in·x, c_noise).
+    async fn diff_denoise(&mut self, x: &[f32], sigma: f32, sd: f32, emb: &[f32], l: usize, ref_s: &[f32]) -> Vec<f32> {
+        let c_skip = sd * sd / (sigma * sigma + sd * sd);
+        let c_out = sigma * sd / (sd * sd + sigma * sigma).sqrt();
+        let c_in = 1.0 / (sigma * sigma + sd * sd).sqrt();
+        let c_noise = sigma.ln() * 0.25;
+        let xin: Vec<f32> = x.iter().map(|v| c_in * v).collect();
+        let pred = self.diff_net(&xin, c_noise, emb, l, ref_s).await;
+        (0..256).map(|k| c_skip * x[k] + c_out * pred[k]).collect()
+    }
+
+    /// Test hook: one isolated GPU denoiser eval (parity vs the CPU oracle's `net_eval`).
+    pub async fn diff_net_eval(&mut self, x: &[f32], time: f32, emb: &[f32], l: usize, ref_s: &[f32]) -> Vec<f32> {
+        self.diff_net(x, time, emb, l, ref_s).await
+    }
+
+    /// One denoiser network eval on GPU. (x[256], time, emb[l,768], ref_s[256]) → [256].
+    async fn diff_net(&mut self, x: &[f32], time: f32, emb: &[f32], l: usize, ref_s: &[f32]) -> Vec<f32> {
+        const F: usize = 1024;
+        const MID: usize = 512;
+        // mapping (CPU, tiny) → replicate to [l,1024] → upload
+        let mapping = self.diff_mapping(time, ref_s);
+        let mut mrep = vec![0f32; l * F];
+        for t in 0..l {
+            mrep[t * F..(t + 1) * F].copy_from_slice(&mapping);
+        }
+        let map_buf = self.up(&mrep);
+        // h[l,1024] = [ x(256, broadcast) ‖ emb[t](768) ]  (CPU build → upload)
+        let mut h = vec![0f32; l * F];
+        for t in 0..l {
+            h[t * F..t * F + 256].copy_from_slice(&x[..256]);
+            h[t * F + 256..t * F + F].copy_from_slice(&emb[t * 768..t * 768 + 768]);
+        }
+        let hb = self.up(&h);
+        let mut enc = self.enc();
+        for bi in 0..3 {
+            let pfx = format!("diffusion.blocks.{bi}");
+            residual_add_chained(self.ctx, self.p, &mut enc, &hb, &map_buf, l * F); // x += mapping
+            // AdaLN (norm, norm_context) — affine (1+γ_fc), β_fc from ref_s (constant across rows)
+            let (gn, bn) = self.diff_adaln_affine(&format!("{pfx}.attention.norm"), ref_s);
+            let (gc, bc) = self.diff_adaln_affine(&format!("{pfx}.attention.norm_context"), ref_s);
+            let xn = self.alloc(l * F);
+            layernorm_affine_chained(self.ctx, self.p, &mut enc, &hb, Some(&gn), Some(&bn), &self.dummy, &xn, l, F, 1e-5);
+            let cn = self.alloc(l * F);
+            layernorm_affine_chained(self.ctx, self.p, &mut enc, &hb, Some(&gc), Some(&bc), &self.dummy, &cn, l, F, 1e-5);
+            // q = to_q(xn); k,v = split(to_kv)(cn)
+            let qw = self.wt16(&format!("{pfx}.attention.to_q.weight"));
+            let kvw = self.t(&format!("{pfx}.attention.to_kv.weight")).to_vec(); // [1024,1024]
+            let kw = self.wt16_slice(&format!("f16:{pfx}.to_kv.k"), &kvw[..MID * F]);
+            let vw = self.wt16_slice(&format!("f16:{pfx}.to_kv.v"), &kvw[MID * F..]);
+            let q = self.glin(&mut enc, &xn, l, F, MID, &qw, None);
+            let k = self.glin(&mut enc, &cn, l, F, MID, &kw, None);
+            let v = self.glin(&mut enc, &cn, l, F, MID, &vw, None);
+            // matmul output [l, heads*hd] is already patch-major (PHD) — the layout the flash
+            // kernel reads directly (q[(patch*heads+head)*hd+d]); output is PHD too. No transpose.
+            let o = self.alloc(MID * l);
+            vision_attention_chained(self.ctx, self.p, &mut enc, &q, &k, &v, &o, 64, 8, l);
+            let ow = self.wt16(&format!("{pfx}.attention.attention.to_out.weight"));
+            let ob = self.wt(&format!("{pfx}.attention.attention.to_out.bias"));
+            let attn = self.glin(&mut enc, &o, l, MID, F, &ow, Some(&ob));
+            residual_add_chained(self.ctx, self.p, &mut enc, &hb, &attn, l * F); // x += attn
+            // FFN: Lin(1024→2048) gelu Lin(2048→1024)
+            let f0w = self.wt16(&format!("{pfx}.feed_forward.0.weight"));
+            let f0b = self.wt(&format!("{pfx}.feed_forward.0.bias"));
+            let ff = self.glin(&mut enc, &hb, l, F, 2 * F, &f0w, Some(&f0b));
+            gelu_exact_chained(self.ctx, self.p, &mut enc, &ff, l * 2 * F);
+            let f2w = self.wt16(&format!("{pfx}.feed_forward.2.weight"));
+            let f2b = self.wt(&format!("{pfx}.feed_forward.2.bias"));
+            let ff2 = self.glin(&mut enc, &ff, l, 2 * F, F, &f2w, Some(&f2b));
+            residual_add_chained(self.ctx, self.p, &mut enc, &hb, &ff2, l * F); // x += ffn
+        }
+        self.submit(enc);
+        // mean-pool over l + Conv1x1(1024→256) on CPU (tiny)
+        let hf = self.read(&hb, l * F).await;
+        let mut pooled = vec![0f32; F];
+        for t in 0..l {
+            for c in 0..F {
+                pooled[c] += hf[t * F + c];
+            }
+        }
+        for v in pooled.iter_mut() {
+            *v /= l as f32;
+        }
+        linear(&pooled, 1, F, self.t("diffusion.to_out.1.weight"), Some(self.t("diffusion.to_out.1.bias")), 256)
+    }
+
+    /// AdaLayerNorm affine: returns uploaded ((1+γ_fc), β_fc) ∈ ℝ¹⁰²⁴, γ/β = fc(ref_s).
+    fn diff_adaln_affine(&mut self, fc_prefix: &str, ref_s: &[f32]) -> (wgpu::Buffer, wgpu::Buffer) {
+        let fw = self.t(&format!("{fc_prefix}.fc.weight")).to_vec();
+        let fb = self.t(&format!("{fc_prefix}.fc.bias")).to_vec();
+        let gb = linear(ref_s, 1, 256, &fw, Some(&fb), 2048);
+        let g1: Vec<f32> = gb[..1024].iter().map(|v| 1.0 + v).collect();
+        let beta = gb[1024..].to_vec();
+        (self.up(&g1), self.up(&beta))
+    }
+
+    /// Denoiser time/feature mapping (CPU, tiny): to_mapping(GELU(Lin(time_pos))+GELU(Lin(ref_s))).
+    fn diff_mapping(&self, time: f32, ref_s: &[f32]) -> Vec<f32> {
+        let gelu = |v: &mut [f32]| {
+            for x in v.iter_mut() {
+                let z = *x / std::f32::consts::SQRT_2;
+                let t = 1.0 / (1.0 + 0.327_591_1 * z.abs());
+                let y = 1.0 - (((((1.061_405_4 * t - 1.453_152_) * t + 1.421_413_7) * t - 0.284_496_74) * t + 0.254_829_6) * t) * (-z * z).exp();
+                *x *= 0.5 * (1.0 + if z >= 0.0 { y } else { -y });
+            }
+        };
+        let mut tpos = vec![0f32; 257];
+        tpos[0] = time;
+        let tw = self.t("diffusion.to_time.0.0.weights");
+        for j in 0..128 {
+            let f = time * tw[j] * 2.0 * std::f32::consts::PI;
+            tpos[1 + j] = f.sin();
+            tpos[1 + 128 + j] = f.cos();
+        }
+        let mut t_emb = linear(&tpos, 1, 257, self.t("diffusion.to_time.0.1.weight"), Some(self.t("diffusion.to_time.0.1.bias")), 1024);
+        gelu(&mut t_emb);
+        let mut f_emb = linear(ref_s, 1, 256, self.t("diffusion.to_features.0.weight"), Some(self.t("diffusion.to_features.0.bias")), 1024);
+        gelu(&mut f_emb);
+        let mut m: Vec<f32> = (0..1024).map(|k| t_emb[k] + f_emb[k]).collect();
+        m = linear(&m, 1, 1024, self.t("diffusion.to_mapping.0.weight"), Some(self.t("diffusion.to_mapping.0.bias")), 1024);
+        gelu(&mut m);
+        m = linear(&m, 1, 1024, self.t("diffusion.to_mapping.2.weight"), Some(self.t("diffusion.to_mapping.2.bias")), 1024);
+        gelu(&mut m);
+        m
     }
 
     /// Full hifigan decoder on GPU: `asr [512,f]`, `f0`/`n [2f]` (CPU), `style [128]` → 24 kHz waveform.

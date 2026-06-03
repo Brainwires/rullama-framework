@@ -54,6 +54,29 @@ fn gaussians(seed: u64, n: usize) -> Vec<f32> {
     out
 }
 
+/// Style-diffusion step count (matches the converter/oracle default).
+pub const DIFFUSION_STEPS: usize = 5;
+
+/// The replayed RNG draws for the ADPM2 sampler: (noise_init[256], steps-1 × [256]).
+pub fn diffusion_noise(cfg: &DiffusionConfig) -> (Vec<f32>, Vec<Vec<f32>>) {
+    let dim = 2 * STYLE_DIM;
+    let g = gaussians(cfg.seed, DIFFUSION_STEPS * dim);
+    let noise_init = g[..dim].to_vec();
+    let noises = (1..DIFFUSION_STEPS).map(|i| g[i * dim..(i + 1) * dim].to_vec()).collect();
+    (noise_init, noises)
+}
+
+/// Blend the diffusion sample with the reference style: acoustic = α·diff+(1-α)·ref,
+/// prosodic = β·diff+(1-β)·ref → effective 256-d style `[acoustic(128) ‖ prosodic(128)]`.
+pub fn blend_style(s_pred: &[f32], ref_s: &[f32], cfg: &DiffusionConfig) -> Vec<f32> {
+    let mut eff = vec![0f32; 2 * STYLE_DIM];
+    for k in 0..STYLE_DIM {
+        eff[k] = cfg.alpha * s_pred[k] + (1.0 - cfg.alpha) * ref_s[k];
+        eff[STYLE_DIM + k] = cfg.beta * s_pred[STYLE_DIM + k] + (1.0 - cfg.beta) * ref_s[STYLE_DIM + k];
+    }
+    eff
+}
+
 const HIDDEN: usize = 512;
 const N_LAYER: usize = 3;
 const TE_K: usize = 5; // text_encoder conv kernel
@@ -292,26 +315,22 @@ impl<'a> StyleTtsAcoustic<'a> {
     /// path). `bert_dur` is the raw PLBERT output `[t,768]`. Returns the effective 256-d style
     /// `[acoustic_blend(128) ‖ prosodic_blend(128)]` the rest of the graph consumes unchanged.
     fn diffuse_style(&self, ref_s: &[f32], bert_dur: &[f32], t: usize, cfg: &DiffusionConfig) -> Vec<f32> {
-        let diff = StyleDiffusion::new(self.w);
-        let steps = 5usize; // matches the converter/oracle default
-        let g = gaussians(cfg.seed, steps * STYLE_DIM * 2);
-        let noise_init = &g[..STYLE_DIM * 2];
-        let noises: Vec<Vec<f32>> = (1..steps).map(|i| g[i * STYLE_DIM * 2..(i + 1) * STYLE_DIM * 2].to_vec()).collect();
-        let s_pred = diff.sample(noise_init, &noises, bert_dur, t, ref_s); // [256]
-        let mut eff = vec![0f32; 2 * STYLE_DIM];
-        for k in 0..STYLE_DIM {
-            // acoustic (decoder ref): alpha·diff + (1-alpha)·reference
-            eff[k] = cfg.alpha * s_pred[k] + (1.0 - cfg.alpha) * ref_s[k];
-            // prosodic (predictor s): beta·diff + (1-beta)·reference
-            eff[STYLE_DIM + k] = cfg.beta * s_pred[STYLE_DIM + k] + (1.0 - cfg.beta) * ref_s[STYLE_DIM + k];
-        }
-        eff
+        let (noise_init, noises) = diffusion_noise(&cfg);
+        let s_pred = StyleDiffusion::new(self.w).sample(&noise_init, &noises, bert_dur, t, ref_s); // [256]
+        blend_style(&s_pred, ref_s, &cfg)
+    }
+
+    /// text_encoder + PLBERT — the style-independent prefix. Split out so the GPU synth path can
+    /// run the (async, GPU) style diffusion between this and `acoustic_rest`.
+    pub fn acoustic_prep(&self, ids: &[i64], progress: Option<&dyn Fn(f32, &str)>) -> (Vec<f32>, Vec<f32>, usize) {
+        let t = ids.len();
+        let t_en = self.text_encoder(ids); // [512,T] cm
+        let bert_out = self.bert(ids, progress); // [T,768]
+        (t_en, bert_out, t)
     }
 
     pub fn acoustic_features(&self, ids: &[i64], ref_s: &[f32], diffuse: Option<DiffusionConfig>, progress: Option<&dyn Fn(f32, &str)>) -> (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, usize) {
-        let t = ids.len();
-        let t_en = self.text_encoder(ids); // [512,T] cm
-        let bert_out = self.bert(ids, progress);
+        let (t_en, bert_out, t) = self.acoustic_prep(ids, progress);
         // optional style diffusion (natural prosody) before splitting into prosodic/acoustic
         let eff_s = match diffuse {
             Some(cfg) => {
@@ -322,12 +341,18 @@ impl<'a> StyleTtsAcoustic<'a> {
             }
             None => ref_s.to_vec(),
         };
+        self.acoustic_rest(&t_en, &bert_out, t, &eff_s, progress)
+    }
+
+    /// Everything downstream of the style split: bert_encoder + predictor + length-regulate.
+    /// `eff_s` is the (possibly diffusion-blended) 256-d style. Returns `(asr_shifted, f0, n, r, F)`.
+    pub fn acoustic_rest(&self, t_en: &[f32], bert_out: &[f32], t: usize, eff_s: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, usize) {
         let s = &eff_s[STYLE_DIM..]; // prosodic
         let r = eff_s[..STYLE_DIM].to_vec(); // acoustic
         if let Some(p) = progress {
             p(0.20, "predicting rhythm");
         }
-        let be = self.bert_encoder(&bert_out, t); // [T,512]
+        let be = self.bert_encoder(bert_out, t); // [T,512]
         let d = self.duration_encode(&be, t, s); // [T,640]
         let dur = self.predict_duration(&d, t);
         let (en, f) = Self::expand_by_dur_cm(&d, t, HIDDEN + STYLE_DIM, &dur); // [640,F]

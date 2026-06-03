@@ -127,7 +127,24 @@ impl StyleTtsModel {
     /// hifigan decoder + generator on the GPU (the dominant cost). `wc` caches uploaded
     /// weights across calls.
     pub async fn synthesize_gpu(&self, ctx: &WgpuCtx, p: &Pipelines, wc: &mut GpuWeightCache, ids: &[i64], voice: &[f32], diffuse: Option<DiffusionConfig>, progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
-        let (asr, f0, n, r, f) = StyleTtsAcoustic::new(&self.w).acoustic_features(ids, voice, diffuse, progress);
+        let ac = StyleTtsAcoustic::new(&self.w);
+        let (t_en, bert_out, t) = ac.acoustic_prep(ids, progress);
+        // style diffusion (natural prosody) on the GPU, between PLBERT and the predictor
+        let eff_s = match diffuse {
+            Some(cfg) => {
+                if let Some(pp) = progress {
+                    pp(0.16, "imagining delivery (GPU)");
+                }
+                // sampler params match the converter/oracle (ADPM2 + Karras, sigma_data=0.2)
+                let (noise_init, noises) = crate::reference::styletts2::acoustic::diffusion_noise(&cfg);
+                let s_pred = StyleTtsGpu::new(&self.w, ctx, p, wc)
+                    .diffusion_sample(&bert_out, t, voice, &noise_init, &noises, 0.2, 1e-4, 3.0, 9.0, crate::reference::styletts2::acoustic::DIFFUSION_STEPS)
+                    .await;
+                crate::reference::styletts2::acoustic::blend_style(&s_pred, voice, &cfg)
+            }
+            None => voice.to_vec(),
+        };
+        let (asr, f0, n, r, f) = ac.acoustic_rest(&t_en, &bert_out, t, &eff_s, progress);
         if let Some(pp) = progress {
             pp(0.36, "generating audio (GPU)");
         }

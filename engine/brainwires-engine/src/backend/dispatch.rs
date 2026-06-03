@@ -363,6 +363,15 @@ pub(crate) fn write_storage_f32(
     write_storage(device, queue, label, bytemuck::cast_slice(x))
 }
 
+/// f32 → f16 storage buffer (same row-major layout). For the f16-weight matmul kernels.
+pub(crate) fn write_storage_f16(device: &wgpu::Device, queue: &wgpu::Queue, label: &str, x: &[f32]) -> wgpu::Buffer {
+    let mut bytes = Vec::with_capacity(x.len() * 2);
+    for &v in x {
+        bytes.extend_from_slice(&half::f16::from_f32(v).to_le_bytes());
+    }
+    write_storage(device, queue, label, &bytes)
+}
+
 /// Read-write storage buffer (STORAGE | COPY_SRC | COPY_DST), zero-initialized.
 /// For intermediate activations that are written by one kernel and read by the next
 /// (and optionally copied out for readback).
@@ -3561,6 +3570,12 @@ struct LeakyReluParams {
 pub fn leaky_relu_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder, y: &wgpu::Buffer, n: usize, slope: f32) {
     let params = LeakyReluParams { n: n as u32, slope, _p0: 0, _p1: 0 };
     cached_dispatch(ctx, enc, &p.leaky_relu, "leaky_relu", &[y], &params, wg_grid(n));
+}
+
+/// Exact (erf) GELU, in-place — the StyleTTS2 diffusion denoiser activation.
+pub fn gelu_exact_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder, y: &wgpu::Buffer, n: usize) {
+    let params = LeakyReluParams { n: n as u32, slope: 0.0, _p0: 0, _p1: 0 };
+    cached_dispatch(ctx, enc, &p.gelu_exact, "gelu_exact", &[y], &params, wg_grid(n));
 }
 
 #[repr(C)]
