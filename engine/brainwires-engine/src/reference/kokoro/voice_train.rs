@@ -36,7 +36,7 @@ fn sig_loss(a: &[f32], b: &[f32]) -> f32 {
 }
 
 /// Deterministic xorshift64 + Box–Muller (no Math.random / Instant in this env).
-struct Rng(u64);
+pub(crate) struct Rng(pub u64);
 impl Rng {
     fn next_u64(&mut self) -> u64 {
         let mut x = self.0;
@@ -95,5 +95,29 @@ impl KokoroModel {
             curve.push(cur_loss);
         }
         VoiceTrainResult { style, loss_curve: curve }
+    }
+
+    /// One hill-climb step (for incremental/UI-driven training). Mutates `style`,
+    /// `cur_loss`, `step`, `rng` in place; returns the (possibly unchanged) current loss.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn voice_train_step(
+        &self, ctx: &WgpuCtx, p: &Pipelines, wc: &mut WeightCache, ids: &[i64], target_sig: &[f32],
+        style: &mut Vec<f32>, cur_loss: &mut f32, step: &mut f32, rng: &mut u64,
+    ) -> f32 {
+        let mut r = Rng(*rng | 1);
+        let mut cand = style.clone();
+        for v in cand.iter_mut() {
+            *v += *step * r.gauss();
+        }
+        *rng = r.0;
+        let audio = self.synthesize_gpu_fast(ctx, p, wc, ids, &cand).await;
+        let loss = sig_loss(&voice_signature(&audio), target_sig);
+        if loss < *cur_loss {
+            *style = cand;
+            *cur_loss = loss;
+        } else {
+            *step *= 0.95;
+        }
+        *cur_loss
     }
 }
