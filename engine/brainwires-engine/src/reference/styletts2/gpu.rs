@@ -25,6 +25,20 @@ use crate::reference::kokoro::ops::{leaky_relu as leaky_cpu, linear};
 const RSQRT2: f32 = 0.707_106_77;
 const STYLE_DIM: usize = 128;
 
+/// Native dev/bench aid: when `ST2_GPU_THROTTLE_MS` is set, drain the queue and sleep after every
+/// stage submit, so the OS reclaims the GPU between stages (the cursor moves, the compositor runs)
+/// instead of one long GPU monopoly. This is what keeps a weak integrated GPU from tripping the
+/// macOS watchdog during a long synth. Unset (production) → zero overhead. No-op on wasm.
+#[cfg(not(target_arch = "wasm32"))]
+fn gpu_yield(ctx: &WgpuCtx) {
+    if let Some(ms) = std::env::var("ST2_GPU_THROTTLE_MS").ok().and_then(|v| v.parse::<u64>().ok()) {
+        let _ = ctx.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+    }
+}
+#[cfg(target_arch = "wasm32")]
+fn gpu_yield(_ctx: &WgpuCtx) {}
+
 /// Persistent GPU weight cache (name → uploaded f32 buffer).
 pub type GpuWeightCache = HashMap<String, wgpu::Buffer>;
 
@@ -35,6 +49,20 @@ pub struct StyleTtsGpu<'a> {
     wc: &'a mut GpuWeightCache,
     dummy: wgpu::Buffer,
     scratch: Vec<wgpu::Buffer>,
+}
+
+impl Drop for StyleTtsGpu<'_> {
+    /// Each call allocates fresh scratch buffers with new ids, so the shared bind-group cache (and
+    /// the GPU descriptor table behind it) grows on *every* synth/encode. Left unbounded this leaks
+    /// until a long session — or a tight loop like the fidelity harness — exhausts the GPU and hard-
+    /// locks the machine. Evict this call's scratch from the cache and free its GPU memory on drop.
+    fn drop(&mut self) {
+        let ids: Vec<u64> = self.scratch.iter().map(crate::backend::buf_id).collect();
+        self.ctx.bind_cache.invalidate_buffers(&ids);
+        for b in &self.scratch {
+            b.destroy();
+        }
+    }
 }
 
 impl<'a> StyleTtsGpu<'a> {
@@ -187,6 +215,7 @@ impl<'a> StyleTtsGpu<'a> {
     }
     fn submit(&self, e: wgpu::CommandEncoder) {
         self.ctx.queue.submit(Some(e.finish()));
+        gpu_yield(self.ctx);
     }
 
     /// hifigan Generator on GPU. `x` buffer [512, xt], `har` buffer [1, har_len]. Returns the
