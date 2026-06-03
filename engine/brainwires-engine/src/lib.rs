@@ -41,6 +41,7 @@ pub mod model;
 pub mod multimodal;
 #[doc(hidden)]
 pub mod reference;
+pub mod styletts2_clone;
 pub mod tts;
 #[doc(hidden)]
 pub mod template;
