@@ -12,6 +12,7 @@
 
 use crate::reference::kokoro::ops::leaky_relu;
 
+pub mod decoder;
 pub mod mel;
 pub mod style_encoder;
 pub use mel::MelFrontend;
