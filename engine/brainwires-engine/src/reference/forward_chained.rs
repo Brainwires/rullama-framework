@@ -1003,6 +1003,13 @@ impl Forward {
         // Tiled output projection — same MAX_TILE_BYTES discipline as
         // the in-line one in `run_forward_from_hidden`.
         const MAX_TILE_BYTES: usize = 8 * 1024 * 1024;
+        // Mobile: stream token_embd one tile at a time and destroy each (peak ~8 MiB) instead of
+        // the cached ~315 MiB. This head is the documented iPhone forward→head jetsam point.
+        if self.mobile_mode {
+            self.output_proj_token_embd_streaming(token_embd_dtype)
+                .await?;
+            return Ok(());
+        }
         let tiles = wc
             .buffer_tiles_async("token_embd.weight", MAX_TILE_BYTES)
             .await?;
@@ -1033,6 +1040,54 @@ impl Forward {
                 (tile.n_rows as u64) * 4,
             );
             self.ctx.queue.submit(Some(enc.finish()));
+        }
+        Ok(())
+    }
+
+    /// Streaming head output projection for `mobile_mode`: fetch one `token_embd` tile, matmul it
+    /// into `logits`, **destroy it**, yield — so token_embd GPU residency is ~one 8 MiB tile
+    /// instead of the cached ~315 MiB that jetsam-killed the iPhone at the forward→head
+    /// transition. Assumes `self.norm_x` already holds the final-normed hidden state. Bit-identical
+    /// to the cached tile loop (same matmuls, same tiles) — it just frees each tile after its use.
+    async fn output_proj_token_embd_streaming(&self, token_embd_dtype: GgmlDtype) -> Result<()> {
+        const MAX_TILE_BYTES: usize = 8 * 1024 * 1024;
+        let d_model = self.cfg.d_model as usize;
+        let wc = self.wcache.clone();
+        let n_tiles = wc.tile_count("token_embd.weight", MAX_TILE_BYTES)?;
+        for i in 0..n_tiles {
+            let tile = wc
+                .fetch_tile_uncached("token_embd.weight", MAX_TILE_BYTES, i)
+                .await?;
+            let mut enc = self
+                .ctx
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("fwd.outproj.stream_tile"),
+                });
+            run_matmul_into_buf(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                token_embd_dtype,
+                &tile.buffer,
+                &self.norm_x,
+                &self.logits_tile,
+                tile.n_rows,
+                d_model,
+                "fwd.outproj_stream_tile",
+            )?;
+            enc.copy_buffer_to_buffer(
+                &self.logits_tile,
+                0,
+                &self.logits,
+                (tile.row_start as u64) * 4,
+                (tile.n_rows as u64) * 4,
+            );
+            self.ctx.queue.submit(Some(enc.finish()));
+            // Free this tile's 8 MiB before the next fetch, and release the event loop one tick so
+            // iOS Safari's GPUProcess reclaims it (and doesn't TDR on the matmul burst).
+            tile.buffer.destroy();
+            self.wasm_yield_zero().await;
         }
         Ok(())
     }
@@ -2255,36 +2310,44 @@ impl Forward {
         // staging allocation, it's a single 80 MiB wgpu::Buffer creation
         // on top of ~2 GB of resident layer weights. 8 MiB tiles work.
         const MAX_TILE_BYTES: usize = 8 * 1024 * 1024;
-        let tiles = wc
-            .buffer_tiles_async("token_embd.weight", MAX_TILE_BYTES)
-            .await?;
-        for tile in &tiles {
-            run_matmul_into_buf(
-                &self.ctx,
-                &self.pipes,
-                &mut enc,
-                token_embd_dtype,
-                &tile.buffer,
-                &self.norm_x,
-                &self.logits_tile,
-                tile.n_rows,
-                d_model,
-                "fwd.output_tile",
-            )?;
-            enc.copy_buffer_to_buffer(
-                &self.logits_tile,
-                0,
-                &self.logits,
-                (tile.row_start as u64) * 4,
-                (tile.n_rows as u64) * 4,
-            );
-            self.ctx.queue.submit(Some(enc.finish()));
-            enc = self
-                .ctx
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("fwd.out_proj_encoder.cont"),
-                });
+        // Mobile: stream + destroy token_embd one tile at a time (~8 MiB peak) instead of the
+        // cached ~315 MiB. `enc` is empty here (final norm was flushed above), so the helper's
+        // own per-tile encoders don't conflict, and `enc` stays valid for the lm_head inject below.
+        if self.mobile_mode {
+            self.output_proj_token_embd_streaming(token_embd_dtype)
+                .await?;
+        } else {
+            let tiles = wc
+                .buffer_tiles_async("token_embd.weight", MAX_TILE_BYTES)
+                .await?;
+            for tile in &tiles {
+                run_matmul_into_buf(
+                    &self.ctx,
+                    &self.pipes,
+                    &mut enc,
+                    token_embd_dtype,
+                    &tile.buffer,
+                    &self.norm_x,
+                    &self.logits_tile,
+                    tile.n_rows,
+                    d_model,
+                    "fwd.output_tile",
+                )?;
+                enc.copy_buffer_to_buffer(
+                    &self.logits_tile,
+                    0,
+                    &self.logits,
+                    (tile.row_start as u64) * 4,
+                    (tile.n_rows as u64) * 4,
+                );
+                self.ctx.queue.submit(Some(enc.finish()));
+                enc = self
+                    .ctx
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("fwd.out_proj_encoder.cont"),
+                    });
+            }
         }
 
         // ---- lm_head LoRA forward inject ----

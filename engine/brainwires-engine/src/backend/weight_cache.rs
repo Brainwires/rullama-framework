@@ -453,6 +453,48 @@ impl WeightCache {
         Ok(self.commit_tiles(key, bufs, metas))
     }
 
+    /// Number of tiles `buffer_tiles_async` would split `name` into at this tile size.
+    pub fn tile_count(&self, name: &str, max_bytes_per_tile: usize) -> Result<usize> {
+        let layout = self.tile_layout(name, max_bytes_per_tile)?;
+        Ok(layout.n_rows.div_ceil(layout.rows_per_tile))
+    }
+
+    /// Fetch ONE tile (by index) and upload it to a fresh GPU buffer **without caching**, so the
+    /// caller can `.destroy()` it right after use. The memory-tight counterpart to
+    /// `buffer_tiles_async`, which uploads *every* tile and caches them all (~315 MiB resident for
+    /// `token_embd.weight` on gemma4:e2b — the brick at the iPhone forward→head jetsam wall).
+    /// Streaming + destroying one tile at a time holds the head-projection peak at
+    /// ~`max_bytes_per_tile` instead of the whole tensor.
+    pub async fn fetch_tile_uncached(
+        &self,
+        name: &str,
+        max_bytes_per_tile: usize,
+        tile_idx: usize,
+    ) -> Result<TiledTensor> {
+        let layout = self.tile_layout(name, max_bytes_per_tile)?;
+        let row_start = tile_idx * layout.rows_per_tile;
+        if row_start >= layout.n_rows {
+            return Err(RullamaError::Inference(format!(
+                "fetch_tile_uncached: tile {tile_idx} out of range for {name} ({} rows)",
+                layout.n_rows
+            )));
+        }
+        let row_end = (row_start + layout.rows_per_tile).min(layout.n_rows);
+        let byte_start = (row_start * layout.row_bytes) as u64;
+        let byte_len = ((row_end - row_start) * layout.row_bytes) as u64;
+        let chunk = self
+            .reader
+            .fetch_tensor_range(name, byte_start, byte_len)
+            .await?;
+        let buf = self.upload(&format!("{name}#stream_tile{row_start}"), &chunk);
+        drop(chunk);
+        Ok(TiledTensor {
+            buffer: buf,
+            row_start,
+            n_rows: row_end - row_start,
+        })
+    }
+
     fn tiles_cached(&self, key: &(String, usize)) -> Option<Vec<TiledTensor>> {
         let tiles = self.tiles.borrow();
         let meta = self.tile_meta.borrow();
