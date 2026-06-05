@@ -513,6 +513,21 @@ impl Model {
         freed
     }
 
+    /// **Explicitly free ALL of the model's GPU memory before discarding it.** Dropping the wasm
+    /// `Model` handle is NOT enough on the WebGPU backend: wgpu's `Drop` releases Rust handles but
+    /// never calls `GPUBuffer.destroy()`, so the ~1.4 GiB of weights + KV cache + tower scratch
+    /// stays pinned until the browser GCs the `GPUBuffer` objects — lazy on iOS Safari, so an
+    /// "unloaded" model keeps the GPU full and the TTS/clone engine can't fit. This iterates and
+    /// `.destroy()`s every buffer (text weights, vision/audio tower weights, KV, scratch). Call it
+    /// immediately before nulling the JS handle; the `Model` is unusable afterward.
+    pub fn release_gpu_native(&mut self) {
+        // Drops the tower structs' own intermediates (~250 MB each).
+        self.vision = None;
+        self.audio = None;
+        // Destroys the entire WeightCache (text + vision + audio weights), KV, and per-step scratch.
+        self.forward.release_gpu();
+    }
+
     /// Re-allocate the per-layer KV cache at a smaller (or larger) capacity.
     /// Returns the *previous* `max_context` so the caller can restore on
     /// demand. Discards any cached KV content (kv_lens reset to 0, pos = 0).
@@ -2501,6 +2516,15 @@ impl Model {
     #[wasm_bindgen(js_name = releaseAudioWeights)]
     pub fn release_audio_weights_js(&mut self) -> usize {
         self.release_audio_weights_native()
+    }
+
+    /// Explicitly `GPUBuffer.destroy()` ALL of the model's GPU memory (weights, KV, scratch,
+    /// vision/audio towers) so it's reclaimed immediately instead of lingering until the browser
+    /// GCs the buffer handles (which iOS Safari does lazily — keeping ~1.4 GiB pinned and blocking
+    /// the TTS/clone engine). Call right before nulling the JS handle; the model is dead afterward.
+    #[wasm_bindgen(js_name = releaseGpu)]
+    pub fn release_gpu_js(&mut self) {
+        self.release_gpu_native();
     }
 
     /// Re-allocate the per-layer KV cache at a new capacity (tokens).
