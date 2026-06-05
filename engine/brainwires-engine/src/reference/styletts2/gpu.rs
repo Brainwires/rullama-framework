@@ -218,6 +218,26 @@ impl<'a> StyleTtsGpu<'a> {
         gpu_yield(self.ctx);
     }
 
+    /// 0 ms JS event-loop yield (wasm32 only) between heavy GPU bursts. A full StyleTTS2 synth is
+    /// one long chain of GPU submits; on iOS Safari that monopolizes the GPU (springboard TDR) and
+    /// lets transient buffers pile up un-reclaimed (jetsam). Releasing the event loop for one tick
+    /// lets the GPUProcess message pipe drain — completed work finishes and its buffers free before
+    /// the next burst. **0 ms specifically**: `setTimeout(>0)` gets the Worker reaped by iOS jetsam
+    /// (proven in the training path's `forward_chained::wasm_yield_zero`). No-op on native.
+    async fn wasm_yield(&self) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            use wasm_bindgen::JsCast;
+            if let Ok(scope) = js_sys::global().dyn_into::<web_sys::DedicatedWorkerGlobalScope>() {
+                let promise = js_sys::Promise::new(&mut |resolve, _reject| {
+                    let resolve_fn: js_sys::Function = resolve.into();
+                    let _ = scope.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve_fn, 0);
+                });
+                let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+            }
+        }
+    }
+
     /// hifigan Generator on GPU. `x` buffer [512, xt], `har` buffer [1, har_len]. Returns the
     /// pre-tanh waveform buffer + length. **One submit per upsample stage** (project rule —
     /// keeps each command buffer small so large sequences don't trip a GPU timeout).
@@ -269,6 +289,9 @@ impl<'a> StyleTtsGpu<'a> {
             }
             scale_chained(self.ctx, self.p, &mut enc, &acc, cout * tup, 1.0 / 3.0);
             self.submit(enc);
+            // Yield between upsample stages — this is the heaviest, longest GPU burst of the synth
+            // (the end-of-gen vocoder) and the one that was tripping the iPhone springboard/jetsam.
+            self.wasm_yield().await;
             cur = acc;
             cin = cout;
             tcur = tup;
@@ -285,6 +308,7 @@ impl<'a> StyleTtsGpu<'a> {
         let post = self.alloc(tcur);
         conv1d_chained(self.ctx, self.p, &mut enc, &sn, &cpw, Some(&cpb), &self.dummy, &post, cin, tcur, 1, 7, 1, 3, 1, 1);
         self.submit(enc);
+        self.wasm_yield().await;
         (post, tcur)
     }
 
@@ -420,9 +444,11 @@ impl<'a> StyleTtsGpu<'a> {
             let sigma_down = (sn * sn - sigma_up * sigma_up).sqrt();
             let sigma_mid = (s + sigma_down) * 0.5;
             let dn = self.diff_denoise(&x, s, sigma_data, emb, l, ref_s).await;
+            self.wasm_yield().await;
             let d: Vec<f32> = (0..256).map(|k| (x[k] - dn[k]) / s).collect();
             let x_mid: Vec<f32> = (0..256).map(|k| x[k] + d[k] * (sigma_mid - s)).collect();
             let dn_mid = self.diff_denoise(&x_mid, sigma_mid, sigma_data, emb, l, ref_s).await;
+            self.wasm_yield().await;
             let d_mid: Vec<f32> = (0..256).map(|k| (x_mid[k] - dn_mid[k]) / sigma_mid).collect();
             let nz = &noises[i];
             for k in 0..256 {
@@ -589,6 +615,7 @@ impl<'a> StyleTtsGpu<'a> {
             tcur = nt;
         }
         self.submit(enc);
+        self.wasm_yield().await;
         if dbg {
             self.dbg("decode_x", &x, 512 * tcur).await;
         }
