@@ -364,7 +364,12 @@ pub(crate) fn write_storage_f32(
 }
 
 /// f32 → f16 storage buffer (same row-major layout). For the f16-weight matmul kernels.
-pub(crate) fn write_storage_f16(device: &wgpu::Device, queue: &wgpu::Queue, label: &str, x: &[f32]) -> wgpu::Buffer {
+pub(crate) fn write_storage_f16(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    label: &str,
+    x: &[f32],
+) -> wgpu::Buffer {
     let mut bytes = Vec::with_capacity(x.len() * 2);
     for &v in x {
         bytes.extend_from_slice(&half::f16::from_f32(v).to_le_bytes());
@@ -379,7 +384,9 @@ pub(crate) fn make_storage_rw(device: &wgpu::Device, label: &str, n_floats: usiz
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: (n_floats * 4) as u64,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     })
 }
@@ -404,7 +411,10 @@ fn make_output_pair(
     (out, read)
 }
 
-pub(crate) async fn read_back_f32(device: &wgpu::Device, read_buf: &wgpu::Buffer) -> Result<Vec<f32>> {
+pub(crate) async fn read_back_f32(
+    device: &wgpu::Device,
+    read_buf: &wgpu::Buffer,
+) -> Result<Vec<f32>> {
     let slice = read_buf.slice(..);
     let (sender, receiver) = oneshot::channel();
     slice.map_async(wgpu::MapMode::Read, move |r| {
@@ -1048,47 +1058,126 @@ pub fn wg_grid(threads: usize) -> (u32, u32, u32) {
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct Conv2dChfParams {
-    in_c: u32, in_h: u32, in_w: u32,
-    out_c: u32, out_h: u32, out_w: u32,
-    kh: u32, kw: u32, sh: u32, sw: u32, ph: u32, pw: u32,
-    groups: u32, has_bias: u32, _p0: u32, _p1: u32,
+    in_c: u32,
+    in_h: u32,
+    in_w: u32,
+    out_c: u32,
+    out_h: u32,
+    out_w: u32,
+    kh: u32,
+    kw: u32,
+    sh: u32,
+    sw: u32,
+    ph: u32,
+    pw: u32,
+    groups: u32,
+    has_bias: u32,
+    _p0: u32,
+    _p1: u32,
 }
 
 /// Channel-first conv2d (StyleTTS2 style encoder): f32 weights, optional bias, groups
 /// (depthwise = groups == in_c). `w [out_c, in_c/groups, kh, kw]`, x/y channel-first.
 #[allow(clippy::too_many_arguments)]
 pub fn conv2d_chf_chained(
-    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
-    w: &wgpu::Buffer, x: &wgpu::Buffer, bias: Option<&wgpu::Buffer>, dummy: &wgpu::Buffer, y: &wgpu::Buffer,
-    in_c: usize, in_h: usize, in_w: usize, out_c: usize, out_h: usize, out_w: usize,
-    kh: usize, kw: usize, sh: usize, sw: usize, ph: usize, pw: usize, groups: usize,
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    w: &wgpu::Buffer,
+    x: &wgpu::Buffer,
+    bias: Option<&wgpu::Buffer>,
+    dummy: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    in_c: usize,
+    in_h: usize,
+    in_w: usize,
+    out_c: usize,
+    out_h: usize,
+    out_w: usize,
+    kh: usize,
+    kw: usize,
+    sh: usize,
+    sw: usize,
+    ph: usize,
+    pw: usize,
+    groups: usize,
 ) {
     let params = Conv2dChfParams {
-        in_c: in_c as u32, in_h: in_h as u32, in_w: in_w as u32,
-        out_c: out_c as u32, out_h: out_h as u32, out_w: out_w as u32,
-        kh: kh as u32, kw: kw as u32, sh: sh as u32, sw: sw as u32, ph: ph as u32, pw: pw as u32,
-        groups: groups as u32, has_bias: bias.is_some() as u32, _p0: 0, _p1: 0,
+        in_c: in_c as u32,
+        in_h: in_h as u32,
+        in_w: in_w as u32,
+        out_c: out_c as u32,
+        out_h: out_h as u32,
+        out_w: out_w as u32,
+        kh: kh as u32,
+        kw: kw as u32,
+        sh: sh as u32,
+        sw: sw as u32,
+        ph: ph as u32,
+        pw: pw as u32,
+        groups: groups as u32,
+        has_bias: bias.is_some() as u32,
+        _p0: 0,
+        _p1: 0,
     };
     let b = bias.unwrap_or(dummy);
-    cached_dispatch(ctx, enc, &p.conv2d_chf, "conv2d_chf", &[w, x, b, y], &params, wg_grid(out_c * out_h * out_w));
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.conv2d_chf,
+        "conv2d_chf",
+        &[w, x, b, y],
+        &params,
+        wg_grid(out_c * out_h * out_w),
+    );
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct AvgPoolHalfChfParams {
-    c: u32, in_h: u32, in_w: u32, out_h: u32, out_w: u32, _p0: u32, _p1: u32, _p2: u32,
+    c: u32,
+    in_h: u32,
+    in_w: u32,
+    out_h: u32,
+    out_w: u32,
+    _p0: u32,
+    _p1: u32,
+    _p2: u32,
 }
 
 /// Channel-first 2×2 average pool with odd-width last-column repeat (StyleTTS2 DownSample).
 #[allow(clippy::too_many_arguments)]
 pub fn avg_pool2d_half_chained(
-    ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder,
-    x: &wgpu::Buffer, y: &wgpu::Buffer, c: usize, in_h: usize, in_w: usize, out_h: usize, out_w: usize,
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    c: usize,
+    in_h: usize,
+    in_w: usize,
+    out_h: usize,
+    out_w: usize,
 ) {
     let params = AvgPoolHalfChfParams {
-        c: c as u32, in_h: in_h as u32, in_w: in_w as u32, out_h: out_h as u32, out_w: out_w as u32, _p0: 0, _p1: 0, _p2: 0,
+        c: c as u32,
+        in_h: in_h as u32,
+        in_w: in_w as u32,
+        out_h: out_h as u32,
+        out_w: out_w as u32,
+        _p0: 0,
+        _p1: 0,
+        _p2: 0,
     };
-    cached_dispatch(ctx, enc, &p.avg_pool2d_half_chf, "avgpool_chf", &[x, y], &params, wg_grid(c * out_h * out_w));
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.avg_pool2d_half_chf,
+        "avgpool_chf",
+        &[x, y],
+        &params,
+        wg_grid(c * out_h * out_w),
+    );
 }
 
 /// **The hot path for every chained dispatcher.** Looks up (or builds
@@ -3494,7 +3583,15 @@ pub fn conv1d_chained(
     };
     let b = bias.unwrap_or(dummy);
     let total = (cout * tout) as u32;
-    cached_dispatch(ctx, enc, &p.conv1d, "conv1d", &[x, w, b, y], &params, wg_grid(total as usize));
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.conv1d,
+        "conv1d",
+        &[x, w, b, y],
+        &params,
+        wg_grid(total as usize),
+    );
     tout
 }
 
@@ -3553,7 +3650,15 @@ pub fn conv_transpose1d_chained(
     };
     let b = bias.unwrap_or(dummy);
     let total = (cout * tout) as u32;
-    cached_dispatch(ctx, enc, &p.conv_transpose1d, "convT1d", &[x, w, b, y], &params, wg_grid(total as usize));
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.conv_transpose1d,
+        "convT1d",
+        &[x, w, b, y],
+        &params,
+        wg_grid(total as usize),
+    );
     tout
 }
 
@@ -3567,15 +3672,54 @@ struct LeakyReluParams {
 }
 
 /// Elementwise LeakyReLU in-place on `y`.
-pub fn leaky_relu_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder, y: &wgpu::Buffer, n: usize, slope: f32) {
-    let params = LeakyReluParams { n: n as u32, slope, _p0: 0, _p1: 0 };
-    cached_dispatch(ctx, enc, &p.leaky_relu, "leaky_relu", &[y], &params, wg_grid(n));
+pub fn leaky_relu_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    y: &wgpu::Buffer,
+    n: usize,
+    slope: f32,
+) {
+    let params = LeakyReluParams {
+        n: n as u32,
+        slope,
+        _p0: 0,
+        _p1: 0,
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.leaky_relu,
+        "leaky_relu",
+        &[y],
+        &params,
+        wg_grid(n),
+    );
 }
 
 /// Exact (erf) GELU, in-place — the StyleTTS2 diffusion denoiser activation.
-pub fn gelu_exact_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder, y: &wgpu::Buffer, n: usize) {
-    let params = LeakyReluParams { n: n as u32, slope: 0.0, _p0: 0, _p1: 0 };
-    cached_dispatch(ctx, enc, &p.gelu_exact, "gelu_exact", &[y], &params, wg_grid(n));
+pub fn gelu_exact_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    y: &wgpu::Buffer,
+    n: usize,
+) {
+    let params = LeakyReluParams {
+        n: n as u32,
+        slope: 0.0,
+        _p0: 0,
+        _p1: 0,
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.gelu_exact,
+        "gelu_exact",
+        &[y],
+        &params,
+        wg_grid(n),
+    );
 }
 
 #[repr(C)]
@@ -3589,9 +3733,31 @@ struct SnakeParams {
 
 /// Snake1D activation (channel-major), per-channel alpha. Buffers: x, alpha, y.
 #[allow(clippy::too_many_arguments)]
-pub fn snake_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder, x: &wgpu::Buffer, alpha: &wgpu::Buffer, y: &wgpu::Buffer, c: usize, t: usize) {
-    let params = SnakeParams { c: c as u32, t: t as u32, _p0: 0, _p1: 0 };
-    cached_dispatch(ctx, enc, &p.snake, "snake", &[x, alpha, y], &params, wg_grid(c * t));
+pub fn snake_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer,
+    alpha: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    c: usize,
+    t: usize,
+) {
+    let params = SnakeParams {
+        c: c as u32,
+        t: t as u32,
+        _p0: 0,
+        _p1: 0,
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.snake,
+        "snake",
+        &[x, alpha, y],
+        &params,
+        wg_grid(c * t),
+    );
 }
 
 #[repr(C)]
@@ -3606,9 +3772,33 @@ struct AdainParams {
 /// AdaIN1d (channel-major): per-channel InstanceNorm + (1+gamma)*·+beta. gamma/beta
 /// are precomputed = chunk(fc(style)). One workgroup per channel. Buffers: x, gamma, beta, y.
 #[allow(clippy::too_many_arguments)]
-pub fn adain_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder, x: &wgpu::Buffer, gamma: &wgpu::Buffer, beta: &wgpu::Buffer, y: &wgpu::Buffer, c: usize, t: usize, eps: f32) {
-    let params = AdainParams { c: c as u32, t: t as u32, eps, _p0: 0 };
-    cached_dispatch(ctx, enc, &p.adain, "adain", &[x, gamma, beta, y], &params, (c as u32, 1, 1));
+pub fn adain_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer,
+    gamma: &wgpu::Buffer,
+    beta: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    c: usize,
+    t: usize,
+    eps: f32,
+) {
+    let params = AdainParams {
+        c: c as u32,
+        t: t as u32,
+        eps,
+        _p0: 0,
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.adain,
+        "adain",
+        &[x, gamma, beta, y],
+        &params,
+        (c as u32, 1, 1),
+    );
 }
 
 #[repr(C)]
@@ -3621,22 +3811,86 @@ struct Transpose2dParams {
 }
 
 /// 2-D transpose: x[rows, cols] row-major → y[cols, rows]. Buffers: x, y.
-pub fn transpose2d_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder, x: &wgpu::Buffer, y: &wgpu::Buffer, rows: usize, cols: usize) {
-    let params = Transpose2dParams { rows: rows as u32, cols: cols as u32, _p0: 0, _p1: 0 };
-    cached_dispatch(ctx, enc, &p.transpose2d, "transpose2d", &[x, y], &params, (((rows * cols) as u32).div_ceil(64), 1, 1));
+pub fn transpose2d_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    rows: usize,
+    cols: usize,
+) {
+    let params = Transpose2dParams {
+        rows: rows as u32,
+        cols: cols as u32,
+        _p0: 0,
+        _p1: 0,
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.transpose2d,
+        "transpose2d",
+        &[x, y],
+        &params,
+        (((rows * cols) as u32).div_ceil(64), 1, 1),
+    );
 }
 
 /// Nearest ×2 upsample (channel-major): x[c, t] → y[c, 2t]. Buffers: x, y.
-pub fn nearest_upsample2x_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder, x: &wgpu::Buffer, y: &wgpu::Buffer, c: usize, t: usize) {
-    let params = Transpose2dParams { rows: c as u32, cols: t as u32, _p0: 0, _p1: 0 };
-    cached_dispatch(ctx, enc, &p.nearest_upsample2x, "nearest2x", &[x, y], &params, wg_grid(c * 2 * t));
+pub fn nearest_upsample2x_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    c: usize,
+    t: usize,
+) {
+    let params = Transpose2dParams {
+        rows: c as u32,
+        cols: t as u32,
+        _p0: 0,
+        _p1: 0,
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.nearest_upsample2x,
+        "nearest2x",
+        &[x, y],
+        &params,
+        wg_grid(c * 2 * t),
+    );
 }
 
 /// ISTFTNet spectral split: post[2*nbins, t] → spec=exp(post[:nbins]), phase=sin(post[nbins:]).
 /// Buffers: post, spec, phase.
-pub fn spec_phase_chained(ctx: &WgpuCtx, p: &Pipelines, enc: &mut wgpu::CommandEncoder, post: &wgpu::Buffer, spec: &wgpu::Buffer, phase: &wgpu::Buffer, nbins: usize, t: usize) {
-    let params = Transpose2dParams { rows: nbins as u32, cols: t as u32, _p0: 0, _p1: 0 };
-    cached_dispatch(ctx, enc, &p.spec_phase, "spec_phase", &[post, spec, phase], &params, (((nbins * t) as u32).div_ceil(64), 1, 1));
+pub fn spec_phase_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    post: &wgpu::Buffer,
+    spec: &wgpu::Buffer,
+    phase: &wgpu::Buffer,
+    nbins: usize,
+    t: usize,
+) {
+    let params = Transpose2dParams {
+        rows: nbins as u32,
+        cols: t as u32,
+        _p0: 0,
+        _p1: 0,
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.spec_phase,
+        "spec_phase",
+        &[post, spec, phase],
+        &params,
+        (((nbins * t) as u32).div_ceil(64), 1, 1),
+    );
 }
 
 #[repr(C)]
@@ -3679,7 +3933,15 @@ pub fn istft_chained(
         _p0: 0,
         _p1: 0,
     };
-    cached_dispatch(ctx, enc, &p.istft, "istft", &[spec, phase, y], &params, ((out_len as u32).div_ceil(64), 1, 1));
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.istft,
+        "istft",
+        &[spec, phase, y],
+        &params,
+        ((out_len as u32).div_ceil(64), 1, 1),
+    );
     out_len
 }
 
@@ -5248,35 +5510,77 @@ mod tests {
         // (cin, tin, cout, k, stride, pad, dilation, groups): same-len k5, downsample
         // stride-2, dilated, and depthwise-grouped — the Kokoro conv shapes.
         let cases = [
-            (4usize, 20usize, 6usize, 5usize, 1usize, 2usize, 1usize, 1usize),
+            (
+                4usize, 20usize, 6usize, 5usize, 1usize, 2usize, 1usize, 1usize,
+            ),
             (3, 31, 1, 3, 2, 1, 1, 1),
             (8, 17, 8, 3, 1, 2, 2, 1),
             (6, 13, 6, 3, 1, 1, 1, 6),
         ];
         for (ci, (cin, tin, cout, k, stride, pad, dil, groups)) in cases.into_iter().enumerate() {
-            let xs: Vec<f32> = (0..cin * tin).map(|i| ((i as i32 % 19 - 9) as f32) * 0.07).collect();
-            let ws: Vec<f32> = (0..cout * (cin / groups) * k).map(|i| (i as f32 * 0.11).sin() * 0.4).collect();
+            let xs: Vec<f32> = (0..cin * tin)
+                .map(|i| ((i as i32 % 19 - 9) as f32) * 0.07)
+                .collect();
+            let ws: Vec<f32> = (0..cout * (cin / groups) * k)
+                .map(|i| (i as f32 * 0.11).sin() * 0.4)
+                .collect();
             let bs: Vec<f32> = (0..cout).map(|i| (i as f32) * 0.05 - 0.1).collect();
-            let (cpu, tout) = cpu_conv1d(&xs, cin, tin, &ws, Some(&bs), cout, k, stride, pad, dil, groups);
+            let (cpu, tout) = cpu_conv1d(
+                &xs,
+                cin,
+                tin,
+                &ws,
+                Some(&bs),
+                cout,
+                k,
+                stride,
+                pad,
+                dil,
+                groups,
+            );
 
             let xb = write_storage_f32(device, queue, "x", &xs);
             let wb = write_storage_f32(device, queue, "w", &ws);
             let bb = write_storage_f32(device, queue, "b", &bs);
             let (yb, yr) = make_output_pair(device, "y", (cout * tout * 4) as u64);
-            let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("c1d") });
-            let gt = conv1d_chained(&ctx, &p, &mut enc, &xb, &wb, Some(&bb), &dummy, &yb, cin, tin, cout, k, stride, pad, dil, groups);
+            let mut enc = device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("c1d") });
+            let gt = conv1d_chained(
+                &ctx,
+                &p,
+                &mut enc,
+                &xb,
+                &wb,
+                Some(&bb),
+                &dummy,
+                &yb,
+                cin,
+                tin,
+                cout,
+                k,
+                stride,
+                pad,
+                dil,
+                groups,
+            );
             enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (cout * tout * 4) as u64);
             queue.submit(Some(enc.finish()));
             let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("readback");
             assert_eq!(gt, tout, "case {ci} tout");
-            let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
+            let md = cpu
+                .iter()
+                .zip(&gpu)
+                .map(|(c, g)| (c - g).abs())
+                .fold(0.0f32, f32::max);
             assert!(md < 1e-4, "conv1d case {ci} max_diff = {md}");
         }
     }
 
     #[test]
     fn conv_transpose1d_gpu_vs_cpu() {
-        use crate::reference::kokoro::convblocks::{conv_transpose1d as cpu_ct, conv_transpose1d_depthwise as cpu_ctd};
+        use crate::reference::kokoro::convblocks::{
+            conv_transpose1d as cpu_ct, conv_transpose1d_depthwise as cpu_ctd,
+        };
         let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
         let p = Pipelines::new(&ctx.device);
         let device = &ctx.device;
@@ -5285,28 +5589,57 @@ mod tests {
 
         // (a) general groups=1, like ISTFTNet ups: 4->6, k5 stride2 pad2 outpad0
         {
-            let (cin, tin, cout, k, stride, pad, op) = (4usize, 9usize, 6usize, 5usize, 2usize, 2usize, 0usize);
-            let xs: Vec<f32> = (0..cin * tin).map(|i| ((i % 13) as f32 - 6.0) * 0.05).collect();
-            let ws: Vec<f32> = (0..cin * cout * k).map(|i| (i as f32 * 0.09).cos() * 0.3).collect();
+            let (cin, tin, cout, k, stride, pad, op) =
+                (4usize, 9usize, 6usize, 5usize, 2usize, 2usize, 0usize);
+            let xs: Vec<f32> = (0..cin * tin)
+                .map(|i| ((i % 13) as f32 - 6.0) * 0.05)
+                .collect();
+            let ws: Vec<f32> = (0..cin * cout * k)
+                .map(|i| (i as f32 * 0.09).cos() * 0.3)
+                .collect();
             let bs: Vec<f32> = (0..cout).map(|i| i as f32 * 0.02).collect();
             let (cpu, tout) = cpu_ct(&xs, cin, tin, &ws, Some(&bs), cout, k, stride, pad, op);
             let xb = write_storage_f32(device, queue, "x", &xs);
             let wb = write_storage_f32(device, queue, "w", &ws);
             let bb = write_storage_f32(device, queue, "b", &bs);
             let (yb, yr) = make_output_pair(device, "y", (cout * tout * 4) as u64);
-            let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("ct") });
-            let gt = conv_transpose1d_chained(&ctx, &p, &mut enc, &xb, &wb, Some(&bb), &dummy, &yb, cin, tin, cout, k, stride, pad, op, 1);
+            let mut enc = device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("ct") });
+            let gt = conv_transpose1d_chained(
+                &ctx,
+                &p,
+                &mut enc,
+                &xb,
+                &wb,
+                Some(&bb),
+                &dummy,
+                &yb,
+                cin,
+                tin,
+                cout,
+                k,
+                stride,
+                pad,
+                op,
+                1,
+            );
             enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (cout * tout * 4) as u64);
             queue.submit(Some(enc.finish()));
             let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("rb");
             assert_eq!(gt, tout);
-            let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
+            let md = cpu
+                .iter()
+                .zip(&gpu)
+                .map(|(c, g)| (c - g).abs())
+                .fold(0.0f32, f32::max);
             assert!(md < 1e-4, "convT general max_diff = {md}");
         }
         // (b) depthwise groups=C, like StyleTTS2 pool: C5, k3 stride2 pad1 outpad1
         {
             let (c, tin, k, stride, pad, op) = (5usize, 7usize, 3usize, 2usize, 1usize, 1usize);
-            let xs: Vec<f32> = (0..c * tin).map(|i| ((i % 11) as f32 - 5.0) * 0.06).collect();
+            let xs: Vec<f32> = (0..c * tin)
+                .map(|i| ((i % 11) as f32 - 5.0) * 0.06)
+                .collect();
             let ws: Vec<f32> = (0..c * k).map(|i| (i as f32 * 0.13).sin() * 0.4).collect();
             let bs: Vec<f32> = (0..c).map(|i| i as f32 * 0.03).collect();
             let (cpu, tout) = cpu_ctd(&xs, c, tin, &ws, Some(&bs), k, stride, pad, op);
@@ -5314,13 +5647,35 @@ mod tests {
             let wb = write_storage_f32(device, queue, "w", &ws);
             let bb = write_storage_f32(device, queue, "b", &bs);
             let (yb, yr) = make_output_pair(device, "y", (c * tout * 4) as u64);
-            let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("ctd") });
-            let gt = conv_transpose1d_chained(&ctx, &p, &mut enc, &xb, &wb, Some(&bb), &dummy, &yb, c, tin, c, k, stride, pad, op, c);
+            let mut enc = device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("ctd") });
+            let gt = conv_transpose1d_chained(
+                &ctx,
+                &p,
+                &mut enc,
+                &xb,
+                &wb,
+                Some(&bb),
+                &dummy,
+                &yb,
+                c,
+                tin,
+                c,
+                k,
+                stride,
+                pad,
+                op,
+                c,
+            );
             enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (c * tout * 4) as u64);
             queue.submit(Some(enc.finish()));
             let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("rb");
             assert_eq!(gt, tout);
-            let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
+            let md = cpu
+                .iter()
+                .zip(&gpu)
+                .map(|(c, g)| (c - g).abs())
+                .fold(0.0f32, f32::max);
             assert!(md < 1e-4, "convT depthwise max_diff = {md}");
         }
     }
@@ -5341,17 +5696,24 @@ mod tests {
         let yb = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("y"),
             size: (n * 4) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         queue.write_buffer(&yb, 0, bytemuck::cast_slice(&x));
         let (_y_unused, yr) = make_output_pair(device, "yr", (n * 4) as u64);
-        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("lr") });
+        let mut enc =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("lr") });
         leaky_relu_chained(&ctx, &p, &mut enc, &yb, n, slope);
         enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (n * 4) as u64);
         queue.submit(Some(enc.finish()));
         let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("rb");
-        let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
+        let md = cpu
+            .iter()
+            .zip(&gpu)
+            .map(|(c, g)| (c - g).abs())
+            .fold(0.0f32, f32::max);
         assert!(md < 1e-6, "leaky_relu max_diff = {md}");
     }
 
@@ -5369,12 +5731,17 @@ mod tests {
         let xb = write_storage_f32(device, queue, "x", &x);
         let ab = write_storage_f32(device, queue, "a", &alpha);
         let (yb, yr) = make_output_pair(device, "y", (c * t * 4) as u64);
-        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("sn") });
+        let mut enc =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("sn") });
         snake_chained(&ctx, &p, &mut enc, &xb, &ab, &yb, c, t);
         enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (c * t * 4) as u64);
         queue.submit(Some(enc.finish()));
         let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("rb");
-        let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
+        let md = cpu
+            .iter()
+            .zip(&gpu)
+            .map(|(c, g)| (c - g).abs())
+            .fold(0.0f32, f32::max);
         assert!(md < 1e-5, "snake max_diff = {md}");
     }
 
@@ -5388,10 +5755,14 @@ mod tests {
         let (c, t, sd) = (8usize, 19usize, 5usize);
         let x: Vec<f32> = (0..c * t).map(|i| ((i % 13) as f32 - 6.0) * 0.07).collect();
         let style: Vec<f32> = (0..sd).map(|i| (i as f32 * 0.3).sin()).collect();
-        let fc_w: Vec<f32> = (0..2 * c * sd).map(|i| (i as f32 * 0.05).cos() * 0.2).collect();
+        let fc_w: Vec<f32> = (0..2 * c * sd)
+            .map(|i| (i as f32 * 0.05).cos() * 0.2)
+            .collect();
         let fc_b: Vec<f32> = (0..2 * c).map(|i| i as f32 * 0.01).collect();
         // CPU oracle (norm affine absent → identity)
-        let cpu = crate::reference::kokoro::convblocks::adain1d(&x, c, t, None, None, &fc_w, &fc_b, &style, sd);
+        let cpu = crate::reference::kokoro::convblocks::adain1d(
+            &x, c, t, None, None, &fc_w, &fc_b, &style, sd,
+        );
         // GPU: precompute gamma/beta = chunk(fc(style))
         let gb = linear(&style, 1, sd, &fc_w, Some(&fc_b), 2 * c);
         let (gamma, beta) = gb.split_at(c);
@@ -5399,12 +5770,17 @@ mod tests {
         let gbuf = write_storage_f32(device, queue, "g", gamma);
         let bbuf = write_storage_f32(device, queue, "b", beta);
         let (yb, yr) = make_output_pair(device, "y", (c * t * 4) as u64);
-        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("ad") });
+        let mut enc =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("ad") });
         adain_chained(&ctx, &p, &mut enc, &xb, &gbuf, &bbuf, &yb, c, t, 1e-5);
         enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (c * t * 4) as u64);
         queue.submit(Some(enc.finish()));
         let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("rb");
-        let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
+        let md = cpu
+            .iter()
+            .zip(&gpu)
+            .map(|(c, g)| (c - g).abs())
+            .fold(0.0f32, f32::max);
         assert!(md < 1e-4, "adain max_diff = {md}");
     }
 
@@ -5424,7 +5800,8 @@ mod tests {
         }
         let xb = write_storage_f32(device, queue, "x", &x);
         let (yb, yr) = make_output_pair(device, "y", (rows * cols * 4) as u64);
-        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("tr") });
+        let mut enc =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("tr") });
         transpose2d_chained(&ctx, &p, &mut enc, &xb, &yb, rows, cols);
         enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (rows * cols * 4) as u64);
         queue.submit(Some(enc.finish()));
@@ -5439,20 +5816,31 @@ mod tests {
         let device = &ctx.device;
         let queue = &ctx.queue;
         let (nbins, frames, nfft, hop) = (11usize, 30usize, 20usize, 5usize);
-        let spec: Vec<f32> = (0..nbins * frames).map(|i| ((i * 7 % 13) as f32) * 0.1 + 0.05).collect();
-        let phase: Vec<f32> = (0..nbins * frames).map(|i| (i as f32 * 0.37).sin() * 3.0).collect();
-        let cpu = crate::reference::kokoro::generator::istft(&spec, &phase, nbins, frames, nfft, hop);
+        let spec: Vec<f32> = (0..nbins * frames)
+            .map(|i| ((i * 7 % 13) as f32) * 0.1 + 0.05)
+            .collect();
+        let phase: Vec<f32> = (0..nbins * frames)
+            .map(|i| (i as f32 * 0.37).sin() * 3.0)
+            .collect();
+        let cpu =
+            crate::reference::kokoro::generator::istft(&spec, &phase, nbins, frames, nfft, hop);
 
         let sb = write_storage_f32(device, queue, "spec", &spec);
         let pb = write_storage_f32(device, queue, "phase", &phase);
         let (yb, yr) = make_output_pair(device, "y", (cpu.len() * 4) as u64);
-        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("istft") });
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("istft"),
+        });
         let ol = istft_chained(&ctx, &p, &mut enc, &sb, &pb, &yb, nbins, frames, nfft, hop);
         enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (cpu.len() * 4) as u64);
         queue.submit(Some(enc.finish()));
         let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("rb");
         assert_eq!(ol, cpu.len());
-        let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
+        let md = cpu
+            .iter()
+            .zip(&gpu)
+            .map(|(c, g)| (c - g).abs())
+            .fold(0.0f32, f32::max);
         assert!(md < 1e-3, "istft max_diff = {md}");
     }
 
@@ -5466,8 +5854,12 @@ mod tests {
         let dim = 53usize;
         let total = n_rows * dim;
         let eps = 1e-5f32;
-        let x: Vec<f32> = (0..total).map(|i| ((i as i32 - 100) as f32) * 0.013).collect();
-        let gamma: Vec<f32> = (0..dim).map(|i| (i as f32 * 0.2).sin() * 0.5 + 1.0).collect();
+        let x: Vec<f32> = (0..total)
+            .map(|i| ((i as i32 - 100) as f32) * 0.013)
+            .collect();
+        let gamma: Vec<f32> = (0..dim)
+            .map(|i| (i as f32 * 0.2).sin() * 0.5 + 1.0)
+            .collect();
         let beta: Vec<f32> = (0..dim).map(|i| (i as f32 * 0.1).cos() * 0.3).collect();
 
         let cpu = crate::reference::kokoro::ops::layer_norm(&x, n_rows, dim, &gamma, &beta, eps);
@@ -5477,13 +5869,30 @@ mod tests {
         let b_buf = write_storage_f32(device, queue, "b", &beta);
         let (y_buf, y_read) = make_output_pair(device, "y", (total * 4) as u64);
         let dummy = make_dummy_storage(device, "dummy");
-        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("ln") });
-        layernorm_affine_chained(&ctx, &p, &mut enc, &x_buf, Some(&g_buf), Some(&b_buf), &dummy, &y_buf, n_rows, dim, eps);
+        let mut enc =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("ln") });
+        layernorm_affine_chained(
+            &ctx,
+            &p,
+            &mut enc,
+            &x_buf,
+            Some(&g_buf),
+            Some(&b_buf),
+            &dummy,
+            &y_buf,
+            n_rows,
+            dim,
+            eps,
+        );
         enc.copy_buffer_to_buffer(&y_buf, 0, &y_read, 0, (total * 4) as u64);
         queue.submit(Some(enc.finish()));
         let gpu = pollster::block_on(read_back_f32(device, &y_read)).expect("readback");
 
-        let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
+        let md = cpu
+            .iter()
+            .zip(&gpu)
+            .map(|(c, g)| (c - g).abs())
+            .fold(0.0f32, f32::max);
         assert!(md < 1e-4, "layernorm_affine max_diff = {md}");
     }
 

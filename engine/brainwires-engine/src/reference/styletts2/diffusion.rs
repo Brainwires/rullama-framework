@@ -34,7 +34,8 @@ fn gelu_exact(v: &mut [f32]) {
         let z = *x / std::f32::consts::SQRT_2;
         let t = 1.0 / (1.0 + 0.327_591_1 * z.abs());
         let y = 1.0
-            - (((((1.061_405_4 * t - 1.453_152_) * t) + 1.421_413_7) * t - 0.284_496_74) * t + 0.254_829_6)
+            - (((((1.061_405_4 * t - 1.453_152_) * t) + 1.421_413_7) * t - 0.284_496_74) * t
+                + 0.254_829_6)
                 * t
                 * (-z * z).exp();
         let erf = if z >= 0.0 { y } else { -y };
@@ -61,17 +62,29 @@ impl<'a> StyleDiffusion<'a> {
             sigma_min: f("diff_sigma_min", 1e-4),
             sigma_max: f("diff_sigma_max", 3.0),
             rho: f("diff_rho", 9.0),
-            steps: w.get("diff_steps").and_then(|v| v.first().copied()).unwrap_or(5.0) as usize,
+            steps: w
+                .get("diff_steps")
+                .and_then(|v| v.first().copied())
+                .unwrap_or(5.0) as usize,
         }
     }
 
     fn g(&self, name: &str) -> &[f32] {
-        self.w.get(&format!("diffusion.{name}")).unwrap_or_else(|| panic!("missing diffusion.{name}"))
+        self.w
+            .get(&format!("diffusion.{name}"))
+            .unwrap_or_else(|| panic!("missing diffusion.{name}"))
     }
 
     /// AdaLayerNorm: layernorm over F then per-channel affine (1+γ)·ln+β, γ/β = fc(s)∈ℝ²⁴⁸.
     fn ada_ln(&self, h: &[f32], l: usize, s: &[f32], fc: &str) -> Vec<f32> {
-        let gb = linear(s, 1, S, self.g(&format!("{fc}.weight")), Some(self.g(&format!("{fc}.bias"))), 2 * F);
+        let gb = linear(
+            s,
+            1,
+            S,
+            self.g(&format!("{fc}.weight")),
+            Some(self.g(&format!("{fc}.bias"))),
+            2 * F,
+        );
         let (gamma, beta) = (&gb[..F], &gb[F..]);
         let ln = layer_norm_plain(h, l, F, EPS);
         let mut out = vec![0f32; l * F];
@@ -90,7 +103,14 @@ impl<'a> StyleDiffusion<'a> {
         let xn = self.ada_ln(h, l, s, &p("attention.norm.fc"));
         let cn = self.ada_ln(h, l, s, &p("attention.norm_context.fc"));
         let q = linear(&xn, l, F, self.g(&p("attention.to_q.weight")), None, MID);
-        let kv = linear(&cn, l, F, self.g(&p("attention.to_kv.weight")), None, 2 * MID);
+        let kv = linear(
+            &cn,
+            l,
+            F,
+            self.g(&p("attention.to_kv.weight")),
+            None,
+            2 * MID,
+        );
         let scale = (HD as f32).powf(-0.5);
         let mut ctx = vec![0f32; l * MID]; // attention output [L, MID]
         for hd in 0..HEADS {
@@ -114,14 +134,35 @@ impl<'a> StyleDiffusion<'a> {
                 }
             }
         }
-        let attn = linear(&ctx, l, MID, self.g(&p("attention.attention.to_out.weight")), Some(self.g(&p("attention.attention.to_out.bias"))), F);
+        let attn = linear(
+            &ctx,
+            l,
+            MID,
+            self.g(&p("attention.attention.to_out.weight")),
+            Some(self.g(&p("attention.attention.to_out.bias"))),
+            F,
+        );
         for k in 0..l * F {
             h[k] += attn[k];
         }
         // --- feed-forward ---
-        let mut ff = linear(h, l, F, self.g(&p("feed_forward.0.weight")), Some(self.g(&p("feed_forward.0.bias"))), 2 * F);
+        let mut ff = linear(
+            h,
+            l,
+            F,
+            self.g(&p("feed_forward.0.weight")),
+            Some(self.g(&p("feed_forward.0.bias"))),
+            2 * F,
+        );
         gelu_exact(&mut ff);
-        let ff = linear(&ff, l, 2 * F, self.g(&p("feed_forward.2.weight")), Some(self.g(&p("feed_forward.2.bias"))), F);
+        let ff = linear(
+            &ff,
+            l,
+            2 * F,
+            self.g(&p("feed_forward.2.weight")),
+            Some(self.g(&p("feed_forward.2.bias"))),
+            F,
+        );
         for k in 0..l * F {
             h[k] += ff[k];
         }
@@ -138,14 +179,42 @@ impl<'a> StyleDiffusion<'a> {
             tpos[1 + j] = f.sin();
             tpos[1 + 128 + j] = f.cos();
         }
-        let mut t_emb = linear(&tpos, 1, 257, self.g("to_time.0.1.weight"), Some(self.g("to_time.0.1.bias")), F);
+        let mut t_emb = linear(
+            &tpos,
+            1,
+            257,
+            self.g("to_time.0.1.weight"),
+            Some(self.g("to_time.0.1.bias")),
+            F,
+        );
         gelu_exact(&mut t_emb);
-        let mut f_emb = linear(s, 1, S, self.g("to_features.0.weight"), Some(self.g("to_features.0.bias")), F);
+        let mut f_emb = linear(
+            s,
+            1,
+            S,
+            self.g("to_features.0.weight"),
+            Some(self.g("to_features.0.bias")),
+            F,
+        );
         gelu_exact(&mut f_emb);
         let mut mapping: Vec<f32> = (0..F).map(|k| t_emb[k] + f_emb[k]).collect();
-        mapping = linear(&mapping, 1, F, self.g("to_mapping.0.weight"), Some(self.g("to_mapping.0.bias")), F);
+        mapping = linear(
+            &mapping,
+            1,
+            F,
+            self.g("to_mapping.0.weight"),
+            Some(self.g("to_mapping.0.bias")),
+            F,
+        );
         gelu_exact(&mut mapping);
-        mapping = linear(&mapping, 1, F, self.g("to_mapping.2.weight"), Some(self.g("to_mapping.2.bias")), F);
+        mapping = linear(
+            &mapping,
+            1,
+            F,
+            self.g("to_mapping.2.weight"),
+            Some(self.g("to_mapping.2.bias")),
+            F,
+        );
         gelu_exact(&mut mapping);
 
         // h[t] = [ x(256, broadcast) ‖ emb[t](768) ]
@@ -172,7 +241,14 @@ impl<'a> StyleDiffusion<'a> {
         for v in pooled.iter_mut() {
             *v /= l as f32;
         }
-        linear(&pooled, 1, F, self.g("to_out.1.weight"), Some(self.g("to_out.1.bias")), C)
+        linear(
+            &pooled,
+            1,
+            F,
+            self.g("to_out.1.weight"),
+            Some(self.g("to_out.1.bias")),
+            C,
+        )
     }
 
     /// KDiffusion denoise_fn: c_skip·x + c_out·net(c_in·x, c_noise).
@@ -199,7 +275,14 @@ impl<'a> StyleDiffusion<'a> {
 
     /// ADPM2 sample → `s_pred [256]`. `noise_init`/`noises` are the replayed RNG draws
     /// (one initial + steps-1 per-step), so output is deterministic given them.
-    pub fn sample(&self, noise_init: &[f32], noises: &[Vec<f32>], emb: &[f32], l: usize, ref_s: &[f32]) -> Vec<f32> {
+    pub fn sample(
+        &self,
+        noise_init: &[f32],
+        noises: &[Vec<f32>],
+        emb: &[f32],
+        l: usize,
+        ref_s: &[f32],
+    ) -> Vec<f32> {
         let sig = self.karras_sigmas();
         let mut x: Vec<f32> = noise_init.iter().map(|v| sig[0] * v).collect();
         for i in 0..self.steps - 1 {

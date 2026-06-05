@@ -7,14 +7,16 @@
 
 use rullama::backend::{Pipelines, WgpuCtx};
 use rullama::gguf::GgufReader;
-use rullama::reference::kokoro::g2p::Lexicon;
 use rullama::reference::kokoro::KokoroModel;
+use rullama::reference::kokoro::g2p::Lexicon;
 use std::fs;
 use std::sync::Arc;
 
 fn main() {
     let mut a = std::env::args().skip(1);
-    let gguf = a.next().expect("usage: kokoro_tts <gguf> <us_gold.json> <text> <voice> <out.wav> [silver]");
+    let gguf = a
+        .next()
+        .expect("usage: kokoro_tts <gguf> <us_gold.json> <text> <voice> <out.wav> [silver]");
     let lex_path = a.next().expect("lexicon path");
     let text = a.next().expect("text");
     let voice = a.next().unwrap_or_else(|| "af_heart".into());
@@ -28,7 +30,8 @@ fn main() {
     let pipes = Pipelines::new(&ctx.device);
 
     let t0 = std::time::Instant::now();
-    let (audio, oov) = pollster::block_on(model.synthesize_text_gpu(&ctx, &pipes, &text, &voice, &lex));
+    let (audio, oov) =
+        pollster::block_on(model.synthesize_text_gpu(&ctx, &pipes, &text, &voice, &lex));
     let dt = t0.elapsed().as_secs_f32();
     let secs = audio.len() as f32 / 24000.0;
     let peak = audio.iter().fold(0.0f32, |m, &v| m.max(v.abs()));
@@ -36,7 +39,11 @@ fn main() {
     if !oov.is_empty() {
         println!("OOV (skipped): {oov:?}");
     }
-    println!("audio: {} samples ({secs:.2}s), peak {peak:.3}, synth {dt:.2}s ({:.1}x realtime)", audio.len(), secs / dt);
+    println!(
+        "audio: {} samples ({secs:.2}s), peak {peak:.3}, synth {dt:.2}s ({:.1}x realtime)",
+        audio.len(),
+        secs / dt
+    );
 
     write_wav(&out, &audio, 24000);
     println!("wrote {out}");

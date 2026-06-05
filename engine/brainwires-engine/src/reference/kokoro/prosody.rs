@@ -2,9 +2,9 @@
 //! (BiLSTM + AdaLayerNorm stack), and duration prediction. Mirrors modules.py.
 #![allow(dead_code)]
 
+use super::KokoroModel;
 use super::convblocks::conv1d;
 use super::ops::{bilstm, layer_norm_plain, linear, sigmoid};
-use super::KokoroModel;
 
 /// 8 BiLSTM tensors for a `{prefix}` (PyTorch l0 + l0_reverse).
 type Bilstm = [Vec<f32>; 8];
@@ -23,8 +23,17 @@ impl KokoroModel {
         ]
     }
 
-    pub(crate) fn run_bilstm(&self, w: &Bilstm, x: &[f32], t: usize, in_dim: usize, hidden: usize) -> Vec<f32> {
-        bilstm(x, t, in_dim, hidden, &w[0], &w[1], &w[2], &w[3], &w[4], &w[5], &w[6], &w[7])
+    pub(crate) fn run_bilstm(
+        &self,
+        w: &Bilstm,
+        x: &[f32],
+        t: usize,
+        in_dim: usize,
+        hidden: usize,
+    ) -> Vec<f32> {
+        bilstm(
+            x, t, in_dim, hidden, &w[0], &w[1], &w[2], &w[3], &w[4], &w[5], &w[6], &w[7],
+        )
     }
 
     /// Linear 768 -> 512. Returns `[T, 512]` (the un-transposed bert_encoder output).
@@ -54,8 +63,14 @@ impl KokoroModel {
             let lstm_out = self.run_bilstm(&lw, &x, t, cat, d / 2); // hidden 256 -> out 512
 
             // AdaLayerNorm block (lstms.{1,3,5}): per-t LN over 512 + (1+gamma)*+beta
-            let fc_w = self.t(&format!("k.predictor.text_encoder.lstms.{}.fc.weight", 2 * layer + 1));
-            let fc_b = self.t(&format!("k.predictor.text_encoder.lstms.{}.fc.bias", 2 * layer + 1));
+            let fc_w = self.t(&format!(
+                "k.predictor.text_encoder.lstms.{}.fc.weight",
+                2 * layer + 1
+            ));
+            let fc_b = self.t(&format!(
+                "k.predictor.text_encoder.lstms.{}.fc.bias",
+                2 * layer + 1
+            ));
             let gb = linear(style, 1, sd, &fc_w, Some(&fc_b), 2 * d); // [1024]
             let (gamma, beta) = gb.split_at(d);
             let ln = layer_norm_plain(&lstm_out, t, d, 1e-5);
@@ -93,7 +108,13 @@ impl KokoroModel {
 
     /// Length regulator: expand row-major `feat [T, C]` to channel-major `[C, F]`
     /// by repeating token t for `dur[t]` frames. `F = sum(dur)`.
-    pub fn expand_by_dur_cm(&self, feat: &[f32], t: usize, c: usize, dur: &[usize]) -> (Vec<f32>, usize) {
+    pub fn expand_by_dur_cm(
+        &self,
+        feat: &[f32],
+        t: usize,
+        c: usize,
+        dur: &[usize],
+    ) -> (Vec<f32>, usize) {
         let f: usize = dur.iter().sum();
         let mut out = vec![0.0f32; c * f];
         let mut fi = 0;
@@ -132,9 +153,33 @@ impl KokoroModel {
 
         let half = hid / 2; // 256
         let run_stack = |which: &str| -> Vec<f32> {
-            let (h, t1) = self.adain_resblk1d(&format!("k.predictor.{which}.0"), &x_cm, hid, f, hid, false, style);
-            let (h, t2) = self.adain_resblk1d(&format!("k.predictor.{which}.1"), &h, hid, t1, half, true, style);
-            let (h, t3) = self.adain_resblk1d(&format!("k.predictor.{which}.2"), &h, half, t2, half, false, style);
+            let (h, t1) = self.adain_resblk1d(
+                &format!("k.predictor.{which}.0"),
+                &x_cm,
+                hid,
+                f,
+                hid,
+                false,
+                style,
+            );
+            let (h, t2) = self.adain_resblk1d(
+                &format!("k.predictor.{which}.1"),
+                &h,
+                hid,
+                t1,
+                half,
+                true,
+                style,
+            );
+            let (h, t3) = self.adain_resblk1d(
+                &format!("k.predictor.{which}.2"),
+                &h,
+                half,
+                t2,
+                half,
+                false,
+                style,
+            );
             let pw = self.t(&format!("k.predictor.{which}_proj.weight"));
             let pb = self.t(&format!("k.predictor.{which}_proj.bias"));
             conv1d(&h, half, t3, &pw, Some(&pb), 1, 1, 1, 0, 1, 1).0 // [2F]

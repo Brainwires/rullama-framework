@@ -14,8 +14,8 @@ use super::gpu::{GpuWeightCache, StyleTtsGpu};
 use super::{MelFrontend, StyleEncoder, StyleTtsAcoustic};
 use crate::backend::{Pipelines, WgpuCtx};
 use crate::error::Result;
-use crate::gguf::tensor::{dequant_tensor_to_f32, dequant_tensor_to_f32_async};
 use crate::gguf::GgufReader;
+use crate::gguf::tensor::{dequant_tensor_to_f32, dequant_tensor_to_f32_async};
 
 pub struct StyleTtsModel {
     w: HashMap<String, Vec<f32>>,
@@ -96,7 +96,10 @@ impl StyleTtsModel {
         if let Some(p) = progress {
             p(0.10, "computing spectrogram");
         }
-        let front = MelFrontend::new(self.w.get("mel.window").expect("mel.window"), self.w.get("mel.filterbank").expect("mel.filterbank"));
+        let front = MelFrontend::new(
+            self.w.get("mel.window").expect("mel.window"),
+            self.w.get("mel.filterbank").expect("mel.filterbank"),
+        );
         let (mel, t) = front.compute(pcm24k);
         if let Some(p) = progress {
             p(0.35, "analyzing timbre");
@@ -114,7 +117,13 @@ impl StyleTtsModel {
 
     /// Token ids + voice vector → 24 kHz waveform (CPU decoder). `diffuse` enables the
     /// natural-prosody style-diffusion path (alpha/beta blend); `None` = flat zero-shot.
-    pub fn synthesize(&self, ids: &[i64], voice: &[f32], diffuse: Option<DiffusionConfig>, progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
+    pub fn synthesize(
+        &self,
+        ids: &[i64],
+        voice: &[f32],
+        diffuse: Option<DiffusionConfig>,
+        progress: Option<&dyn Fn(f32, &str)>,
+    ) -> Vec<f32> {
         let out = StyleTtsAcoustic::new(&self.w).synthesize(ids, voice, diffuse, progress);
         if let Some(p) = progress {
             p(1.0, "done");
@@ -123,16 +132,28 @@ impl StyleTtsModel {
     }
 
     /// GPU voice encode: CPU mel frontend → the StyleEncoder conv stack on the GPU.
-    pub async fn encode_voice_gpu(&self, ctx: &WgpuCtx, p: &Pipelines, wc: &mut GpuWeightCache, pcm24k: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
+    pub async fn encode_voice_gpu(
+        &self,
+        ctx: &WgpuCtx,
+        p: &Pipelines,
+        wc: &mut GpuWeightCache,
+        pcm24k: &[f32],
+        progress: Option<&dyn Fn(f32, &str)>,
+    ) -> Vec<f32> {
         if let Some(pp) = progress {
             pp(0.10, "computing spectrogram");
         }
-        let front = MelFrontend::new(self.w.get("mel.window").expect("mel.window"), self.w.get("mel.filterbank").expect("mel.filterbank"));
+        let front = MelFrontend::new(
+            self.w.get("mel.window").expect("mel.window"),
+            self.w.get("mel.filterbank").expect("mel.filterbank"),
+        );
         let (mel, t) = front.compute(pcm24k);
         if let Some(pp) = progress {
             pp(0.30, "analyzing voice (GPU)");
         }
-        let out = StyleTtsGpu::new(&self.w, ctx, p, wc).encode(&mel, 80, t).await;
+        let out = StyleTtsGpu::new(&self.w, ctx, p, wc)
+            .encode(&mel, 80, t)
+            .await;
         if let Some(pp) = progress {
             pp(1.0, "voice ready");
         }
@@ -142,7 +163,16 @@ impl StyleTtsModel {
     /// GPU synthesis: CPU acoustic graph (text_encoder/bert/predictor — small) then the
     /// hifigan decoder + generator on the GPU (the dominant cost). `wc` caches uploaded
     /// weights across calls.
-    pub async fn synthesize_gpu(&self, ctx: &WgpuCtx, p: &Pipelines, wc: &mut GpuWeightCache, ids: &[i64], voice: &[f32], diffuse: Option<DiffusionConfig>, progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
+    pub async fn synthesize_gpu(
+        &self,
+        ctx: &WgpuCtx,
+        p: &Pipelines,
+        wc: &mut GpuWeightCache,
+        ids: &[i64],
+        voice: &[f32],
+        diffuse: Option<DiffusionConfig>,
+        progress: Option<&dyn Fn(f32, &str)>,
+    ) -> Vec<f32> {
         let ac = StyleTtsAcoustic::new(&self.w);
         let (t_en, bert_out, t) = ac.acoustic_prep(ids, progress);
         // style diffusion (natural prosody) on the GPU, between PLBERT and the predictor
@@ -152,9 +182,21 @@ impl StyleTtsModel {
                     pp(0.16, "imagining delivery (GPU)");
                 }
                 // sampler params match the converter/oracle (ADPM2 + Karras, sigma_data=0.2)
-                let (noise_init, noises) = crate::reference::styletts2::acoustic::diffusion_noise(&cfg);
+                let (noise_init, noises) =
+                    crate::reference::styletts2::acoustic::diffusion_noise(&cfg);
                 let s_pred = StyleTtsGpu::new(&self.w, ctx, p, wc)
-                    .diffusion_sample(&bert_out, t, voice, &noise_init, &noises, 0.2, 1e-4, 3.0, 9.0, crate::reference::styletts2::acoustic::DIFFUSION_STEPS)
+                    .diffusion_sample(
+                        &bert_out,
+                        t,
+                        voice,
+                        &noise_init,
+                        &noises,
+                        0.2,
+                        1e-4,
+                        3.0,
+                        9.0,
+                        crate::reference::styletts2::acoustic::DIFFUSION_STEPS,
+                    )
                     .await;
                 crate::reference::styletts2::acoustic::blend_style(&s_pred, voice, &cfg)
             }
@@ -164,7 +206,9 @@ impl StyleTtsModel {
         if let Some(pp) = progress {
             pp(0.36, "generating audio (GPU)");
         }
-        let out = StyleTtsGpu::new(&self.w, ctx, p, wc).decode(&asr, f, &f0, &n, &r).await;
+        let out = StyleTtsGpu::new(&self.w, ctx, p, wc)
+            .decode(&asr, f, &f0, &n, &r)
+            .await;
         if let Some(pp) = progress {
             pp(1.0, "done");
         }
@@ -191,7 +235,10 @@ mod tests {
         let streamed = pollster::block_on(StyleTtsModel::load_streaming(&reader)).unwrap();
         assert_eq!(bulk.w.len(), streamed.w.len(), "tensor count differs");
         for (k, v) in &bulk.w {
-            let s = streamed.w.get(k).unwrap_or_else(|| panic!("streamed missing {k}"));
+            let s = streamed
+                .w
+                .get(k)
+                .unwrap_or_else(|| panic!("streamed missing {k}"));
             assert_eq!(v.as_slice(), s.as_slice(), "weights differ for {k}");
         }
     }

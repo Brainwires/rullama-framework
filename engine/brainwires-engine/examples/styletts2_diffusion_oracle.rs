@@ -20,18 +20,26 @@ fn dir() -> PathBuf {
 
 fn read_bin(p: &PathBuf) -> Vec<f32> {
     let b = fs::read(p).unwrap_or_else(|e| panic!("read {p:?}: {e}"));
-    b.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+    b.chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect()
 }
 
 fn main() {
     let d = dir();
-    assert!(d.is_dir(), "fixtures missing — run scripts/styletts2_dump_diffusion_fixtures.py first ({d:?})");
+    assert!(
+        d.is_dir(),
+        "fixtures missing — run scripts/styletts2_dump_diffusion_fixtures.py first ({d:?})"
+    );
 
     let mut w: HashMap<String, Vec<f32>> = HashMap::new();
     for entry in fs::read_dir(&d).unwrap() {
         let p = entry.unwrap().path();
         if p.extension().and_then(|e| e.to_str()) == Some("bin") {
-            w.insert(p.file_stem().unwrap().to_str().unwrap().to_string(), read_bin(&p));
+            w.insert(
+                p.file_stem().unwrap().to_str().unwrap().to_string(),
+                read_bin(&p),
+            );
         }
     }
     let bert_dur = w.remove("bert_dur").unwrap();
@@ -52,7 +60,10 @@ fn main() {
     let x0: Vec<f32> = noise_init.iter().map(|v| c_in * sigma_max * v).collect();
     let net_got = diff.net_eval(&x0, c_noise, &bert_dur, l, &ref_s);
     let dnet = max_abs_diff(&net_got, &want_net);
-    println!("denoiser net eval   max_abs_diff = {dnet:.3e}  (|out|={:.3})", (net_got.iter().map(|v| v * v).sum::<f32>()).sqrt());
+    println!(
+        "denoiser net eval   max_abs_diff = {dnet:.3e}  (|out|={:.3})",
+        (net_got.iter().map(|v| v * v).sum::<f32>()).sqrt()
+    );
 
     // 2) full ADPM2 sample → s_pred
     let spred = diff.sample(&noise_init, &noises, &bert_dur, l, &ref_s);
@@ -63,7 +74,10 @@ fn main() {
 
     let worst = dnet.max(dspred);
     println!("\nworst max_abs_diff = {worst:.3e}");
-    assert!(worst < 2e-3, "StyleTTS2 diffusion parity FAILED (worst {worst:.3e})");
+    assert!(
+        worst < 2e-3,
+        "StyleTTS2 diffusion parity FAILED (worst {worst:.3e})"
+    );
     println!("✅ StyleTTS2 style-diffusion matches PyTorch (denoiser + ADPM2 sampler)");
 
     // ---- GPU diffusion sampler (f16 weights) vs PyTorch s_pred ----
@@ -75,19 +89,36 @@ fn main() {
     let pipes = Pipelines::new(&ctx.device);
     let mut gwc = std::collections::HashMap::new();
     // isolate: single GPU net eval vs CPU net_eval (same inputs as section 1)
-    let gpu_net = pollster::block_on(StyleTtsGpu::new(&w, &ctx, &pipes, &mut gwc).diff_net_eval(&x0, c_noise, &bert_dur, l, &ref_s));
+    let gpu_net = pollster::block_on(
+        StyleTtsGpu::new(&w, &ctx, &pipes, &mut gwc)
+            .diff_net_eval(&x0, c_noise, &bert_dur, l, &ref_s),
+    );
     let dnetgpu = max_abs_diff(&gpu_net, &net_got);
     println!("\nGPU net eval vs CPU net  max_abs_diff = {dnetgpu:.3e}");
     println!("  gpu  [:6] = {:?}", &gpu_net[..6]);
     println!("  cpu  [:6] = {:?}", &net_got[..6]);
 
     let gpu_spred = pollster::block_on(
-        StyleTtsGpu::new(&w, &ctx, &pipes, &mut gwc).diffusion_sample(&bert_dur, l, &ref_s, &noise_init, &noises, 0.2, 1e-4, 3.0, 9.0, 5),
+        StyleTtsGpu::new(&w, &ctx, &pipes, &mut gwc).diffusion_sample(
+            &bert_dur,
+            l,
+            &ref_s,
+            &noise_init,
+            &noises,
+            0.2,
+            1e-4,
+            3.0,
+            9.0,
+            5,
+        ),
     );
     let dgpu = max_abs_diff(&gpu_spred, &want_spred);
     let corr = {
         let (a, b) = (&gpu_spred, &want_spred);
-        let (ma, mb) = (a.iter().sum::<f32>() / a.len() as f32, b.iter().sum::<f32>() / b.len() as f32);
+        let (ma, mb) = (
+            a.iter().sum::<f32>() / a.len() as f32,
+            b.iter().sum::<f32>() / b.len() as f32,
+        );
         let mut num = 0.0;
         let mut da = 0.0;
         let mut db = 0.0;

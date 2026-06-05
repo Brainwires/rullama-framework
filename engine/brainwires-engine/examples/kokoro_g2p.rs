@@ -3,20 +3,28 @@
 //!   cargo run --release --example kokoro_g2p -- \
 //!       ~/.cache/kokoro/us_gold.json ~/.cache/kokoro/g2p_corpus.json
 
-use rullama::reference::kokoro::g2p::{g2p, Lexicon};
+use rullama::reference::kokoro::g2p::{Lexicon, g2p};
 use std::fs;
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let lex_path = args.next().expect("usage: kokoro_g2p <us_gold.json> <corpus.json>");
-    let corpus_path = args.next().expect("usage: kokoro_g2p <us_gold.json> <corpus.json>");
+    let lex_path = args
+        .next()
+        .expect("usage: kokoro_g2p <us_gold.json> <corpus.json>");
+    let corpus_path = args
+        .next()
+        .expect("usage: kokoro_g2p <us_gold.json> <corpus.json>");
 
     // optional 3rd arg: us_silver.json fallback
-    let silver = std::env::args().nth(3).map(|p| fs::read(p).unwrap()).unwrap_or_default();
+    let silver = std::env::args()
+        .nth(3)
+        .map(|p| fs::read(p).unwrap())
+        .unwrap_or_default();
     let lex = Lexicon::load(&fs::read(&lex_path).unwrap(), &silver);
     println!("lexicon: {} entries", lex.len());
 
-    let corpus: serde_json::Value = serde_json::from_slice(&fs::read(&corpus_path).unwrap()).unwrap();
+    let corpus: serde_json::Value =
+        serde_json::from_slice(&fs::read(&corpus_path).unwrap()).unwrap();
     let mut exact = 0;
     let total = corpus.as_array().unwrap().len();
     for row in corpus.as_array().unwrap() {

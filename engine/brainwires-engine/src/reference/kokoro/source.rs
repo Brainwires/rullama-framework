@@ -40,7 +40,10 @@ impl KokoroModel {
 
         // f0 upsampled (nearest) → [L]
         let f0_up: Vec<f32> = (0..l).map(|i| f0_curve[i / up]).collect();
-        let uv: Vec<f32> = f0_up.iter().map(|&v| if v > VOICED_THRESHOLD { 1.0 } else { 0.0 }).collect();
+        let uv: Vec<f32> = f0_up
+            .iter()
+            .map(|&v| if v > VOICED_THRESHOLD { 1.0 } else { 0.0 })
+            .collect();
 
         // per-harmonic sine, summed via l_linear, tanh
         let lw = self.t("k.decoder.generator.m_source.l_linear.weight"); // [1,9]
@@ -48,7 +51,10 @@ impl KokoroModel {
         let mut har_source = vec![0.0f32; l];
         for h in 0..harmonics {
             let mult = (h + 1) as f32;
-            let rad: Vec<f32> = f0_up.iter().map(|&f| ((f * mult) / SR).rem_euclid(1.0)).collect();
+            let rad: Vec<f32> = f0_up
+                .iter()
+                .map(|&f| ((f * mult) / SR).rem_euclid(1.0))
+                .collect();
             let rad_ds = interp_linear(&rad, l, frames_in);
             let mut cum = vec![0.0f32; frames_in];
             let mut acc = 0.0f32;
@@ -86,7 +92,9 @@ impl KokoroModel {
             padded[l + pad + i] = har_source[l - 2 - i];
         }
         padded[pad..pad + l].copy_from_slice(&har_source);
-        let win: Vec<f32> = (0..nfft).map(|n| 0.5 - 0.5 * (2.0 * PI * n as f32 / nfft as f32).cos()).collect();
+        let win: Vec<f32> = (0..nfft)
+            .map(|n| 0.5 - 0.5 * (2.0 * PI * n as f32 / nfft as f32).cos())
+            .collect();
         let frames = (padded.len() - nfft) / hop + 1;
 
         let mut har = vec![0.0f32; (nfft + 2) * frames]; // [22, frames]: 0..10 mag, 11..21 phase

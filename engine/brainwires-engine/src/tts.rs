@@ -8,10 +8,10 @@ use std::sync::Arc;
 use crate::backend::{Pipelines, WgpuCtx};
 use crate::error::Result;
 use crate::gguf::GgufReader;
-use crate::reference::kokoro::g2p::{g2p, Lexicon};
+use crate::reference::kokoro::KokoroModel;
+use crate::reference::kokoro::g2p::{Lexicon, g2p};
 use crate::reference::kokoro::gpu_fast::WeightCache;
 use crate::reference::kokoro::voice_train::voice_signature;
-use crate::reference::kokoro::KokoroModel;
 
 fn sig_l2(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b).map(|(x, y)| (x - y) * (x - y)).sum::<f32>() / a.len().max(1) as f32
@@ -51,12 +51,26 @@ impl KokoroTts {
         let model = KokoroModel::new(reader)?;
         let ctx = WgpuCtx::new().await?;
         let pipes = Arc::new(Pipelines::new(&ctx.device));
-        Ok(Self { model, ctx, pipes, lex: None, wc: WeightCache::new(), train: None })
+        Ok(Self {
+            model,
+            ctx,
+            pipes,
+            lex: None,
+            wc: WeightCache::new(),
+            train: None,
+        })
     }
 
     /// Begin a voice-training run: target speaker PCM (resampled to 24 kHz by the
     /// caller) + a reference text the model re-synthesizes each step (G2P'd internally).
-    pub async fn train_begin_native(&mut self, target_pcm: &[f32], ref_text: &str, init_voice: &str, step0: f32, seed: u64) {
+    pub async fn train_begin_native(
+        &mut self,
+        target_pcm: &[f32],
+        ref_text: &str,
+        init_voice: &str,
+        step0: f32,
+        seed: u64,
+    ) {
         let target_sig = voice_signature(target_pcm);
         let phonemes = {
             let lex = self.lex.as_ref().expect("lexicon not set");
@@ -64,22 +78,45 @@ impl KokoroTts {
         };
         let ids = self.model.phonemes_to_ids(&phonemes);
         let style = self.model.load_voice(init_voice, ids.len());
-        let audio = self.model.synthesize_gpu_fast(&self.ctx, &self.pipes, &mut self.wc, &ids, &style).await;
+        let audio = self
+            .model
+            .synthesize_gpu_fast(&self.ctx, &self.pipes, &mut self.wc, &ids, &style)
+            .await;
         let loss = sig_l2(&voice_signature(&audio), &target_sig);
-        self.train = Some(VoiceTrainState { target_sig, ids, style, loss, step: step0, rng: seed | 1 });
+        self.train = Some(VoiceTrainState {
+            target_sig,
+            ids,
+            style,
+            loss,
+            step: step0,
+            rng: seed | 1,
+        });
     }
 
     /// One training step. Returns the current best loss.
     pub async fn train_step_native(&mut self) -> f32 {
         let st = self.train.as_mut().expect("train_begin first");
         self.model
-            .voice_train_step(&self.ctx, &self.pipes, &mut self.wc, &st.ids, &st.target_sig, &mut st.style, &mut st.loss, &mut st.step, &mut st.rng)
+            .voice_train_step(
+                &self.ctx,
+                &self.pipes,
+                &mut self.wc,
+                &st.ids,
+                &st.target_sig,
+                &mut st.style,
+                &mut st.loss,
+                &mut st.step,
+                &mut st.rng,
+            )
             .await
     }
 
     /// The current best voice vector (256-d), to save/reuse as a custom voicepack.
     pub fn trained_voice_native(&self) -> Vec<f32> {
-        self.train.as_ref().map(|s| s.style.clone()).unwrap_or_default()
+        self.train
+            .as_ref()
+            .map(|s| s.style.clone())
+            .unwrap_or_default()
     }
 
     /// Synthesize text with an explicit voice vector (a trained/custom voicepack).
@@ -89,7 +126,9 @@ impl KokoroTts {
             g2p(text, lex).0
         };
         let ids = self.model.phonemes_to_ids(&phonemes);
-        self.model.synthesize_gpu_fast(&self.ctx, &self.pipes, &mut self.wc, &ids, style).await
+        self.model
+            .synthesize_gpu_fast(&self.ctx, &self.pipes, &mut self.wc, &ids, style)
+            .await
     }
 
     /// Provide the G2P lexicon (misaki us_gold + optional us_silver JSON bytes).
@@ -112,7 +151,9 @@ impl KokoroTts {
     pub async fn synthesize_phonemes_native(&mut self, phonemes: &str, voice: &str) -> Vec<f32> {
         let ids = self.model.phonemes_to_ids(phonemes);
         let ref_s = self.model.load_voice(voice, ids.len());
-        self.model.synthesize_gpu_fast(&self.ctx, &self.pipes, &mut self.wc, &ids, &ref_s).await
+        self.model
+            .synthesize_gpu_fast(&self.ctx, &self.pipes, &mut self.wc, &ids, &ref_s)
+            .await
     }
 }
 
@@ -122,7 +163,9 @@ impl KokoroTts {
     /// Load from GGUF bytes (the PWA reads the OPFS-cached file and passes them here).
     #[wasm_bindgen(js_name = load)]
     pub async fn load_js(bytes: Vec<u8>) -> std::result::Result<KokoroTts, JsError> {
-        Self::load_native(bytes).await.map_err(|e| JsError::new(&format!("{e:?}")))
+        Self::load_native(bytes)
+            .await
+            .map_err(|e| JsError::new(&format!("{e:?}")))
     }
 
     /// Set the G2P lexicon from us_gold (+ optional us_silver) JSON bytes.
@@ -153,8 +196,14 @@ impl KokoroTts {
     /// Begin training toward a target speaker clip (24 kHz mono PCM). `refPhonemes`
     /// is the phoneme string the model re-synthesizes each step; `initVoice` seeds it.
     #[wasm_bindgen(js_name = trainBegin)]
-    pub async fn train_begin_js(&mut self, target_pcm: Vec<f32>, ref_text: String, init_voice: String) {
-        self.train_begin_native(&target_pcm, &ref_text, &init_voice, 0.06, 1).await;
+    pub async fn train_begin_js(
+        &mut self,
+        target_pcm: Vec<f32>,
+        ref_text: String,
+        init_voice: String,
+    ) {
+        self.train_begin_native(&target_pcm, &ref_text, &init_voice, 0.06, 1)
+            .await;
     }
 
     /// Run one training step; returns the current best loss (call in a JS loop with a stop flag).

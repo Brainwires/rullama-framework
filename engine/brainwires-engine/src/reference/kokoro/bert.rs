@@ -2,8 +2,8 @@
 //! Mirrors HF `AlbertModel` (gelu_new, layer_norm_eps=1e-12, absolute positions).
 #![allow(dead_code)]
 
-use super::ops::{gelu_new, layer_norm, linear, softmax};
 use super::KokoroModel;
+use super::ops::{gelu_new, layer_norm, linear, softmax};
 
 const EPS: f32 = 1e-12;
 const EMB: usize = 128; // ALBERT embedding_size

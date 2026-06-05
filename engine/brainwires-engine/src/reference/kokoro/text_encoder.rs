@@ -2,9 +2,9 @@
 //! channel-axis LayerNorm + LeakyReLU) → BiLSTM. Output `[hidden, T]` channel-major.
 #![allow(dead_code)]
 
+use super::KokoroModel;
 use super::convblocks::conv1d;
 use super::ops::leaky_relu;
-use super::KokoroModel;
 
 impl KokoroModel {
     /// Returns `t_en [hidden, T]` channel-major (matches the PyTorch text_encoder output).
@@ -35,7 +35,10 @@ impl KokoroModel {
             let mut ln = vec![0.0f32; c * t];
             for ti in 0..t {
                 let mean = (0..c).map(|ch| conv[ch * t + ti]).sum::<f32>() / c as f32;
-                let var = (0..c).map(|ch| (conv[ch * t + ti] - mean).powi(2)).sum::<f32>() / c as f32;
+                let var = (0..c)
+                    .map(|ch| (conv[ch * t + ti] - mean).powi(2))
+                    .sum::<f32>()
+                    / c as f32;
                 let inv = 1.0 / (var + 1e-5).sqrt();
                 for ch in 0..c {
                     ln[ch * t + ti] = (conv[ch * t + ti] - mean) * inv * gamma[ch] + beta[ch];

@@ -11,7 +11,9 @@ use std::collections::HashMap;
 use super::decoder::StyleTtsDecoder;
 use super::diffusion::StyleDiffusion;
 use crate::reference::kokoro::convblocks::conv1d;
-use crate::reference::kokoro::ops::{bilstm, gelu_new, layer_norm, layer_norm_plain, leaky_relu, linear, sigmoid, softmax};
+use crate::reference::kokoro::ops::{
+    bilstm, gelu_new, layer_norm, layer_norm_plain, leaky_relu, linear, sigmoid, softmax,
+};
 
 /// Style-diffusion settings for synthesis. When present, the reference style is replaced by
 /// `blend(diffusion_sample, reference)` for natural, text-appropriate prosody (the StyleTTS2
@@ -26,7 +28,11 @@ pub struct DiffusionConfig {
 
 impl Default for DiffusionConfig {
     fn default() -> Self {
-        Self { alpha: 0.3, beta: 0.7, seed: 0x5111_e775 }
+        Self {
+            alpha: 0.3,
+            beta: 0.7,
+            seed: 0x5111_e775,
+        }
     }
 }
 
@@ -62,7 +68,9 @@ pub fn diffusion_noise(cfg: &DiffusionConfig) -> (Vec<f32>, Vec<Vec<f32>>) {
     let dim = 2 * STYLE_DIM;
     let g = gaussians(cfg.seed, DIFFUSION_STEPS * dim);
     let noise_init = g[..dim].to_vec();
-    let noises = (1..DIFFUSION_STEPS).map(|i| g[i * dim..(i + 1) * dim].to_vec()).collect();
+    let noises = (1..DIFFUSION_STEPS)
+        .map(|i| g[i * dim..(i + 1) * dim].to_vec())
+        .collect();
     (noise_init, noises)
 }
 
@@ -72,7 +80,8 @@ pub fn blend_style(s_pred: &[f32], ref_s: &[f32], cfg: &DiffusionConfig) -> Vec<
     let mut eff = vec![0f32; 2 * STYLE_DIM];
     for k in 0..STYLE_DIM {
         eff[k] = cfg.alpha * s_pred[k] + (1.0 - cfg.alpha) * ref_s[k];
-        eff[STYLE_DIM + k] = cfg.beta * s_pred[STYLE_DIM + k] + (1.0 - cfg.beta) * ref_s[STYLE_DIM + k];
+        eff[STYLE_DIM + k] =
+            cfg.beta * s_pred[STYLE_DIM + k] + (1.0 - cfg.beta) * ref_s[STYLE_DIM + k];
     }
     eff
 }
@@ -98,13 +107,33 @@ impl<'a> StyleTtsAcoustic<'a> {
         Self { w }
     }
     fn t(&self, n: &str) -> &[f32] {
-        self.w.get(n).unwrap_or_else(|| panic!("missing acoustic weight: {n}"))
+        self.w
+            .get(n)
+            .unwrap_or_else(|| panic!("missing acoustic weight: {n}"))
     }
-    fn bilstm_run(&self, prefix: &str, x: &[f32], t: usize, in_dim: usize, hidden: usize) -> Vec<f32> {
+    fn bilstm_run(
+        &self,
+        prefix: &str,
+        x: &[f32],
+        t: usize,
+        in_dim: usize,
+        hidden: usize,
+    ) -> Vec<f32> {
         let g = |s: &str| self.t(&format!("{prefix}.{s}"));
-        bilstm(x, t, in_dim, hidden,
-            g("weight_ih_l0"), g("weight_hh_l0"), g("bias_ih_l0"), g("bias_hh_l0"),
-            g("weight_ih_l0_reverse"), g("weight_hh_l0_reverse"), g("bias_ih_l0_reverse"), g("bias_hh_l0_reverse"))
+        bilstm(
+            x,
+            t,
+            in_dim,
+            hidden,
+            g("weight_ih_l0"),
+            g("weight_hh_l0"),
+            g("bias_ih_l0"),
+            g("bias_hh_l0"),
+            g("weight_ih_l0_reverse"),
+            g("weight_hh_l0_reverse"),
+            g("bias_ih_l0_reverse"),
+            g("bias_hh_l0_reverse"),
+        )
     }
 
     /// TextEncoder: embedding → 3×(Conv1d k5 + channel-LayerNorm + LeakyReLU) → BiLSTM.
@@ -127,7 +156,10 @@ impl<'a> StyleTtsAcoustic<'a> {
             let mut ln = vec![0f32; c * t];
             for ti in 0..t {
                 let mean = (0..c).map(|ch| conv[ch * t + ti]).sum::<f32>() / c as f32;
-                let var = (0..c).map(|ch| (conv[ch * t + ti] - mean).powi(2)).sum::<f32>() / c as f32;
+                let var = (0..c)
+                    .map(|ch| (conv[ch * t + ti] - mean).powi(2))
+                    .sum::<f32>()
+                    / c as f32;
                 let inv = 1.0 / (var + 1e-5).sqrt();
                 for ch in 0..c {
                     ln[ch * t + ti] = (conv[ch * t + ti] - mean) * inv * gamma[ch] + beta[ch];
@@ -167,23 +199,64 @@ impl<'a> StyleTtsAcoustic<'a> {
                 emb[p * EMB + d] = word[id as usize * EMB + d] + pos[p * EMB + d] + tok[d];
             }
         }
-        let emb = layer_norm(&emb, t, EMB, self.t("bert.embeddings.LayerNorm.weight"), self.t("bert.embeddings.LayerNorm.bias"), EPS_BERT);
-        let mut hidden = linear(&emb, t, EMB, self.t("bert.encoder.embedding_hidden_mapping_in.weight"), Some(self.t("bert.encoder.embedding_hidden_mapping_in.bias")), h);
+        let emb = layer_norm(
+            &emb,
+            t,
+            EMB,
+            self.t("bert.embeddings.LayerNorm.weight"),
+            self.t("bert.embeddings.LayerNorm.bias"),
+            EPS_BERT,
+        );
+        let mut hidden = linear(
+            &emb,
+            t,
+            EMB,
+            self.t("bert.encoder.embedding_hidden_mapping_in.weight"),
+            Some(self.t("bert.encoder.embedding_hidden_mapping_in.bias")),
+            h,
+        );
 
         let p = "bert.encoder.albert_layer_groups.0.albert_layers.0.";
-        let (qw, qb) = (self.t(&format!("{p}attention.query.weight")), self.t(&format!("{p}attention.query.bias")));
-        let (kw, kb) = (self.t(&format!("{p}attention.key.weight")), self.t(&format!("{p}attention.key.bias")));
-        let (vw, vb) = (self.t(&format!("{p}attention.value.weight")), self.t(&format!("{p}attention.value.bias")));
-        let (dw, db) = (self.t(&format!("{p}attention.dense.weight")), self.t(&format!("{p}attention.dense.bias")));
-        let (aw, ab) = (self.t(&format!("{p}attention.LayerNorm.weight")), self.t(&format!("{p}attention.LayerNorm.bias")));
-        let (fw, fb) = (self.t(&format!("{p}ffn.weight")), self.t(&format!("{p}ffn.bias")));
-        let (fow, fob) = (self.t(&format!("{p}ffn_output.weight")), self.t(&format!("{p}ffn_output.bias")));
-        let (flw, flb) = (self.t(&format!("{p}full_layer_layer_norm.weight")), self.t(&format!("{p}full_layer_layer_norm.bias")));
+        let (qw, qb) = (
+            self.t(&format!("{p}attention.query.weight")),
+            self.t(&format!("{p}attention.query.bias")),
+        );
+        let (kw, kb) = (
+            self.t(&format!("{p}attention.key.weight")),
+            self.t(&format!("{p}attention.key.bias")),
+        );
+        let (vw, vb) = (
+            self.t(&format!("{p}attention.value.weight")),
+            self.t(&format!("{p}attention.value.bias")),
+        );
+        let (dw, db) = (
+            self.t(&format!("{p}attention.dense.weight")),
+            self.t(&format!("{p}attention.dense.bias")),
+        );
+        let (aw, ab) = (
+            self.t(&format!("{p}attention.LayerNorm.weight")),
+            self.t(&format!("{p}attention.LayerNorm.bias")),
+        );
+        let (fw, fb) = (
+            self.t(&format!("{p}ffn.weight")),
+            self.t(&format!("{p}ffn.bias")),
+        );
+        let (fow, fob) = (
+            self.t(&format!("{p}ffn_output.weight")),
+            self.t(&format!("{p}ffn_output.bias")),
+        );
+        let (flw, flb) = (
+            self.t(&format!("{p}full_layer_layer_norm.weight")),
+            self.t(&format!("{p}full_layer_layer_norm.bias")),
+        );
         let scale = 1.0 / (hd as f32).sqrt();
 
         for layer in 0..PLBERT_LAYERS {
             if let Some(p) = progress {
-                p(0.05 + 0.13 * layer as f32 / PLBERT_LAYERS as f32, "analyzing text");
+                p(
+                    0.05 + 0.13 * layer as f32 / PLBERT_LAYERS as f32,
+                    "analyzing text",
+                );
             }
             let q = linear(&hidden, t, h, qw, Some(qb), h);
             let k = linear(&hidden, t, h, kw, Some(kb), h);
@@ -224,7 +297,14 @@ impl<'a> StyleTtsAcoustic<'a> {
 
     /// bert_encoder Linear 768→512. Returns `[T, 512]` row-major.
     pub fn bert_encoder(&self, bert: &[f32], t: usize) -> Vec<f32> {
-        linear(bert, t, PLBERT_HID, self.t("bert_encoder.weight"), Some(self.t("bert_encoder.bias")), HIDDEN)
+        linear(
+            bert,
+            t,
+            PLBERT_HID,
+            self.t("bert_encoder.weight"),
+            Some(self.t("bert_encoder.bias")),
+            HIDDEN,
+        )
     }
 
     /// DurationEncoder: bert_encoder `[T,512]` + prosodic style → `d [T,640]`.
@@ -236,9 +316,21 @@ impl<'a> StyleTtsAcoustic<'a> {
             x[ti * cat + HIDDEN..(ti + 1) * cat].copy_from_slice(style);
         }
         for layer in 0..N_LAYER {
-            let lstm_out = self.bilstm_run(&format!("predictor.text_encoder.lstms.{}", 2 * layer), &x, t, cat, HIDDEN / 2);
-            let fc_w = self.t(&format!("predictor.text_encoder.lstms.{}.fc.weight", 2 * layer + 1));
-            let fc_b = self.t(&format!("predictor.text_encoder.lstms.{}.fc.bias", 2 * layer + 1));
+            let lstm_out = self.bilstm_run(
+                &format!("predictor.text_encoder.lstms.{}", 2 * layer),
+                &x,
+                t,
+                cat,
+                HIDDEN / 2,
+            );
+            let fc_w = self.t(&format!(
+                "predictor.text_encoder.lstms.{}.fc.weight",
+                2 * layer + 1
+            ));
+            let fc_b = self.t(&format!(
+                "predictor.text_encoder.lstms.{}.fc.bias",
+                2 * layer + 1
+            ));
             let gb = linear(style, 1, STYLE_DIM, fc_w, Some(fc_b), 2 * HIDDEN);
             let (gamma, beta) = gb.split_at(HIDDEN);
             let ln = layer_norm_plain(&lstm_out, t, HIDDEN, 1e-5);
@@ -256,10 +348,20 @@ impl<'a> StyleTtsAcoustic<'a> {
     pub fn predict_duration(&self, d: &[f32], t: usize) -> Vec<usize> {
         let cat = HIDDEN + STYLE_DIM;
         let x = self.bilstm_run("predictor.lstm", d, t, cat, HIDDEN / 2);
-        let logits = linear(&x, t, HIDDEN, self.t("predictor.duration_proj.linear_layer.weight"), Some(self.t("predictor.duration_proj.linear_layer.bias")), MAX_DUR);
+        let logits = linear(
+            &x,
+            t,
+            HIDDEN,
+            self.t("predictor.duration_proj.linear_layer.weight"),
+            Some(self.t("predictor.duration_proj.linear_layer.bias")),
+            MAX_DUR,
+        );
         (0..t)
             .map(|ti| {
-                let s: f32 = logits[ti * MAX_DUR..(ti + 1) * MAX_DUR].iter().map(|&v| sigmoid(v)).sum();
+                let s: f32 = logits[ti * MAX_DUR..(ti + 1) * MAX_DUR]
+                    .iter()
+                    .map(|&v| sigmoid(v))
+                    .sum();
                 s.round().max(1.0) as usize
             })
             .collect()
@@ -300,10 +402,47 @@ impl<'a> StyleTtsAcoustic<'a> {
         let half = HIDDEN / 2;
         let dec = StyleTtsDecoder::new(self.w);
         let run = |which: &str| -> Vec<f32> {
-            let (h, t1) = dec.adain_resblk1d(&format!("predictor.{which}.0"), &x_cm, HIDDEN, f, HIDDEN, false, style);
-            let (h, t2) = dec.adain_resblk1d(&format!("predictor.{which}.1"), &h, HIDDEN, t1, half, true, style);
-            let (h, t3) = dec.adain_resblk1d(&format!("predictor.{which}.2"), &h, half, t2, half, false, style);
-            conv1d(&h, half, t3, self.t(&format!("predictor.{which}_proj.weight")), Some(self.t(&format!("predictor.{which}_proj.bias"))), 1, 1, 1, 0, 1, 1).0
+            let (h, t1) = dec.adain_resblk1d(
+                &format!("predictor.{which}.0"),
+                &x_cm,
+                HIDDEN,
+                f,
+                HIDDEN,
+                false,
+                style,
+            );
+            let (h, t2) = dec.adain_resblk1d(
+                &format!("predictor.{which}.1"),
+                &h,
+                HIDDEN,
+                t1,
+                half,
+                true,
+                style,
+            );
+            let (h, t3) = dec.adain_resblk1d(
+                &format!("predictor.{which}.2"),
+                &h,
+                half,
+                t2,
+                half,
+                false,
+                style,
+            );
+            conv1d(
+                &h,
+                half,
+                t3,
+                self.t(&format!("predictor.{which}_proj.weight")),
+                Some(self.t(&format!("predictor.{which}_proj.bias"))),
+                1,
+                1,
+                1,
+                0,
+                1,
+                1,
+            )
+            .0
         };
         (run("F0"), run("N"))
     }
@@ -314,7 +453,13 @@ impl<'a> StyleTtsAcoustic<'a> {
     /// Replace the reference style with the diffusion-sampled style (the `alpha/beta` prosody
     /// path). `bert_dur` is the raw PLBERT output `[t,768]`. Returns the effective 256-d style
     /// `[acoustic_blend(128) ‖ prosodic_blend(128)]` the rest of the graph consumes unchanged.
-    fn diffuse_style(&self, ref_s: &[f32], bert_dur: &[f32], t: usize, cfg: &DiffusionConfig) -> Vec<f32> {
+    fn diffuse_style(
+        &self,
+        ref_s: &[f32],
+        bert_dur: &[f32],
+        t: usize,
+        cfg: &DiffusionConfig,
+    ) -> Vec<f32> {
         let (noise_init, noises) = diffusion_noise(&cfg);
         let s_pred = StyleDiffusion::new(self.w).sample(&noise_init, &noises, bert_dur, t, ref_s); // [256]
         blend_style(&s_pred, ref_s, &cfg)
@@ -322,14 +467,24 @@ impl<'a> StyleTtsAcoustic<'a> {
 
     /// text_encoder + PLBERT — the style-independent prefix. Split out so the GPU synth path can
     /// run the (async, GPU) style diffusion between this and `acoustic_rest`.
-    pub fn acoustic_prep(&self, ids: &[i64], progress: Option<&dyn Fn(f32, &str)>) -> (Vec<f32>, Vec<f32>, usize) {
+    pub fn acoustic_prep(
+        &self,
+        ids: &[i64],
+        progress: Option<&dyn Fn(f32, &str)>,
+    ) -> (Vec<f32>, Vec<f32>, usize) {
         let t = ids.len();
         let t_en = self.text_encoder(ids); // [512,T] cm
         let bert_out = self.bert(ids, progress); // [T,768]
         (t_en, bert_out, t)
     }
 
-    pub fn acoustic_features(&self, ids: &[i64], ref_s: &[f32], diffuse: Option<DiffusionConfig>, progress: Option<&dyn Fn(f32, &str)>) -> (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, usize) {
+    pub fn acoustic_features(
+        &self,
+        ids: &[i64],
+        ref_s: &[f32],
+        diffuse: Option<DiffusionConfig>,
+        progress: Option<&dyn Fn(f32, &str)>,
+    ) -> (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, usize) {
         let (t_en, bert_out, t) = self.acoustic_prep(ids, progress);
         // optional style diffusion (natural prosody) before splitting into prosodic/acoustic
         let eff_s = match diffuse {
@@ -346,7 +501,14 @@ impl<'a> StyleTtsAcoustic<'a> {
 
     /// Everything downstream of the style split: bert_encoder + predictor + length-regulate.
     /// `eff_s` is the (possibly diffusion-blended) 256-d style. Returns `(asr_shifted, f0, n, r, F)`.
-    pub fn acoustic_rest(&self, t_en: &[f32], bert_out: &[f32], t: usize, eff_s: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, usize) {
+    pub fn acoustic_rest(
+        &self,
+        t_en: &[f32],
+        bert_out: &[f32],
+        t: usize,
+        eff_s: &[f32],
+        progress: Option<&dyn Fn(f32, &str)>,
+    ) -> (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, usize) {
         let s = &eff_s[STYLE_DIM..]; // prosodic
         let r = eff_s[..STYLE_DIM].to_vec(); // acoustic
         if let Some(p) = progress {
@@ -380,7 +542,13 @@ impl<'a> StyleTtsAcoustic<'a> {
     }
 
     /// Full zero-shot synthesis (CPU decoder). `progress(fraction, stage)` at stage boundaries.
-    pub fn synthesize(&self, ids: &[i64], ref_s: &[f32], diffuse: Option<DiffusionConfig>, progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
+    pub fn synthesize(
+        &self,
+        ids: &[i64],
+        ref_s: &[f32],
+        diffuse: Option<DiffusionConfig>,
+        progress: Option<&dyn Fn(f32, &str)>,
+    ) -> Vec<f32> {
         let (asr_s, f0, n, r, f) = self.acoustic_features(ids, ref_s, diffuse, progress);
         StyleTtsDecoder::new(self.w).forward(&asr_s, HIDDEN, f, &f0, &n, &r, progress)
     }

@@ -13,7 +13,10 @@ use rullama::reference::styletts2::StyleTtsAcoustic;
 fn corr(a: &[f32], b: &[f32]) -> f32 {
     let n = a.len().min(b.len());
     let (a, b) = (&a[..n], &b[..n]);
-    let (ma, mb) = (a.iter().sum::<f32>() / n as f32, b.iter().sum::<f32>() / n as f32);
+    let (ma, mb) = (
+        a.iter().sum::<f32>() / n as f32,
+        b.iter().sum::<f32>() / n as f32,
+    );
     let (mut num, mut da, mut db) = (0.0f32, 0.0f32, 0.0f32);
     for (x, y) in a.iter().zip(b) {
         num += (x - ma) * (y - mb);
@@ -24,8 +27,12 @@ fn corr(a: &[f32], b: &[f32]) -> f32 {
 }
 
 fn main() {
-    let dir = PathBuf::from(std::env::var("HOME").unwrap()).join(".cache/styletts2/fixtures/synth/bin");
-    assert!(dir.is_dir(), "run scripts/styletts2_dump_synth_fixtures.py first ({dir:?})");
+    let dir =
+        PathBuf::from(std::env::var("HOME").unwrap()).join(".cache/styletts2/fixtures/synth/bin");
+    assert!(
+        dir.is_dir(),
+        "run scripts/styletts2_dump_synth_fixtures.py first ({dir:?})"
+    );
     let mut w: HashMap<String, Vec<f32>> = HashMap::new();
     let mut tokens: Vec<i64> = Vec::new();
     let mut pred_dur_ref: Vec<i64> = Vec::new();
@@ -34,10 +41,23 @@ fn main() {
         let name = p.file_stem().unwrap().to_str().unwrap().to_string();
         let bytes = fs::read(&p).unwrap();
         if name == "tokens" || name == "pred_dur" {
-            let v: Vec<i64> = bytes.chunks_exact(8).map(|c| i64::from_le_bytes(c.try_into().unwrap())).collect();
-            if name == "tokens" { tokens = v; } else { pred_dur_ref = v; }
+            let v: Vec<i64> = bytes
+                .chunks_exact(8)
+                .map(|c| i64::from_le_bytes(c.try_into().unwrap()))
+                .collect();
+            if name == "tokens" {
+                tokens = v;
+            } else {
+                pred_dur_ref = v;
+            }
         } else {
-            w.insert(name, bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect());
+            w.insert(
+                name,
+                bytes
+                    .chunks_exact(4)
+                    .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                    .collect(),
+            );
         }
     }
     let t = tokens.len();
@@ -46,7 +66,10 @@ fn main() {
 
     // ---- text_encoder ----
     let t_en = ac.text_encoder(&tokens);
-    println!("t_en           max_abs_diff = {:.3e}", max_abs_diff(&t_en, w.get("t_en").unwrap()));
+    println!(
+        "t_en           max_abs_diff = {:.3e}",
+        max_abs_diff(&t_en, w.get("t_en").unwrap())
+    );
 
     // ---- bert + bert_encoder → d_en [512,T] (transpose of [T,512]) ----
     let be = ac.bert_encoder(&ac.bert(&tokens, None), t);
@@ -56,15 +79,25 @@ fn main() {
             d_en[c * t + ti] = be[ti * 512 + c];
         }
     }
-    println!("d_en (bert)    max_abs_diff = {:.3e}", max_abs_diff(&d_en, w.get("d_en").unwrap()));
+    println!(
+        "d_en (bert)    max_abs_diff = {:.3e}",
+        max_abs_diff(&d_en, w.get("d_en").unwrap())
+    );
 
     // ---- durations (MUST be integer-exact or everything downstream misaligns) ----
     let d = ac.duration_encode(&be, t, &w.get("s_prosodic").unwrap().clone());
     let dur = ac.predict_duration(&d, t);
     let dur_i64: Vec<i64> = dur.iter().map(|&x| x as i64).collect();
     let dur_match = dur_i64 == pred_dur_ref;
-    println!("pred_dur exact = {dur_match}  (sum {} vs ref {})", dur.iter().sum::<usize>(), pred_dur_ref.iter().sum::<i64>());
-    assert!(dur_match, "duration prediction diverged — got {dur_i64:?} want {pred_dur_ref:?}");
+    println!(
+        "pred_dur exact = {dur_match}  (sum {} vs ref {})",
+        dur.iter().sum::<usize>(),
+        pred_dur_ref.iter().sum::<i64>()
+    );
+    assert!(
+        dur_match,
+        "duration prediction diverged — got {dur_i64:?} want {pred_dur_ref:?}"
+    );
 
     // ---- full synthesis → audio ----
     let ref_s = w.get("ref_s").unwrap().clone();
@@ -72,8 +105,17 @@ fn main() {
     let audio_ref = w.get("audio").unwrap();
     let da = max_abs_diff(&audio, audio_ref);
     let c = corr(&audio, audio_ref);
-    println!("\naudio[{}] vs ref[{}]  max_abs_diff = {da:.3e}  corr = {c:.6}", audio.len(), audio_ref.len());
-    assert!(audio.len() == audio_ref.len(), "audio length {} != {}", audio.len(), audio_ref.len());
+    println!(
+        "\naudio[{}] vs ref[{}]  max_abs_diff = {da:.3e}  corr = {c:.6}",
+        audio.len(),
+        audio_ref.len()
+    );
+    assert!(
+        audio.len() == audio_ref.len(),
+        "audio length {} != {}",
+        audio.len(),
+        audio_ref.len()
+    );
     // Correlation is the parity metric downstream of the HnNSF source (tiny F0 diffs →
     // source-phase drift that preserves the waveform but inflates per-sample max-abs —
     // the same F0-phase sensitivity documented for the Kokoro path).
@@ -87,15 +129,25 @@ fn main() {
         let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
         let pipes = Pipelines::new(&ctx.device);
         let mut wc = HashMap::new();
-        let gpu_audio = pollster::block_on(StyleTtsGpu::new(&w, &ctx, &pipes, &mut wc).decode(&asr_g, fg, &f0_g, &n_g, &r_g));
+        let gpu_audio = pollster::block_on(
+            StyleTtsGpu::new(&w, &ctx, &pipes, &mut wc).decode(&asr_g, fg, &f0_g, &n_g, &r_g),
+        );
         let cg = corr(&gpu_audio, audio_ref);
-        println!("GPU full synth   corr = {cg:.6}  (len {} vs {})", gpu_audio.len(), audio_ref.len());
-        assert!(cg > 0.999, "GPU full synthesis parity FAILED (corr {cg:.6})");
+        println!(
+            "GPU full synth   corr = {cg:.6}  (len {} vs {})",
+            gpu_audio.len(),
+            audio_ref.len()
+        );
+        assert!(
+            cg > 0.999,
+            "GPU full synthesis parity FAILED (corr {cg:.6})"
+        );
         println!("✅ StyleTTS2 GPU synthesis matches PyTorch end-to-end");
     }
 
     // write the Rust-side cloned WAV (16-bit PCM) for listening
-    let out = PathBuf::from(std::env::var("HOME").unwrap()).join(".cache/styletts2/fixtures/synth/cloned_rust.wav");
+    let out = PathBuf::from(std::env::var("HOME").unwrap())
+        .join(".cache/styletts2/fixtures/synth/cloned_rust.wav");
     let n = audio.len();
     let mut buf = Vec::with_capacity(44 + n * 2);
     let hdr = |buf: &mut Vec<u8>, s: &str| buf.extend_from_slice(s.as_bytes());

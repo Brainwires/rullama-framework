@@ -5,7 +5,14 @@
 #![allow(dead_code)]
 
 /// y[t,o] = sum_i x[t,i] * w[o,i] + b[o].  w is row-major `[out, in]` (PyTorch Linear).
-pub fn linear(x: &[f32], rows: usize, in_dim: usize, w: &[f32], b: Option<&[f32]>, out_dim: usize) -> Vec<f32> {
+pub fn linear(
+    x: &[f32],
+    rows: usize,
+    in_dim: usize,
+    w: &[f32],
+    b: Option<&[f32]>,
+    out_dim: usize,
+) -> Vec<f32> {
     let mut y = vec![0.0f32; rows * out_dim];
     for t in 0..rows {
         let xr = &x[t * in_dim..(t + 1) * in_dim];
@@ -22,7 +29,14 @@ pub fn linear(x: &[f32], rows: usize, in_dim: usize, w: &[f32], b: Option<&[f32]
 }
 
 /// LayerNorm over the last dim, per row. gamma/beta length == dim.
-pub fn layer_norm(x: &[f32], rows: usize, dim: usize, gamma: &[f32], beta: &[f32], eps: f32) -> Vec<f32> {
+pub fn layer_norm(
+    x: &[f32],
+    rows: usize,
+    dim: usize,
+    gamma: &[f32],
+    beta: &[f32],
+    eps: f32,
+) -> Vec<f32> {
     let mut y = vec![0.0f32; rows * dim];
     for r in 0..rows {
         let row = &x[r * dim..(r + 1) * dim];
@@ -91,8 +105,15 @@ pub fn layer_norm_plain(x: &[f32], rows: usize, dim: usize, eps: f32) -> Vec<f32
 /// `w_ih [4H, in]`, `w_hh [4H, H]`, `b_ih/b_hh [4H]`. `reverse` walks t high→low.
 #[allow(clippy::too_many_arguments)]
 fn lstm_dir(
-    x: &[f32], t: usize, in_dim: usize, hidden: usize,
-    w_ih: &[f32], w_hh: &[f32], b_ih: &[f32], b_hh: &[f32], reverse: bool,
+    x: &[f32],
+    t: usize,
+    in_dim: usize,
+    hidden: usize,
+    w_ih: &[f32],
+    w_hh: &[f32],
+    b_ih: &[f32],
+    b_hh: &[f32],
+    reverse: bool,
 ) -> Vec<f32> {
     let h = hidden;
     let mut out = vec![0.0f32; t * h];
@@ -133,16 +154,27 @@ fn lstm_dir(
 /// Bidirectional LSTM → `[T, 2*hidden]` (forward dirs in `[..hidden]`, reverse in `[hidden..]`).
 #[allow(clippy::too_many_arguments)]
 pub fn bilstm(
-    x: &[f32], t: usize, in_dim: usize, hidden: usize,
-    w_ih_f: &[f32], w_hh_f: &[f32], b_ih_f: &[f32], b_hh_f: &[f32],
-    w_ih_r: &[f32], w_hh_r: &[f32], b_ih_r: &[f32], b_hh_r: &[f32],
+    x: &[f32],
+    t: usize,
+    in_dim: usize,
+    hidden: usize,
+    w_ih_f: &[f32],
+    w_hh_f: &[f32],
+    b_ih_f: &[f32],
+    b_hh_f: &[f32],
+    w_ih_r: &[f32],
+    w_hh_r: &[f32],
+    b_ih_r: &[f32],
+    b_hh_r: &[f32],
 ) -> Vec<f32> {
     let fwd = lstm_dir(x, t, in_dim, hidden, w_ih_f, w_hh_f, b_ih_f, b_hh_f, false);
     let rev = lstm_dir(x, t, in_dim, hidden, w_ih_r, w_hh_r, b_ih_r, b_hh_r, true);
     let mut out = vec![0.0f32; t * 2 * hidden];
     for ti in 0..t {
-        out[ti * 2 * hidden..ti * 2 * hidden + hidden].copy_from_slice(&fwd[ti * hidden..(ti + 1) * hidden]);
-        out[ti * 2 * hidden + hidden..(ti + 1) * 2 * hidden].copy_from_slice(&rev[ti * hidden..(ti + 1) * hidden]);
+        out[ti * 2 * hidden..ti * 2 * hidden + hidden]
+            .copy_from_slice(&fwd[ti * hidden..(ti + 1) * hidden]);
+        out[ti * 2 * hidden + hidden..(ti + 1) * 2 * hidden]
+            .copy_from_slice(&rev[ti * hidden..(ti + 1) * hidden]);
     }
     out
 }
@@ -150,5 +182,8 @@ pub fn bilstm(
 /// Max-abs difference between two equal-length slices (parity metric).
 pub fn max_abs_diff(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len(), "len mismatch {} vs {}", a.len(), b.len());
-    a.iter().zip(b).map(|(x, y)| (x - y).abs()).fold(0.0, f32::max)
+    a.iter()
+        .zip(b)
+        .map(|(x, y)| (x - y).abs())
+        .fold(0.0, f32::max)
 }

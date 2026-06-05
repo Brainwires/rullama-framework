@@ -31,7 +31,8 @@ impl Lexicon {
         let mut m = HashMap::new();
         for bytes in [silver, gold] {
             // silver first so gold overwrites it
-            let raw: HashMap<String, serde_json::Value> = serde_json::from_slice(bytes).unwrap_or_default();
+            let raw: HashMap<String, serde_json::Value> =
+                serde_json::from_slice(bytes).unwrap_or_default();
             for (k, v) in raw {
                 if let Some(ph) = extract_default(v) {
                     m.insert(k.to_lowercase(), ph);
@@ -60,7 +61,8 @@ impl Lexicon {
         // morphology: stem + suffix phoneme (try stem, and stem+"e" for drop-e forms)
         let try_stem = |stem: &str| -> Option<&str> { self.raw(stem) };
         let voiceless = |p: &str| matches!(p.chars().last(), Some('p' | 't' | 'k' | 'f' | 'θ'));
-        let sibilant = |p: &str| matches!(p.chars().last(), Some('s' | 'z' | 'ʃ' | 'ʒ' | 'ʧ' | 'ʤ'));
+        let sibilant =
+            |p: &str| matches!(p.chars().last(), Some('s' | 'z' | 'ʃ' | 'ʒ' | 'ʧ' | 'ʤ'));
         if let Some(stem) = w.strip_suffix("ing").filter(|s| s.len() >= 2) {
             if let Some(p) = try_stem(stem).or_else(|| try_stem(&format!("{stem}e"))) {
                 return Some(format!("{p}ɪŋ"));
@@ -68,7 +70,13 @@ impl Lexicon {
         }
         if let Some(stem) = w.strip_suffix("ed").filter(|s| s.len() >= 2) {
             if let Some(p) = try_stem(stem).or_else(|| try_stem(&format!("{stem}e"))) {
-                let suf = if matches!(p.chars().last(), Some('t' | 'd')) { "ɪd" } else if voiceless(p) { "t" } else { "d" };
+                let suf = if matches!(p.chars().last(), Some('t' | 'd')) {
+                    "ɪd"
+                } else if voiceless(p) {
+                    "t"
+                } else {
+                    "d"
+                };
                 return Some(format!("{p}{suf}"));
             }
         }
@@ -79,7 +87,13 @@ impl Lexicon {
         }
         if let Some(stem) = w.strip_suffix('s').filter(|s| s.len() >= 2) {
             if let Some(p) = try_stem(stem) {
-                let suf = if sibilant(p) { "ɪz" } else if voiceless(p) { "s" } else { "z" };
+                let suf = if sibilant(p) {
+                    "ɪz"
+                } else if voiceless(p) {
+                    "s"
+                } else {
+                    "z"
+                };
                 return Some(format!("{p}{suf}"));
             }
         }
@@ -88,7 +102,10 @@ impl Lexicon {
 }
 
 fn is_kept_punct(c: char) -> bool {
-    matches!(c, ',' | '.' | '!' | '?' | ';' | ':' | '—' | '…' | '"' | '(' | ')' | '\'')
+    matches!(
+        c,
+        ',' | '.' | '!' | '?' | ';' | ':' | '—' | '…' | '"' | '(' | ')' | '\''
+    )
 }
 
 /// First phonetic segment is a vowel (skip leading stress marks).
@@ -96,7 +113,32 @@ fn starts_with_vowel(ph: &str) -> bool {
     let c = ph.chars().find(|c| !matches!(c, 'ˈ' | 'ˌ'));
     matches!(
         c,
-        Some('a' | 'e' | 'i' | 'o' | 'u' | 'æ' | 'ɑ' | 'ɐ' | 'ɒ' | 'ɔ' | 'ə' | 'ɛ' | 'ɜ' | 'ɪ' | 'ʊ' | 'ʌ' | 'ɚ' | 'ᵊ' | 'A' | 'E' | 'I' | 'O' | 'U' | 'W' | 'Y')
+        Some(
+            'a' | 'e'
+                | 'i'
+                | 'o'
+                | 'u'
+                | 'æ'
+                | 'ɑ'
+                | 'ɐ'
+                | 'ɒ'
+                | 'ɔ'
+                | 'ə'
+                | 'ɛ'
+                | 'ɜ'
+                | 'ɪ'
+                | 'ʊ'
+                | 'ʌ'
+                | 'ɚ'
+                | 'ᵊ'
+                | 'A'
+                | 'E'
+                | 'I'
+                | 'O'
+                | 'U'
+                | 'W'
+                | 'Y'
+        )
     )
 }
 
@@ -153,8 +195,16 @@ pub fn g2p(text: &str, lex: &Lexicon) -> (String, Vec<String>) {
                     .unwrap_or(false);
                 let wl = w.to_lowercase();
                 let ph = match wl.as_str() {
-                    "the" => Some(if next_vowel { "ði".to_string() } else { "ðə".to_string() }),
-                    "to" => Some(if next_vowel { "tu".to_string() } else { "tə".to_string() }),
+                    "the" => Some(if next_vowel {
+                        "ði".to_string()
+                    } else {
+                        "ðə".to_string()
+                    }),
+                    "to" => Some(if next_vowel {
+                        "tu".to_string()
+                    } else {
+                        "tə".to_string()
+                    }),
                     _ => resolved[i].as_ref().and_then(|(_, p)| p.clone()),
                 };
                 match ph {

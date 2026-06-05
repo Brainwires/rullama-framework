@@ -30,7 +30,10 @@ impl MelFrontend {
         let pad = (N_FFT - WIN) / 2; // 424
         let mut window = vec![0f32; N_FFT];
         window[pad..pad + WIN].copy_from_slice(hann1200);
-        Self { window, fb: fb.to_vec() }
+        Self {
+            window,
+            fb: fb.to_vec(),
+        }
     }
 
     /// 24 kHz mono audio → normalized log-mel `[N_MELS, n_frames]` row-major (`m*T + t`),

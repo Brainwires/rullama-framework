@@ -2,15 +2,24 @@
 //! Covers AdainResBlk1d used by the ProsodyPredictor F0/N stacks and the Decoder.
 #![allow(dead_code)]
 
-use super::ops::linear;
 use super::KokoroModel;
+use super::ops::linear;
 
 /// General 1-D convolution, channel-major. `w [Cout, Cin/groups, K]`, `b [Cout]`.
 /// Returns `(out [Cout, Tout], Tout)`.
 #[allow(clippy::too_many_arguments)]
 pub fn conv1d(
-    inp: &[f32], cin: usize, t: usize, w: &[f32], b: Option<&[f32]>, cout: usize,
-    k: usize, stride: usize, pad: usize, dilation: usize, groups: usize,
+    inp: &[f32],
+    cin: usize,
+    t: usize,
+    w: &[f32],
+    b: Option<&[f32]>,
+    cout: usize,
+    k: usize,
+    stride: usize,
+    pad: usize,
+    dilation: usize,
+    groups: usize,
 ) -> (Vec<f32>, usize) {
     let tout = (t + 2 * pad - dilation * (k - 1) - 1) / stride + 1;
     let cin_g = cin / groups;
@@ -44,8 +53,16 @@ pub fn conv1d(
 /// Out length `(T-1)*stride - 2*pad + (K-1) + output_padding + 1`.
 #[allow(clippy::too_many_arguments)]
 pub fn conv_transpose1d(
-    inp: &[f32], cin: usize, t: usize, w: &[f32], b: Option<&[f32]>, cout: usize,
-    k: usize, stride: usize, pad: usize, output_padding: usize,
+    inp: &[f32],
+    cin: usize,
+    t: usize,
+    w: &[f32],
+    b: Option<&[f32]>,
+    cout: usize,
+    k: usize,
+    stride: usize,
+    pad: usize,
+    output_padding: usize,
 ) -> (Vec<f32>, usize) {
     let tout = (t - 1) * stride + (k - 1) + output_padding + 1 - 2 * pad;
     let mut out = vec![0.0f32; cout * tout];
@@ -102,8 +119,15 @@ pub fn snake(x: &mut [f32], c: usize, t: usize, alpha: &[f32]) {
 /// Depthwise ConvTranspose1d (groups == channels), `w [C, 1, K]`, `b [C]`.
 /// Used as StyleTTS2's upsampling "pool": stride=2, pad=1, output_padding=1, K=3 → 2×T.
 pub fn conv_transpose1d_depthwise(
-    inp: &[f32], c: usize, t: usize, w: &[f32], b: Option<&[f32]>,
-    k: usize, stride: usize, pad: usize, output_padding: usize,
+    inp: &[f32],
+    c: usize,
+    t: usize,
+    w: &[f32],
+    b: Option<&[f32]>,
+    k: usize,
+    stride: usize,
+    pad: usize,
+    output_padding: usize,
 ) -> (Vec<f32>, usize) {
     let tout = (t - 1) * stride + (k - 1) + output_padding + 1 - 2 * pad;
     let mut out = vec![0.0f32; c * tout];
@@ -143,8 +167,15 @@ pub fn upsample_nearest_2x(inp: &[f32], c: usize, t: usize) -> Vec<f32> {
 /// `(1+gamma_c) * (norm_affine(x)) + beta_c`, gamma/beta = chunk(fc(style)).
 #[allow(clippy::too_many_arguments)]
 pub fn adain1d(
-    x: &[f32], c: usize, t: usize, norm_w: Option<&[f32]>, norm_b: Option<&[f32]>,
-    fc_w: &[f32], fc_b: &[f32], style: &[f32], style_dim: usize,
+    x: &[f32],
+    c: usize,
+    t: usize,
+    norm_w: Option<&[f32]>,
+    norm_b: Option<&[f32]>,
+    fc_w: &[f32],
+    fc_b: &[f32],
+    style: &[f32],
+    style_dim: usize,
 ) -> Vec<f32> {
     let gb = linear(style, 1, style_dim, fc_w, Some(fc_b), 2 * c); // [2C]
     let (gamma, beta) = gb.split_at(c);
@@ -170,8 +201,14 @@ impl KokoroModel {
     /// AdainResBlk1d (modules.AdainResBlk1d / istftnet variant), LeakyReLU(0.2) activation.
     /// `x [dim_in, T]` → `(out [dim_out, Tout], Tout)`. `upsample` doubles T via the pool.
     pub fn adain_resblk1d(
-        &self, prefix: &str, x: &[f32], dim_in: usize, t: usize, dim_out: usize,
-        upsample: bool, style: &[f32],
+        &self,
+        prefix: &str,
+        x: &[f32],
+        dim_in: usize,
+        t: usize,
+        dim_out: usize,
+        upsample: bool,
+        style: &[f32],
     ) -> (Vec<f32>, usize) {
         let sd = self.cfg.style_dim;
         let learned_sc = dim_in != dim_out;
@@ -181,7 +218,17 @@ impl KokoroModel {
         let n1b = self.t_opt(&format!("{prefix}.norm1.norm.bias"));
         let n1fw = self.t(&format!("{prefix}.norm1.fc.weight"));
         let n1fb = self.t(&format!("{prefix}.norm1.fc.bias"));
-        let mut h = adain1d(x, dim_in, t, n1w.as_deref(), n1b.as_deref(), &n1fw, &n1fb, style, sd);
+        let mut h = adain1d(
+            x,
+            dim_in,
+            t,
+            n1w.as_deref(),
+            n1b.as_deref(),
+            &n1fw,
+            &n1fb,
+            style,
+            sd,
+        );
         super::ops::leaky_relu(&mut h, 0.2);
 
         // pool: identity, or depthwise ConvTranspose (2×T) on dim_in channels
@@ -200,14 +247,28 @@ impl KokoroModel {
         let n2b = self.t_opt(&format!("{prefix}.norm2.norm.bias"));
         let n2fw = self.t(&format!("{prefix}.norm2.fc.weight"));
         let n2fb = self.t(&format!("{prefix}.norm2.fc.bias"));
-        let mut h = adain1d(&h, dim_out, t1, n2w.as_deref(), n2b.as_deref(), &n2fw, &n2fb, style, sd);
+        let mut h = adain1d(
+            &h,
+            dim_out,
+            t1,
+            n2w.as_deref(),
+            n2b.as_deref(),
+            &n2fw,
+            &n2fb,
+            style,
+            sd,
+        );
         super::ops::leaky_relu(&mut h, 0.2);
         let c2w = self.t(&format!("{prefix}.conv2.weight"));
         let c2b = self.t(&format!("{prefix}.conv2.bias"));
         let (residual, tout) = conv1d(&h, dim_out, t1, &c2w, Some(&c2b), dim_out, 3, 1, 1, 1, 1);
 
         // ---- shortcut ----
-        let sc = if upsample { upsample_nearest_2x(x, dim_in, t) } else { x.to_vec() };
+        let sc = if upsample {
+            upsample_nearest_2x(x, dim_in, t)
+        } else {
+            x.to_vec()
+        };
         let sc = if learned_sc {
             let cw = self.t(&format!("{prefix}.conv1x1.weight"));
             conv1d(&sc, dim_in, tout, &cw, None, dim_out, 1, 1, 0, 1, 1).0

@@ -62,14 +62,26 @@ fn json_usize_vec(s: &str) -> Vec<usize> {
 
 impl KokoroConfig {
     pub fn from_gguf(r: &GgufReader) -> Result<Self> {
-        let u = |k: &str| -> usize { r.get(k).and_then(|v| v.as_u32()).map(|x| x as usize).unwrap_or(0) };
-        let s = |k: &str| -> String { r.get(k).and_then(|v| v.as_str()).map(|x| x.to_string()).unwrap_or_default() };
-        let dil: Vec<Vec<usize>> = serde_json::from_str::<Vec<Vec<i64>>>(&s("kokoro.resblock_dilation_sizes_json"))
-            .unwrap_or_default()
-            .into_iter()
-            .map(|row| row.into_iter().map(|x| x as usize).collect())
-            .collect();
-        let vocab: HashMap<String, i64> = serde_json::from_str(&s("kokoro.vocab_json")).unwrap_or_default();
+        let u = |k: &str| -> usize {
+            r.get(k)
+                .and_then(|v| v.as_u32())
+                .map(|x| x as usize)
+                .unwrap_or(0)
+        };
+        let s = |k: &str| -> String {
+            r.get(k)
+                .and_then(|v| v.as_str())
+                .map(|x| x.to_string())
+                .unwrap_or_default()
+        };
+        let dil: Vec<Vec<usize>> =
+            serde_json::from_str::<Vec<Vec<i64>>>(&s("kokoro.resblock_dilation_sizes_json"))
+                .unwrap_or_default()
+                .into_iter()
+                .map(|row| row.into_iter().map(|x| x as usize).collect())
+                .collect();
+        let vocab: HashMap<String, i64> =
+            serde_json::from_str(&s("kokoro.vocab_json")).unwrap_or_default();
         Ok(Self {
             n_token: u("kokoro.n_token"),
             hidden_dim: u("kokoro.hidden_dim"),
@@ -105,12 +117,17 @@ pub struct KokoroModel {
 impl KokoroModel {
     pub fn new(reader: Arc<GgufReader>) -> Result<Self> {
         let cfg = KokoroConfig::from_gguf(&reader)?;
-        Ok(Self { cfg, w: Weights::new(reader) })
+        Ok(Self {
+            cfg,
+            w: Weights::new(reader),
+        })
     }
 
     /// Load+dequant a tensor to f32, panicking with the name on error (oracle convenience).
     pub(crate) fn t(&self, name: &str) -> Vec<f32> {
-        self.w.load(name).unwrap_or_else(|e| panic!("kokoro tensor {name}: {e:?}"))
+        self.w
+            .load(name)
+            .unwrap_or_else(|e| panic!("kokoro tensor {name}: {e:?}"))
     }
 
     /// Optional tensor — `None` if absent. Used for InstanceNorm affine params, which
@@ -165,6 +182,12 @@ impl KokoroModel {
         let t_en = self.text_encoder(ids);
         let (_de, x_dec, _f0d, _nd) = self.decoder_features(&t_en, &f0, &n, &dur, timbre);
         let (har, frames) = self.generator_source(&f0);
-        self.generator(&x_dec, x_dec.len() / self.cfg.hidden_dim, &har, frames, timbre)
+        self.generator(
+            &x_dec,
+            x_dec.len() / self.cfg.hidden_dim,
+            &har,
+            frames,
+            timbre,
+        )
     }
 }

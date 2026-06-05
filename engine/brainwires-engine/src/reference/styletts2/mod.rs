@@ -43,7 +43,15 @@ impl Map {
 /// General 2D convolution (NCHW, N=1) with stride/pad/groups. PyTorch weight layout
 /// `[out_c, in_c/groups, kh, kw]`. Naive — this is a correctness oracle.
 pub fn conv2d(
-    x: &Map, w: &[f32], b: Option<&[f32]>, out_c: usize, kh: usize, kw: usize, stride: usize, pad: usize, groups: usize,
+    x: &Map,
+    w: &[f32],
+    b: Option<&[f32]>,
+    out_c: usize,
+    kh: usize,
+    kw: usize,
+    stride: usize,
+    pad: usize,
+    groups: usize,
 ) -> Map {
     let (ic, h, win) = (x.c, x.h, x.w);
     let ho = (h + 2 * pad - kh) / stride + 1;
@@ -123,7 +131,14 @@ pub fn avg_pool2d_half(x: &Map) -> Map {
 /// `AdaptiveAvgPool2d(1)`: mean over H×W per channel → `[c]`.
 pub fn adaptive_avg_pool2d_1(x: &Map) -> Vec<f32> {
     let hw = (x.h * x.w) as f32;
-    (0..x.c).map(|c| x.data[c * x.h * x.w..(c + 1) * x.h * x.w].iter().sum::<f32>() / hw).collect()
+    (0..x.c)
+        .map(|c| {
+            x.data[c * x.h * x.w..(c + 1) * x.h * x.w]
+                .iter()
+                .sum::<f32>()
+                / hw
+        })
+        .collect()
 }
 
 const LRELU: f32 = 0.2;
@@ -142,7 +157,17 @@ pub struct Conv {
 
 impl Conv {
     pub fn apply(&self, x: &Map) -> Map {
-        conv2d(x, &self.w, self.b.as_deref(), self.oc, self.kh, self.kw, self.stride, self.pad, self.groups)
+        conv2d(
+            x,
+            &self.w,
+            self.b.as_deref(),
+            self.oc,
+            self.kh,
+            self.kw,
+            self.stride,
+            self.pad,
+            self.groups,
+        )
     }
 }
 
@@ -150,10 +175,10 @@ impl Conv {
 /// (when channels change) then avg-pool; residual: leaky→conv1(k3)→strided depthwise
 /// down→leaky→conv2(k3); `(shortcut+residual)/√2`.
 pub struct ResBlk {
-    pub conv1: Conv,           // dim_in → dim_in, k3 p1
-    pub down: Conv,            // depthwise dim_in → dim_in, k3 s2 p1
-    pub conv2: Conv,           // dim_in → dim_out, k3 p1
-    pub sc: Option<Conv>,      // 1×1 dim_in → dim_out (only when dim_in != dim_out)
+    pub conv1: Conv,      // dim_in → dim_in, k3 p1
+    pub down: Conv,       // depthwise dim_in → dim_in, k3 s2 p1
+    pub conv2: Conv,      // dim_in → dim_out, k3 p1
+    pub sc: Option<Conv>, // 1×1 dim_in → dim_out (only when dim_in != dim_out)
 }
 
 impl ResBlk {
@@ -174,7 +199,12 @@ impl ResBlk {
         // (shortcut + residual) / sqrt(2)
         debug_assert_eq!(shortcut.data.len(), r.data.len());
         let inv = 1.0 / std::f32::consts::SQRT_2;
-        let data: Vec<f32> = shortcut.data.iter().zip(&r.data).map(|(a, b)| (a + b) * inv).collect();
+        let data: Vec<f32> = shortcut
+            .data
+            .iter()
+            .zip(&r.data)
+            .map(|(a, b)| (a + b) * inv)
+            .collect();
         Map::new(data, r.c, r.h, r.w)
     }
 }

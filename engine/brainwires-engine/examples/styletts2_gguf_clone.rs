@@ -13,13 +13,18 @@ use rullama::reference::styletts2::StyleTtsModel;
 /// unlike multimodal::decode_wav which downsamples to the 16 kHz audio-tower rate).
 fn read_wav_24k(bytes: &[u8]) -> Vec<f32> {
     let data = &bytes[44..]; // skip canonical 44-byte header
-    data.chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0).collect()
+    data.chunks_exact(2)
+        .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
+        .collect()
 }
 
 fn corr(a: &[f32], b: &[f32]) -> f32 {
     let n = a.len().min(b.len());
     let (a, b) = (&a[..n], &b[..n]);
-    let (ma, mb) = (a.iter().sum::<f32>() / n as f32, b.iter().sum::<f32>() / n as f32);
+    let (ma, mb) = (
+        a.iter().sum::<f32>() / n as f32,
+        b.iter().sum::<f32>() / n as f32,
+    );
     let (mut num, mut da, mut db) = (0.0f32, 0.0f32, 0.0f32);
     for (x, y) in a.iter().zip(b) {
         num += (x - ma) * (y - mb);
@@ -31,7 +36,10 @@ fn corr(a: &[f32], b: &[f32]) -> f32 {
 
 fn main() {
     let home = PathBuf::from(std::env::var("HOME").unwrap());
-    let gguf = std::env::args().nth(1).map(PathBuf::from).unwrap_or_else(|| home.join(".cache/styletts2/styletts2-libritts-f16.gguf"));
+    let gguf = std::env::args()
+        .nth(1)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".cache/styletts2/styletts2-libritts-f16.gguf"));
     println!("loading {gguf:?}");
     let reader = GgufReader::new(fs::read(&gguf).unwrap()).unwrap();
     let model = StyleTtsModel::load(&reader).unwrap();
@@ -44,20 +52,41 @@ fn main() {
     // synth-fixture references (f32) for parity comparison
     let fdir = home.join(".cache/styletts2/fixtures/synth/bin");
     let read_f32 = |n: &str| -> Vec<f32> {
-        fs::read(fdir.join(format!("{n}.bin"))).unwrap().chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+        fs::read(fdir.join(format!("{n}.bin")))
+            .unwrap()
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect()
     };
-    let tokens: Vec<i64> = fs::read(fdir.join("tokens.bin")).unwrap().chunks_exact(8).map(|c| i64::from_le_bytes(c.try_into().unwrap())).collect();
+    let tokens: Vec<i64> = fs::read(fdir.join("tokens.bin"))
+        .unwrap()
+        .chunks_exact(8)
+        .map(|c| i64::from_le_bytes(c.try_into().unwrap()))
+        .collect();
     let ref_s_fix = read_f32("ref_s");
     let audio_fix = read_f32("audio");
 
-    println!("encode_voice vs fixture ref_s:  corr = {:.5}", corr(&voice, &ref_s_fix));
+    println!(
+        "encode_voice vs fixture ref_s:  corr = {:.5}",
+        corr(&voice, &ref_s_fix)
+    );
 
     // synth path through f16 GGUF, isolated by using the fixture's ref_s (flat path = matches fixture)
     let audio = model.synthesize(&tokens, &ref_s_fix, None, None);
-    println!("f16-GGUF synth vs f32 fixture:  corr = {:.5}  (len {} vs {})", corr(&audio, &audio_fix), audio.len(), audio_fix.len());
+    println!(
+        "f16-GGUF synth vs f32 fixture:  corr = {:.5}  (len {} vs {})",
+        corr(&audio, &audio_fix),
+        audio.len(),
+        audio_fix.len()
+    );
 
     // full clone (encode + synth, all through the GGUF) → WAV, with the natural-prosody diffusion
-    let full = model.synthesize(&tokens, &voice, Some(rullama::reference::styletts2::acoustic::DiffusionConfig::default()), None);
+    let full = model.synthesize(
+        &tokens,
+        &voice,
+        Some(rullama::reference::styletts2::acoustic::DiffusionConfig::default()),
+        None,
+    );
     let out = home.join(".cache/styletts2/fixtures/synth/gguf_clone.wav");
     let mut buf = Vec::with_capacity(44 + full.len() * 2);
     buf.extend_from_slice(b"RIFF");

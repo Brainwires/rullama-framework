@@ -20,8 +20,8 @@
 
 use rullama::backend::{Pipelines, WgpuCtx};
 use rullama::gguf::GgufReader;
-use rullama::reference::kokoro::g2p::{g2p, Lexicon};
 use rullama::reference::kokoro::KokoroModel;
+use rullama::reference::kokoro::g2p::{Lexicon, g2p};
 use rullama::reference::styletts2::StyleTtsModel;
 use std::collections::HashMap;
 use std::fs;
@@ -108,10 +108,18 @@ fn trimmed_mean(vs: &[Vec<f32>]) -> Vec<f32> {
         return mean(vs);
     }
     let c = mean(vs);
-    let mut scored: Vec<(f32, &Vec<f32>)> = vs.iter().map(|v| (1.0 - cosine(acoustic(v), acoustic(&c)), v)).collect();
+    let mut scored: Vec<(f32, &Vec<f32>)> = vs
+        .iter()
+        .map(|v| (1.0 - cosine(acoustic(v), acoustic(&c)), v))
+        .collect();
     scored.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
     let keep = ((vs.len() as f32) * 0.8).ceil() as usize;
-    mean(&scored[..keep].iter().map(|(_, v)| (*v).clone()).collect::<Vec<_>>())
+    mean(
+        &scored[..keep]
+            .iter()
+            .map(|(_, v)| (*v).clone())
+            .collect::<Vec<_>>(),
+    )
 }
 
 fn mean(vs: &[Vec<f32>]) -> Vec<f32> {
@@ -130,14 +138,19 @@ fn mean(vs: &[Vec<f32>]) -> Vec<f32> {
 
 fn main() {
     let mut a = std::env::args().skip(1);
-    let kokoro_gguf = a.next().expect("usage: <kokoro.gguf> <styletts2.gguf> <us_gold.json> [us_silver.json] [diff_voice]");
+    let kokoro_gguf = a.next().expect(
+        "usage: <kokoro.gguf> <styletts2.gguf> <us_gold.json> [us_silver.json] [diff_voice]",
+    );
     let st_gguf = a.next().expect("styletts2 gguf");
     let gold = fs::read(a.next().expect("us_gold.json")).unwrap();
     let silver = a.next().map(|p| fs::read(p).unwrap()).unwrap_or_default();
     let diff_voice = a.next().unwrap_or_else(|| "am_michael".into());
 
     // engines
-    let kokoro = KokoroModel::new(Arc::new(GgufReader::new(fs::read(&kokoro_gguf).unwrap()).unwrap())).unwrap();
+    let kokoro = KokoroModel::new(Arc::new(
+        GgufReader::new(fs::read(&kokoro_gguf).unwrap()).unwrap(),
+    ))
+    .unwrap();
     let lex = Lexicon::load(&gold, &silver);
     let st = StyleTtsModel::load(&GgufReader::new(fs::read(&st_gguf).unwrap()).unwrap()).unwrap();
     let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
@@ -145,8 +158,16 @@ fn main() {
     let mut wc = rullama::reference::styletts2::gpu::GpuWeightCache::new();
 
     // StyleTTS2 phoneme vocab (BOS=0 prefix; drop OOV)
-    let vocab_txt = fs::read_to_string(format!("{}/src/reference/styletts2/vocab.txt", env!("CARGO_MANIFEST_DIR"))).unwrap();
-    let vocab: HashMap<char, i64> = vocab_txt.chars().enumerate().map(|(i, c)| (c, i as i64)).collect();
+    let vocab_txt = fs::read_to_string(format!(
+        "{}/src/reference/styletts2/vocab.txt",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    let vocab: HashMap<char, i64> = vocab_txt
+        .chars()
+        .enumerate()
+        .map(|(i, c)| (c, i as i64))
+        .collect();
     let to_ids = |text: &str| -> Vec<i64> {
         let (ps, _) = g2p(text, &lex);
         let mut ids = vec![0i64];
@@ -176,27 +197,46 @@ fn main() {
                 // GPU synth (the heavy hifigan generator). Drain the queue and give it a long
                 // cool-down so the integrated GPU never stays saturated.
                 // block_on returns only after the GPU readback completes → queue already drained.
-                let out = pollster::block_on(st.synthesize_gpu(&ctx, &pipes, &mut wc, &ids, $voice, None, None));
+                let out = pollster::block_on(
+                    st.synthesize_gpu(&ctx, &pipes, &mut wc, &ids, $voice, None, None),
+                );
                 cool();
                 let s = enc!(&out);
                 sim += cosine(acoustic(&s), acoustic(&$af[i]));
             }
             sim /= HELD_OUT.len() as f32;
             let self_sim = cosine(acoustic($self_ref), acoustic($voice));
-            println!("  {:<30} clone-vs-af_heart = {:.4}   (self {:.4})", $label, sim, self_sim);
+            println!(
+                "  {:<30} clone-vs-af_heart = {:.4}   (self {:.4})",
+                $label, sim, self_sim
+            );
         }};
     }
 
-    println!("== A0 clone-fidelity calibration ==\nidentity = cosine of the acoustic(timbre) half of the StyleTTS2 style\n");
+    println!(
+        "== A0 clone-fidelity calibration ==\nidentity = cosine of the acoustic(timbre) half of the StyleTTS2 style\n"
+    );
 
     // held-out af_heart outputs (the comparison target). Done first = cheap.
-    println!("synthesizing {} held-out af_heart outputs (ground truth)...", HELD_OUT.len());
-    let af_out_styles: Vec<Vec<f32>> = HELD_OUT.iter().map(|t| enc!(&ksynth(t, "af_heart"))).collect();
+    println!(
+        "synthesizing {} held-out af_heart outputs (ground truth)...",
+        HELD_OUT.len()
+    );
+    let af_out_styles: Vec<Vec<f32>> = HELD_OUT
+        .iter()
+        .map(|t| enc!(&ksynth(t, "af_heart")))
+        .collect();
 
     // FLOOR: a different Kokoro speaker (synth'd EARLY so a missing voice panics before the
     // expensive corpus). Compared vs af_heart's outputs.
-    println!("synthesizing {} held-out {diff_voice} outputs (floor)...", HELD_OUT.len());
-    let diff_out_styles: Vec<Vec<f32>> = HELD_OUT.iter().map(|t| enc!(&ksynth(t, &diff_voice))).collect();
+    println!(
+        "synthesizing {} held-out {diff_voice} outputs (floor)...",
+        HELD_OUT.len()
+    );
+    let diff_out_styles: Vec<Vec<f32>> = HELD_OUT
+        .iter()
+        .map(|t| enc!(&ksynth(t, &diff_voice)))
+        .collect();
     let floor = {
         let mut s = 0.0;
         let mut n = 0;
@@ -210,7 +250,10 @@ fn main() {
     };
 
     // clean varied af_heart reference corpus → per-clip style (the cloning input)
-    println!("synthesizing + encoding {} clean af_heart reference clips...", REF_CORPUS.len());
+    println!(
+        "synthesizing + encoding {} clean af_heart reference clips...",
+        REF_CORPUS.len()
+    );
     let mut ref_secs: Vec<f32> = Vec::new();
     let mut ref_styles: Vec<Vec<f32>> = Vec::new();
     let mut clip0: Vec<f32> = Vec::new();
@@ -224,9 +267,16 @@ fn main() {
     }
     let total_ref: f32 = ref_secs.iter().sum();
     let ref_centroid = trimmed_mean(&ref_styles);
-    let ceiling: f32 = af_out_styles.iter().map(|s| cosine(acoustic(s), acoustic(&ref_centroid))).sum::<f32>() / af_out_styles.len() as f32;
+    let ceiling: f32 = af_out_styles
+        .iter()
+        .map(|s| cosine(acoustic(s), acoustic(&ref_centroid)))
+        .sum::<f32>()
+        / af_out_styles.len() as f32;
 
-    println!("\n  total clean reference available: {total_ref:.1}s ({} clips)", ref_styles.len());
+    println!(
+        "\n  total clean reference available: {total_ref:.1}s ({} clips)",
+        ref_styles.len()
+    );
     println!("  CEILING (af_heart vs af_heart, diff text) = {ceiling:.4}");
     println!("  FLOOR   ({diff_voice} vs af_heart)        = {floor:.4}");
     println!("  (a faithful clone lands near CEILING, far above FLOOR)\n");
@@ -243,7 +293,12 @@ fn main() {
             idx += 1;
         }
         let voice = trimmed_mean(&ref_styles[..idx]);
-        measure!(&voice, &ref_centroid, format!("{acc:>5.0}s clean ({idx} clips)"), af_out_styles);
+        measure!(
+            &voice,
+            &ref_centroid,
+            format!("{acc:>5.0}s clean ({idx} clips)"),
+            af_out_styles
+        );
     }
 
     println!("\nCONTROLS:");
@@ -258,15 +313,29 @@ fn main() {
             *x += u * rms * 0.25;
         }
         let v = enc!(&noisy);
-        measure!(&v, &ref_centroid, "1 short NOISY clip".to_string(), af_out_styles);
+        measure!(
+            &v,
+            &ref_centroid,
+            "1 short NOISY clip".to_string(),
+            af_out_styles
+        );
     }
     // sanity: cloning a DIFFERENT speaker should land near FLOOR
     {
         let v = enc!(&ksynth(HELD_OUT[0], &diff_voice));
-        measure!(&v, &ref_centroid, format!("{diff_voice} clone (≈FLOOR)"), af_out_styles);
+        measure!(
+            &v,
+            &ref_centroid,
+            format!("{diff_voice} clone (≈FLOOR)"),
+            af_out_styles
+        );
     }
 
-    println!("\nREAD: if the multi-minute clean rows climb toward CEILING ({ceiling:.3}) and sit well");
-    println!("above FLOOR ({floor:.3}), the pipeline preserves identity → Phase A (clean data) is the lever.");
+    println!(
+        "\nREAD: if the multi-minute clean rows climb toward CEILING ({ceiling:.3}) and sit well"
+    );
+    println!(
+        "above FLOOR ({floor:.3}), the pipeline preserves identity → Phase A (clean data) is the lever."
+    );
     println!("The seconds→similarity climb is the real 'how much audio do I need' answer.");
 }

@@ -12,12 +12,13 @@ use std::fs;
 use std::sync::Arc;
 
 use rullama::gguf::GgufReader;
-use rullama::reference::kokoro::ops::max_abs_diff;
 use rullama::reference::kokoro::KokoroModel;
+use rullama::reference::kokoro::ops::max_abs_diff;
 
 // Fixture input (from scripts/kokoro_dump_fixtures.py meta.json): "Hello, how are you today?"
 const INPUT_IDS: [i64; 25] = [
-    0, 50, 83, 54, 156, 31, 3, 16, 50, 157, 39, 16, 69, 123, 16, 52, 63, 16, 62, 83, 46, 156, 24, 6, 0,
+    0, 50, 83, 54, 156, 31, 3, 16, 50, 157, 39, 16, 69, 123, 16, 52, 63, 16, 62, 83, 46, 156, 24,
+    6, 0,
 ];
 
 fn read_bin_f32(path: &str) -> Vec<f32> {
@@ -30,8 +31,12 @@ fn read_bin_f32(path: &str) -> Vec<f32> {
 
 fn main() {
     let mut args = env::args().skip(1);
-    let gguf = args.next().expect("usage: kokoro_oracle <gguf> <fixtures_dir>");
-    let fixtures = args.next().expect("usage: kokoro_oracle <gguf> <fixtures_dir>");
+    let gguf = args
+        .next()
+        .expect("usage: kokoro_oracle <gguf> <fixtures_dir>");
+    let fixtures = args
+        .next()
+        .expect("usage: kokoro_oracle <gguf> <fixtures_dir>");
 
     let bytes = fs::read(&gguf).unwrap();
     let reader = Arc::new(GgufReader::new(bytes).unwrap());
@@ -49,11 +54,19 @@ fn main() {
 
     // ---- Stage 1: PL-BERT (ALBERT) ----
     let bert = model.bert(&INPUT_IDS);
-    diff("bert", &bert, &read_bin_f32(&format!("{fixtures}/bin/bert.bin")));
+    diff(
+        "bert",
+        &bert,
+        &read_bin_f32(&format!("{fixtures}/bin/bert.bin")),
+    );
 
     // ---- Stage 2: bert_encoder (768->512) ----
     let be = model.bert_encoder(&bert, t);
-    diff("bert_encoder", &be, &read_bin_f32(&format!("{fixtures}/bin/bert_encoder.bin")));
+    diff(
+        "bert_encoder",
+        &be,
+        &read_bin_f32(&format!("{fixtures}/bin/bert_encoder.bin")),
+    );
 
     // voice vector (exact ref_s used by the fixture): [:128]=timbre, [128:]=prosodic
     let ref_s = read_bin_f32(&format!("{fixtures}/bin/ref_s.bin"));
@@ -61,16 +74,28 @@ fn main() {
 
     // ---- Stage 3: DurationEncoder (BiLSTM + AdaLayerNorm) ----
     let d = model.duration_encode(&be, t, style_pros);
-    diff("pred_text_encoder_d", &d, &read_bin_f32(&format!("{fixtures}/bin/pred_text_encoder_d.bin")));
+    diff(
+        "pred_text_encoder_d",
+        &d,
+        &read_bin_f32(&format!("{fixtures}/bin/pred_text_encoder_d.bin")),
+    );
 
     // ---- Stage 4: duration prediction ----
     let (logits, pred_dur) = model.predict_duration(&d, t);
-    diff("duration_logits", &logits, &read_bin_f32(&format!("{fixtures}/bin/duration_logits.bin")));
+    diff(
+        "duration_logits",
+        &logits,
+        &read_bin_f32(&format!("{fixtures}/bin/duration_logits.bin")),
+    );
     let dur_ok = pred_dur == EXPECTED_DUR;
     println!(
         "[pred_dur]        sum {:>6}  {}  {}",
         pred_dur.iter().sum::<usize>(),
-        if dur_ok { "exact match" } else { "*** MISMATCH ***" },
+        if dur_ok {
+            "exact match"
+        } else {
+            "*** MISMATCH ***"
+        },
         if dur_ok { "OK" } else { "" },
     );
     if !dur_ok {
@@ -97,37 +122,84 @@ fn main() {
 
     // ---- GPU AdainResBlk1d vs CPU oracle (real weights, synthetic input):
     //      plain block + the upsample/learned-shortcut block ----
-    for (prefix, di, dout, up) in [("k.predictor.F0.0", 512usize, 512usize, false), ("k.predictor.F0.1", 512, 256, true)] {
-        let xs: Vec<f32> = (0..di * f).map(|i| ((i % 23) as f32 - 11.0) * 0.05).collect();
+    for (prefix, di, dout, up) in [
+        ("k.predictor.F0.0", 512usize, 512usize, false),
+        ("k.predictor.F0.1", 512, 256, true),
+    ] {
+        let xs: Vec<f32> = (0..di * f)
+            .map(|i| ((i % 23) as f32 - 11.0) * 0.05)
+            .collect();
         let (cpu_b, _) = model.adain_resblk1d(prefix, &xs, di, f, dout, up, style_pros);
-        let gpu_b = pollster::block_on(model.adain_resblk1d_gpu(&ctx, &pipes, prefix, &xs, di, f, dout, up, style_pros));
+        let gpu_b = pollster::block_on(
+            model.adain_resblk1d_gpu(&ctx, &pipes, prefix, &xs, di, f, dout, up, style_pros),
+        );
         diff(&format!("adainblk {prefix}"), &gpu_b, &cpu_b);
     }
 
     // ---- full GPU sub-network: prosody F0/N stack vs fixtures ----
     let (f0_gpu, n_gpu) = pollster::block_on(model.f0_n_gpu(&ctx, &pipes, &en, f, style_pros));
-    diff("F0_GPU", &f0_gpu, &read_bin_f32(&format!("{fixtures}/bin/F0.bin")));
-    diff("N_GPU", &n_gpu, &read_bin_f32(&format!("{fixtures}/bin/N.bin")));
+    diff(
+        "F0_GPU",
+        &f0_gpu,
+        &read_bin_f32(&format!("{fixtures}/bin/F0.bin")),
+    );
+    diff(
+        "N_GPU",
+        &n_gpu,
+        &read_bin_f32(&format!("{fixtures}/bin/N.bin")),
+    );
 
     // ---- GPU decoder cat-stack vs fixtures ----
-    let (dec_enc_g, x_dec_g) = pollster::block_on(model.decoder_features_gpu(&ctx, &pipes, &t_en, &f0, &n, &pred_dur, &ref_s[0..128]));
-    diff("dec_encode_GPU", &dec_enc_g, &read_bin_f32(&format!("{fixtures}/bin/dec_encode.bin")));
-    diff("gen_x_GPU", &x_dec_g, &read_bin_f32(&format!("{fixtures}/bin/gen_x.bin")));
+    let (dec_enc_g, x_dec_g) = pollster::block_on(model.decoder_features_gpu(
+        &ctx,
+        &pipes,
+        &t_en,
+        &f0,
+        &n,
+        &pred_dur,
+        &ref_s[0..128],
+    ));
+    diff(
+        "dec_encode_GPU",
+        &dec_enc_g,
+        &read_bin_f32(&format!("{fixtures}/bin/dec_encode.bin")),
+    );
+    diff(
+        "gen_x_GPU",
+        &x_dec_g,
+        &read_bin_f32(&format!("{fixtures}/bin/gen_x.bin")),
+    );
 
     // ---- GPU generator (ISTFTNet: snake resblocks + ups + iSTFT) vs fixture, injected har ----
     let audio_gpu = pollster::block_on(model.generator_gpu(
-        &ctx, &pipes,
-        &read_bin_f32(&format!("{fixtures}/bin/gen_x.bin")), 156,
-        &read_bin_f32(&format!("{fixtures}/bin/gen_har.bin")), 9361,
+        &ctx,
+        &pipes,
+        &read_bin_f32(&format!("{fixtures}/bin/gen_x.bin")),
+        156,
+        &read_bin_f32(&format!("{fixtures}/bin/gen_har.bin")),
+        9361,
         &ref_s[0..128],
     ));
-    diff("generator_GPU", &audio_gpu, &read_bin_f32(&format!("{fixtures}/bin/audio.bin")));
+    diff(
+        "generator_GPU",
+        &audio_gpu,
+        &read_bin_f32(&format!("{fixtures}/bin/audio.bin")),
+    );
 
     // ---- Stage 7: Decoder encode + decode stack (timbre style = ref_s[:128]) ----
     let style_timbre = &ref_s[0..128];
-    let (dec_encode, x_dec, _f0d, _nd) = model.decoder_features(&t_en, &f0, &n, &pred_dur, style_timbre);
-    diff("dec_encode", &dec_encode, &read_bin_f32(&format!("{fixtures}/bin/dec_encode.bin")));
-    diff("gen_x(decode)", &x_dec, &read_bin_f32(&format!("{fixtures}/bin/gen_x.bin")));
+    let (dec_encode, x_dec, _f0d, _nd) =
+        model.decoder_features(&t_en, &f0, &n, &pred_dur, style_timbre);
+    diff(
+        "dec_encode",
+        &dec_encode,
+        &read_bin_f32(&format!("{fixtures}/bin/dec_encode.bin")),
+    );
+    diff(
+        "gen_x(decode)",
+        &x_dec,
+        &read_bin_f32(&format!("{fixtures}/bin/gen_x.bin")),
+    );
 
     // ---- Stage 8: ISTFTNet generator + exact iSTFT ----
     // har is non-deterministic upstream (random source) → inject the reference.
@@ -143,7 +215,11 @@ fn main() {
 
     // ---- Stage 9: standalone HnNSF source (deterministic, zeroed randomness) ----
     let src_sig = model.source_signal(&f0);
-    diff("har_source_det", &src_sig, &read_bin_f32(&format!("{fixtures}/bin/har_source_det.bin")));
+    diff(
+        "har_source_det",
+        &src_sig,
+        &read_bin_f32(&format!("{fixtures}/bin/har_source_det.bin")),
+    );
     let (har_src, frames_src) = model.generator_source(&f0);
     let ref_hd = read_bin_f32(&format!("{fixtures}/bin/gen_har_det.bin"));
     // har phase is arbitrary at low-energy bins (model trained on random source
@@ -167,7 +243,10 @@ fn main() {
                 }
             }
         }
-        println!("    split: mag_max={mag_d:.3e}  phase_max={ph_d:.3e}  phase_flips(>1)={flips}/{}", nb * frames);
+        println!(
+            "    split: mag_max={mag_d:.3e}  phase_max={ph_d:.3e}  phase_flips(>1)={flips}/{}",
+            nb * frames
+        );
         // one voiced frame: is the phase error a k-linear ramp (shift) or random (branch flip)?
         let f0r = 100;
         print!("    frame100 dphase[k]: ");
@@ -179,14 +258,26 @@ fn main() {
     }
 
     let audio_std = model.generator(&x_dec, 156, &har_src, frames_src, style_timbre);
-    corr_report("audio_det(standalone)", &audio_std, &read_bin_f32(&format!("{fixtures}/bin/audio_det.bin")));
+    corr_report(
+        "audio_det(standalone)",
+        &audio_std,
+        &read_bin_f32(&format!("{fixtures}/bin/audio_det.bin")),
+    );
 
     // ---- Stage 10: composed synthesize() must reproduce the staged pipeline ----
     let syn_ids = model.synthesize_ids(&INPUT_IDS, &ref_s);
     diff("synthesize_ids", &syn_ids, &audio_std);
     let ids = model.phonemes_to_ids("həlˈO, hˌW ɑɹ ju tədˈA?");
     let ids_ok = ids == INPUT_IDS;
-    println!("[phonemes_to_ids ]  {}  ({} ids)", if ids_ok { "matches fixture  OK" } else { "*** MISMATCH ***" }, ids.len());
+    println!(
+        "[phonemes_to_ids ]  {}  ({} ids)",
+        if ids_ok {
+            "matches fixture  OK"
+        } else {
+            "*** MISMATCH ***"
+        },
+        ids.len()
+    );
     let syn = model.synthesize("həlˈO, hˌW ɑɹ ju tədˈA?", "af_heart");
     diff("synthesize(full)", &syn, &audio_std);
 
@@ -195,28 +286,74 @@ fn main() {
         use std::time::Instant;
         let t = Instant::now();
         let _ = pollster::block_on(model.text_encoder_gpu(&ctx, &pipes, &INPUT_IDS));
-        println!("[timing] text_encoder_gpu  {:>7.1} ms", t.elapsed().as_secs_f32() * 1e3);
+        println!(
+            "[timing] text_encoder_gpu  {:>7.1} ms",
+            t.elapsed().as_secs_f32() * 1e3
+        );
         let t = Instant::now();
         let _ = pollster::block_on(model.f0_n_gpu(&ctx, &pipes, &en, f, style_pros));
-        println!("[timing] f0_n_gpu          {:>7.1} ms", t.elapsed().as_secs_f32() * 1e3);
+        println!(
+            "[timing] f0_n_gpu          {:>7.1} ms",
+            t.elapsed().as_secs_f32() * 1e3
+        );
         let t = Instant::now();
-        let (_de, xd) = pollster::block_on(model.decoder_features_gpu(&ctx, &pipes, &t_en, &f0, &n, &pred_dur, &ref_s[0..128]));
-        println!("[timing] decoder_features  {:>7.1} ms", t.elapsed().as_secs_f32() * 1e3);
+        let (_de, xd) = pollster::block_on(model.decoder_features_gpu(
+            &ctx,
+            &pipes,
+            &t_en,
+            &f0,
+            &n,
+            &pred_dur,
+            &ref_s[0..128],
+        ));
+        println!(
+            "[timing] decoder_features  {:>7.1} ms",
+            t.elapsed().as_secs_f32() * 1e3
+        );
         let t = Instant::now();
-        let _ = pollster::block_on(model.generator_gpu(&ctx, &pipes, &xd, 156, &read_bin_f32(&format!("{fixtures}/bin/gen_har.bin")), 9361, &ref_s[0..128]));
-        println!("[timing] generator_gpu     {:>7.1} ms", t.elapsed().as_secs_f32() * 1e3);
+        let _ = pollster::block_on(model.generator_gpu(
+            &ctx,
+            &pipes,
+            &xd,
+            156,
+            &read_bin_f32(&format!("{fixtures}/bin/gen_har.bin")),
+            9361,
+            &ref_s[0..128],
+        ));
+        println!(
+            "[timing] generator_gpu     {:>7.1} ms",
+            t.elapsed().as_secs_f32() * 1e3
+        );
         // head-to-head: full slice forward vs full buffer-chained forward (same inputs)
         let t = Instant::now();
         let _ = pollster::block_on(model.synthesize_gpu(&ctx, &pipes, &INPUT_IDS, &ref_s));
-        println!("[timing] synthesize_gpu (slice, full)  {:>7.1} ms", t.elapsed().as_secs_f32() * 1e3);
+        println!(
+            "[timing] synthesize_gpu (slice, full)  {:>7.1} ms",
+            t.elapsed().as_secs_f32() * 1e3
+        );
         let mut wc = rullama::reference::kokoro::gpu_fast::WeightCache::new();
         let t = Instant::now();
-        let fast1 = pollster::block_on(model.synthesize_gpu_fast(&ctx, &pipes, &mut wc, &INPUT_IDS, &ref_s));
-        println!("[timing] synth_fast cold (cache build)  {:>7.1} ms", t.elapsed().as_secs_f32() * 1e3);
+        let fast1 = pollster::block_on(
+            model.synthesize_gpu_fast(&ctx, &pipes, &mut wc, &INPUT_IDS, &ref_s),
+        );
+        println!(
+            "[timing] synth_fast cold (cache build)  {:>7.1} ms",
+            t.elapsed().as_secs_f32() * 1e3
+        );
         let t = Instant::now();
-        let _ = pollster::block_on(model.synthesize_gpu_fast(&ctx, &pipes, &mut wc, &INPUT_IDS, &ref_s));
-        println!("[timing] synth_fast warm (cache reuse)  {:>7.1} ms  ({} weights cached)", t.elapsed().as_secs_f32() * 1e3, wc.len());
-        corr_report("synth_fast vs synth_gpu", &fast1, &model.synthesize_ids(&INPUT_IDS, &ref_s));
+        let _ = pollster::block_on(
+            model.synthesize_gpu_fast(&ctx, &pipes, &mut wc, &INPUT_IDS, &ref_s),
+        );
+        println!(
+            "[timing] synth_fast warm (cache reuse)  {:>7.1} ms  ({} weights cached)",
+            t.elapsed().as_secs_f32() * 1e3,
+            wc.len()
+        );
+        corr_report(
+            "synth_fast vs synth_gpu",
+            &fast1,
+            &model.synthesize_ids(&INPUT_IDS, &ref_s),
+        );
     }
 
     // ---- full hybrid GPU forward, end-to-end (deterministic source). The GPU computes
@@ -224,10 +361,18 @@ fn main() {
     //      so correlation (not max-abs) is the right metric — same as the source path. ----
     let syn_gpu = pollster::block_on(model.synthesize_gpu(&ctx, &pipes, &INPUT_IDS, &ref_s));
     corr_report("synthesize_GPU vs CPU", &syn_gpu, &syn_ids);
-    corr_report("synthesize_GPU vs WAV", &syn_gpu, &read_bin_f32(&format!("{fixtures}/bin/audio_det.bin")));
+    corr_report(
+        "synthesize_GPU vs WAV",
+        &syn_gpu,
+        &read_bin_f32(&format!("{fixtures}/bin/audio_det.bin")),
+    );
 
     // write WAVs to listen (standalone + seeded reference-x reconstruction)
-    write_wav(&format!("{fixtures}/oracle_standalone.wav"), &audio_std, 24000);
+    write_wav(
+        &format!("{fixtures}/oracle_standalone.wav"),
+        &audio_std,
+        24000,
+    );
     write_wav(&format!("{fixtures}/oracle_seeded.wav"), &audio_full, 24000);
     println!("wrote oracle_standalone.wav / oracle_seeded.wav to {fixtures}");
 }
@@ -282,19 +427,28 @@ fn corr_report(name: &str, got: &[f32], reference: &[f32]) {
     }
     let corr = cov / (va.sqrt() * vb.sqrt() + 1e-20);
     let rel = (se / sr.max(1e-20)).sqrt();
-    let ok = if corr > 0.99 { "OK (phase-arbitrary)" } else { "*** LOW CORR ***" };
-    println!("[{name:<18}] shape {:>7}  corr = {corr:.5}  rel_rmse = {:.2}%  {ok}", n, rel * 100.0);
+    let ok = if corr > 0.99 {
+        "OK (phase-arbitrary)"
+    } else {
+        "*** LOW CORR ***"
+    };
+    println!(
+        "[{name:<18}] shape {:>7}  corr = {corr:.5}  rel_rmse = {:.2}%  {ok}",
+        n,
+        rel * 100.0
+    );
 }
 
 fn diff(name: &str, got: &[f32], reference: &[f32]) {
     let d = max_abs_diff(got, reference);
-    println!("[{name:<18}] shape {:>7}  max_abs_diff = {:.3e}  {}", got.len(), d, verdict(d));
+    println!(
+        "[{name:<18}] shape {:>7}  max_abs_diff = {:.3e}  {}",
+        got.len(),
+        d,
+        verdict(d)
+    );
 }
 
 fn verdict(d: f32) -> &'static str {
-    if d < 2e-3 {
-        "OK"
-    } else {
-        "*** MISMATCH ***"
-    }
+    if d < 2e-3 { "OK" } else { "*** MISMATCH ***" }
 }

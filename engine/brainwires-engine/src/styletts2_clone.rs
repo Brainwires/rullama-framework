@@ -12,10 +12,10 @@ use std::collections::HashMap;
 use crate::backend::{Pipelines, WgpuCtx};
 use crate::error::Result;
 use crate::gguf::GgufReader;
-use crate::reference::kokoro::g2p::{g2p, Lexicon};
+use crate::reference::kokoro::g2p::{Lexicon, g2p};
+use crate::reference::styletts2::StyleTtsModel;
 use crate::reference::styletts2::acoustic::DiffusionConfig;
 use crate::reference::styletts2::gpu::GpuWeightCache;
-use crate::reference::styletts2::StyleTtsModel;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -39,10 +39,21 @@ impl StyleTtsClone {
     /// Init the GPU context + lexicon scaffolding around an already-loaded model. Shared by the
     /// in-memory (`load_native`) and streaming (`load_streaming`) entry points.
     async fn from_model(model: StyleTtsModel) -> Result<Self> {
-        let vocab = VOCAB.chars().enumerate().map(|(i, c)| (c, i as i64)).collect();
+        let vocab = VOCAB
+            .chars()
+            .enumerate()
+            .map(|(i, c)| (c, i as i64))
+            .collect();
         let ctx = WgpuCtx::new().await?;
         let pipes = Pipelines::new(&ctx.device);
-        Ok(Self { model, lex: None, vocab, ctx, pipes, wc: GpuWeightCache::new() })
+        Ok(Self {
+            model,
+            lex: None,
+            vocab,
+            ctx,
+            pipes,
+            wc: GpuWeightCache::new(),
+        })
     }
 
     /// Load from in-memory GGUF bytes + init a GPU context (synthesis runs on the GPU).
@@ -76,24 +87,60 @@ impl StyleTtsClone {
     }
 
     /// Reference 24 kHz mono PCM → 256-d voice vector (GPU encoder).
-    pub async fn encode_voice_native(&mut self, pcm24k: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
-        self.model.encode_voice_gpu(&self.ctx, &self.pipes, &mut self.wc, pcm24k, progress).await
+    pub async fn encode_voice_native(
+        &mut self,
+        pcm24k: &[f32],
+        progress: Option<&dyn Fn(f32, &str)>,
+    ) -> Vec<f32> {
+        self.model
+            .encode_voice_gpu(&self.ctx, &self.pipes, &mut self.wc, pcm24k, progress)
+            .await
     }
 
     /// Text + voice vector → 24 kHz PCM (GPU decoder). Requires the lexicon to be set.
     /// Uses the style-diffusion prosody path (alpha=0.3/beta=0.7) by default.
-    pub async fn synthesize_native(&mut self, text: &str, voice: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
+    pub async fn synthesize_native(
+        &mut self,
+        text: &str,
+        voice: &[f32],
+        progress: Option<&dyn Fn(f32, &str)>,
+    ) -> Vec<f32> {
         let ids = {
             let lex = self.lex.as_ref().expect("lexicon not set");
             let (ps, _oov) = g2p(text, lex);
             self.phonemes_to_ids(&ps)
         };
-        self.model.synthesize_gpu(&self.ctx, &self.pipes, &mut self.wc, &ids, voice, Some(DiffusionConfig::default()), progress).await
+        self.model
+            .synthesize_gpu(
+                &self.ctx,
+                &self.pipes,
+                &mut self.wc,
+                &ids,
+                voice,
+                Some(DiffusionConfig::default()),
+                progress,
+            )
+            .await
     }
 
-    pub async fn synthesize_phonemes_native(&mut self, phonemes: &str, voice: &[f32], progress: Option<&dyn Fn(f32, &str)>) -> Vec<f32> {
+    pub async fn synthesize_phonemes_native(
+        &mut self,
+        phonemes: &str,
+        voice: &[f32],
+        progress: Option<&dyn Fn(f32, &str)>,
+    ) -> Vec<f32> {
         let ids = self.phonemes_to_ids(phonemes);
-        self.model.synthesize_gpu(&self.ctx, &self.pipes, &mut self.wc, &ids, voice, Some(DiffusionConfig::default()), progress).await
+        self.model
+            .synthesize_gpu(
+                &self.ctx,
+                &self.pipes,
+                &mut self.wc,
+                &ids,
+                voice,
+                Some(DiffusionConfig::default()),
+                progress,
+            )
+            .await
     }
 }
 
@@ -103,7 +150,9 @@ impl StyleTtsClone {
     /// Load from GGUF bytes (StyleTTS2-LibriTTS f32) + init the GPU.
     #[wasm_bindgen(js_name = load)]
     pub async fn load_js(bytes: Vec<u8>) -> std::result::Result<StyleTtsClone, JsError> {
-        Self::load_native(bytes).await.map_err(|e| JsError::new(&format!("{e:?}")))
+        Self::load_native(bytes)
+            .await
+            .map_err(|e| JsError::new(&format!("{e:?}")))
     }
 
     /// Streaming load over an OPFS file (the iPhone-safe path). `read_fn(offset, len) ->
@@ -111,15 +160,25 @@ impl StyleTtsClone {
     /// one tensor at a time so the 543 MB GGUF never enters wasm linear memory in bulk. Mirrors
     /// `Model.loadFromOpfs`. See [`StyleTtsModel::load_streaming`] for the jetsam rationale.
     #[wasm_bindgen(js_name = loadStreaming)]
-    pub async fn load_streaming_js(read_fn: js_sys::Function, total_bytes: f64) -> std::result::Result<StyleTtsClone, JsError> {
+    pub async fn load_streaming_js(
+        read_fn: js_sys::Function,
+        total_bytes: f64,
+    ) -> std::result::Result<StyleTtsClone, JsError> {
         use crate::gguf::{OpfsFetcher, TensorFetcher};
         use std::sync::Arc;
         if !(total_bytes.is_finite() && total_bytes >= 0.0) {
-            return Err(JsError::new("loadStreaming: total_bytes must be a non-negative finite number"));
+            return Err(JsError::new(
+                "loadStreaming: total_bytes must be a non-negative finite number",
+            ));
         }
-        let fetcher: Arc<dyn TensorFetcher> = Arc::new(OpfsFetcher::new(read_fn, total_bytes as u64));
-        let reader = GgufReader::new_streaming(fetcher).await.map_err(|e| JsError::new(&format!("{e:?}")))?;
-        Self::load_streaming(&reader).await.map_err(|e| JsError::new(&format!("{e:?}")))
+        let fetcher: Arc<dyn TensorFetcher> =
+            Arc::new(OpfsFetcher::new(read_fn, total_bytes as u64));
+        let reader = GgufReader::new_streaming(fetcher)
+            .await
+            .map_err(|e| JsError::new(&format!("{e:?}")))?;
+        Self::load_streaming(&reader)
+            .await
+            .map_err(|e| JsError::new(&format!("{e:?}")))
     }
 
     /// Set the G2P lexicon (misaki us_gold + optional us_silver JSON bytes).
@@ -132,18 +191,35 @@ impl StyleTtsClone {
     /// `onProgress(fraction, stage)` is called synchronously at each stage — the worker
     /// posts these out mid-computation so the UI gets a live progress bar + log.
     #[wasm_bindgen(js_name = encodeVoice)]
-    pub async fn encode_voice_js(&mut self, pcm24k: Vec<f32>, on_progress: js_sys::Function) -> Vec<f32> {
+    pub async fn encode_voice_js(
+        &mut self,
+        pcm24k: Vec<f32>,
+        on_progress: js_sys::Function,
+    ) -> Vec<f32> {
         let cb = |frac: f32, stage: &str| {
-            let _ = on_progress.call2(&JsValue::NULL, &JsValue::from_f64(frac as f64), &JsValue::from_str(stage));
+            let _ = on_progress.call2(
+                &JsValue::NULL,
+                &JsValue::from_f64(frac as f64),
+                &JsValue::from_str(stage),
+            );
         };
         self.encode_voice_native(&pcm24k, Some(&cb)).await
     }
 
     /// Synthesize text in a voice → 24 kHz PCM (Float32Array). `onProgress(fraction, stage)`.
     #[wasm_bindgen(js_name = synthesize)]
-    pub async fn synthesize_js(&mut self, text: String, voice: Vec<f32>, on_progress: js_sys::Function) -> Vec<f32> {
+    pub async fn synthesize_js(
+        &mut self,
+        text: String,
+        voice: Vec<f32>,
+        on_progress: js_sys::Function,
+    ) -> Vec<f32> {
         let cb = |frac: f32, stage: &str| {
-            let _ = on_progress.call2(&JsValue::NULL, &JsValue::from_f64(frac as f64), &JsValue::from_str(stage));
+            let _ = on_progress.call2(
+                &JsValue::NULL,
+                &JsValue::from_f64(frac as f64),
+                &JsValue::from_str(stage),
+            );
         };
         self.synthesize_native(&text, &voice, Some(&cb)).await
     }
@@ -151,7 +227,8 @@ impl StyleTtsClone {
     /// Synthesize a phoneme string in a voice → 24 kHz PCM (skips G2P).
     #[wasm_bindgen(js_name = synthesizePhonemes)]
     pub async fn synthesize_phonemes_js(&mut self, phonemes: String, voice: Vec<f32>) -> Vec<f32> {
-        self.synthesize_phonemes_native(&phonemes, &voice, None).await
+        self.synthesize_phonemes_native(&phonemes, &voice, None)
+            .await
     }
 
     #[wasm_bindgen(js_name = sampleRate, getter)]

@@ -7,8 +7,8 @@
 //! style — which changes Kokoro's predicted durations — doesn't break mel alignment.
 #![allow(dead_code)]
 
-use super::gpu_fast::WeightCache;
 use super::KokoroModel;
+use super::gpu_fast::WeightCache;
 use crate::backend::{Pipelines, WgpuCtx};
 use crate::multimodal::audio_features::MelEngine;
 
@@ -68,8 +68,16 @@ impl KokoroModel {
     /// reject). Returns the best voicepack + the loss curve.
     #[allow(clippy::too_many_arguments)]
     pub async fn train_voice(
-        &self, ctx: &WgpuCtx, p: &Pipelines, wc: &mut WeightCache,
-        ids: &[i64], target_sig: &[f32], init_style: &[f32], iters: usize, step0: f32, seed: u64,
+        &self,
+        ctx: &WgpuCtx,
+        p: &Pipelines,
+        wc: &mut WeightCache,
+        ids: &[i64],
+        target_sig: &[f32],
+        init_style: &[f32],
+        iters: usize,
+        step0: f32,
+        seed: u64,
     ) -> VoiceTrainResult {
         let mut style = init_style.to_vec();
         let mut cur_loss = {
@@ -94,15 +102,26 @@ impl KokoroModel {
             }
             curve.push(cur_loss);
         }
-        VoiceTrainResult { style, loss_curve: curve }
+        VoiceTrainResult {
+            style,
+            loss_curve: curve,
+        }
     }
 
     /// One hill-climb step (for incremental/UI-driven training). Mutates `style`,
     /// `cur_loss`, `step`, `rng` in place; returns the (possibly unchanged) current loss.
     #[allow(clippy::too_many_arguments)]
     pub async fn voice_train_step(
-        &self, ctx: &WgpuCtx, p: &Pipelines, wc: &mut WeightCache, ids: &[i64], target_sig: &[f32],
-        style: &mut Vec<f32>, cur_loss: &mut f32, step: &mut f32, rng: &mut u64,
+        &self,
+        ctx: &WgpuCtx,
+        p: &Pipelines,
+        wc: &mut WeightCache,
+        ids: &[i64],
+        target_sig: &[f32],
+        style: &mut Vec<f32>,
+        cur_loss: &mut f32,
+        step: &mut f32,
+        rng: &mut u64,
     ) -> f32 {
         let mut r = Rng(*rng | 1);
         let mut cand = style.clone();

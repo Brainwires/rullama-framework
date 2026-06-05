@@ -21,12 +21,18 @@ fn fixtures_dir() -> PathBuf {
 
 fn read_bin(p: &PathBuf) -> Vec<f32> {
     let bytes = fs::read(p).unwrap_or_else(|e| panic!("read {p:?}: {e}"));
-    bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+    bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect()
 }
 
 fn main() {
     let dir = fixtures_dir();
-    assert!(dir.is_dir(), "fixtures missing — run scripts/styletts2_dump_style_fixtures.py first ({dir:?})");
+    assert!(
+        dir.is_dir(),
+        "fixtures missing — run scripts/styletts2_dump_style_fixtures.py first ({dir:?})"
+    );
 
     // load every <name>.bin into a weight/tensor map
     let mut w: HashMap<String, Vec<f32>> = HashMap::new();
@@ -79,7 +85,10 @@ fn main() {
     worst = worst.max(de2e);
 
     println!("\nworst max_abs_diff = {worst:.3e}");
-    assert!(worst < 2e-3, "StyleTTS2 cloning-front parity FAILED (worst {worst:.3e})");
+    assert!(
+        worst < 2e-3,
+        "StyleTTS2 cloning-front parity FAILED (worst {worst:.3e})"
+    );
     println!("✅ StyleTTS2 style encoder + mel frontend match PyTorch (end-to-end)");
 
     // ---- GPU StyleEncoder parity (both encoders) vs PyTorch ----
@@ -88,9 +97,13 @@ fn main() {
     let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
     let pipes = Pipelines::new(&ctx.device);
     let mut gwc = HashMap::new();
-    let gpu_vec = pollster::block_on(StyleTtsGpu::new(&w, &ctx, &pipes, &mut gwc).encode(&mel, n_mels, t));
+    let gpu_vec =
+        pollster::block_on(StyleTtsGpu::new(&w, &ctx, &pipes, &mut gwc).encode(&mel, n_mels, t));
     let dgpu = max_abs_diff(&gpu_vec, w.get("concat256").unwrap());
-    println!("\nGPU encoder vs PyTorch  max_abs_diff = {dgpu:.3e}  (|v|={:.3})", (gpu_vec.iter().map(|v| v * v).sum::<f32>()).sqrt());
+    println!(
+        "\nGPU encoder vs PyTorch  max_abs_diff = {dgpu:.3e}  (|v|={:.3})",
+        (gpu_vec.iter().map(|v| v * v).sum::<f32>()).sqrt()
+    );
     assert!(dgpu < 2e-3, "GPU StyleEncoder parity FAILED ({dgpu:.3e})");
     println!("✅ GPU StyleEncoder matches PyTorch");
 }

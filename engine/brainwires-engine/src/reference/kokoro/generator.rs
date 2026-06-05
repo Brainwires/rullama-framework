@@ -9,14 +9,23 @@
 
 use std::f32::consts::PI;
 
-use super::convblocks::{conv1d, conv_transpose1d, reflection_pad_left1, snake};
-use super::ops::leaky_relu;
 use super::KokoroModel;
+use super::convblocks::{conv_transpose1d, conv1d, reflection_pad_left1, snake};
+use super::ops::leaky_relu;
 
 impl KokoroModel {
     /// AdaINResBlock1 (3 dilated conv pairs, Snake activation, AdaIN before each).
     /// `x [C, T]` → `[C, T]`. `kernel`/`dilations` per the resblock config.
-    fn adain_resblock1(&self, prefix: &str, x: &[f32], c: usize, t: usize, k: usize, dil: &[usize], style: &[f32]) -> Vec<f32> {
+    fn adain_resblock1(
+        &self,
+        prefix: &str,
+        x: &[f32],
+        c: usize,
+        t: usize,
+        k: usize,
+        dil: &[usize],
+        style: &[f32],
+    ) -> Vec<f32> {
         let sd = self.cfg.style_dim;
         let mut x = x.to_vec();
         for j in 0..3 {
@@ -24,7 +33,17 @@ impl KokoroModel {
             let n1b = self.t_opt(&format!("{prefix}.adain1.{j}.norm.bias"));
             let n1fw = self.t(&format!("{prefix}.adain1.{j}.fc.weight"));
             let n1fb = self.t(&format!("{prefix}.adain1.{j}.fc.bias"));
-            let mut xt = super::convblocks::adain1d(&x, c, t, n1w.as_deref(), n1b.as_deref(), &n1fw, &n1fb, style, sd);
+            let mut xt = super::convblocks::adain1d(
+                &x,
+                c,
+                t,
+                n1w.as_deref(),
+                n1b.as_deref(),
+                &n1fw,
+                &n1fb,
+                style,
+                sd,
+            );
             let a1 = self.t(&format!("{prefix}.alpha1.{j}"));
             snake(&mut xt, c, t, &a1);
             // convs1[j]: dilation dil[j], pad = (k*dil - dil)/2
@@ -37,7 +56,17 @@ impl KokoroModel {
             let n2b = self.t_opt(&format!("{prefix}.adain2.{j}.norm.bias"));
             let n2fw = self.t(&format!("{prefix}.adain2.{j}.fc.weight"));
             let n2fb = self.t(&format!("{prefix}.adain2.{j}.fc.bias"));
-            let mut xt = super::convblocks::adain1d(&xt, c, t, n2w.as_deref(), n2b.as_deref(), &n2fw, &n2fb, style, sd);
+            let mut xt = super::convblocks::adain1d(
+                &xt,
+                c,
+                t,
+                n2w.as_deref(),
+                n2b.as_deref(),
+                &n2fw,
+                &n2fb,
+                style,
+                sd,
+            );
             let a2 = self.t(&format!("{prefix}.alpha2.{j}"));
             snake(&mut xt, c, t, &a2);
             // convs2[j]: dilation 1, pad = (k-1)/2
@@ -54,7 +83,14 @@ impl KokoroModel {
 
     /// ISTFTNet generator. `x [512, Tx]` (Tx=156), injected `har [22, Th]`,
     /// timbre `style [128]`. Returns the 24 kHz waveform.
-    pub fn generator(&self, x: &[f32], xt_len: usize, har: &[f32], har_len: usize, style: &[f32]) -> Vec<f32> {
+    pub fn generator(
+        &self,
+        x: &[f32],
+        xt_len: usize,
+        har: &[f32],
+        har_len: usize,
+        style: &[f32],
+    ) -> Vec<f32> {
         let rates = &self.cfg.upsample_rates; // [10, 6]
         let rkernels = self.cfg.resblock_kernel_sizes.clone(); // [3,7,11]
         let rdil = self.cfg.resblock_dilation_sizes.clone(); // [[1,3,5]x3]
@@ -74,20 +110,63 @@ impl KokoroModel {
             let cout = cin / 2;
             let (xsrc, _, nres_k) = if i + 1 < rates.len() {
                 let stride_f0: usize = rates[i + 1..].iter().product();
-                let (xs, ts) = conv1d(har, nfft + 2, har_len, &ncw, Some(&ncb), cout, stride_f0 * 2, stride_f0, (stride_f0 + 1) / 2, 1, 1);
+                let (xs, ts) = conv1d(
+                    har,
+                    nfft + 2,
+                    har_len,
+                    &ncw,
+                    Some(&ncb),
+                    cout,
+                    stride_f0 * 2,
+                    stride_f0,
+                    (stride_f0 + 1) / 2,
+                    1,
+                    1,
+                );
                 (xs, ts, 7usize)
             } else {
-                let (xs, ts) = conv1d(har, nfft + 2, har_len, &ncw, Some(&ncb), cout, 1, 1, 0, 1, 1);
+                let (xs, ts) = conv1d(
+                    har,
+                    nfft + 2,
+                    har_len,
+                    &ncw,
+                    Some(&ncb),
+                    cout,
+                    1,
+                    1,
+                    0,
+                    1,
+                    1,
+                );
                 (xs, ts, 11usize)
             };
             let xsrc_t = xsrc.len() / cout;
-            let xsrc = self.adain_resblock1(&format!("k.decoder.generator.noise_res.{i}"), &xsrc, cout, xsrc_t, nres_k, &[1, 3, 5], style);
+            let xsrc = self.adain_resblock1(
+                &format!("k.decoder.generator.noise_res.{i}"),
+                &xsrc,
+                cout,
+                xsrc_t,
+                nres_k,
+                &[1, 3, 5],
+                style,
+            );
 
             // upsample x
             let uw = self.t(&format!("k.decoder.generator.ups.{i}.weight"));
             let ub = self.t(&format!("k.decoder.generator.ups.{i}.bias"));
             let k = self.cfg.upsample_kernel_sizes[i];
-            let (mut up, mut tup) = conv_transpose1d(&cur, cin, tcur, &uw, Some(&ub), cout, k, rates[i], (k - rates[i]) / 2, 0);
+            let (mut up, mut tup) = conv_transpose1d(
+                &cur,
+                cin,
+                tcur,
+                &uw,
+                Some(&ub),
+                cout,
+                k,
+                rates[i],
+                (k - rates[i]) / 2,
+                0,
+            );
             if i == rates.len() - 1 {
                 up = reflection_pad_left1(&up, cout, tup);
                 tup += 1;
@@ -100,7 +179,15 @@ impl KokoroModel {
             // 3 resblocks summed / num_kernels
             let mut acc = vec![0.0f32; cout * tup];
             for (j, (&rk, rd)) in rkernels.iter().zip(rdil.iter()).enumerate() {
-                let rb = self.adain_resblock1(&format!("k.decoder.generator.resblocks.{}", i * rkernels.len() + j), &up, cout, tup, rk, rd, style);
+                let rb = self.adain_resblock1(
+                    &format!("k.decoder.generator.resblocks.{}", i * rkernels.len() + j),
+                    &up,
+                    cout,
+                    tup,
+                    rk,
+                    rd,
+                    style,
+                );
                 for idx in 0..cout * tup {
                     acc[idx] += rb[idx];
                 }
@@ -133,9 +220,18 @@ impl KokoroModel {
 
 /// Exact iSTFT (onesided, center, COLA-normalized) — matches torch.istft.
 /// `spec`/`phase` are `[nbins, F]` channel-major (magnitude, angle).
-pub(crate) fn istft(spec: &[f32], phase: &[f32], nbins: usize, frames: usize, nfft: usize, hop: usize) -> Vec<f32> {
+pub(crate) fn istft(
+    spec: &[f32],
+    phase: &[f32],
+    nbins: usize,
+    frames: usize,
+    nfft: usize,
+    hop: usize,
+) -> Vec<f32> {
     // Hann window, periodic
-    let win: Vec<f32> = (0..nfft).map(|n| 0.5 - 0.5 * (2.0 * PI * n as f32 / nfft as f32).cos()).collect();
+    let win: Vec<f32> = (0..nfft)
+        .map(|n| 0.5 - 0.5 * (2.0 * PI * n as f32 / nfft as f32).cos())
+        .collect();
     // DFT tables
     let mut cos_t = vec![0.0f32; nfft * nfft];
     let mut sin_t = vec![0.0f32; nfft * nfft];
