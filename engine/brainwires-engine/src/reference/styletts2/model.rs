@@ -14,7 +14,7 @@ use super::gpu::{GpuWeightCache, StyleTtsGpu};
 use super::{MelFrontend, StyleEncoder, StyleTtsAcoustic};
 use crate::backend::{Pipelines, WgpuCtx};
 use crate::error::Result;
-use crate::gguf::tensor::dequant_tensor_to_f32;
+use crate::gguf::tensor::{dequant_tensor_to_f32, dequant_tensor_to_f32_async};
 use crate::gguf::GgufReader;
 
 pub struct StyleTtsModel {
@@ -70,6 +70,22 @@ impl StyleTtsModel {
         for td in reader.tensors() {
             let data = dequant_tensor_to_f32(reader, &td.name)?;
             w.insert(remap(&td.name), data);
+        }
+        Ok(Self { w })
+    }
+
+    /// Streaming load: fetch + dequant **one tensor at a time** via range reads, so nothing
+    /// bigger than a single tensor is ever materialized on top of the growing weight map. The
+    /// bulk-load path (`load`) holds the whole GGUF `Vec` *and* the map simultaneously (~2× the
+    /// model) plus the JS-side bytes — ~1.6 GB transient for the 543 MB f32 cloning model, which
+    /// trips iOS jetsam on load. This keeps the peak at `map + one tensor`. Bit-identical to
+    /// [`load`]; works for any fetcher (in-memory native or OPFS browser).
+    pub async fn load_streaming(reader: &GgufReader) -> Result<Self> {
+        let mut w = HashMap::new();
+        let names: Vec<String> = reader.tensors().iter().map(|td| td.name.clone()).collect();
+        for name in names {
+            let data = dequant_tensor_to_f32_async(reader, &name).await?;
+            w.insert(remap(&name), data);
         }
         Ok(Self { w })
     }
@@ -153,5 +169,30 @@ impl StyleTtsModel {
             pp(1.0, "done");
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Streaming load must be byte-for-byte identical to the bulk load — it only changes *how*
+    /// the bytes reach the dequantizer (per-tensor range read vs one resident `Vec`), not the
+    /// math. Gated on `ST2_GGUF` so it's a no-op without the 518 MB local fixture.
+    ///   ST2_GGUF=~/.cache/styletts2/styletts2-libritts-f32.gguf cargo test -p rullama st2_streaming
+    #[test]
+    fn st2_streaming_load_is_bit_identical() {
+        let Ok(path) = std::env::var("ST2_GGUF") else {
+            eprintln!("skip: set ST2_GGUF to the styletts2 f32 gguf to run");
+            return;
+        };
+        let reader = GgufReader::new(std::fs::read(&path).unwrap()).unwrap();
+        let bulk = StyleTtsModel::load(&reader).unwrap();
+        let streamed = pollster::block_on(StyleTtsModel::load_streaming(&reader)).unwrap();
+        assert_eq!(bulk.w.len(), streamed.w.len(), "tensor count differs");
+        for (k, v) in &bulk.w {
+            let s = streamed.w.get(k).unwrap_or_else(|| panic!("streamed missing {k}"));
+            assert_eq!(v.as_slice(), s.as_slice(), "weights differ for {k}");
+        }
     }
 }

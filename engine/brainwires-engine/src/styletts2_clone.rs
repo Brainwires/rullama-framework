@@ -36,14 +36,28 @@ pub struct StyleTtsClone {
 }
 
 impl StyleTtsClone {
-    /// Load from in-memory GGUF bytes + init a GPU context (synthesis runs on the GPU).
-    pub async fn load_native(bytes: Vec<u8>) -> Result<Self> {
-        let reader = GgufReader::new(bytes)?;
-        let model = StyleTtsModel::load(&reader)?; // dequant into the weight map; reader dropped after
+    /// Init the GPU context + lexicon scaffolding around an already-loaded model. Shared by the
+    /// in-memory (`load_native`) and streaming (`load_streaming`) entry points.
+    async fn from_model(model: StyleTtsModel) -> Result<Self> {
         let vocab = VOCAB.chars().enumerate().map(|(i, c)| (c, i as i64)).collect();
         let ctx = WgpuCtx::new().await?;
         let pipes = Pipelines::new(&ctx.device);
         Ok(Self { model, lex: None, vocab, ctx, pipes, wc: GpuWeightCache::new() })
+    }
+
+    /// Load from in-memory GGUF bytes + init a GPU context (synthesis runs on the GPU).
+    pub async fn load_native(bytes: Vec<u8>) -> Result<Self> {
+        let reader = GgufReader::new(bytes)?;
+        let model = StyleTtsModel::load(&reader)?; // dequant into the weight map; reader dropped after
+        Self::from_model(model).await
+    }
+
+    /// Streaming load from any [`crate::gguf::TensorFetcher`] — the wasm/iPhone path. Fetches the
+    /// model one tensor at a time (range reads) so the whole GGUF never lands in linear memory.
+    /// See [`StyleTtsModel::load_streaming`] for the jetsam rationale.
+    pub async fn load_streaming(reader: &GgufReader) -> Result<Self> {
+        let model = StyleTtsModel::load_streaming(reader).await?;
+        Self::from_model(model).await
     }
 
     pub fn set_lexicon_native(&mut self, gold: &[u8], silver: &[u8]) {
@@ -90,6 +104,22 @@ impl StyleTtsClone {
     #[wasm_bindgen(js_name = load)]
     pub async fn load_js(bytes: Vec<u8>) -> std::result::Result<StyleTtsClone, JsError> {
         Self::load_native(bytes).await.map_err(|e| JsError::new(&format!("{e:?}")))
+    }
+
+    /// Streaming load over an OPFS file (the iPhone-safe path). `read_fn(offset, len) ->
+    /// Uint8Array` is a JS callback backed by a `FileSystemSyncAccessHandle`; weights are pulled
+    /// one tensor at a time so the 543 MB GGUF never enters wasm linear memory in bulk. Mirrors
+    /// `Model.loadFromOpfs`. See [`StyleTtsModel::load_streaming`] for the jetsam rationale.
+    #[wasm_bindgen(js_name = loadStreaming)]
+    pub async fn load_streaming_js(read_fn: js_sys::Function, total_bytes: f64) -> std::result::Result<StyleTtsClone, JsError> {
+        use crate::gguf::{OpfsFetcher, TensorFetcher};
+        use std::sync::Arc;
+        if !(total_bytes.is_finite() && total_bytes >= 0.0) {
+            return Err(JsError::new("loadStreaming: total_bytes must be a non-negative finite number"));
+        }
+        let fetcher: Arc<dyn TensorFetcher> = Arc::new(OpfsFetcher::new(read_fn, total_bytes as u64));
+        let reader = GgufReader::new_streaming(fetcher).await.map_err(|e| JsError::new(&format!("{e:?}")))?;
+        Self::load_streaming(&reader).await.map_err(|e| JsError::new(&format!("{e:?}")))
     }
 
     /// Set the G2P lexicon (misaki us_gold + optional us_silver JSON bytes).
