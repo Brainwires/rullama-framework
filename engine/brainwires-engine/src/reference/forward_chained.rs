@@ -1084,8 +1084,14 @@ impl Forward {
                 (tile.n_rows as u64) * 4,
             );
             self.ctx.queue.submit(Some(enc.finish()));
-            // Free this tile's 8 MiB before the next fetch, and release the event loop one tick so
-            // iOS Safari's GPUProcess reclaims it (and doesn't TDR on the matmul burst).
+            // Invalidate this tile's bind-group cache entries BEFORE destroy. wgpu keeps a buffer's
+            // memory alive as long as a cached BindGroup references it, so destroy() alone frees
+            // nothing — and prefill runs this outproj on EVERY token, so without the invalidate the
+            // fresh per-tile buffers leak ~315 MiB/token (the iPhone prefill climb). Mirrors
+            // WeightCache::drop_*_destroy. The submit already captured the bind group, so dropping
+            // the cache entry now is safe; the memory frees once the GPU drains.
+            let tile_id = crate::backend::buf_id(&tile.buffer);
+            self.ctx.bind_cache.invalidate_buffers(&[tile_id]);
             tile.buffer.destroy();
             self.wasm_yield_zero().await;
         }
