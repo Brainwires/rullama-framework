@@ -566,37 +566,6 @@ impl Forward {
         self.ctx.bind_cache.clear();
     }
 
-    /// **Explicitly free all GPU memory this forward holds.** wgpu's `Drop` does NOT call
-    /// `GPUBuffer.destroy()` on the WebGPU backend — dropping the `Forward` only releases the Rust
-    /// handles, leaving the ~1.4 GiB of weights + KV cache + scratch pinned until the browser GCs
-    /// the `GPUBuffer` objects. On iOS Safari that GC is lazy enough that an "unloaded" model stays
-    /// fully resident, so the TTS / clone engine can't fit and crashes (documented WebGPU-SPA
-    /// teardown bug — you must iterate every buffer and `.destroy()` it). After this the `Forward`
-    /// is unusable; the caller must drop it immediately.
-    pub fn release_gpu(&self) {
-        // Cached bind groups pin the weight buffers — clear them first so destroy() actually frees.
-        self.ctx.bind_cache.clear();
-        // Every cached weight buffer + tile (invalidates bind groups, destroy()s, untracks).
-        let _ = self.wcache.drop_prefix_destroy("");
-        // Persistent per-step scratch + logits buffers.
-        for b in [
-            &self.hidden, &self.norm_x, &self.norm_y, &self.q, &self.q_norm, &self.k, &self.k_norm,
-            &self.v, &self.v_norm, &self.attn_out_buf, &self.attn_proj, &self.ffn_gate, &self.ffn_up,
-            &self.ffn_act, &self.ffn_out, &self.per_layer_residual, &self.per_layer_proj,
-            &self.per_layer, &self.ple_state, &self.ple_act, &self.ple_proj, &self.logits_tile,
-            &self.logits, &self.logits_read, &self.dummy,
-        ] {
-            b.destroy();
-        }
-        // KV cache (the dominant non-weight allocation).
-        for k in &self.kv_k {
-            k.destroy();
-        }
-        for v in &self.kv_v {
-            v.destroy();
-        }
-    }
-
     /// **0 ms JS event-loop yield (mobile-mode + wasm32 only).** Used
     /// by training callers between bursts of GPU submits
     /// (recompute→backward_layer, backward_layer→epilogue) to let iOS
