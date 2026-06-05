@@ -4402,7 +4402,15 @@ impl Forward {
             // max-abs back down. Preserves direction (every element
             // scaled by the same factor); Adam doesn't care about
             // absolute scale.
-            if clip_max > 0.0 {
+            // **Per-layer adaptive grad-clip — DESKTOP ONLY.** This reads d_hidden's max-abs via
+            // `read_buf_stats` (a fresh-buffer `map_async`) on EVERY backward layer. On iPhone
+            // Safari that `map_async`, issued mid-backward right after `backward_layer`'s submit,
+            // does NOT resolve — the page hangs with the log frozen at `backward 1/35` (no crash,
+            // no jetsam; tracked memory flat at ~237 MiB). It's a hang, not OOM, and it's downstream
+            // of the 4398 yield (which is why that yield didn't fix it). Skip it on mobile: for a
+            // stable step `max_abs < clip_max`, so no scale would apply anyway (bit-identical), and
+            // a diverging step is caught by the NaN auto-halt one level up.
+            if clip_max > 0.0 && !self.mobile_mode {
                 let (max_abs, _) =
                     read_buf_stats(&self.ctx, scratch.d_hidden, self.cfg.d_model as usize).await?;
                 if max_abs > clip_max && max_abs.is_finite() {
@@ -4458,9 +4466,17 @@ impl Forward {
             // GPU heap pressure isn't the bottleneck — keeping the
             // 35 backward-layer weight sets resident across the walk
             // saves ~35 re-fetches per step and ~1 GiB of churn.
-            if self.mobile_mode {
-                let _destroyed_layer = self.wcache.drop_prefix_destroy(&format!("blk.{i}."));
-            }
+            // **Per-layer weight reclaim — DISABLED.** This was only safe because the clip's
+            // `read_buf_stats` above drained the GPU first (so `backward_layer`'s in-flight submit
+            // no longer referenced `blk.{i}.*` when we destroyed it). That `map_async` drain is
+            // removed on mobile (it hung — see above), so a destroy here would be a use-after-
+            // destroy against still-in-flight work. Memory has the headroom to keep the ~10 walked
+            // layers resident (~400 MiB on top of the ~237 MiB baseline, far under the iPhone
+            // budget), and recompute then hits the WeightCache instead of re-fetching from OPFS
+            // (also faster). Desktop never destroyed here anyway (Mac fast path).
+            //
+            // NOTE: the mobile backward is now a pure submit-stream — no per-layer CPU/GPU sync
+            // (no clip readback, no destroy). The GPU drains naturally at the optimizer step.
             // Diagnostic: marks per-layer completion. If this fires for
             // layer N but no `bwd.layer.recompute` for layer N-1 does,
             // the death is in the inter-layer transition AFTER destroy
