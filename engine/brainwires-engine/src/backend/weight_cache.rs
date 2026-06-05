@@ -486,7 +486,19 @@ impl WeightCache {
             .reader
             .fetch_tensor_range(name, byte_start, byte_len)
             .await?;
-        let buf = self.upload(&format!("{name}#stream_tile{row_start}"), &chunk);
+        // Create the tile buffer directly, NOT via `upload` — `upload` calls
+        // `gpu_mem::record_alloc("weight:…")`, but the caller destroys this tile one matmul later
+        // and there's no matching `record_free`. Routing transient tiles through `upload` makes the
+        // gpu_mem `w` counter climb one tile per call with no balancing free — the false
+        // "+315 MiB/token" the iPhone training beacon showed (the GPU memory itself is freed fine by
+        // the caller's invalidate + destroy). These tiles are intentionally untracked.
+        let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("weight_cache.stream_tile"),
+            size: chunk.len() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(&buf, 0, &chunk);
         drop(chunk);
         Ok(TiledTensor {
             buffer: buf,
