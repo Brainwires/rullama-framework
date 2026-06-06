@@ -460,9 +460,9 @@ impl<'a> StyleTtsAcoustic<'a> {
         t: usize,
         cfg: &DiffusionConfig,
     ) -> Vec<f32> {
-        let (noise_init, noises) = diffusion_noise(&cfg);
+        let (noise_init, noises) = diffusion_noise(cfg);
         let s_pred = StyleDiffusion::new(self.w).sample(&noise_init, &noises, bert_dur, t, ref_s); // [256]
-        blend_style(&s_pred, ref_s, &cfg)
+        blend_style(&s_pred, ref_s, cfg)
     }
 
     /// text_encoder + PLBERT — the style-independent prefix. Split out so the GPU synth path can

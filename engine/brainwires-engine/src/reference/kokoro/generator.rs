@@ -119,7 +119,7 @@ impl KokoroModel {
                     cout,
                     stride_f0 * 2,
                     stride_f0,
-                    (stride_f0 + 1) / 2,
+                    stride_f0.div_ceil(2),
                     1,
                     1,
                 );

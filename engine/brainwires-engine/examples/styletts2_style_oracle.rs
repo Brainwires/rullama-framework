@@ -97,8 +97,11 @@ fn main() {
     let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
     let pipes = Pipelines::new(&ctx.device);
     let mut gwc = HashMap::new();
-    let gpu_vec =
-        pollster::block_on(StyleTtsGpu::new(&w, &ctx, &pipes, &mut gwc).encode(&mel, n_mels, t));
+    // f32 oracle path: empty f16 weight map (the f16-resident variant isn't exercised here).
+    let w16: HashMap<String, Vec<u16>> = HashMap::new();
+    let gpu_vec = pollster::block_on(
+        StyleTtsGpu::new(&w, &w16, &ctx, &pipes, &mut gwc).encode(&mel, n_mels, t),
+    );
     let dgpu = max_abs_diff(&gpu_vec, w.get("concat256").unwrap());
     println!(
         "\nGPU encoder vs PyTorch  max_abs_diff = {dgpu:.3e}  (|v|={:.3})",

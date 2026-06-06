@@ -651,7 +651,7 @@ impl<'a> StyleTtsGpu<'a> {
             let ncw_name = format!("generator.noise_convs.{i}.weight");
             let (xsrc, nres_k, ts) = if i + 1 < 4 {
                 let sf: usize = RATES[i + 1..].iter().product();
-                let ts = (har_len + 2 * ((sf + 1) / 2) - sf * 2) / sf + 1;
+                let ts = (har_len + 2 * sf.div_ceil(2) - sf * 2) / sf + 1;
                 let o = self.alloc(cout * ts);
                 self.conv1d_w(
                     &mut enc,
@@ -664,7 +664,7 @@ impl<'a> StyleTtsGpu<'a> {
                     cout,
                     sf * 2,
                     sf,
-                    (sf + 1) / 2,
+                    sf.div_ceil(2),
                     1,
                     1,
                 );
@@ -829,7 +829,7 @@ impl<'a> StyleTtsGpu<'a> {
         );
         let (mut h, mut w) = (n_mels, t);
         for (i, &(din, dout)) in BLK.iter().enumerate() {
-            let (h2, w2) = (h / 2, (w + 1) / 2);
+            let (h2, w2) = (h / 2, w.div_ceil(2));
             // shortcut: optional 1×1 conv (when channels change) then avg-pool
             let sc = if din != dout {
                 let o = self.alloc(dout * h * w);

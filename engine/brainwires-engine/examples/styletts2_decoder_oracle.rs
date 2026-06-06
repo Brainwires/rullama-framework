@@ -100,8 +100,9 @@ fn main() {
     let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
     let pipes = Pipelines::new(&ctx.device);
     let mut wc = HashMap::new();
+    let w16: std::collections::HashMap<String, Vec<u16>> = std::collections::HashMap::new();
     let gpu_audio = pollster::block_on(
-        StyleTtsGpu::new(&w, &ctx, &pipes, &mut wc).decode(&asr, 40, &f0c, &nc, &style),
+        StyleTtsGpu::new(&w, &w16, &ctx, &pipes, &mut wc).decode(&asr, 40, &f0c, &nc, &style),
     );
     let dg = max_abs_diff(&gpu_audio, &audio_ref);
     let cg = corr(&gpu_audio, &audio_ref);
@@ -135,7 +136,7 @@ fn main() {
         .collect();
     let mut wc2 = HashMap::new();
     let big = pollster::block_on(
-        StyleTtsGpu::new(&w, &ctx, &pipes, &mut wc2)
+        StyleTtsGpu::new(&w, &w16, &ctx, &pipes, &mut wc2)
             .decode(&asr_big, bigf, &f0_big, &n_big, &style),
     );
     let finite = big.iter().all(|x| x.is_finite());

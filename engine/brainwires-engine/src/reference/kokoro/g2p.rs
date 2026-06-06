@@ -63,39 +63,39 @@ impl Lexicon {
         let voiceless = |p: &str| matches!(p.chars().last(), Some('p' | 't' | 'k' | 'f' | 'θ'));
         let sibilant =
             |p: &str| matches!(p.chars().last(), Some('s' | 'z' | 'ʃ' | 'ʒ' | 'ʧ' | 'ʤ'));
-        if let Some(stem) = w.strip_suffix("ing").filter(|s| s.len() >= 2) {
-            if let Some(p) = try_stem(stem).or_else(|| try_stem(&format!("{stem}e"))) {
-                return Some(format!("{p}ɪŋ"));
-            }
+        if let Some(stem) = w.strip_suffix("ing").filter(|s| s.len() >= 2)
+            && let Some(p) = try_stem(stem).or_else(|| try_stem(&format!("{stem}e")))
+        {
+            return Some(format!("{p}ɪŋ"));
         }
-        if let Some(stem) = w.strip_suffix("ed").filter(|s| s.len() >= 2) {
-            if let Some(p) = try_stem(stem).or_else(|| try_stem(&format!("{stem}e"))) {
-                let suf = if matches!(p.chars().last(), Some('t' | 'd')) {
-                    "ɪd"
-                } else if voiceless(p) {
-                    "t"
-                } else {
-                    "d"
-                };
-                return Some(format!("{p}{suf}"));
-            }
+        if let Some(stem) = w.strip_suffix("ed").filter(|s| s.len() >= 2)
+            && let Some(p) = try_stem(stem).or_else(|| try_stem(&format!("{stem}e")))
+        {
+            let suf = if matches!(p.chars().last(), Some('t' | 'd')) {
+                "ɪd"
+            } else if voiceless(p) {
+                "t"
+            } else {
+                "d"
+            };
+            return Some(format!("{p}{suf}"));
         }
-        if let Some(stem) = w.strip_suffix("es").filter(|s| s.len() >= 2) {
-            if let Some(p) = try_stem(stem) {
-                return Some(format!("{p}ɪz"));
-            }
+        if let Some(stem) = w.strip_suffix("es").filter(|s| s.len() >= 2)
+            && let Some(p) = try_stem(stem)
+        {
+            return Some(format!("{p}ɪz"));
         }
-        if let Some(stem) = w.strip_suffix('s').filter(|s| s.len() >= 2) {
-            if let Some(p) = try_stem(stem) {
-                let suf = if sibilant(p) {
-                    "ɪz"
-                } else if voiceless(p) {
-                    "s"
-                } else {
-                    "z"
-                };
-                return Some(format!("{p}{suf}"));
-            }
+        if let Some(stem) = w.strip_suffix('s').filter(|s| s.len() >= 2)
+            && let Some(p) = try_stem(stem)
+        {
+            let suf = if sibilant(p) {
+                "ɪz"
+            } else if voiceless(p) {
+                "s"
+            } else {
+                "z"
+            };
+            return Some(format!("{p}{suf}"));
         }
         None
     }

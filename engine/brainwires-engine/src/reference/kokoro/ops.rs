@@ -52,7 +52,7 @@ pub fn layer_norm(
 
 /// gelu_new (tanh approximation), the HF default ALBERT activation.
 pub fn gelu_new(x: &mut [f32]) {
-    const K: f32 = 0.797_884_560_802_865_4; // sqrt(2/pi)
+    const K: f32 = 0.797_884_6; // sqrt(2/pi)
     for v in x.iter_mut() {
         let t = *v;
         *v = 0.5 * t * (1.0 + (K * (t + 0.044715 * t * t * t)).tanh());

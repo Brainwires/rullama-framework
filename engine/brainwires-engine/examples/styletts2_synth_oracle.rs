@@ -129,8 +129,9 @@ fn main() {
         let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
         let pipes = Pipelines::new(&ctx.device);
         let mut wc = HashMap::new();
+        let w16: std::collections::HashMap<String, Vec<u16>> = std::collections::HashMap::new();
         let gpu_audio = pollster::block_on(
-            StyleTtsGpu::new(&w, &ctx, &pipes, &mut wc).decode(&asr_g, fg, &f0_g, &n_g, &r_g),
+            StyleTtsGpu::new(&w, &w16, &ctx, &pipes, &mut wc).decode(&asr_g, fg, &f0_g, &n_g, &r_g),
         );
         let cg = corr(&gpu_audio, audio_ref);
         println!(

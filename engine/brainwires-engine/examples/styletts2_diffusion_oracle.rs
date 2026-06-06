@@ -88,9 +88,10 @@ fn main() {
     let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
     let pipes = Pipelines::new(&ctx.device);
     let mut gwc = std::collections::HashMap::new();
+    let w16: std::collections::HashMap<String, Vec<u16>> = std::collections::HashMap::new();
     // isolate: single GPU net eval vs CPU net_eval (same inputs as section 1)
     let gpu_net = pollster::block_on(
-        StyleTtsGpu::new(&w, &ctx, &pipes, &mut gwc)
+        StyleTtsGpu::new(&w, &w16, &ctx, &pipes, &mut gwc)
             .diff_net_eval(&x0, c_noise, &bert_dur, l, &ref_s),
     );
     let dnetgpu = max_abs_diff(&gpu_net, &net_got);
@@ -99,7 +100,7 @@ fn main() {
     println!("  cpu  [:6] = {:?}", &net_got[..6]);
 
     let gpu_spred = pollster::block_on(
-        StyleTtsGpu::new(&w, &ctx, &pipes, &mut gwc).diffusion_sample(
+        StyleTtsGpu::new(&w, &w16, &ctx, &pipes, &mut gwc).diffusion_sample(
             &bert_dur,
             l,
             &ref_s,

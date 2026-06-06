@@ -96,7 +96,7 @@ pub fn conv2d(
 /// `torch.cat([x, x[...,-1:]])`), then 2×2 stride-2 average pool. Halves H and W.
 pub fn avg_pool2d_half(x: &Map) -> Map {
     // pad last column when width is odd (height is always even in this pipeline)
-    let (padded, w) = if x.w % 2 != 0 {
+    let (padded, w) = if !x.w.is_multiple_of(2) {
         let mut p = vec![0f32; x.c * x.h * (x.w + 1)];
         for c in 0..x.c {
             for y in 0..x.h {

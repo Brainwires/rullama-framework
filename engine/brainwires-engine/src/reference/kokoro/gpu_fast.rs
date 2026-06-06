@@ -344,7 +344,7 @@ impl<'a> GpuTts<'a> {
             let ncb = self.w(&format!("k.decoder.generator.noise_convs.{i}.bias"));
             let (xsrc, nres_k, ts) = if i + 1 < rates.len() {
                 let sf: usize = rates[i + 1..].iter().product();
-                let ts = (har_len + 2 * ((sf + 1) / 2) - sf * 2) / sf + 1;
+                let ts = (har_len + 2 * sf.div_ceil(2) - sf * 2) / sf + 1;
                 let o = self.alloc(cout * ts);
                 conv1d_chained(
                     self.ctx,
@@ -360,7 +360,7 @@ impl<'a> GpuTts<'a> {
                     cout,
                     sf * 2,
                     sf,
-                    (sf + 1) / 2,
+                    sf.div_ceil(2),
                     1,
                     1,
                 );
