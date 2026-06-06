@@ -201,7 +201,7 @@ async fn run() -> Result<(), BoxError> {
         // When `apply_chat_template` is set, wrap the prompt in the same
         // `<start_of_turn>user\n...<end_of_turn>\n<start_of_turn>model\n`
         // sequence the PWA emits via `client.renderChat([...], false)`.
-        // Mirrors `examples/web/src/components/FineTunePanel.tsx`'s
+        // Mirrors `web/src/components/FineTunePanel.tsx`'s
         // pre-tokenize pass so the adapter trains on the exact tokens
         // it'll see at inference time in the browser.
         let prompt_text = if apply_chat_template {

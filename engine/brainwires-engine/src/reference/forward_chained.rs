@@ -105,7 +105,7 @@ pub struct LoraSlot<'a> {
 /// `(phase, current, total)` where `phase` is one of `"forward"` /
 /// `"backward"` and `current` is 1-based logical layer index. Used
 /// by training to drive a VisionProgress-style status strip (see
-/// `examples/web/src/components/TrainingProgress.tsx`) — without the
+/// `web/src/components/TrainingProgress.tsx`) — without the
 /// per-layer beacons the user stares at a "step 0 / N" counter while
 /// a 30 s pipeline-compile + first step grinds in silence.
 pub type LayerProgressCb<'a> = dyn Fn(&str, u32, u32) + 'a;
