@@ -246,6 +246,44 @@ pub fn dequant_into_f32(dtype: GgmlDtype, src: &[u8], out: &mut [f32]) -> Result
     }
 }
 
+/// F16 little-endian bytes → raw f16 bit patterns (passthrough, no precision
+/// change). Used by the f16-resident StyleTTS2 path to keep big weights f16
+/// in host memory instead of expanding them to f32.
+pub fn f16_to_f16_bits(src: &[u8], out: &mut [u16]) -> Result<()> {
+    if !src.len().is_multiple_of(2) {
+        return Err(RullamaError::Gguf(format!("F16 source byte length {} is odd", src.len())));
+    }
+    if out.len() * 2 != src.len() {
+        return Err(RullamaError::Gguf(format!(
+            "F16 dest expected {} elements, got {}",
+            src.len() / 2,
+            out.len()
+        )));
+    }
+    for (i, chunk) in src.chunks_exact(2).enumerate() {
+        out[i] = u16::from_le_bytes([chunk[0], chunk[1]]);
+    }
+    Ok(())
+}
+
+/// Dequantize any supported dtype into raw f16 bit patterns (little-endian
+/// half). F16 passes through losslessly; everything else is dequantized to f32
+/// and downcast to f16. `out[i]` holds the u16 bit pattern — upload as 2 LE
+/// bytes per element (the same layout `write_storage_f16` produces).
+pub fn dequant_into_f16(dtype: GgmlDtype, src: &[u8], out: &mut [u16]) -> Result<()> {
+    match dtype {
+        GgmlDtype::F16 => f16_to_f16_bits(src, out),
+        _ => {
+            let mut tmp = vec![0f32; out.len()];
+            dequant_into_f32(dtype, src, &mut tmp)?;
+            for (o, &v) in out.iter_mut().zip(tmp.iter()) {
+                *o = f16::from_f32(v).to_bits();
+            }
+            Ok(())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,6 +318,37 @@ mod tests {
         dequant_q4_k(&src, &mut out).unwrap();
         for &v in &out {
             assert_eq!(v, 0.0, "dequant of all-zero quants must be zero");
+        }
+    }
+
+    #[test]
+    fn dequant_into_f16_f16_passthrough_is_lossless() {
+        // F16 source → identical f16 bits, and decoding them back equals the originals.
+        let vals = [1.0f32, 2.0, -0.5, 0.0, 65504.0]; // last is f16::MAX
+        let mut src = Vec::new();
+        for &v in &vals {
+            src.extend_from_slice(&f16::from_f32(v).to_bits().to_le_bytes());
+        }
+        let mut bits = vec![0u16; vals.len()];
+        dequant_into_f16(GgmlDtype::F16, &src, &mut bits).unwrap();
+        for (i, &v) in vals.iter().enumerate() {
+            assert_eq!(bits[i], f16::from_f32(v).to_bits(), "f16 passthrough bit-exact at {i}");
+            assert_eq!(f16::from_bits(bits[i]).to_f32(), v, "decoded value matches at {i}");
+        }
+    }
+
+    #[test]
+    fn dequant_into_f16_f32_downcast() {
+        // F32 source → f16 bits equal to a direct f32→f16 conversion.
+        let vals = [1.0f32, 2.0, -0.5, 0.1];
+        let mut src = Vec::new();
+        for &v in &vals {
+            src.extend_from_slice(&v.to_le_bytes());
+        }
+        let mut bits = vec![0u16; vals.len()];
+        dequant_into_f16(GgmlDtype::F32, &src, &mut bits).unwrap();
+        for (i, &v) in vals.iter().enumerate() {
+            assert_eq!(bits[i], f16::from_f32(v).to_bits(), "f32→f16 downcast matches at {i}");
         }
     }
 

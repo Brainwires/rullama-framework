@@ -5,7 +5,7 @@
 //! inside a fused matmul kernel — but we still want this code path for the parity oracle.
 
 use super::dtype::GgmlDtype;
-use super::quant::dequant_into_f32;
+use super::quant::{dequant_into_f16, dequant_into_f32};
 use super::reader::GgufReader;
 use crate::error::{Result, RullamaError};
 
@@ -78,6 +78,29 @@ pub fn dequant_row_to_f32(r: &GgufReader, name: &str, row_idx: usize) -> Result<
 #[allow(dead_code)]
 pub(crate) fn dtype_of(r: &GgufReader, name: &str) -> Result<GgmlDtype> {
     Ok(r.tensor(name)?.dtype)
+}
+
+/// Dequantize the named tensor into a freshly-allocated `Vec<u16>` of raw f16
+/// bit patterns (little-endian half layout). F16 tensors pass through
+/// losslessly; other dtypes are dequantized to f32 then downcast. Used by the
+/// f16-resident StyleTTS2 path to hold big weights at half the host footprint.
+pub fn dequant_tensor_to_f16(r: &GgufReader, name: &str) -> Result<Vec<u16>> {
+    let desc = r.tensor(name)?;
+    let bytes = r.tensor_bytes(name)?;
+    let elems = desc.elem_count() as usize;
+    let mut out = vec![0u16; elems];
+    dequant_into_f16(desc.dtype, bytes, &mut out)?;
+    Ok(out)
+}
+
+/// Async equivalent of [`dequant_tensor_to_f16`] for the streaming loader.
+pub async fn dequant_tensor_to_f16_async(r: &GgufReader, name: &str) -> Result<Vec<u16>> {
+    let desc = r.tensor(name)?.clone();
+    let bytes = r.fetch_tensor_bytes(name).await?;
+    let elems = desc.elem_count() as usize;
+    let mut out = vec![0u16; elems];
+    dequant_into_f16(desc.dtype, &bytes, &mut out)?;
+    Ok(out)
 }
 
 // ---------- async (streaming-safe) variants ----------
