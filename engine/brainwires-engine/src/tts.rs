@@ -120,14 +120,19 @@ impl KokoroTts {
     }
 
     /// Synthesize text with an explicit voice vector (a trained/custom voicepack).
-    pub async fn synthesize_text_style_native(&mut self, text: &str, style: &[f32]) -> Vec<f32> {
+    pub async fn synthesize_text_style_native(
+        &mut self,
+        text: &str,
+        style: &[f32],
+        progress: Option<&dyn Fn(f32, &str)>,
+    ) -> Vec<f32> {
         let phonemes = {
             let lex = self.lex.as_ref().expect("lexicon not set");
             g2p(text, lex).0
         };
         let ids = self.model.phonemes_to_ids(&phonemes);
         self.model
-            .synthesize_gpu_fast(&self.ctx, &self.pipes, &mut self.wc, &ids, style)
+            .synthesize_gpu_fast_p(&self.ctx, &self.pipes, &mut self.wc, &ids, style, progress)
             .await
     }
 
@@ -138,21 +143,31 @@ impl KokoroTts {
 
     /// Text → PCM. Returns (pcm, oov words). Requires the lexicon to be set.
     /// Uses the buffer-chained, weight-cached fast path (warm after the first synth).
-    pub async fn synthesize_native(&mut self, text: &str, voice: &str) -> (Vec<f32>, Vec<String>) {
+    pub async fn synthesize_native(
+        &mut self,
+        text: &str,
+        voice: &str,
+        progress: Option<&dyn Fn(f32, &str)>,
+    ) -> (Vec<f32>, Vec<String>) {
         let (phonemes, oov) = {
             let lex = self.lex.as_ref().expect("lexicon not set");
             g2p(text, lex)
         };
-        let audio = self.synthesize_phonemes_native(&phonemes, voice).await;
+        let audio = self.synthesize_phonemes_native(&phonemes, voice, progress).await;
         (audio, oov)
     }
 
     /// Phoneme string → PCM (skips G2P).
-    pub async fn synthesize_phonemes_native(&mut self, phonemes: &str, voice: &str) -> Vec<f32> {
+    pub async fn synthesize_phonemes_native(
+        &mut self,
+        phonemes: &str,
+        voice: &str,
+        progress: Option<&dyn Fn(f32, &str)>,
+    ) -> Vec<f32> {
         let ids = self.model.phonemes_to_ids(phonemes);
         let ref_s = self.model.load_voice(voice, ids.len());
         self.model
-            .synthesize_gpu_fast(&self.ctx, &self.pipes, &mut self.wc, &ids, &ref_s)
+            .synthesize_gpu_fast_p(&self.ctx, &self.pipes, &mut self.wc, &ids, &ref_s, progress)
             .await
     }
 }
@@ -174,16 +189,31 @@ impl KokoroTts {
         self.set_lexicon_native(&gold, &silver);
     }
 
-    /// Synthesize text → Float32Array PCM (24 kHz mono).
+    /// Synthesize text → Float32Array PCM (24 kHz mono). `onProgress(fraction, stage)` is
+    /// called synchronously at each synth stage so the UI gets a live, stage-annotated bar.
     #[wasm_bindgen(js_name = synthesize)]
-    pub async fn synthesize_js(&mut self, text: String, voice: String) -> Vec<f32> {
-        self.synthesize_native(&text, &voice).await.0
+    pub async fn synthesize_js(
+        &mut self,
+        text: String,
+        voice: String,
+        on_progress: js_sys::Function,
+    ) -> Vec<f32> {
+        let cb = |frac: f32, stage: &str| {
+            let _ = on_progress.call2(
+                &JsValue::NULL,
+                &JsValue::from_f64(frac as f64),
+                &JsValue::from_str(stage),
+            );
+        };
+        let pcm = self.synthesize_native(&text, &voice, Some(&cb)).await.0;
+        let _ = on_progress.call2(&JsValue::NULL, &JsValue::from_f64(1.0), &JsValue::from_str("done"));
+        pcm
     }
 
     /// Synthesize a phoneme string → Float32Array PCM (skips G2P).
     #[wasm_bindgen(js_name = synthesizePhonemes)]
     pub async fn synthesize_phonemes_js(&mut self, phonemes: String, voice: String) -> Vec<f32> {
-        self.synthesize_phonemes_native(&phonemes, &voice).await
+        self.synthesize_phonemes_native(&phonemes, &voice, None).await
     }
 
     #[wasm_bindgen(js_name = sampleRate, getter)]
@@ -221,6 +251,6 @@ impl KokoroTts {
     /// Synthesize text with a trained/custom voice vector → Float32Array PCM.
     #[wasm_bindgen(js_name = synthesizeWithVoice)]
     pub async fn synthesize_with_voice_js(&mut self, text: String, voice: Vec<f32>) -> Vec<f32> {
-        self.synthesize_text_style_native(&text, &voice).await
+        self.synthesize_text_style_native(&text, &voice, None).await
     }
 }
