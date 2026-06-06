@@ -176,7 +176,12 @@ upload_model() {
     # filename we pass instead of inheriting the source basename.
     # `--s3-chunk-size 100M` is rclone's multipart chunk size; default
     # 5 MiB is fine but slower. `--progress` gives a live transfer bar.
+    # `--s3-no-check-bucket` skips rclone's pre-upload bucket-existence
+    # probe — an R2 "Object Read & Write" token denies the CreateBucket
+    # fallback that probe triggers, which otherwise fails the upload with
+    # `AccessDenied: CreateBucket`. The bucket already exists; assume it.
     "$RCLONE_BIN" copyto "$blob" "${RCLONE_REMOTE}:${BUCKET}/${key}" \
+        --s3-no-check-bucket \
         --s3-chunk-size 100M \
         --progress
     echo "    ✓ done"
