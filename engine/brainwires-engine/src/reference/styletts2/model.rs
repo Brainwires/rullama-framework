@@ -14,11 +14,20 @@ use super::gpu::{GpuWeightCache, StyleTtsGpu};
 use super::{MelFrontend, StyleEncoder, StyleTtsAcoustic};
 use crate::backend::{Pipelines, WgpuCtx};
 use crate::error::Result;
+use crate::gguf::GgmlDtype;
 use crate::gguf::GgufReader;
-use crate::gguf::tensor::{dequant_tensor_to_f32, dequant_tensor_to_f32_async};
+use crate::gguf::tensor::{
+    dequant_tensor_to_f16_async, dequant_tensor_to_f32, dequant_tensor_to_f32_async,
+};
 
 pub struct StyleTtsModel {
+    /// f32 weights: everything in the f32 variant; small weights + linears in
+    /// the f16 variant (linears are consumed on the CPU via `t()`).
     w: HashMap<String, Vec<f32>>,
+    /// f16 weights (raw bits) for the memory-tight variant: the 3-D/4-D conv
+    /// tensors — the bulk of the model — routed to the f16 conv GPU kernels.
+    /// Empty for the f32 variant. See [`StyleTtsModel::load_streaming_f16`].
+    w16: HashMap<String, Vec<u16>>,
 }
 
 /// Map a checkpoint tensor name to the oracle-struct name.
@@ -71,7 +80,10 @@ impl StyleTtsModel {
             let data = dequant_tensor_to_f32(reader, &td.name)?;
             w.insert(remap(&td.name), data);
         }
-        Ok(Self { w })
+        Ok(Self {
+            w,
+            w16: HashMap::new(),
+        })
     }
 
     /// Streaming load: fetch + dequant **one tensor at a time** via range reads, so nothing
@@ -87,7 +99,38 @@ impl StyleTtsModel {
             let data = dequant_tensor_to_f32_async(reader, &name).await?;
             w.insert(remap(&name), data);
         }
-        Ok(Self { w })
+        Ok(Self {
+            w,
+            w16: HashMap::new(),
+        })
+    }
+
+    /// Memory-tight streaming load: the **3-D/4-D conv weights** (the bulk of
+    /// the model) are kept f16 in `w16` and run through the f16 conv GPU
+    /// kernels; everything else (biases, AdaIN/snake affines, 2-D linears that
+    /// are consumed on the CPU) is dequantized to f32 in `w`. Roughly halves
+    /// the resident weight footprint (host *and* GPU) versus [`load_streaming`].
+    /// Intended for the f16 GGUF variant on memory-tight devices; the CPU
+    /// reference synth (`encode_voice`/`synthesize`) is NOT available on a model
+    /// loaded this way (the conv weights aren't in `w` as f32) — use the GPU
+    /// path. Same per-tensor streaming peak as [`load_streaming`].
+    pub async fn load_streaming_f16(reader: &GgufReader) -> Result<Self> {
+        let mut w = HashMap::new();
+        let mut w16 = HashMap::new();
+        let descs: Vec<(String, GgmlDtype, usize)> = reader
+            .tensors()
+            .iter()
+            .map(|td| (td.name.clone(), td.dtype, td.dims.len()))
+            .collect();
+        for (name, dtype, rank) in descs {
+            let key = remap(&name);
+            if dtype == GgmlDtype::F16 && (rank == 3 || rank == 4) {
+                w16.insert(key, dequant_tensor_to_f16_async(reader, &name).await?);
+            } else {
+                w.insert(key, dequant_tensor_to_f32_async(reader, &name).await?);
+            }
+        }
+        Ok(Self { w, w16 })
     }
 
     /// Reference 24 kHz mono PCM → 256-d voice vector (acoustic ‖ prosodic).
@@ -151,7 +194,7 @@ impl StyleTtsModel {
         if let Some(pp) = progress {
             pp(0.30, "analyzing voice (GPU)");
         }
-        let out = StyleTtsGpu::new(&self.w, ctx, p, wc)
+        let out = StyleTtsGpu::new(&self.w, &self.w16, ctx, p, wc)
             .encode(&mel, 80, t)
             .await;
         if let Some(pp) = progress {
@@ -184,7 +227,7 @@ impl StyleTtsModel {
                 // sampler params match the converter/oracle (ADPM2 + Karras, sigma_data=0.2)
                 let (noise_init, noises) =
                     crate::reference::styletts2::acoustic::diffusion_noise(&cfg);
-                let s_pred = StyleTtsGpu::new(&self.w, ctx, p, wc)
+                let s_pred = StyleTtsGpu::new(&self.w, &self.w16, ctx, p, wc)
                     .diffusion_sample(
                         &bert_out,
                         t,
@@ -206,7 +249,7 @@ impl StyleTtsModel {
         if let Some(pp) = progress {
             pp(0.36, "generating audio (GPU)");
         }
-        let out = StyleTtsGpu::new(&self.w, ctx, p, wc)
+        let out = StyleTtsGpu::new(&self.w, &self.w16, ctx, p, wc)
             .decode(&asr, f, &f0, &n, &r)
             .await;
         if let Some(pp) = progress {

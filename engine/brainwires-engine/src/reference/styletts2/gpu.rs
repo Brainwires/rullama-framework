@@ -14,10 +14,11 @@ use std::collections::HashMap;
 use super::decoder::source_signal;
 use crate::backend::dispatch::{
     adain_chained, add_bias_batched_chained, avg_pool2d_half_chained, conv_transpose1d_chained,
-    conv1d_chained, conv2d_chf_chained, gelu_exact_chained, layernorm_affine_chained,
-    leaky_relu_chained, make_dummy_storage, make_storage_rw, matmul_f16_batched_tiled_chained,
+    conv_transpose1d_f16_chained, conv1d_chained, conv1d_f16_chained, conv2d_chf_chained,
+    conv2d_chf_f16_chained, gelu_exact_chained, layernorm_affine_chained, leaky_relu_chained,
+    make_dummy_storage, make_storage_rw, matmul_f16_batched_tiled_chained,
     nearest_upsample2x_chained, read_back_f32, residual_add_chained, scale_chained, snake_chained,
-    vision_attention_chained, write_storage_f16, write_storage_f32,
+    vision_attention_chained, write_storage_f16, write_storage_f16_bits, write_storage_f32,
 };
 use crate::backend::{Pipelines, WgpuCtx};
 use crate::reference::kokoro::ops::{leaky_relu as leaky_cpu, linear};
@@ -50,6 +51,10 @@ pub type GpuWeightCache = HashMap<String, wgpu::Buffer>;
 
 pub struct StyleTtsGpu<'a> {
     w: &'a HashMap<String, Vec<f32>>,
+    /// f16 conv weights (raw bits) for the memory-tight variant. Empty for the
+    /// f32 variant; when a conv weight is present here, the conv dispatch routes
+    /// to the f16 kernel + an f16 GPU buffer instead of f32.
+    w16: &'a HashMap<String, Vec<u16>>,
     ctx: &'a WgpuCtx,
     p: &'a Pipelines,
     wc: &'a mut GpuWeightCache,
@@ -74,6 +79,7 @@ impl Drop for StyleTtsGpu<'_> {
 impl<'a> StyleTtsGpu<'a> {
     pub fn new(
         w: &'a HashMap<String, Vec<f32>>,
+        w16: &'a HashMap<String, Vec<u16>>,
         ctx: &'a WgpuCtx,
         p: &'a Pipelines,
         wc: &'a mut GpuWeightCache,
@@ -81,6 +87,7 @@ impl<'a> StyleTtsGpu<'a> {
         let dummy = make_dummy_storage(&ctx.device, "dummy");
         Self {
             w,
+            w16,
             ctx,
             p,
             wc,
@@ -119,21 +126,243 @@ impl<'a> StyleTtsGpu<'a> {
         eprintln!("[ST2DBG] {label}: n={n} nan={nan} inf={inf} min={mn:.3} max={mx:.3}");
     }
 
-    /// Cached weight buffer (uploaded once).
+    /// Cached f32 weight buffer (uploaded once). Falls back to dequantizing an
+    /// f16-resident weight (`w16`) to f32 when one is fetched through the f32
+    /// path — so a conv call site not yet routed to the f16 kernel still works
+    /// correctly (just without the GPU-side f16 saving). Makes the f16 routing
+    /// an incremental, always-correct migration.
     fn wt(&mut self, name: &str) -> wgpu::Buffer {
         if let Some(b) = self.wc.get(name) {
             return b.clone();
         }
-        let buf = write_storage_f32(
-            &self.ctx.device,
-            &self.ctx.queue,
-            name,
-            self.w
-                .get(name)
-                .unwrap_or_else(|| panic!("missing gpu weight: {name}")),
-        );
+        let buf = if let Some(f32data) = self.w.get(name) {
+            write_storage_f32(&self.ctx.device, &self.ctx.queue, name, f32data)
+        } else if let Some(bits) = self.w16.get(name) {
+            let f32data: Vec<f32> = bits
+                .iter()
+                .map(|&b| half::f16::from_bits(b).to_f32())
+                .collect();
+            write_storage_f32(&self.ctx.device, &self.ctx.queue, name, &f32data)
+        } else {
+            panic!("missing gpu weight: {name}");
+        };
         self.wc.insert(name.to_string(), buf.clone());
         buf
+    }
+
+    /// Cached f16 conv-weight buffer (uploaded once) from the raw f16 bits in
+    /// `w16`. Keyed `f16c:<name>` to coexist with any f32 entry.
+    fn wt16c(&mut self, name: &str) -> wgpu::Buffer {
+        let key = format!("f16c:{name}");
+        if let Some(b) = self.wc.get(&key) {
+            return b.clone();
+        }
+        let bits = self
+            .w16
+            .get(name)
+            .unwrap_or_else(|| panic!("missing f16 conv weight: {name}"));
+        let buf = write_storage_f16_bits(&self.ctx.device, &self.ctx.queue, name, bits);
+        self.wc.insert(key, buf.clone());
+        buf
+    }
+
+    /// conv1d, routed to the f16 kernel + f16 weight buffer when the weight is
+    /// f16-resident (present in `w16`); otherwise the f32 path. Identical math.
+    #[allow(clippy::too_many_arguments)]
+    fn conv1d_w(
+        &mut self,
+        enc: &mut wgpu::CommandEncoder,
+        x: &wgpu::Buffer,
+        wname: &str,
+        bias: Option<&wgpu::Buffer>,
+        y: &wgpu::Buffer,
+        cin: usize,
+        tin: usize,
+        cout: usize,
+        k: usize,
+        stride: usize,
+        pad: usize,
+        dilation: usize,
+        groups: usize,
+    ) -> usize {
+        if self.w16.contains_key(wname) {
+            let wb = self.wt16c(wname);
+            conv1d_f16_chained(
+                self.ctx,
+                self.p,
+                enc,
+                x,
+                &wb,
+                bias,
+                &self.dummy,
+                y,
+                cin,
+                tin,
+                cout,
+                k,
+                stride,
+                pad,
+                dilation,
+                groups,
+            )
+        } else {
+            let wb = self.wt(wname);
+            conv1d_chained(
+                self.ctx,
+                self.p,
+                enc,
+                x,
+                &wb,
+                bias,
+                &self.dummy,
+                y,
+                cin,
+                tin,
+                cout,
+                k,
+                stride,
+                pad,
+                dilation,
+                groups,
+            )
+        }
+    }
+
+    /// conv_transpose1d with the same f16/f32 routing as [`Self::conv1d_w`].
+    #[allow(clippy::too_many_arguments)]
+    fn conv_transpose1d_w(
+        &mut self,
+        enc: &mut wgpu::CommandEncoder,
+        x: &wgpu::Buffer,
+        wname: &str,
+        bias: Option<&wgpu::Buffer>,
+        y: &wgpu::Buffer,
+        cin: usize,
+        tin: usize,
+        cout: usize,
+        k: usize,
+        stride: usize,
+        pad: usize,
+        output_padding: usize,
+        groups: usize,
+    ) -> usize {
+        if self.w16.contains_key(wname) {
+            let wb = self.wt16c(wname);
+            conv_transpose1d_f16_chained(
+                self.ctx,
+                self.p,
+                enc,
+                x,
+                &wb,
+                bias,
+                &self.dummy,
+                y,
+                cin,
+                tin,
+                cout,
+                k,
+                stride,
+                pad,
+                output_padding,
+                groups,
+            )
+        } else {
+            let wb = self.wt(wname);
+            conv_transpose1d_chained(
+                self.ctx,
+                self.p,
+                enc,
+                x,
+                &wb,
+                bias,
+                &self.dummy,
+                y,
+                cin,
+                tin,
+                cout,
+                k,
+                stride,
+                pad,
+                output_padding,
+                groups,
+            )
+        }
+    }
+
+    /// conv2d_chf with the same f16/f32 routing as [`Self::conv1d_w`].
+    #[allow(clippy::too_many_arguments)]
+    fn conv2d_chf_w(
+        &mut self,
+        enc: &mut wgpu::CommandEncoder,
+        wname: &str,
+        x: &wgpu::Buffer,
+        bias: Option<&wgpu::Buffer>,
+        y: &wgpu::Buffer,
+        in_c: usize,
+        in_h: usize,
+        in_w: usize,
+        out_c: usize,
+        out_h: usize,
+        out_w: usize,
+        kh: usize,
+        kw: usize,
+        sh: usize,
+        sw: usize,
+        ph: usize,
+        pw: usize,
+        groups: usize,
+    ) {
+        if self.w16.contains_key(wname) {
+            let wb = self.wt16c(wname);
+            conv2d_chf_f16_chained(
+                self.ctx,
+                self.p,
+                enc,
+                &wb,
+                x,
+                bias,
+                &self.dummy,
+                y,
+                in_c,
+                in_h,
+                in_w,
+                out_c,
+                out_h,
+                out_w,
+                kh,
+                kw,
+                sh,
+                sw,
+                ph,
+                pw,
+                groups,
+            );
+        } else {
+            let wb = self.wt(wname);
+            conv2d_chf_chained(
+                self.ctx,
+                self.p,
+                enc,
+                &wb,
+                x,
+                bias,
+                &self.dummy,
+                y,
+                in_c,
+                in_h,
+                in_w,
+                out_c,
+                out_h,
+                out_w,
+                kh,
+                kw,
+                sh,
+                sw,
+                ph,
+                pw,
+                groups,
+            );
+        }
     }
 
     fn up(&mut self, x: &[f32]) -> wgpu::Buffer {
@@ -181,18 +410,14 @@ impl<'a> StyleTtsGpu<'a> {
         adain_chained(self.ctx, self.p, enc, x, &g1, &b1, &h1, dim_in, t, 1e-5);
         leaky_relu_chained(self.ctx, self.p, enc, &h1, dim_in * t, 0.2);
         let (h1, t_pool) = if upsample {
-            let pw = self.wt(&format!("{prefix}.pool.weight"));
             let pb = self.wt(&format!("{prefix}.pool.bias"));
             let tp = (t - 1) * 2 + (3 - 1) + 1 + 1 - 2; // depthwise convT k3 s2 p1 opad1 → 2t
             let out = self.alloc(dim_in * tp);
-            conv_transpose1d_chained(
-                self.ctx,
-                self.p,
+            self.conv_transpose1d_w(
                 enc,
                 &h1,
-                &pw,
+                &format!("{prefix}.pool.weight"),
                 Some(&pb),
-                &self.dummy,
                 &out,
                 dim_in,
                 t,
@@ -207,17 +432,13 @@ impl<'a> StyleTtsGpu<'a> {
         } else {
             (h1, t)
         };
-        let c1w = self.wt(&format!("{prefix}.conv1.weight"));
         let c1b = self.wt(&format!("{prefix}.conv1.bias"));
         let cv1 = self.alloc(dim_out * t_pool);
-        conv1d_chained(
-            self.ctx,
-            self.p,
+        self.conv1d_w(
             enc,
             &h1,
-            &c1w,
+            &format!("{prefix}.conv1.weight"),
             Some(&c1b),
-            &self.dummy,
             &cv1,
             dim_in,
             t_pool,
@@ -234,16 +455,12 @@ impl<'a> StyleTtsGpu<'a> {
         );
         leaky_relu_chained(self.ctx, self.p, enc, &h3, dim_out * t_pool, 0.2);
         let residual = self.alloc(dim_out * t_pool);
-        let c2w = self.wt(&format!("{prefix}.conv2.weight"));
         let c2b = self.wt(&format!("{prefix}.conv2.bias"));
-        conv1d_chained(
-            self.ctx,
-            self.p,
+        self.conv1d_w(
             enc,
             &h3,
-            &c2w,
+            &format!("{prefix}.conv2.weight"),
             Some(&c2b),
-            &self.dummy,
             &residual,
             dim_out,
             t_pool,
@@ -263,16 +480,12 @@ impl<'a> StyleTtsGpu<'a> {
             x.clone()
         };
         let sc = if dim_in != dim_out {
-            let cw = self.wt(&format!("{prefix}.conv1x1.weight"));
             let out = self.alloc(dim_out * t_pool);
-            conv1d_chained(
-                self.ctx,
-                self.p,
+            self.conv1d_w(
                 enc,
                 &sc,
-                &cw,
+                &format!("{prefix}.conv1x1.weight"),
                 None,
-                &self.dummy,
                 &out,
                 dim_in,
                 t_pool,
@@ -311,23 +524,18 @@ impl<'a> StyleTtsGpu<'a> {
             let (g2, b2) = self.adain_gb(&format!("{prefix}.adain2.{j}"), c, style);
             let a1 = self.wt(&format!("{prefix}.alpha1.{j}"));
             let a2 = self.wt(&format!("{prefix}.alpha2.{j}"));
-            let c1w = self.wt(&format!("{prefix}.convs1.{j}.weight"));
             let c1b = self.wt(&format!("{prefix}.convs1.{j}.bias"));
-            let c2w = self.wt(&format!("{prefix}.convs2.{j}.weight"));
             let c2b = self.wt(&format!("{prefix}.convs2.{j}.bias"));
             let h1 = self.alloc(c * t);
             adain_chained(self.ctx, self.p, enc, &xacc, &g1, &b1, &h1, c, t, 1e-5);
             let h2 = self.alloc(c * t);
             snake_chained(self.ctx, self.p, enc, &h1, &a1, &h2, c, t);
             let h3 = self.alloc(c * t);
-            conv1d_chained(
-                self.ctx,
-                self.p,
+            self.conv1d_w(
                 enc,
                 &h2,
-                &c1w,
+                &format!("{prefix}.convs1.{j}.weight"),
                 Some(&c1b),
-                &self.dummy,
                 &h3,
                 c,
                 t,
@@ -343,14 +551,11 @@ impl<'a> StyleTtsGpu<'a> {
             let h5 = self.alloc(c * t);
             snake_chained(self.ctx, self.p, enc, &h4, &a2, &h5, c, t);
             let rb = self.alloc(c * t);
-            conv1d_chained(
-                self.ctx,
-                self.p,
+            self.conv1d_w(
                 enc,
                 &h5,
-                &c2w,
+                &format!("{prefix}.convs2.{j}.weight"),
                 Some(&c2b),
-                &self.dummy,
                 &rb,
                 c,
                 t,
@@ -442,20 +647,17 @@ impl<'a> StyleTtsGpu<'a> {
             let sn = self.alloc(cin * tcur);
             snake_chained(self.ctx, self.p, &mut enc, &cur, &a, &sn, cin, tcur);
             let cout = cin / 2;
-            let ncw = self.wt(&format!("generator.noise_convs.{i}.weight"));
             let ncb = self.wt(&format!("generator.noise_convs.{i}.bias"));
+            let ncw_name = format!("generator.noise_convs.{i}.weight");
             let (xsrc, nres_k, ts) = if i + 1 < 4 {
                 let sf: usize = RATES[i + 1..].iter().product();
                 let ts = (har_len + 2 * ((sf + 1) / 2) - sf * 2) / sf + 1;
                 let o = self.alloc(cout * ts);
-                conv1d_chained(
-                    self.ctx,
-                    self.p,
+                self.conv1d_w(
                     &mut enc,
                     har,
-                    &ncw,
+                    &ncw_name,
                     Some(&ncb),
-                    &self.dummy,
                     &o,
                     1,
                     har_len,
@@ -469,14 +671,11 @@ impl<'a> StyleTtsGpu<'a> {
                 (o, 7usize, ts)
             } else {
                 let o = self.alloc(cout * har_len);
-                conv1d_chained(
-                    self.ctx,
-                    self.p,
+                self.conv1d_w(
                     &mut enc,
                     har,
-                    &ncw,
+                    &ncw_name,
                     Some(&ncb),
-                    &self.dummy,
                     &o,
                     1,
                     har_len,
@@ -499,21 +698,17 @@ impl<'a> StyleTtsGpu<'a> {
                 &format!("generator.noise_res.{i}"),
                 style,
             );
-            let uw = self.wt(&format!("generator.ups.{i}.weight"));
             let ub = self.wt(&format!("generator.ups.{i}.bias"));
             let u = RATES[i];
             let kk = KERNELS[i];
             let pad = u / 2 + u % 2;
             let tup = (tcur - 1) * u + (kk - 1) + (u % 2) + 1 - 2 * pad;
             let up = self.alloc(cout * tup);
-            conv_transpose1d_chained(
-                self.ctx,
-                self.p,
+            self.conv_transpose1d_w(
                 &mut enc,
                 &sn,
-                &uw,
+                &format!("generator.ups.{i}.weight"),
                 Some(&ub),
-                &self.dummy,
                 &up,
                 cin,
                 tcur,
@@ -556,17 +751,13 @@ impl<'a> StyleTtsGpu<'a> {
         let a = self.wt("generator.alphas.4");
         let sn = self.alloc(cin * tcur);
         snake_chained(self.ctx, self.p, &mut enc, &cur, &a, &sn, cin, tcur);
-        let cpw = self.wt("generator.conv_post.weight");
         let cpb = self.wt("generator.conv_post.bias");
         let post = self.alloc(tcur);
-        conv1d_chained(
-            self.ctx,
-            self.p,
+        self.conv1d_w(
             &mut enc,
             &sn,
-            &cpw,
+            "generator.conv_post.weight",
             Some(&cpb),
-            &self.dummy,
             &post,
             cin,
             tcur,
@@ -614,17 +805,13 @@ impl<'a> StyleTtsGpu<'a> {
         let pn = |s: &str| format!("{prefix}.{s}");
         let mut enc = self.enc();
         // conv0: 1 → 64, k3 p1
-        let c0w = self.wt(&pn("conv0.weight"));
         let c0b = self.wt(&pn("conv0.bias"));
         let mut x = self.alloc(64 * n_mels * t);
-        conv2d_chf_chained(
-            self.ctx,
-            self.p,
+        self.conv2d_chf_w(
             &mut enc,
-            &c0w,
+            &pn("conv0.weight"),
             mel_buf,
             Some(&c0b),
-            &self.dummy,
             &x,
             1,
             n_mels,
@@ -645,16 +832,12 @@ impl<'a> StyleTtsGpu<'a> {
             let (h2, w2) = (h / 2, (w + 1) / 2);
             // shortcut: optional 1×1 conv (when channels change) then avg-pool
             let sc = if din != dout {
-                let cw = self.wt(&pn(&format!("blk{i}.sc.weight")));
                 let o = self.alloc(dout * h * w);
-                conv2d_chf_chained(
-                    self.ctx,
-                    self.p,
+                self.conv2d_chf_w(
                     &mut enc,
-                    &cw,
+                    &pn(&format!("blk{i}.sc.weight")),
                     &x,
                     None,
-                    &self.dummy,
                     &o,
                     din,
                     h,
@@ -682,19 +865,13 @@ impl<'a> StyleTtsGpu<'a> {
             let r = self.alloc(din * h * w);
             enc.copy_buffer_to_buffer(&x, 0, &r, 0, (din * h * w * 4) as u64);
             leaky_relu_chained(self.ctx, self.p, &mut enc, &r, din * h * w, 0.2);
-            let (c1w, c1b) = (
-                self.wt(&pn(&format!("blk{i}.conv1.weight"))),
-                self.wt(&pn(&format!("blk{i}.conv1.bias"))),
-            );
+            let c1b = self.wt(&pn(&format!("blk{i}.conv1.bias")));
             let c1 = self.alloc(din * h * w);
-            conv2d_chf_chained(
-                self.ctx,
-                self.p,
+            self.conv2d_chf_w(
                 &mut enc,
-                &c1w,
+                &pn(&format!("blk{i}.conv1.weight")),
                 &r,
                 Some(&c1b),
-                &self.dummy,
                 &c1,
                 din,
                 h,
@@ -710,19 +887,13 @@ impl<'a> StyleTtsGpu<'a> {
                 1,
                 1,
             );
-            let (dw, db) = (
-                self.wt(&pn(&format!("blk{i}.down.weight"))),
-                self.wt(&pn(&format!("blk{i}.down.bias"))),
-            );
+            let db = self.wt(&pn(&format!("blk{i}.down.bias")));
             let dn = self.alloc(din * h2 * w2);
-            conv2d_chf_chained(
-                self.ctx,
-                self.p,
+            self.conv2d_chf_w(
                 &mut enc,
-                &dw,
+                &pn(&format!("blk{i}.down.weight")),
                 &c1,
                 Some(&db),
-                &self.dummy,
                 &dn,
                 din,
                 h,
@@ -739,19 +910,13 @@ impl<'a> StyleTtsGpu<'a> {
                 din,
             );
             leaky_relu_chained(self.ctx, self.p, &mut enc, &dn, din * h2 * w2, 0.2);
-            let (c2w, c2b) = (
-                self.wt(&pn(&format!("blk{i}.conv2.weight"))),
-                self.wt(&pn(&format!("blk{i}.conv2.bias"))),
-            );
+            let c2b = self.wt(&pn(&format!("blk{i}.conv2.bias")));
             let c2 = self.alloc(dout * h2 * w2);
-            conv2d_chf_chained(
-                self.ctx,
-                self.p,
+            self.conv2d_chf_w(
                 &mut enc,
-                &c2w,
+                &pn(&format!("blk{i}.conv2.weight")),
                 &dn,
                 Some(&c2b),
-                &self.dummy,
                 &c2,
                 din,
                 h2,
@@ -776,19 +941,13 @@ impl<'a> StyleTtsGpu<'a> {
         // leaky → conv_out (512→512, k5, no pad) → [512, h-4, w-4]
         leaky_relu_chained(self.ctx, self.p, &mut enc, &x, 512 * h * w, 0.2);
         let (oh, ow) = (h - 4, w - 4);
-        let (cow, cob) = (
-            self.wt(&pn("conv_out.weight")),
-            self.wt(&pn("conv_out.bias")),
-        );
+        let cob = self.wt(&pn("conv_out.bias"));
         let co = self.alloc(512 * oh * ow);
-        conv2d_chf_chained(
-            self.ctx,
-            self.p,
+        self.conv2d_chf_w(
             &mut enc,
-            &cow,
+            &pn("conv_out.weight"),
             &x,
             Some(&cob),
-            &self.dummy,
             &co,
             512,
             h,
@@ -1164,17 +1323,13 @@ impl<'a> StyleTtsGpu<'a> {
         let n_buf = self.up(n);
         // ---- decoder cat-stack (one submit; small tensors, t ≤ 2f) ----
         let mut enc = self.enc();
-        let f0w = self.wt("F0_conv.weight");
         let f0b = self.wt("F0_conv.bias");
         let f0d = self.alloc(f);
-        conv1d_chained(
-            self.ctx,
-            self.p,
+        self.conv1d_w(
             &mut enc,
             &f0_buf,
-            &f0w,
+            "F0_conv.weight",
             Some(&f0b),
-            &self.dummy,
             &f0d,
             1,
             2 * f,
@@ -1185,17 +1340,13 @@ impl<'a> StyleTtsGpu<'a> {
             1,
             1,
         );
-        let nw = self.wt("N_conv.weight");
         let nb = self.wt("N_conv.bias");
         let nd = self.alloc(f);
-        conv1d_chained(
-            self.ctx,
-            self.p,
+        self.conv1d_w(
             &mut enc,
             &n_buf,
-            &nw,
+            "N_conv.weight",
             Some(&nb),
-            &self.dummy,
             &nd,
             1,
             2 * f,
@@ -1209,17 +1360,13 @@ impl<'a> StyleTtsGpu<'a> {
         let cat0 = self.concat(&mut enc, &[(&asr_buf, 512), (&f0d, 1), (&nd, 1)], f);
         let (mut x, mut tcur) =
             self.adain_resblk1d(&mut enc, &cat0, 514, f, 1024, false, "encode", style);
-        let arw = self.wt("asr_res.0.weight");
         let arb = self.wt("asr_res.0.bias");
         let asr_res = self.alloc(64 * f);
-        conv1d_chained(
-            self.ctx,
-            self.p,
+        self.conv1d_w(
             &mut enc,
             &asr_buf,
-            &arw,
+            "asr_res.0.weight",
             Some(&arb),
-            &self.dummy,
             &asr_res,
             512,
             f,
