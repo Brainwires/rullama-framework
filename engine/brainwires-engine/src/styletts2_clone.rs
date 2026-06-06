@@ -71,6 +71,15 @@ impl StyleTtsClone {
         Self::from_model(model).await
     }
 
+    /// Streaming load of the **f16** GGUF variant: the conv weights (the bulk of the model) stay
+    /// f16 in host memory and run through the f16 GPU conv kernels — roughly halving the resident
+    /// weight footprint (host + GPU) for memory-tight devices. f16 precision (≈corr 0.97 vs the
+    /// f32 variant). See [`StyleTtsModel::load_streaming_f16`].
+    pub async fn load_streaming_f16(reader: &GgufReader) -> Result<Self> {
+        let model = StyleTtsModel::load_streaming_f16(reader).await?;
+        Self::from_model(model).await
+    }
+
     pub fn set_lexicon_native(&mut self, gold: &[u8], silver: &[u8]) {
         self.lex = Some(Lexicon::load(gold, silver));
     }
@@ -177,6 +186,31 @@ impl StyleTtsClone {
             .await
             .map_err(|e| JsError::new(&format!("{e:?}")))?;
         Self::load_streaming(&reader)
+            .await
+            .map_err(|e| JsError::new(&format!("{e:?}")))
+    }
+
+    /// Streaming load of the **f16** GGUF (`styletts2-libritts-f16.gguf`) over OPFS — the
+    /// memory-tight variant. Same callback contract as [`Self::load_streaming_js`]; the conv
+    /// weights stay f16 (host + GPU), ≈halving the resident footprint at f16 precision.
+    #[wasm_bindgen(js_name = loadStreamingF16)]
+    pub async fn load_streaming_f16_js(
+        read_fn: js_sys::Function,
+        total_bytes: f64,
+    ) -> std::result::Result<StyleTtsClone, JsError> {
+        use crate::gguf::{OpfsFetcher, TensorFetcher};
+        use std::sync::Arc;
+        if !(total_bytes.is_finite() && total_bytes >= 0.0) {
+            return Err(JsError::new(
+                "loadStreamingF16: total_bytes must be a non-negative finite number",
+            ));
+        }
+        let fetcher: Arc<dyn TensorFetcher> =
+            Arc::new(OpfsFetcher::new(read_fn, total_bytes as u64));
+        let reader = GgufReader::new_streaming(fetcher)
+            .await
+            .map_err(|e| JsError::new(&format!("{e:?}")))?;
+        Self::load_streaming_f16(&reader)
             .await
             .map_err(|e| JsError::new(&format!("{e:?}")))
     }

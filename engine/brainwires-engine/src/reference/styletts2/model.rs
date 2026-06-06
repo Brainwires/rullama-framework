@@ -124,7 +124,13 @@ impl StyleTtsModel {
             .collect();
         for (name, dtype, rank) in descs {
             let key = remap(&name);
-            if dtype == GgmlDtype::F16 && (rank == 3 || rank == 4) {
+            // 3-D/4-D conv weights go f16 — EXCEPT the `text_encoder.*` and
+            // `predictor.*` convs, which run on the CPU acoustic graph
+            // (StyleTtsAcoustic) and must stay f32 in `w`. The GPU decoder /
+            // generator / style-encoder convs (the bulk) are routed to the f16
+            // GPU kernels.
+            let cpu_conv = key.starts_with("text_encoder.") || key.starts_with("predictor.");
+            if dtype == GgmlDtype::F16 && (rank == 3 || rank == 4) && !cpu_conv {
                 w16.insert(key, dequant_tensor_to_f16_async(reader, &name).await?);
             } else {
                 w.insert(key, dequant_tensor_to_f32_async(reader, &name).await?);
