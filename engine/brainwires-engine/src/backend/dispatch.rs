@@ -377,6 +377,26 @@ pub(crate) fn write_storage_f16(
     write_storage(device, queue, label, &bytes)
 }
 
+/// Raw f16 bit patterns → storage buffer, padded to an even element count so
+/// the byte length is a multiple of 4 (the f16-weight kernels bind it as
+/// `array<u32>`, two halves per word). The padding half is never read. Source
+/// for the f16-resident weight path (host weights stored as `Vec<u16>`).
+pub(crate) fn write_storage_f16_bits(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    label: &str,
+    bits: &[u16],
+) -> wgpu::Buffer {
+    let mut bytes = Vec::with_capacity((bits.len() + 1) * 2);
+    for &b in bits {
+        bytes.extend_from_slice(&b.to_le_bytes());
+    }
+    if bits.len() & 1 == 1 {
+        bytes.extend_from_slice(&[0u8, 0u8]); // pad to even → 4-byte aligned
+    }
+    write_storage(device, queue, label, &bytes)
+}
+
 /// Read-write storage buffer (STORAGE | COPY_SRC | COPY_DST), zero-initialized.
 /// For intermediate activations that are written by one kernel and read by the next
 /// (and optionally copied out for readback).
@@ -3595,6 +3615,58 @@ pub fn conv1d_chained(
     tout
 }
 
+/// f16-weight variant of [`conv1d_chained`]. Identical args, except `w` is an
+/// f16-packed weight buffer (2 halves per u32, `write_storage_f16` layout). x /
+/// bias / y stay f32. Halves the resident weight footprint of the StyleTTS2
+/// convolutions for the memory-tight f16 clone.
+#[allow(clippy::too_many_arguments)]
+pub fn conv1d_f16_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer,
+    w: &wgpu::Buffer,
+    bias: Option<&wgpu::Buffer>,
+    dummy: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    cin: usize,
+    tin: usize,
+    cout: usize,
+    k: usize,
+    stride: usize,
+    pad: usize,
+    dilation: usize,
+    groups: usize,
+) -> usize {
+    let tout = (tin + 2 * pad - dilation * (k - 1) - 1) / stride + 1;
+    let params = Conv1dParams {
+        cin: cin as u32,
+        tin: tin as u32,
+        cout: cout as u32,
+        tout: tout as u32,
+        k: k as u32,
+        stride: stride as u32,
+        pad: pad as u32,
+        dilation: dilation as u32,
+        groups: groups as u32,
+        has_bias: bias.is_some() as u32,
+        _p0: 0,
+        _p1: 0,
+    };
+    let b = bias.unwrap_or(dummy);
+    let total = (cout * tout) as u32;
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.conv1d_f16,
+        "conv1d_f16",
+        &[x, w, b, y],
+        &params,
+        wg_grid(total as usize),
+    );
+    tout
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct ConvT1dParams {
@@ -5573,6 +5645,65 @@ mod tests {
                 .map(|(c, g)| (c - g).abs())
                 .fold(0.0f32, f32::max);
             assert!(md < 1e-4, "conv1d case {ci} max_diff = {md}");
+        }
+    }
+
+    #[test]
+    fn conv1d_f16_gpu_vs_cpu() {
+        // f16-weight conv1d vs the same conv with f16-ROUNDED weights on CPU.
+        // Rounding the oracle's weights through f16 isolates kernel correctness
+        // (reading packed f16 via unpack2x16float) from the f16 storage
+        // precision loss, which is the intended trade — not a kernel bug.
+        use crate::reference::kokoro::convblocks::conv1d as cpu_conv1d;
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let dummy = make_dummy_storage(device, "dummy");
+
+        // Same shapes as conv1d_gpu_vs_cpu; case 1 has an ODD weight-element
+        // count (1*3*3=9) to exercise the u32 even-pad path.
+        let cases = [
+            (4usize, 20usize, 6usize, 5usize, 1usize, 2usize, 1usize, 1usize),
+            (3, 31, 1, 3, 2, 1, 1, 1),
+            (8, 17, 8, 3, 1, 2, 2, 1),
+            (6, 13, 6, 3, 1, 1, 1, 6),
+        ];
+        for (ci, (cin, tin, cout, k, stride, pad, dil, groups)) in cases.into_iter().enumerate() {
+            let xs: Vec<f32> = (0..cin * tin)
+                .map(|i| ((i as i32 % 19 - 9) as f32) * 0.07)
+                .collect();
+            let ws: Vec<f32> = (0..cout * (cin / groups) * k)
+                .map(|i| (i as f32 * 0.11).sin() * 0.4)
+                .collect();
+            let bs: Vec<f32> = (0..cout).map(|i| (i as f32) * 0.05 - 0.1).collect();
+            // f16 weight bits + their exact f32 values for the oracle.
+            let ws16_bits: Vec<u16> = ws.iter().map(|&v| half::f16::from_f32(v).to_bits()).collect();
+            let ws16_f32: Vec<f32> = ws16_bits.iter().map(|&b| half::f16::from_bits(b).to_f32()).collect();
+            let (cpu, tout) = cpu_conv1d(
+                &xs, cin, tin, &ws16_f32, Some(&bs), cout, k, stride, pad, dil, groups,
+            );
+
+            let xb = write_storage_f32(device, queue, "x", &xs);
+            let wb = write_storage_f16_bits(device, queue, "w16", &ws16_bits);
+            let bb = write_storage_f32(device, queue, "b", &bs);
+            let (yb, yr) = make_output_pair(device, "y", (cout * tout * 4) as u64);
+            let mut enc = device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("c1d16") });
+            let gt = conv1d_f16_chained(
+                &ctx, &p, &mut enc, &xb, &wb, Some(&bb), &dummy, &yb, cin, tin, cout, k, stride,
+                pad, dil, groups,
+            );
+            enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (cout * tout * 4) as u64);
+            queue.submit(Some(enc.finish()));
+            let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("readback");
+            assert_eq!(gt, tout, "case {ci} tout");
+            let md = cpu
+                .iter()
+                .zip(&gpu)
+                .map(|(c, g)| (c - g).abs())
+                .fold(0.0f32, f32::max);
+            assert!(md < 1e-4, "conv1d_f16 case {ci} max_diff = {md}");
         }
     }
 

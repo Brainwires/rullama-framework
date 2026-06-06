@@ -8,6 +8,7 @@ pub const AVG_POOL2D: &str = include_str!("wgsl/avg_pool2d.wgsl");
 pub const CLAMP: &str = include_str!("wgsl/clamp.wgsl");
 pub const ADAIN: &str = include_str!("wgsl/adain.wgsl");
 pub const CONV1D: &str = include_str!("wgsl/conv1d.wgsl");
+pub const CONV1D_F16: &str = include_str!("wgsl/conv1d_f16.wgsl");
 pub const CONV_TRANSPOSE1D: &str = include_str!("wgsl/conv_transpose1d.wgsl");
 pub const CONV2D: &str = include_str!("wgsl/conv2d.wgsl");
 pub const CONV2D_CHF: &str = include_str!("wgsl/conv2d_chf.wgsl");
