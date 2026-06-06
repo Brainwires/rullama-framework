@@ -251,7 +251,10 @@ pub fn dequant_into_f32(dtype: GgmlDtype, src: &[u8], out: &mut [f32]) -> Result
 /// in host memory instead of expanding them to f32.
 pub fn f16_to_f16_bits(src: &[u8], out: &mut [u16]) -> Result<()> {
     if !src.len().is_multiple_of(2) {
-        return Err(RullamaError::Gguf(format!("F16 source byte length {} is odd", src.len())));
+        return Err(RullamaError::Gguf(format!(
+            "F16 source byte length {} is odd",
+            src.len()
+        )));
     }
     if out.len() * 2 != src.len() {
         return Err(RullamaError::Gguf(format!(
@@ -332,8 +335,16 @@ mod tests {
         let mut bits = vec![0u16; vals.len()];
         dequant_into_f16(GgmlDtype::F16, &src, &mut bits).unwrap();
         for (i, &v) in vals.iter().enumerate() {
-            assert_eq!(bits[i], f16::from_f32(v).to_bits(), "f16 passthrough bit-exact at {i}");
-            assert_eq!(f16::from_bits(bits[i]).to_f32(), v, "decoded value matches at {i}");
+            assert_eq!(
+                bits[i],
+                f16::from_f32(v).to_bits(),
+                "f16 passthrough bit-exact at {i}"
+            );
+            assert_eq!(
+                f16::from_bits(bits[i]).to_f32(),
+                v,
+                "decoded value matches at {i}"
+            );
         }
     }
 
@@ -348,7 +359,11 @@ mod tests {
         let mut bits = vec![0u16; vals.len()];
         dequant_into_f16(GgmlDtype::F32, &src, &mut bits).unwrap();
         for (i, &v) in vals.iter().enumerate() {
-            assert_eq!(bits[i], f16::from_f32(v).to_bits(), "f32→f16 downcast matches at {i}");
+            assert_eq!(
+                bits[i],
+                f16::from_f32(v).to_bits(),
+                "f32→f16 downcast matches at {i}"
+            );
         }
     }
 
