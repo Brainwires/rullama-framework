@@ -60,7 +60,7 @@ if [ ! -f "$JSONL" ]; then
 fi
 
 # Memory-Tight equivalent recipe — matches ULTRA_SAFE_LORA / ULTRA_SAFE_HP
-# defined in examples/web/src/components/FineTunePanel.tsx. Same wgpu
+# defined in web/src/components/FineTunePanel.tsx. Same wgpu
 # pressure as the browser's Memory-Tight preset.
 export RULLAMA_TRAIN_RANK=1
 export RULLAMA_TRAIN_ALPHA=2
