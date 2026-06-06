@@ -1152,6 +1152,62 @@ pub fn conv2d_chf_chained(
     );
 }
 
+/// f16-weight variant of [`conv2d_chf_chained`]. `w` is an f16-packed weight
+/// buffer (2 halves per u32, `write_storage_f16` layout); x/bias/y stay f32.
+#[allow(clippy::too_many_arguments)]
+pub fn conv2d_chf_f16_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    w: &wgpu::Buffer,
+    x: &wgpu::Buffer,
+    bias: Option<&wgpu::Buffer>,
+    dummy: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    in_c: usize,
+    in_h: usize,
+    in_w: usize,
+    out_c: usize,
+    out_h: usize,
+    out_w: usize,
+    kh: usize,
+    kw: usize,
+    sh: usize,
+    sw: usize,
+    ph: usize,
+    pw: usize,
+    groups: usize,
+) {
+    let params = Conv2dChfParams {
+        in_c: in_c as u32,
+        in_h: in_h as u32,
+        in_w: in_w as u32,
+        out_c: out_c as u32,
+        out_h: out_h as u32,
+        out_w: out_w as u32,
+        kh: kh as u32,
+        kw: kw as u32,
+        sh: sh as u32,
+        sw: sw as u32,
+        ph: ph as u32,
+        pw: pw as u32,
+        groups: groups as u32,
+        has_bias: bias.is_some() as u32,
+        _p0: 0,
+        _p1: 0,
+    };
+    let b = bias.unwrap_or(dummy);
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.conv2d_chf_f16,
+        "conv2d_chf_f16",
+        &[w, x, b, y],
+        &params,
+        wg_grid(out_c * out_h * out_w),
+    );
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct AvgPoolHalfChfParams {
@@ -3734,6 +3790,56 @@ pub fn conv_transpose1d_chained(
     tout
 }
 
+/// f16-weight variant of [`conv_transpose1d_chained`]. `w` is an f16-packed
+/// weight buffer (2 halves per u32, `write_storage_f16` layout); x/bias/y f32.
+#[allow(clippy::too_many_arguments)]
+pub fn conv_transpose1d_f16_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer,
+    w: &wgpu::Buffer,
+    bias: Option<&wgpu::Buffer>,
+    dummy: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    cin: usize,
+    tin: usize,
+    cout: usize,
+    k: usize,
+    stride: usize,
+    pad: usize,
+    output_padding: usize,
+    groups: usize,
+) -> usize {
+    let tout = (tin - 1) * stride + (k - 1) + output_padding + 1 - 2 * pad;
+    let params = ConvT1dParams {
+        cin: cin as u32,
+        tin: tin as u32,
+        cout: cout as u32,
+        tout: tout as u32,
+        k: k as u32,
+        stride: stride as u32,
+        pad: pad as u32,
+        groups: groups as u32,
+        has_bias: bias.is_some() as u32,
+        _p0: 0,
+        _p1: 0,
+        _p2: 0,
+    };
+    let b = bias.unwrap_or(dummy);
+    let total = (cout * tout) as u32;
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.conv_transpose1d_f16,
+        "convT1d_f16",
+        &[x, w, b, y],
+        &params,
+        wg_grid(total as usize),
+    );
+    tout
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct LeakyReluParams {
@@ -5664,7 +5770,9 @@ mod tests {
         // Same shapes as conv1d_gpu_vs_cpu; case 1 has an ODD weight-element
         // count (1*3*3=9) to exercise the u32 even-pad path.
         let cases = [
-            (4usize, 20usize, 6usize, 5usize, 1usize, 2usize, 1usize, 1usize),
+            (
+                4usize, 20usize, 6usize, 5usize, 1usize, 2usize, 1usize, 1usize,
+            ),
             (3, 31, 1, 3, 2, 1, 1, 1),
             (8, 17, 8, 3, 1, 2, 2, 1),
             (6, 13, 6, 3, 1, 1, 1, 6),
@@ -5678,21 +5786,52 @@ mod tests {
                 .collect();
             let bs: Vec<f32> = (0..cout).map(|i| (i as f32) * 0.05 - 0.1).collect();
             // f16 weight bits + their exact f32 values for the oracle.
-            let ws16_bits: Vec<u16> = ws.iter().map(|&v| half::f16::from_f32(v).to_bits()).collect();
-            let ws16_f32: Vec<f32> = ws16_bits.iter().map(|&b| half::f16::from_bits(b).to_f32()).collect();
+            let ws16_bits: Vec<u16> = ws
+                .iter()
+                .map(|&v| half::f16::from_f32(v).to_bits())
+                .collect();
+            let ws16_f32: Vec<f32> = ws16_bits
+                .iter()
+                .map(|&b| half::f16::from_bits(b).to_f32())
+                .collect();
             let (cpu, tout) = cpu_conv1d(
-                &xs, cin, tin, &ws16_f32, Some(&bs), cout, k, stride, pad, dil, groups,
+                &xs,
+                cin,
+                tin,
+                &ws16_f32,
+                Some(&bs),
+                cout,
+                k,
+                stride,
+                pad,
+                dil,
+                groups,
             );
 
             let xb = write_storage_f32(device, queue, "x", &xs);
             let wb = write_storage_f16_bits(device, queue, "w16", &ws16_bits);
             let bb = write_storage_f32(device, queue, "b", &bs);
             let (yb, yr) = make_output_pair(device, "y", (cout * tout * 4) as u64);
-            let mut enc = device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("c1d16") });
+            let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("c1d16"),
+            });
             let gt = conv1d_f16_chained(
-                &ctx, &p, &mut enc, &xb, &wb, Some(&bb), &dummy, &yb, cin, tin, cout, k, stride,
-                pad, dil, groups,
+                &ctx,
+                &p,
+                &mut enc,
+                &xb,
+                &wb,
+                Some(&bb),
+                &dummy,
+                &yb,
+                cin,
+                tin,
+                cout,
+                k,
+                stride,
+                pad,
+                dil,
+                groups,
             );
             enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (cout * tout * 4) as u64);
             queue.submit(Some(enc.finish()));
@@ -5705,6 +5844,141 @@ mod tests {
                 .fold(0.0f32, f32::max);
             assert!(md < 1e-4, "conv1d_f16 case {ci} max_diff = {md}");
         }
+    }
+
+    #[test]
+    fn conv_transpose1d_f16_gpu_vs_cpu() {
+        use crate::reference::kokoro::convblocks::conv_transpose1d as cpu_ct;
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let dummy = make_dummy_storage(device, "dummy");
+        // groups=1 ISTFTNet ups shape: 4->6, k5 stride2 pad2 outpad0.
+        let (cin, tin, cout, k, stride, pad, op) =
+            (4usize, 9usize, 6usize, 5usize, 2usize, 2usize, 0usize);
+        let xs: Vec<f32> = (0..cin * tin)
+            .map(|i| ((i % 13) as f32 - 6.0) * 0.05)
+            .collect();
+        let ws: Vec<f32> = (0..cin * cout * k)
+            .map(|i| (i as f32 * 0.09).cos() * 0.3)
+            .collect();
+        let bs: Vec<f32> = (0..cout).map(|i| i as f32 * 0.02).collect();
+        let wbits: Vec<u16> = ws
+            .iter()
+            .map(|&v| half::f16::from_f32(v).to_bits())
+            .collect();
+        let w16f: Vec<f32> = wbits
+            .iter()
+            .map(|&b| half::f16::from_bits(b).to_f32())
+            .collect();
+        let (cpu, tout) = cpu_ct(&xs, cin, tin, &w16f, Some(&bs), cout, k, stride, pad, op);
+        let xb = write_storage_f32(device, queue, "x", &xs);
+        let wb = write_storage_f16_bits(device, queue, "w16", &wbits);
+        let bb = write_storage_f32(device, queue, "b", &bs);
+        let (yb, yr) = make_output_pair(device, "y", (cout * tout * 4) as u64);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("ct16"),
+        });
+        let gt = conv_transpose1d_f16_chained(
+            &ctx,
+            &p,
+            &mut enc,
+            &xb,
+            &wb,
+            Some(&bb),
+            &dummy,
+            &yb,
+            cin,
+            tin,
+            cout,
+            k,
+            stride,
+            pad,
+            op,
+            1,
+        );
+        enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (cout * tout * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("readback");
+        assert_eq!(gt, tout);
+        let md = cpu
+            .iter()
+            .zip(&gpu)
+            .map(|(c, g)| (c - g).abs())
+            .fold(0.0f32, f32::max);
+        assert!(md < 1e-4, "conv_transpose1d_f16 max_diff = {md}");
+    }
+
+    #[test]
+    fn conv2d_chf_f16_gpu_vs_cpu() {
+        use crate::reference::styletts2::{Map, conv2d as cpu_conv2d};
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let dummy = make_dummy_storage(device, "dummy");
+        let (in_c, in_h, in_w, out_c, kh, kw, stride, pad, groups) = (
+            3usize, 7usize, 5usize, 4usize, 3usize, 3usize, 1usize, 1usize, 1usize,
+        );
+        let xs: Vec<f32> = (0..in_c * in_h * in_w)
+            .map(|i| ((i % 11) as f32 - 5.0) * 0.06)
+            .collect();
+        let ws: Vec<f32> = (0..out_c * (in_c / groups) * kh * kw)
+            .map(|i| (i as f32 * 0.13).sin() * 0.35)
+            .collect();
+        let bs: Vec<f32> = (0..out_c).map(|i| i as f32 * 0.03 - 0.05).collect();
+        let wbits: Vec<u16> = ws
+            .iter()
+            .map(|&v| half::f16::from_f32(v).to_bits())
+            .collect();
+        let w16f: Vec<f32> = wbits
+            .iter()
+            .map(|&b| half::f16::from_bits(b).to_f32())
+            .collect();
+        let xm = Map::new(xs.clone(), in_c, in_h, in_w);
+        let cpu = cpu_conv2d(&xm, &w16f, Some(&bs), out_c, kh, kw, stride, pad, groups);
+        let (out_h, out_w) = (cpu.h, cpu.w);
+        let xb = write_storage_f32(device, queue, "x", &xs);
+        let wb = write_storage_f16_bits(device, queue, "w16", &wbits);
+        let bb = write_storage_f32(device, queue, "b", &bs);
+        let (yb, yr) = make_output_pair(device, "y", (out_c * out_h * out_w * 4) as u64);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("c2d16"),
+        });
+        conv2d_chf_f16_chained(
+            &ctx,
+            &p,
+            &mut enc,
+            &wb,
+            &xb,
+            Some(&bb),
+            &dummy,
+            &yb,
+            in_c,
+            in_h,
+            in_w,
+            out_c,
+            out_h,
+            out_w,
+            kh,
+            kw,
+            stride,
+            stride,
+            pad,
+            pad,
+            groups,
+        );
+        enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (out_c * out_h * out_w * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("readback");
+        let md = cpu
+            .data
+            .iter()
+            .zip(&gpu)
+            .map(|(c, g)| (c - g).abs())
+            .fold(0.0f32, f32::max);
+        assert!(md < 1e-4, "conv2d_chf_f16 max_diff = {md}");
     }
 
     #[test]
