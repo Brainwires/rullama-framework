@@ -57,9 +57,20 @@ fn main() -> ExitCode {
     print_keys(&r, "general.");
     println!();
 
-    println!("== gemma4.* ==");
-    print_keys(&r, "gemma4.");
-    println!();
+    // Dump the active architecture's keys generically (gemma4 / gemma3 /
+    // bert / nomic-bert / …) instead of hardcoding gemma4. The
+    // `general.architecture` value IS the metadata key prefix.
+    let arch = r
+        .get("general.architecture")
+        .ok()
+        .and_then(|v| v.as_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+    if !arch.is_empty() {
+        println!("== {arch}.* ==");
+        print_keys(&r, &format!("{arch}."));
+        println!();
+    }
 
     println!("== tokenizer.ggml.* (sizes / scalars only — vocab arrays are summarized) ==");
     print_keys(&r, "tokenizer.");
