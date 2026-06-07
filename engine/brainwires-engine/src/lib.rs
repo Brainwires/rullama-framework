@@ -35,6 +35,8 @@
 )]
 
 pub mod api;
+/// JS-facing embedding surface — `EmbeddingModel` over EmbeddingGemma.
+pub mod embed;
 pub mod error;
 /// Inference-time LoRA adapter — parsed from safetensors bytes,
 /// attaches to a `Model` via `loadAdapter` / `clearAdapter`.
