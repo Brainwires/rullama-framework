@@ -1191,4 +1191,3 @@ pub fn cross_entropy_backward_chained(
         (1, 1, 1),
     );
 }
-

@@ -124,6 +124,48 @@ pub async fn matmul_q4_k(
     dispatch_matmul(ctx, kernels::Q4_K_DEQUANT_MATMUL, w_bytes, x, k, n).await
 }
 
+/// Run `y = x @ W` on the GPU where `W` is stored as Q4_0-packed row-major bytes.
+/// Each row has `k/32` blocks of 18 bytes, so total weight bytes = `(k/32)*18*n`.
+/// Q4_0 is the legacy ggml quant Google ships QAT Gemma in.
+pub async fn matmul_q4_0(
+    ctx: &WgpuCtx,
+    w_bytes: &[u8],
+    x: &[f32],
+    k: usize,
+    n: usize,
+) -> Result<Vec<f32>> {
+    if !k.is_multiple_of(32) {
+        return Err(RullamaError::Inference(format!(
+            "k {k} must be a multiple of 32 for Q4_0 matmul"
+        )));
+    }
+    let row_bytes = (k / 32) * 18;
+    let expected = row_bytes * n;
+    if w_bytes.len() != expected {
+        return Err(RullamaError::Inference(format!(
+            "Q4_0 W bytes {} != (k/32)*18*n = {}",
+            w_bytes.len(),
+            expected
+        )));
+    }
+    if x.len() != k {
+        return Err(RullamaError::Inference(format!(
+            "x.len() {} != k {}",
+            x.len(),
+            k
+        )));
+    }
+    // Each row's byte length must be a multiple of 4 for u32-indexed weight
+    // storage. (k/32)*18 is /4 whenever k is a multiple of 64 — true of every
+    // gemma4 weight input dim (d_model / ffn_len are multiples of 256).
+    if !row_bytes.is_multiple_of(4) {
+        return Err(RullamaError::Inference(format!(
+            "Q4_0 row_bytes {row_bytes} not multiple of 4 (k={k})"
+        )));
+    }
+    dispatch_matmul(ctx, kernels::Q4_0_DEQUANT_MATMUL, w_bytes, x, k, n).await
+}
+
 /// Run `y = x @ W` on the GPU where `W` is stored as Q6_K-packed row-major bytes.
 /// Each row has `k/256` super-blocks of 210 bytes, so total weight bytes = `(k/256)*210*n`.
 pub async fn matmul_q6_k(
@@ -351,6 +393,55 @@ mod tests {
                 x[i]
             );
         }
+    }
+
+    /// Q4_0 fused dequant+matmul GPU kernel vs the CPU dequant oracle. Synthesizes
+    /// random Q4_0 blocks (no model file needed), dequantizes them on CPU via the
+    /// ggml-exact `dequant_q4_0`, runs a plain f32 matmul, and compares to the GPU
+    /// `matmul_q4_0` kernel. This is the project-mandated GPU-vs-CPU parity test for
+    /// the new Q4_0 kernel.
+    #[test]
+    fn q4_0_matmul_gpu_vs_cpu_oracle() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let k = 128usize; // 4 blocks/row (mult of 64 → row_bytes /4)
+        let n = 16usize;
+        let blocks_per_row = k / 32;
+
+        // Deterministic LCG for reproducible random weights + input.
+        let mut state: u32 = 0x1234_5678;
+        let mut next_u = || {
+            state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+            state
+        };
+
+        // Build Q4_0 weight bytes: per block, an f16 scale d in ~[-0.1, 0.1] then
+        // 16 random nibble-bytes.
+        let mut w_bytes = Vec::with_capacity(n * blocks_per_row * 18);
+        for _ in 0..(n * blocks_per_row) {
+            let dv = ((next_u() >> 8) as f32 / 16777216.0 - 0.5) * 0.2;
+            w_bytes.extend_from_slice(&f16::from_f32(dv).to_le_bytes());
+            for _ in 0..16 {
+                w_bytes.push((next_u() & 0xFF) as u8);
+            }
+        }
+        let x: Vec<f32> = (0..k)
+            .map(|_| (next_u() >> 8) as f32 / 16777216.0 - 0.5)
+            .collect();
+
+        // CPU reference: dequant → f32 matmul.
+        let mut w_f32 = vec![0f32; k * n];
+        crate::gguf::quant::dequant_q4_0(&w_bytes, &mut w_f32).expect("dequant");
+        let cpu = cpu_matmul_f32(&w_f32, &x, k, n);
+
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let gpu = pollster::block_on(matmul_q4_0(&ctx, &w_bytes, &x, k, n)).expect("gpu");
+
+        let mut max_abs = 0f32;
+        for i in 0..n {
+            max_abs = max_abs.max((gpu[i] - cpu[i]).abs());
+        }
+        eprintln!("q4_0 matmul GPU vs CPU: max_abs={max_abs:.3e}");
+        assert!(max_abs < 1e-4, "Q4_0 GPU vs CPU max_abs {max_abs} exceeds 1e-4");
     }
 
     /// Layer-0 fragment integration: run all four projection matmuls of layer 0

@@ -167,6 +167,53 @@ pub fn dequant_q6_k(src: &[u8], out: &mut [f32]) -> Result<()> {
 
 // ---------- F16 / F32 ----------
 
+// ---------- Q4_0 ----------
+//
+// The legacy ggml quant Google ships QAT (quantization-aware-trained) Gemma in.
+// Block layout (18 bytes total, 32 elements):
+//   d  : f16          (block scale)
+//   qs : 16 bytes     (32 × 4-bit quants — low nibbles are the first 16
+//                      elements, high nibbles the next 16; offset by -8)
+//
+// Mirrors `dequantize_row_q4_0` in ggml-quants.c (Ollama's build dep):
+//   y[l]      = (qs[l] & 0xF) - 8) * d
+//   y[l + 16] = (qs[l] >> 4)  - 8) * d
+
+pub const Q4_0_BLOCK_BYTES: usize = 18;
+/// Elements per Q4_0 block (legacy ggml `QK4_0`).
+pub const QK4_0: usize = 32;
+
+/// Dequantize a Q4_0-encoded byte stream into `out` (length = number of blocks × 32).
+pub fn dequant_q4_0(src: &[u8], out: &mut [f32]) -> Result<()> {
+    if !src.len().is_multiple_of(Q4_0_BLOCK_BYTES) {
+        return Err(RullamaError::Gguf(format!(
+            "Q4_0 source not multiple of {Q4_0_BLOCK_BYTES} bytes (got {})",
+            src.len()
+        )));
+    }
+    let nb = src.len() / Q4_0_BLOCK_BYTES;
+    if out.len() != nb * QK4_0 {
+        return Err(RullamaError::Gguf(format!(
+            "Q4_0 dest expected {} elements, got {}",
+            nb * QK4_0,
+            out.len()
+        )));
+    }
+    // Byte-indexed (not bytemuck cast) since 18-byte blocks aren't u32-aligned.
+    for bi in 0..nb {
+        let off = bi * Q4_0_BLOCK_BYTES;
+        let d = f16::from_bits(u16::from_le_bytes([src[off], src[off + 1]])).to_f32();
+        let qs = &src[off + 2..off + Q4_0_BLOCK_BYTES];
+        let dst = &mut out[bi * QK4_0..(bi + 1) * QK4_0];
+        for l in 0..16 {
+            let q = qs[l];
+            dst[l] = ((q & 0x0F) as f32 - 8.0) * d;
+            dst[l + 16] = ((q >> 4) as f32 - 8.0) * d;
+        }
+    }
+    Ok(())
+}
+
 /// Convert a BF16 byte stream (little-endian, high 16 bits of an IEEE-754 f32) to f32.
 pub fn bf16_to_f32(src: &[u8], out: &mut [f32]) -> Result<()> {
     if !src.len().is_multiple_of(2) {
@@ -240,8 +287,9 @@ pub fn dequant_into_f32(dtype: GgmlDtype, src: &[u8], out: &mut [f32]) -> Result
         GgmlDtype::BF16 => bf16_to_f32(src, out),
         GgmlDtype::Q4_K => dequant_q4_k(src, out),
         GgmlDtype::Q6_K => dequant_q6_k(src, out),
+        GgmlDtype::Q4_0 => dequant_q4_0(src, out),
         other => Err(RullamaError::Gguf(format!(
-            "dtype {other:?} is not in v1 dequant scope (only F32, F16, BF16, Q4_K, Q6_K)"
+            "dtype {other:?} is not in dequant scope (only F32, F16, BF16, Q4_0, Q4_K, Q6_K)"
         ))),
     }
 }
@@ -322,6 +370,41 @@ mod tests {
         for &v in &out {
             assert_eq!(v, 0.0, "dequant of all-zero quants must be zero");
         }
+    }
+
+    #[test]
+    fn q4_0_dequant_matches_ggml_oracle() {
+        // One block: d=2.0 (f16 0x4000). qs[0]=0x3A → low nibble 0xA=10, high 0x3=3.
+        // ggml: y[0]=(10-8)*2= 4,  y[16]=(3-8)*2=-10.  qs[15]=0x80 → low 0, high 8:
+        //       y[15]=(0-8)*2=-16, y[31]=(8-8)*2=0.  All other qs=0 → low/high 0 → -16.
+        let mut buf = vec![0u8; Q4_0_BLOCK_BYTES];
+        buf[0..2].copy_from_slice(&0x4000u16.to_le_bytes()); // d = 2.0
+        buf[2] = 0x3A; // qs[0]
+        buf[2 + 15] = 0x80; // qs[15]
+        let mut out = vec![999f32; QK4_0];
+        dequant_q4_0(&buf, &mut out).unwrap();
+        assert_eq!(out[0], 4.0);
+        assert_eq!(out[16], -10.0);
+        assert_eq!(out[15], -16.0);
+        assert_eq!(out[31], 0.0);
+        // every other low/high nibble is 0 → (0-8)*2 = -16
+        for l in 1..15 {
+            assert_eq!(out[l], -16.0, "low nibble {l}");
+            assert_eq!(out[l + 16], -16.0, "high nibble {l}");
+        }
+    }
+
+    #[test]
+    fn q4_0_into_f32_dispatch_routes() {
+        // Same block, but via the public dtype dispatcher used by the loader.
+        let mut buf = vec![0u8; Q4_0_BLOCK_BYTES];
+        buf[0..2].copy_from_slice(&0x3C00u16.to_le_bytes()); // d = 1.0
+        for b in &mut buf[2..] {
+            *b = 0x88; // every nibble = 8 → (8-8)*1 = 0
+        }
+        let mut out = vec![999f32; QK4_0];
+        dequant_into_f32(GgmlDtype::Q4_0, &buf, &mut out).unwrap();
+        assert!(out.iter().all(|&v| v == 0.0), "nibble 8 with offset -8 → 0");
     }
 
     #[test]

@@ -7,6 +7,8 @@
 use super::{BatchedMatmulParams, MatmulParams, cached_dispatch, write_uniform};
 use crate::backend::WgpuCtx;
 use crate::backend::pipelines::Pipelines;
+use crate::error::{Result, RullamaError};
+use crate::gguf::GgmlDtype;
 
 fn matmul_chained_inner(
     ctx: &WgpuCtx,
@@ -78,7 +80,52 @@ pub fn matmul_q6_k_chained(
     matmul_chained_inner(ctx, enc, &p.q6_k_matmul, "q6k_chain", w, x, y, k, n);
 }
 
-#[allow(dead_code)]
+/// Q4_0 weight matmul. Q4_0 is the legacy ggml quant Google ships QAT
+/// (quantization-aware-trained) Gemma in — e.g. `gemma4:e2b-it-qat`, whose
+/// attn / FFN weights are all Q4_0 (vs the Q4_K mix in the standard Q4_K_M).
+pub fn matmul_q4_0_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    w: &wgpu::Buffer,
+    x: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    k: usize,
+    n: usize,
+) {
+    matmul_chained_inner(ctx, enc, &p.q4_0_matmul, "q4_0_chain", w, x, y, k, n);
+}
+
+/// Dtype-routed weight matmul: picks the right dequant-matmul pipeline from the
+/// weight tensor's actual GGUF quant type. This is what lets one forward path
+/// serve both the standard Q4_K_M models (Q4_K / Q6_K weights) and the QAT
+/// models (Q4_0 weights) — the per-layer dispatch no longer assumes Q4_K.
+pub fn matmul_quant_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    w: &wgpu::Buffer,
+    x: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    k: usize,
+    n: usize,
+    dtype: GgmlDtype,
+) -> Result<()> {
+    match dtype {
+        GgmlDtype::Q4_K => matmul_q4_k_chained(ctx, p, enc, w, x, y, k, n),
+        GgmlDtype::Q6_K => matmul_q6_k_chained(ctx, p, enc, w, x, y, k, n),
+        GgmlDtype::Q4_0 => matmul_q4_0_chained(ctx, p, enc, w, x, y, k, n),
+        // QAT models leave a stray weight (e.g. a projection) in F16.
+        GgmlDtype::F16 => matmul_f16_chained(ctx, p, enc, w, x, y, k, n),
+        other => {
+            return Err(RullamaError::Inference(format!(
+                "weight matmul: unsupported quant dtype {other:?} (expected F16, Q4_0, Q4_K, or Q6_K)"
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub fn matmul_f16_chained(
     ctx: &WgpuCtx,
     p: &Pipelines,

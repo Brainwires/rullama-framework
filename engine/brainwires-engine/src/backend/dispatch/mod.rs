@@ -1353,7 +1353,6 @@ fn cached_dispatch<T: bytemuck::Pod>(
     cp.dispatch_workgroups(wg.0, wg.1, wg.2);
 }
 
-
 /// Chained RMSNorm. `weight` of None binds a dummy zero buffer + sets `has_weight=0`,
 /// matching the WGSL layout's optional-weight contract.
 pub fn rmsnorm_chained(
@@ -1572,7 +1571,6 @@ pub fn depthwise_conv1d_chained(
     cp.dispatch_workgroups(total.div_ceil(64), 1, 1);
 }
 
-
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct ScalePerInnerDimParams {
@@ -1666,7 +1664,6 @@ pub fn add_bias_batched_chained(
     cp.set_bind_group(0, &bg, &[]);
     cp.dispatch_workgroups(total.div_ceil(64), 1, 1);
 }
-
 
 /// Chained 2D convolution. Generic stride/padding so the same kernel handles
 /// vision patch embed (k=16, s=16, p=0) and audio SSCP (k=3, s=2, p=1).
@@ -1984,7 +1981,6 @@ pub fn rmsnorm_per_row_chained(
         (n_rows as u32, 1, 1),
     );
 }
-
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]

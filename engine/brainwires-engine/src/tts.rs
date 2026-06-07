@@ -153,7 +153,9 @@ impl KokoroTts {
             let lex = self.lex.as_ref().expect("lexicon not set");
             g2p(text, lex)
         };
-        let audio = self.synthesize_phonemes_native(&phonemes, voice, progress).await;
+        let audio = self
+            .synthesize_phonemes_native(&phonemes, voice, progress)
+            .await;
         (audio, oov)
     }
 
@@ -206,14 +208,19 @@ impl KokoroTts {
             );
         };
         let pcm = self.synthesize_native(&text, &voice, Some(&cb)).await.0;
-        let _ = on_progress.call2(&JsValue::NULL, &JsValue::from_f64(1.0), &JsValue::from_str("done"));
+        let _ = on_progress.call2(
+            &JsValue::NULL,
+            &JsValue::from_f64(1.0),
+            &JsValue::from_str("done"),
+        );
         pcm
     }
 
     /// Synthesize a phoneme string → Float32Array PCM (skips G2P).
     #[wasm_bindgen(js_name = synthesizePhonemes)]
     pub async fn synthesize_phonemes_js(&mut self, phonemes: String, voice: String) -> Vec<f32> {
-        self.synthesize_phonemes_native(&phonemes, &voice, None).await
+        self.synthesize_phonemes_native(&phonemes, &voice, None)
+            .await
     }
 
     #[wasm_bindgen(js_name = sampleRate, getter)]

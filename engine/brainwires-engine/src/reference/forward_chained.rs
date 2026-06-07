@@ -27,9 +27,9 @@ use crate::backend::dispatch::{
     attention_probs_chained, cross_entropy_backward_chained, geglu_backward_chained, geglu_chained,
     lora_matmul_col_chained, lora_matmul_fused_chained, lora_matmul_row_chained,
     lora_outer_add_chained, make_dummy_storage, matmul_q4_k_backward_input_chained,
-    matmul_q4_k_backward_input_tile_chained, matmul_q4_k_chained,
-    matmul_q6_k_backward_input_chained, matmul_q6_k_backward_input_tile_chained,
-    matmul_q6_k_chained, residual_add_chained, rmsnorm_backward_chained, rmsnorm_chained,
+    matmul_q4_k_backward_input_tile_chained, matmul_q6_k_backward_input_chained,
+    matmul_q6_k_backward_input_tile_chained, matmul_quant_chained, residual_add_chained,
+    rmsnorm_backward_chained, rmsnorm_chained,
     rmsnorm_per_row_backward_chained, rmsnorm_per_row_chained, rope_neox_backward_chained,
     rope_neox_chained, scale_chained, softcap_chained,
 };
@@ -2123,17 +2123,14 @@ impl Forward {
         let token_embd_dtype = wc.dtype("token_embd.weight")?;
 
         // PLE prep weights
-        let (ple_proj_w_buf, ple_proj_norm_w_buf, ple_proj_n) = if self.cfg.has_ple() {
-            if wc.dtype("per_layer_model_proj.weight")? != GgmlDtype::Q4_K {
-                return Err(RullamaError::Inference(
-                    "per_layer_model_proj expected Q4_K".into(),
-                ));
-            }
+        let (ple_proj_w_buf, ple_proj_norm_w_buf, ple_proj_n, ple_proj_dt) = if self.cfg.has_ple()
+        {
+            let proj_dt = wc.dtype("per_layer_model_proj.weight")?;
             let proj_w = wc.buffer_async("per_layer_model_proj.weight").await?;
             let proj_norm = wc.buffer_async("per_layer_proj_norm.weight").await?;
-            (Some(proj_w), Some(proj_norm), n_layers * ple_dim)
+            (Some(proj_w), Some(proj_norm), n_layers * ple_dim, Some(proj_dt))
         } else {
-            (None, None, 0)
+            (None, None, 0, None)
         };
 
         // ---- build the per-token CommandEncoder ----
@@ -2155,7 +2152,7 @@ impl Forward {
             let proj_w = ple_proj_w_buf.as_ref().unwrap();
             let proj_norm_w = ple_proj_norm_w_buf.as_ref().unwrap();
 
-            matmul_q4_k_chained(
+            matmul_quant_chained(
                 &self.ctx,
                 &self.pipes,
                 &mut enc,
@@ -2164,7 +2161,8 @@ impl Forward {
                 &self.per_layer_proj,
                 d_model,
                 ple_proj_n,
-            );
+                ple_proj_dt.unwrap(),
+            )?;
             scale_chained(
                 &self.ctx,
                 &self.pipes,
@@ -2499,24 +2497,25 @@ impl Forward {
             .buffer_async(&format!("{prefix}post_ffw_norm.weight"))
             .await?;
 
-        let q_w = self
-            .wcache
-            .buffer_async(&format!("{prefix}attn_q.weight"))
-            .await?;
+        // Weight quant dtype is read alongside each buffer so the matmul routes to
+        // the matching dequant kernel — Q4_K for standard Q4_K_M models, Q4_0 for
+        // the QAT models (gemma4:*-it-qat), Q6_K where present. (Previously q/k/o/
+        // gate/up assumed Q4_K, which is only true for the Q4_K_M mix.)
+        let q_name = format!("{prefix}attn_q.weight");
+        let q_w = self.wcache.buffer_async(&q_name).await?;
+        let q_dt = self.wcache.dtype(&q_name)?;
         let q_norm_w = self
             .wcache
             .buffer_async(&format!("{prefix}attn_q_norm.weight"))
             .await?;
-        let o_w = self
-            .wcache
-            .buffer_async(&format!("{prefix}attn_output.weight"))
-            .await?;
+        let o_name = format!("{prefix}attn_output.weight");
+        let o_w = self.wcache.buffer_async(&o_name).await?;
+        let o_dt = self.wcache.dtype(&o_name)?;
 
-        let (k_w, k_norm_w, v_w, v_w_dtype) = if donor.is_none() {
-            let kw = self
-                .wcache
-                .buffer_async(&format!("{prefix}attn_k.weight"))
-                .await?;
+        let (k_w, k_norm_w, v_w, v_w_dtype, k_w_dtype) = if donor.is_none() {
+            let k_name = format!("{prefix}attn_k.weight");
+            let kw = self.wcache.buffer_async(&k_name).await?;
+            let k_dt = self.wcache.dtype(&k_name)?;
             let knw = self
                 .wcache
                 .buffer_async(&format!("{prefix}attn_k_norm.weight"))
@@ -2524,40 +2523,36 @@ impl Forward {
             let v_name = format!("{prefix}attn_v.weight");
             let vw = self.wcache.buffer_async(&v_name).await?;
             let dt = self.wcache.dtype(&v_name)?;
-            (Some(kw), Some(knw), Some(vw), Some(dt))
+            (Some(kw), Some(knw), Some(vw), Some(dt), Some(k_dt))
         } else {
-            (None, None, None, None)
+            (None, None, None, None, None)
         };
 
-        let gate_w = self
-            .wcache
-            .buffer_async(&format!("{prefix}ffn_gate.weight"))
-            .await?;
-        let up_w = self
-            .wcache
-            .buffer_async(&format!("{prefix}ffn_up.weight"))
-            .await?;
+        let gate_name = format!("{prefix}ffn_gate.weight");
+        let gate_w = self.wcache.buffer_async(&gate_name).await?;
+        let gate_dt = self.wcache.dtype(&gate_name)?;
+        let up_name = format!("{prefix}ffn_up.weight");
+        let up_w = self.wcache.buffer_async(&up_name).await?;
+        let up_dt = self.wcache.dtype(&up_name)?;
         let down_name = format!("{prefix}ffn_down.weight");
         let down_w = self.wcache.buffer_async(&down_name).await?;
         let down_dtype = self.wcache.dtype(&down_name)?;
 
         // PLE-injection weights (only when has_ple)
-        let (inp_gate_w, proj_w, post_norm_w) = if self.cfg.has_ple() {
-            let a = self
-                .wcache
-                .buffer_async(&format!("{prefix}inp_gate.weight"))
-                .await?;
-            let b = self
-                .wcache
-                .buffer_async(&format!("{prefix}proj.weight"))
-                .await?;
+        let (inp_gate_w, proj_w, post_norm_w, inp_gate_dt, proj_dt) = if self.cfg.has_ple() {
+            let inp_gate_name = format!("{prefix}inp_gate.weight");
+            let a = self.wcache.buffer_async(&inp_gate_name).await?;
+            let a_dt = self.wcache.dtype(&inp_gate_name)?;
+            let proj_name = format!("{prefix}proj.weight");
+            let b = self.wcache.buffer_async(&proj_name).await?;
+            let b_dt = self.wcache.dtype(&proj_name)?;
             let c = self
                 .wcache
                 .buffer_async(&format!("{prefix}post_norm.weight"))
                 .await?;
-            (Some(a), Some(b), Some(c))
+            (Some(a), Some(b), Some(c), Some(a_dt), Some(b_dt))
         } else {
-            (None, None, None)
+            (None, None, None, None, None)
         };
 
         let factors_w = if matches!(kind, LayerKind::Global) {
@@ -2595,7 +2590,7 @@ impl Forward {
         }
 
         // Q/K/V projections from norm_x
-        matmul_q4_k_chained(
+        matmul_quant_chained(
             &self.ctx,
             &self.pipes,
             enc,
@@ -2604,7 +2599,8 @@ impl Forward {
             &self.q,
             d_model,
             n_heads * head_dim,
-        );
+            q_dt,
+        )?;
 
         // ---- LoRA forward correction (q) — fused ----
         // Fused into ONE dispatch: z=A·norm_x AND self.q+=scale·B·z.
@@ -2688,8 +2684,9 @@ impl Forward {
             let knw = k_norm_w.as_ref().unwrap();
             let vw = v_w.as_ref().unwrap();
             let vdt = v_w_dtype.unwrap();
+            let kdt = k_w_dtype.unwrap();
 
-            matmul_q4_k_chained(
+            matmul_quant_chained(
                 &self.ctx,
                 &self.pipes,
                 enc,
@@ -2698,7 +2695,8 @@ impl Forward {
                 &self.k,
                 d_model,
                 n_kv_heads * head_dim,
-            );
+                kdt,
+            )?;
 
             // ---- LoRA forward correction (k) — fused ----
             if let Some(slot) = loras.and_then(|l| l.k.as_ref()) {
@@ -2757,33 +2755,17 @@ impl Forward {
                 rope_base,
             );
 
-            match vdt {
-                GgmlDtype::Q6_K => matmul_q6_k_chained(
-                    &self.ctx,
-                    &self.pipes,
-                    enc,
-                    vw,
-                    &self.norm_x,
-                    &self.v,
-                    d_model,
-                    n_kv_heads * head_dim,
-                ),
-                GgmlDtype::Q4_K => matmul_q4_k_chained(
-                    &self.ctx,
-                    &self.pipes,
-                    enc,
-                    vw,
-                    &self.norm_x,
-                    &self.v,
-                    d_model,
-                    n_kv_heads * head_dim,
-                ),
-                other => {
-                    return Err(RullamaError::Inference(format!(
-                        "attn_v dtype {other:?} unsupported"
-                    )));
-                }
-            }
+            matmul_quant_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                vw,
+                &self.norm_x,
+                &self.v,
+                d_model,
+                n_kv_heads * head_dim,
+                vdt,
+            )?;
 
             // ---- LoRA forward correction (v) — fused ----
             if let Some(slot) = loras.and_then(|l| l.v.as_ref()) {
@@ -2888,7 +2870,7 @@ impl Forward {
         }
 
         // attn_proj = matmul(attn_out_buf, attn_output.weight)
-        matmul_q4_k_chained(
+        matmul_quant_chained(
             &self.ctx,
             &self.pipes,
             enc,
@@ -2897,7 +2879,8 @@ impl Forward {
             &self.attn_proj,
             n_heads * head_dim,
             d_model,
-        );
+            o_dt,
+        )?;
 
         // ---- LoRA forward correction (o) — fused ----
         if let Some(slot) = loras.and_then(|l| l.o.as_ref()) {
@@ -2986,7 +2969,7 @@ impl Forward {
             );
         }
 
-        matmul_q4_k_chained(
+        matmul_quant_chained(
             &self.ctx,
             &self.pipes,
             enc,
@@ -2995,7 +2978,8 @@ impl Forward {
             &self.ffn_gate,
             d_model,
             ffn_n,
-        );
+            gate_dt,
+        )?;
 
         // ---- LoRA forward correction (ffn_gate) — fused ----
         if let Some(slot) = loras.and_then(|l| l.ffn_gate.as_ref()) {
@@ -3016,7 +3000,7 @@ impl Forward {
             );
         }
 
-        matmul_q4_k_chained(
+        matmul_quant_chained(
             &self.ctx,
             &self.pipes,
             enc,
@@ -3025,7 +3009,8 @@ impl Forward {
             &self.ffn_up,
             d_model,
             ffn_n,
-        );
+            up_dt,
+        )?;
 
         // ---- LoRA forward correction (ffn_up) — fused ----
         if let Some(slot) = loras.and_then(|l| l.ffn_up.as_ref()) {
@@ -3080,33 +3065,17 @@ impl Forward {
             );
         }
 
-        match down_dtype {
-            GgmlDtype::Q6_K => matmul_q6_k_chained(
-                &self.ctx,
-                &self.pipes,
-                enc,
-                &down_w,
-                &self.ffn_act,
-                &self.ffn_out,
-                ffn_n,
-                d_model,
-            ),
-            GgmlDtype::Q4_K => matmul_q4_k_chained(
-                &self.ctx,
-                &self.pipes,
-                enc,
-                &down_w,
-                &self.ffn_act,
-                &self.ffn_out,
-                ffn_n,
-                d_model,
-            ),
-            other => {
-                return Err(RullamaError::Inference(format!(
-                    "ffn_down dtype {other:?} unsupported"
-                )));
-            }
-        }
+        matmul_quant_chained(
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &down_w,
+            &self.ffn_act,
+            &self.ffn_out,
+            ffn_n,
+            d_model,
+            down_dtype,
+        )?;
 
         // ---- LoRA forward correction (ffn_down) — fused ----
         if let Some(slot) = loras.and_then(|l| l.ffn_down.as_ref()) {
@@ -3166,7 +3135,7 @@ impl Forward {
             let ple_dim = self.cfg.ple_dim as usize;
 
             // ple_state = matmul(hidden, inp_gate_w) [d_model -> ple_dim]
-            matmul_q4_k_chained(
+            matmul_quant_chained(
                 &self.ctx,
                 &self.pipes,
                 enc,
@@ -3175,7 +3144,8 @@ impl Forward {
                 &self.ple_state,
                 d_model,
                 ple_dim,
-            );
+                inp_gate_dt.unwrap(),
+            )?;
 
             // ---- CAPTURE: ple_state (input gate branch to PLE GEGLU) ----
             if let Some(cap) = capture {
@@ -3222,7 +3192,7 @@ impl Forward {
             }
 
             // projected = matmul(ple_act, proj_w) [ple_dim -> d_model]
-            matmul_q4_k_chained(
+            matmul_quant_chained(
                 &self.ctx,
                 &self.pipes,
                 enc,
@@ -3231,7 +3201,8 @@ impl Forward {
                 &self.ple_proj,
                 ple_dim,
                 d_model,
-            );
+                proj_dt.unwrap(),
+            )?;
 
             // ---- CAPTURE: ple_proj (input to PLE rmsnorm) ----
             if let Some(cap) = capture {
@@ -3310,6 +3281,7 @@ fn run_matmul_into_buf(
     let pipeline = match dtype {
         GgmlDtype::Q4_K => &pipes.q4_k_matmul,
         GgmlDtype::Q6_K => &pipes.q6_k_matmul,
+        GgmlDtype::Q4_0 => &pipes.q4_0_matmul,
         other => {
             return Err(RullamaError::Inference(format!(
                 "output proj dtype {other:?} not supported"
