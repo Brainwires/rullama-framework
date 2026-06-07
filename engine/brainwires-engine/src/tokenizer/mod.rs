@@ -14,5 +14,7 @@
 
 pub mod bpe;
 pub mod special;
+pub mod spm;
 
 pub use bpe::BpeTokenizer;
+pub use spm::SpmTokenizer;

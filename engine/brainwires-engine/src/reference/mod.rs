@@ -7,6 +7,7 @@
 //! Built only when the `cpu-reference` cargo feature is enabled, to keep WASM bundle
 //! size small.
 
+pub mod embed;
 pub mod forward;
 pub mod forward_chained;
 pub mod forward_gpu;

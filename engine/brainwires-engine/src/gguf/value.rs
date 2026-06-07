@@ -155,6 +155,21 @@ impl GgufValue {
         })
     }
 
+    /// Decode a float array (e.g. `tokenizer.ggml.scores`, the SPM unigram
+    /// log-probabilities). Integer arrays are widened to f32 as a convenience.
+    pub fn as_f32_array(&self) -> Result<Vec<f32>> {
+        Ok(match self {
+            Self::ArrayF32(v) => v.clone(),
+            Self::ArrayU32(v) => v.iter().map(|x| *x as f32).collect(),
+            Self::ArrayI32(v) => v.iter().map(|x| *x as f32).collect(),
+            other => {
+                return Err(RullamaError::Gguf(format!(
+                    "expected f32 array, got {other:?}"
+                )));
+            }
+        })
+    }
+
     pub fn as_bool_array(&self) -> Result<&[bool]> {
         match self {
             Self::ArrayBool(v) => Ok(v.as_slice()),
