@@ -15,6 +15,7 @@
 #![allow(dead_code)]
 
 pub mod forward;
+pub mod gpu;
 
 use std::sync::Arc;
 
