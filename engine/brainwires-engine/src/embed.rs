@@ -1,12 +1,12 @@
 //! JS-facing embedding surface: `EmbeddingModel` — load an EmbeddingGemma
 //! GGUF, embed text → an L2-normalized float vector (Matryoshka-truncatable).
 //!
-//! Mirrors `tts.rs`'s `KokoroTts` loading pattern: the PWA downloads +
-//! OPFS-caches the GGUF and passes the bytes; the model loads whole
-//! in-memory. The forward currently runs on the CPU oracle
-//! (`reference::embed`) — correct and wasm-compatible; a GPU forward is a
-//! follow-up perf optimization (the CPU path is fine for queries + small
-//! documents, slower for large batches).
+//! Mirrors `tts.rs`'s `KokoroTts`: the PWA downloads + OPFS-caches the GGUF
+//! and passes the bytes; the model loads whole in-memory and inits a GPU
+//! context. The forward is the hybrid GPU path (`reference::embed::gpu`) —
+//! matmuls on the GPU, norms/attention/pool in CPU f32 — bit-identical to
+//! the CPU oracle (`reference::embed::forward`), which is itself cos 0.9997
+//! vs Ollama. `load`/`embed`/`embedBatch` are async (GPU readback).
 //!
 //! Tokenization uses the SentencePiece unigram tokenizer (`tokenizer::spm`)
 //! because EmbeddingGemma's GGUF ships scores, not BPE merges.
