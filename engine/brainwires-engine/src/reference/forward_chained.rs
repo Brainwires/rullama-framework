@@ -29,9 +29,9 @@ use crate::backend::dispatch::{
     lora_outer_add_chained, make_dummy_storage, matmul_q4_k_backward_input_chained,
     matmul_q4_k_backward_input_tile_chained, matmul_q6_k_backward_input_chained,
     matmul_q6_k_backward_input_tile_chained, matmul_quant_chained, residual_add_chained,
-    rmsnorm_backward_chained, rmsnorm_chained,
-    rmsnorm_per_row_backward_chained, rmsnorm_per_row_chained, rope_neox_backward_chained,
-    rope_neox_chained, scale_chained, softcap_chained,
+    rmsnorm_backward_chained, rmsnorm_chained, rmsnorm_per_row_backward_chained,
+    rmsnorm_per_row_chained, rope_neox_backward_chained, rope_neox_chained, scale_chained,
+    softcap_chained,
 };
 
 /// Activation capture buffers for one transformer layer. Used by the
@@ -2123,12 +2123,16 @@ impl Forward {
         let token_embd_dtype = wc.dtype("token_embd.weight")?;
 
         // PLE prep weights
-        let (ple_proj_w_buf, ple_proj_norm_w_buf, ple_proj_n, ple_proj_dt) = if self.cfg.has_ple()
-        {
+        let (ple_proj_w_buf, ple_proj_norm_w_buf, ple_proj_n, ple_proj_dt) = if self.cfg.has_ple() {
             let proj_dt = wc.dtype("per_layer_model_proj.weight")?;
             let proj_w = wc.buffer_async("per_layer_model_proj.weight").await?;
             let proj_norm = wc.buffer_async("per_layer_proj_norm.weight").await?;
-            (Some(proj_w), Some(proj_norm), n_layers * ple_dim, Some(proj_dt))
+            (
+                Some(proj_w),
+                Some(proj_norm),
+                n_layers * ple_dim,
+                Some(proj_dt),
+            )
         } else {
             (None, None, 0, None)
         };

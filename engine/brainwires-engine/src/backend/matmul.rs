@@ -441,7 +441,10 @@ mod tests {
             max_abs = max_abs.max((gpu[i] - cpu[i]).abs());
         }
         eprintln!("q4_0 matmul GPU vs CPU: max_abs={max_abs:.3e}");
-        assert!(max_abs < 1e-4, "Q4_0 GPU vs CPU max_abs {max_abs} exceeds 1e-4");
+        assert!(
+            max_abs < 1e-4,
+            "Q4_0 GPU vs CPU max_abs {max_abs} exceeds 1e-4"
+        );
     }
 
     /// Layer-0 fragment integration: run all four projection matmuls of layer 0
