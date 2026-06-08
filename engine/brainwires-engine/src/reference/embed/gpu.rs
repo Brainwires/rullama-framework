@@ -1,38 +1,37 @@
-//! Hybrid GPU forward for EmbeddingGemma.
+//! Hybrid, streaming GPU forward for EmbeddingGemma.
 //!
-//! The matmuls (≈90% of the FLOPs) run on the GPU via the existing
-//! `matmul_bf16_batched_chained` kernel, batched over all T positions; the
-//! norms / RoPE / attention / pooling / dense head stay in CPU f32 (the
-//! validated oracle code in `forward.rs`). This is far less code + risk than
-//! a full buffer-chained bidirectional WGSL forward, and still moves the
-//! dominant cost onto the GPU.
+//! The matmuls (≈90% of the FLOPs) run on the GPU via
+//! `matmul_bf16_batched_chained`, batched over all T positions; the norms /
+//! RoPE / attention / pooling / dense head stay in CPU f32 (the validated
+//! oracle math in `forward.rs`). Bit-identical to the CPU oracle.
 //!
-//! Weights are uploaded once and cached for the duration of the call. The
-//! method is async because GPU readback is.
-
-use std::collections::HashMap;
-
-use wgpu::util::DeviceExt;
+//! **Streaming (iPhone-critical).** Weights are accessed through a
+//! [`WeightCache`]: matmul weights are fetched via `buffer_async` (the temp
+//! `Vec<u8>` is dropped the instant it reaches the GPU buffer, which is then
+//! cached across calls), and `token_embd` — ~400 MB of the 621 MB GGUF — is
+//! never made resident: only the per-token row is range-fetched
+//! (`load_row_async`). So the wasm linear-memory peak is one tensor, not the
+//! whole file, and the GPU holds only the ~220 MB of layer weights.
 
 use super::{EmbedModel, LayerKind};
-use crate::backend::dispatch::matmul_bf16_batched_chained;
-use crate::backend::dispatch::{make_storage_rw, read_back_f32, write_storage_f32};
+use crate::backend::WeightCache;
+use crate::backend::dispatch::{
+    make_storage_rw, matmul_bf16_batched_chained, read_back_f32, write_storage_f32,
+};
 use crate::backend::{Pipelines, WgpuCtx};
 use crate::error::Result;
 use crate::reference::ops::{geglu_split, rmsnorm, rope_neox, scale, softmax};
 
-/// GPU weight-buffer cache (tensor name → uploaded bf16 buffer), valid for
-/// one `embed_ids_gpu` call.
-type WBufCache = HashMap<String, wgpu::Buffer>;
-
 impl EmbedModel {
-    /// GPU-accelerated embedding. Same math as [`EmbedModel::embed_ids`] but
-    /// with the linear layers on the GPU. Returns the L2-normalized,
-    /// Matryoshka-truncated vector.
+    /// Streaming GPU embedding. Weights flow through `wcache` (GPU-resident,
+    /// cached across calls); `token_embd` rows are range-streamed. Returns the
+    /// L2-normalized, Matryoshka-truncated vector. Bit-identical to the CPU
+    /// oracle [`EmbedModel::embed_ids`].
     pub async fn embed_ids_gpu(
         &self,
         ctx: &WgpuCtx,
         pipes: &Pipelines,
+        wcache: &WeightCache,
         input_ids: &[u32],
         target_dim: usize,
     ) -> Result<Vec<f32>> {
@@ -40,13 +39,15 @@ impl EmbedModel {
         let t = input_ids.len();
         let d = cfg.d_model as usize;
         let eps = cfg.rms_eps;
-        let mut wc: WBufCache = HashMap::new();
 
-        // ---- token embeddings, scaled by sqrt(d_model) ----
+        // ---- token embeddings (per-row range fetch), scaled by sqrt(d_model) ----
         let embd_scale = (d as f32).sqrt();
         let mut hidden = vec![0f32; t * d];
         for (p, &id) in input_ids.iter().enumerate() {
-            let row = self.weights.load_row("token_embd.weight", id as usize)?;
+            let row = self
+                .weights
+                .load_row_async("token_embd.weight", id as usize)
+                .await?;
             let dst = &mut hidden[p * d..(p + 1) * d];
             for k in 0..d {
                 dst[k] = row[k] * embd_scale;
@@ -54,12 +55,12 @@ impl EmbedModel {
         }
 
         for layer in 0..cfg.n_layers {
-            self.layer_gpu(ctx, pipes, &mut wc, layer, t, &mut hidden)
+            self.layer_gpu(ctx, pipes, wcache, layer, t, &mut hidden)
                 .await?;
         }
 
         // ---- final output norm (per token) ----
-        let out_norm = self.weights.load("output_norm.weight")?;
+        let out_norm = self.weights.load_async("output_norm.weight").await?;
         let mut normed = vec![0f32; t * d];
         for p in 0..t {
             rmsnorm(
@@ -80,15 +81,13 @@ impl EmbedModel {
         scale(&mut pooled, 1.0 / t as f32);
 
         // ---- dense head (GPU matmuls), then L2 normalize ----
-        let w0_name = "dense.0.weight";
-        let inter = self.weights.reader().tensor(w0_name)?.dims[1] as usize;
+        let inter = wcache.reader().tensor("dense.0.weight")?.dims[1] as usize;
         let mid = self
-            .gpu_matmul(ctx, pipes, &mut wc, w0_name, &pooled, d, inter, 1)
+            .gpu_matmul(ctx, pipes, wcache, "dense.0.weight", &pooled, d, inter, 1)
             .await?;
-        let w1_name = "dense.1.weight";
-        let out_d = self.weights.reader().tensor(w1_name)?.dims[1] as usize;
+        let out_d = wcache.reader().tensor("dense.1.weight")?.dims[1] as usize;
         let mut projected = self
-            .gpu_matmul(ctx, pipes, &mut wc, w1_name, &mid, inter, out_d, 1)
+            .gpu_matmul(ctx, pipes, wcache, "dense.1.weight", &mid, inter, out_d, 1)
             .await?;
 
         let keep = if target_dim == 0 {
@@ -105,7 +104,7 @@ impl EmbedModel {
         &self,
         ctx: &WgpuCtx,
         pipes: &Pipelines,
-        wc: &mut WBufCache,
+        wcache: &WeightCache,
         layer: u32,
         t: usize,
         hidden: &mut [f32],
@@ -120,7 +119,10 @@ impl EmbedModel {
 
         // ===== attention =====
         let residual = hidden.to_vec();
-        let attn_norm = self.weights.load(&format!("{prefix}attn_norm.weight"))?;
+        let attn_norm = self
+            .weights
+            .load_async(&format!("{prefix}attn_norm.weight"))
+            .await?;
         let mut x = vec![0f32; t * d];
         for p in 0..t {
             rmsnorm(
@@ -131,12 +133,11 @@ impl EmbedModel {
             );
         }
 
-        // Q/K/V projections on GPU (batched over T).
         let q = self
             .gpu_matmul(
                 ctx,
                 pipes,
-                wc,
+                wcache,
                 &format!("{prefix}attn_q.weight"),
                 &x,
                 d,
@@ -148,7 +149,7 @@ impl EmbedModel {
             .gpu_matmul(
                 ctx,
                 pipes,
-                wc,
+                wcache,
                 &format!("{prefix}attn_k.weight"),
                 &x,
                 d,
@@ -160,7 +161,7 @@ impl EmbedModel {
             .gpu_matmul(
                 ctx,
                 pipes,
-                wc,
+                wcache,
                 &format!("{prefix}attn_v.weight"),
                 &x,
                 d,
@@ -169,9 +170,14 @@ impl EmbedModel {
             )
             .await?;
 
-        // QK-norm + RoPE (CPU), then bidirectional attention (CPU).
-        let q_norm = self.weights.load(&format!("{prefix}attn_q_norm.weight"))?;
-        let k_norm = self.weights.load(&format!("{prefix}attn_k_norm.weight"))?;
+        let q_norm = self
+            .weights
+            .load_async(&format!("{prefix}attn_q_norm.weight"))
+            .await?;
+        let k_norm = self
+            .weights
+            .load_async(&format!("{prefix}attn_k_norm.weight"))
+            .await?;
         let mut q_all = vec![0f32; t * n_heads * hd];
         let mut k_all = vec![0f32; t * n_kv * hd];
         let base = cfg.rope_base;
@@ -248,12 +254,11 @@ impl EmbedModel {
             }
         }
 
-        // output projection (GPU) + post-attn norm + residual (CPU).
         let attn_out = self
             .gpu_matmul(
                 ctx,
                 pipes,
-                wc,
+                wcache,
                 &format!("{prefix}attn_output.weight"),
                 &ctx_attn,
                 n_heads * hd,
@@ -263,7 +268,8 @@ impl EmbedModel {
             .await?;
         let post_attn = self
             .weights
-            .load(&format!("{prefix}post_attention_norm.weight"))?;
+            .load_async(&format!("{prefix}post_attention_norm.weight"))
+            .await?;
         for p in 0..t {
             let mut h2 = vec![0f32; d];
             rmsnorm(
@@ -280,7 +286,10 @@ impl EmbedModel {
         // ===== MLP =====
         let residual = hidden.to_vec();
         let ffn_n = cfg.ffn as usize;
-        let ffn_norm = self.weights.load(&format!("{prefix}ffn_norm.weight"))?;
+        let ffn_norm = self
+            .weights
+            .load_async(&format!("{prefix}ffn_norm.weight"))
+            .await?;
         let mut xn = vec![0f32; t * d];
         for p in 0..t {
             rmsnorm(
@@ -294,7 +303,7 @@ impl EmbedModel {
             .gpu_matmul(
                 ctx,
                 pipes,
-                wc,
+                wcache,
                 &format!("{prefix}ffn_gate.weight"),
                 &xn,
                 d,
@@ -306,7 +315,7 @@ impl EmbedModel {
             .gpu_matmul(
                 ctx,
                 pipes,
-                wc,
+                wcache,
                 &format!("{prefix}ffn_up.weight"),
                 &xn,
                 d,
@@ -326,7 +335,7 @@ impl EmbedModel {
             .gpu_matmul(
                 ctx,
                 pipes,
-                wc,
+                wcache,
                 &format!("{prefix}ffn_down.weight"),
                 &act,
                 ffn_n,
@@ -336,7 +345,8 @@ impl EmbedModel {
             .await?;
         let post_ffw = self
             .weights
-            .load(&format!("{prefix}post_ffw_norm.weight"))?;
+            .load_async(&format!("{prefix}post_ffw_norm.weight"))
+            .await?;
         for p in 0..t {
             let mut h3 = vec![0f32; d];
             rmsnorm(&mlp_out[p * d..(p + 1) * d], Some(&post_ffw), eps, &mut h3);
@@ -347,36 +357,20 @@ impl EmbedModel {
         Ok(())
     }
 
-    /// `y[batch, n] = x[batch, k] · W[n, k]^T` with W a cached bf16 GPU buffer.
+    /// `y[batch, n] = x[batch, k] · W[n, k]^T` with W a streamed + cached
+    /// bf16 GPU buffer (fetched once per tensor, reused across calls).
     async fn gpu_matmul(
         &self,
         ctx: &WgpuCtx,
         pipes: &Pipelines,
-        wc: &mut WBufCache,
+        wcache: &WeightCache,
         weight_name: &str,
         x: &[f32],
         k: usize,
         n: usize,
         batch: usize,
     ) -> Result<Vec<f32>> {
-        // Upload (and cache) the bf16 weight buffer.
-        if !wc.contains_key(weight_name) {
-            let bytes = self.weights.reader().tensor_bytes(weight_name)?;
-            // Pad to a 4-byte multiple (the bf16 kernel binds array<u32>).
-            let mut padded = bytes.to_vec();
-            while padded.len() % 4 != 0 {
-                padded.push(0);
-            }
-            let buf = ctx
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some(weight_name),
-                    contents: &padded,
-                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                });
-            wc.insert(weight_name.to_string(), buf);
-        }
-        let w = wc.get(weight_name).unwrap();
+        let w = wcache.buffer_async(weight_name).await?;
         let xb = write_storage_f32(&ctx.device, &ctx.queue, "embed.x", x);
         let yb = make_storage_rw(&ctx.device, "embed.y", batch * n);
         let read = ctx.device.create_buffer(&wgpu::BufferDescriptor {
@@ -390,7 +384,7 @@ impl EmbedModel {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("embed.mm"),
             });
-        matmul_bf16_batched_chained(ctx, pipes, &mut enc, w, &xb, &yb, k, n, batch);
+        matmul_bf16_batched_chained(ctx, pipes, &mut enc, &w, &xb, &yb, k, n, batch);
         enc.copy_buffer_to_buffer(&yb, 0, &read, 0, (batch * n * 4) as u64);
         ctx.queue.submit(Some(enc.finish()));
         read_back_f32(&ctx.device, &read).await

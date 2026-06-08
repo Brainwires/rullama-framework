@@ -100,9 +100,16 @@ fn main() -> ExitCode {
     // GPU-vs-CPU parity (the load-bearing check). RULLAMA_EMBED_GPU=1.
     if env::var("RULLAMA_EMBED_GPU").is_ok() {
         let gpu = pollster::block_on(async {
+            use std::sync::Arc;
             let ctx = rullama::backend::WgpuCtx::new().await?;
             let pipes = rullama::backend::Pipelines::new(&ctx.device);
-            model.embed_ids_gpu(&ctx, &pipes, &ids, 0).await
+            let wcache = rullama::backend::WeightCache::new(
+                model.weights.reader_arc(),
+                ctx.device.clone(),
+                ctx.queue.clone(),
+                Arc::clone(&ctx.bind_cache),
+            );
+            model.embed_ids_gpu(&ctx, &pipes, &wcache, &ids, 0).await
         });
         match gpu {
             Ok(g) => {
