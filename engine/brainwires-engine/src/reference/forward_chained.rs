@@ -2525,9 +2525,15 @@ impl Forward {
                 .buffer_async(&format!("{prefix}attn_k_norm.weight"))
                 .await?;
             let v_name = format!("{prefix}attn_v.weight");
-            let vw = self.wcache.buffer_async(&v_name).await?;
-            let dt = self.wcache.dtype(&v_name)?;
-            (Some(kw), Some(knw), Some(vw), Some(dt), Some(k_dt))
+            // Larger Gemma 4 variants (12b) ship NO attn_v on global layers —
+            // those reuse the raw K projection as V (handled at the matmul site
+            // below). buffer_opt_async returns None there.
+            let vw = self.wcache.buffer_opt_async(&v_name).await?;
+            let dt = match &vw {
+                Some(_) => Some(self.wcache.dtype(&v_name)?),
+                None => None,
+            };
+            (Some(kw), Some(knw), vw, dt, Some(k_dt))
         } else {
             (None, None, None, None, None)
         };
@@ -2686,8 +2692,6 @@ impl Forward {
         if donor.is_none() {
             let kw = k_w.as_ref().unwrap();
             let knw = k_norm_w.as_ref().unwrap();
-            let vw = v_w.as_ref().unwrap();
-            let vdt = v_w_dtype.unwrap();
             let kdt = k_w_dtype.unwrap();
 
             matmul_quant_chained(
@@ -2759,17 +2763,32 @@ impl Forward {
                 rope_base,
             );
 
-            matmul_quant_chained(
-                &self.ctx,
-                &self.pipes,
-                enc,
-                vw,
-                &self.norm_x,
-                &self.v,
-                d_model,
-                n_kv_heads * head_dim,
-                vdt,
-            )?;
+            // Value projection. Global layers in the 12b ship no attn_v — they
+            // reuse the raw K projection (self.k, before K-norm) as V, per the
+            // Ollama reference (model_text.go: "K=V: use raw K projection
+            // (before K norm) as V"). The unweighted V-norm below then applies
+            // to it exactly as it would to a real V.
+            if let (Some(vw), Some(vdt)) = (v_w.as_ref(), v_w_dtype) {
+                matmul_quant_chained(
+                    &self.ctx,
+                    &self.pipes,
+                    enc,
+                    vw,
+                    &self.norm_x,
+                    &self.v,
+                    d_model,
+                    n_kv_heads * head_dim,
+                    vdt,
+                )?;
+            } else {
+                enc.copy_buffer_to_buffer(
+                    &self.k,
+                    0,
+                    &self.v,
+                    0,
+                    (n_kv_heads * head_dim * 4) as u64,
+                );
+            }
 
             // ---- LoRA forward correction (v) — fused ----
             if let Some(slot) = loras.and_then(|l| l.v.as_ref()) {

@@ -87,14 +87,26 @@ impl WeightCache {
 
     /// Internal: create+upload a single GPU buffer from a slice.
     fn upload(&self, name: &str, bytes: &[u8]) -> wgpu::Buffer {
+        // write_buffer requires a COPY_BUFFER_ALIGNMENT (4-byte) multiple. Most
+        // tensors are already aligned, but a row-aligned Q6_K tile can land on a
+        // non-/4 boundary (row_bytes = (k/256)*210 is odd-multiple when k/256 is
+        // odd — e.g. the 12b token_embd, d_model 3840 → 3150 B/row → an 8,388,450 B
+        // tile). Pad up; the extra bytes are past the last block and never read.
+        let padded_len = (bytes.len() + 3) & !3;
         let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(name),
-            size: bytes.len() as u64,
+            size: padded_len as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        self.queue.write_buffer(&buf, 0, bytes);
-        crate::backend::gpu_mem::record_alloc(&format!("weight:{name}"), bytes.len() as u64);
+        if padded_len == bytes.len() {
+            self.queue.write_buffer(&buf, 0, bytes);
+        } else {
+            let mut padded = bytes.to_vec();
+            padded.resize(padded_len, 0);
+            self.queue.write_buffer(&buf, 0, &padded);
+        }
+        crate::backend::gpu_mem::record_alloc(&format!("weight:{name}"), padded_len as u64);
         buf
     }
 
@@ -492,14 +504,23 @@ impl WeightCache {
         // gpu_mem `w` counter climb one tile per call with no balancing free — the false
         // "+315 MiB/token" the iPhone training beacon showed (the GPU memory itself is freed fine by
         // the caller's invalidate + destroy). These tiles are intentionally untracked.
+        // write_buffer requires a COPY_BUFFER_ALIGNMENT (4-byte) multiple. A
+        // row-aligned tile can land non-4-aligned when row_bytes isn't /4 — e.g.
+        // Q6_K row_bytes = (k/256)*210 is odd-multiple-of-210 when k/256 is odd
+        // (the 12b's token_embd, d_model 3840 → 3150 B/row → an 8,388,450 B tile).
+        // Pad up; the extra bytes sit past the last block of the last row and are
+        // never read by the matmul kernel.
+        let mut data = chunk;
+        let padded_len = (data.len() + 3) & !3;
+        data.resize(padded_len, 0);
         let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("weight_cache.stream_tile"),
-            size: chunk.len() as u64,
+            size: data.len() as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        self.queue.write_buffer(&buf, 0, &chunk);
-        drop(chunk);
+        self.queue.write_buffer(&buf, 0, &data);
+        drop(data);
         Ok(TiledTensor {
             buffer: buf,
             row_start,

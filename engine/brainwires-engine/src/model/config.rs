@@ -24,8 +24,8 @@ pub struct Gemma4Config {
 
     // ---- attention ----
     pub n_heads: u32,
-    /// SWA layers' KV head count (`gemma4.attention.head_count_kv`). Some GGUFs use a
-    /// per-layer array; for now we accept the scalar form.
+    /// SWA layers' KV head count (`gemma4.attention.head_count_kv`). The 12b stores
+    /// this as a per-layer array (8 on SWA layers, 1 on global) — parsed below.
     pub n_kv_heads_swa: u32,
     /// Global layers' KV head count, if explicitly differentiated. Falls back to
     /// `n_kv_heads_swa` when the optional key is absent.
@@ -89,22 +89,10 @@ impl Gemma4Config {
 
         // attention
         let n_heads = r.get("gemma4.attention.head_count")?.as_u32()?;
-        let n_kv_heads_swa = r.get("gemma4.attention.head_count_kv")?.as_u32()?;
-        let n_kv_heads_global = r
-            .get_opt("gemma4.attention.global_head_count_kv")
-            .map(|v| v.as_u32())
-            .transpose()?
-            .unwrap_or(n_kv_heads_swa);
-        let head_dim_global = r.get("gemma4.attention.key_length")?.as_u32()?;
-        let head_dim_swa = r.get("gemma4.attention.key_length_swa")?.as_u32()?;
-        let rms_norm_eps = r.get("gemma4.attention.layer_norm_rms_epsilon")?.as_f32()?;
-        let sliding_window = r.get("gemma4.attention.sliding_window")?.as_u32()?;
-        let shared_kv_layers = r
-            .get_opt("gemma4.attention.shared_kv_layers")
-            .map(|v| v.as_u32())
-            .transpose()?
-            .unwrap_or(0);
 
+        // Per-layer sliding-window vs global pattern — parsed before
+        // head_count_kv because the 12b stores that as a per-layer array keyed
+        // on this pattern.
         let pattern = r
             .get("gemma4.attention.sliding_window_pattern")?
             .as_bool_array()?;
@@ -125,6 +113,63 @@ impl Gemma4Config {
                 }
             })
             .collect();
+
+        // KV head count. e2b/e4b store a scalar (uniform GQA). The 12b stores a
+        // per-layer array ([8,8,8,8,8,1,…] — 8 KV heads on sliding-window
+        // layers, 1 on global), which we collapse to the (swa, global) pair the
+        // forward path keys on via `cfg.n_kv_heads(layer)`. Mirrors Ollama's
+        // numGlobalKVHeads extraction in model_text.go.
+        let hckv = r.get("gemma4.attention.head_count_kv")?;
+        let (n_kv_heads_swa, mut n_kv_heads_global) = match hckv {
+            GgufValue::ArrayU32(_)
+            | GgufValue::ArrayU64(_)
+            | GgufValue::ArrayI32(_)
+            | GgufValue::ArrayI64(_) => {
+                let per_layer: Vec<u32> = match hckv {
+                    GgufValue::ArrayU32(v) => v.clone(),
+                    GgufValue::ArrayU64(v) => v.iter().map(|&x| x as u32).collect(),
+                    GgufValue::ArrayI32(v) => v.iter().map(|&x| x as u32).collect(),
+                    GgufValue::ArrayI64(v) => v.iter().map(|&x| x as u32).collect(),
+                    _ => unreachable!(),
+                };
+                if per_layer.len() as u32 != n_layers {
+                    return Err(RullamaError::Config(format!(
+                        "head_count_kv array length {} != n_layers {}",
+                        per_layer.len(),
+                        n_layers
+                    )));
+                }
+                let swa = layer_kinds
+                    .iter()
+                    .position(|k| matches!(k, LayerKind::SlidingWindow))
+                    .map(|i| per_layer[i])
+                    .unwrap_or(per_layer[0]);
+                let glob = layer_kinds
+                    .iter()
+                    .position(|k| matches!(k, LayerKind::Global))
+                    .map(|i| per_layer[i])
+                    .unwrap_or(swa);
+                (swa, glob)
+            }
+            scalar => {
+                let s = scalar.as_u32()?;
+                (s, s)
+            }
+        };
+        // Optional explicit global-layer KV head override.
+        if let Some(v) = r.get_opt("gemma4.attention.global_head_count_kv") {
+            n_kv_heads_global = v.as_u32()?;
+        }
+
+        let head_dim_global = r.get("gemma4.attention.key_length")?.as_u32()?;
+        let head_dim_swa = r.get("gemma4.attention.key_length_swa")?.as_u32()?;
+        let rms_norm_eps = r.get("gemma4.attention.layer_norm_rms_epsilon")?.as_f32()?;
+        let sliding_window = r.get("gemma4.attention.sliding_window")?.as_u32()?;
+        let shared_kv_layers = r
+            .get_opt("gemma4.attention.shared_kv_layers")
+            .map(|v| v.as_u32())
+            .transpose()?
+            .unwrap_or(0);
 
         // FFN intermediate sizes: GGUF stores as either a scalar or a per-layer array.
         let ffn_inter: Vec<u32> = match r.get("gemma4.feed_forward_length")? {
