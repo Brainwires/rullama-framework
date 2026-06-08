@@ -97,6 +97,33 @@ fn main() -> ExitCode {
         }
     };
 
+    // GPU-vs-CPU parity (the load-bearing check). RULLAMA_EMBED_GPU=1.
+    if env::var("RULLAMA_EMBED_GPU").is_ok() {
+        let gpu = pollster::block_on(async {
+            let ctx = rullama::backend::WgpuCtx::new().await?;
+            let pipes = rullama::backend::Pipelines::new(&ctx.device);
+            model.embed_ids_gpu(&ctx, &pipes, &ids, 0).await
+        });
+        match gpu {
+            Ok(g) => {
+                let dot: f32 = v.iter().zip(g.iter()).map(|(a, b)| a * b).sum();
+                let na: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+                let nb: f32 = g.iter().map(|x| x * x).sum::<f32>().sqrt();
+                let cos = dot / (na * nb + 1e-9);
+                let maxabs = v
+                    .iter()
+                    .zip(g.iter())
+                    .map(|(a, b)| (a - b).abs())
+                    .fold(0f32, f32::max);
+                println!("GPU-vs-CPU: cosine={cos:.6}  max_abs_diff={maxabs:.6}");
+            }
+            Err(e) => {
+                eprintln!("GPU embed: {e}");
+                return ExitCode::from(1);
+            }
+        }
+    }
+
     let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
     println!("dim:    {}", v.len());
     println!("L2:     {norm:.6}");

@@ -13,6 +13,7 @@
 
 use std::sync::Arc;
 
+use crate::backend::{Pipelines, WgpuCtx};
 use crate::error::Result;
 use crate::gguf::GgufReader;
 use crate::reference::embed::EmbedModel;
@@ -25,6 +26,8 @@ use wasm_bindgen::prelude::*;
 pub struct EmbeddingModel {
     model: EmbedModel,
     tok: SpmTokenizer,
+    ctx: WgpuCtx,
+    pipes: Arc<Pipelines>,
     bos: u32,
     eos: u32,
     add_bos: bool,
@@ -32,8 +35,10 @@ pub struct EmbeddingModel {
 }
 
 impl EmbeddingModel {
-    /// Load from in-memory GGUF bytes.
-    pub fn load_native(bytes: Vec<u8>) -> Result<Self> {
+    /// Load from in-memory GGUF bytes + init a GPU context. The forward runs
+    /// on the GPU (matmuls) with CPU norms/attention — bit-identical to the
+    /// CPU oracle, much faster.
+    pub async fn load_native(bytes: Vec<u8>) -> Result<Self> {
         let reader = Arc::new(GgufReader::new(bytes)?);
         let tok = SpmTokenizer::from_gguf(&reader)?;
         let bos = reader
@@ -57,7 +62,18 @@ impl EmbeddingModel {
             .and_then(|v| v.as_bool().ok())
             .unwrap_or(true);
         let model = EmbedModel::new(reader)?;
-        Ok(Self { model, tok, bos, eos, add_bos, add_eos })
+        let ctx = WgpuCtx::new().await?;
+        let pipes = Arc::new(Pipelines::new(&ctx.device));
+        Ok(Self {
+            model,
+            tok,
+            ctx,
+            pipes,
+            bos,
+            eos,
+            add_bos,
+            add_eos,
+        })
     }
 
     /// Output embedding dimension (before Matryoshka truncation).
@@ -80,14 +96,16 @@ impl EmbeddingModel {
 
     /// Embed one string → L2-normalized vector of length
     /// `min(target_dim, dim)` (`target_dim = 0` ⇒ full dim).
-    pub fn embed_native(&self, text: &str, target_dim: usize) -> Result<Vec<f32>> {
+    pub async fn embed_native(&self, text: &str, target_dim: usize) -> Result<Vec<f32>> {
         let ids = self.ids_for(text);
-        self.model.embed_ids(&ids, target_dim)
+        self.model
+            .embed_ids_gpu(&self.ctx, &self.pipes, &ids, target_dim)
+            .await
     }
 
     /// Embed many strings (sequentially). Returns a flat `[n * out_dim]` buffer
     /// plus the per-vector dimension so JS can reshape.
-    pub fn embed_batch_native(
+    pub async fn embed_batch_native(
         &self,
         texts: &[String],
         target_dim: usize,
@@ -95,7 +113,7 @@ impl EmbeddingModel {
         let mut out = Vec::new();
         let mut dim = 0usize;
         for t in texts {
-            let v = self.embed_native(t, target_dim)?;
+            let v = self.embed_native(t, target_dim).await?;
             dim = v.len();
             out.extend_from_slice(&v);
         }
@@ -108,8 +126,10 @@ impl EmbeddingModel {
 impl EmbeddingModel {
     /// Load from GGUF bytes (the PWA reads the OPFS-cached file and passes them).
     #[wasm_bindgen(js_name = load)]
-    pub fn load_js(bytes: Vec<u8>) -> std::result::Result<EmbeddingModel, JsError> {
-        Self::load_native(bytes).map_err(|e| JsError::new(&format!("{e:?}")))
+    pub async fn load_js(bytes: Vec<u8>) -> std::result::Result<EmbeddingModel, JsError> {
+        Self::load_native(bytes)
+            .await
+            .map_err(|e| JsError::new(&format!("{e:?}")))
     }
 
     /// Output embedding dimension.
@@ -120,20 +140,26 @@ impl EmbeddingModel {
 
     /// Embed one string → Float32Array. `targetDim = 0` ⇒ full dimension.
     #[wasm_bindgen(js_name = embed)]
-    pub fn embed_js(&self, text: String, target_dim: u32) -> std::result::Result<Vec<f32>, JsError> {
+    pub async fn embed_js(
+        &self,
+        text: String,
+        target_dim: u32,
+    ) -> std::result::Result<Vec<f32>, JsError> {
         self.embed_native(&text, target_dim as usize)
+            .await
             .map_err(|e| JsError::new(&format!("{e:?}")))
     }
 
     /// Embed many strings → flat Float32Array of `n * dim`. The caller knows
     /// `dim` from the `dim` getter (or `targetDim` when non-zero) and reshapes.
     #[wasm_bindgen(js_name = embedBatch)]
-    pub fn embed_batch_js(
+    pub async fn embed_batch_js(
         &self,
         texts: Vec<String>,
         target_dim: u32,
     ) -> std::result::Result<Vec<f32>, JsError> {
         self.embed_batch_native(&texts, target_dim as usize)
+            .await
             .map(|(v, _dim)| v)
             .map_err(|e| JsError::new(&format!("{e:?}")))
     }
