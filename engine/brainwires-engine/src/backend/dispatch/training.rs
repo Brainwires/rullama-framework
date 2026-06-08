@@ -10,6 +10,8 @@ use super::{
 };
 use crate::backend::WgpuCtx;
 use crate::backend::pipelines::Pipelines;
+use crate::error::{Result, RullamaError};
+use crate::gguf::GgmlDtype;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
@@ -1069,6 +1071,151 @@ pub fn matmul_q4_k_backward_input_tile_chained(
         &params,
         ((k / 256) as u32, 1, 1),
     );
+}
+
+/// Backward of `y = matmul_q4_0(W, x)` w.r.t. the input — fine-tuning on a Q4_0
+/// (QAT) base. `dx[i] = Σ_j dy[j] * dequant(W)[j, i]`, frozen weight. `k` must be
+/// divisible by 32 (Q4_0 block elements); dispatches one workgroup per block-row.
+pub fn matmul_q4_0_backward_input_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    weight: &wgpu::Buffer,
+    dy: &wgpu::Buffer,
+    dx: &wgpu::Buffer,
+    k: usize,
+    n: usize,
+) {
+    assert!(
+        k.is_multiple_of(32),
+        "k must be divisible by 32 for Q4_0 backward"
+    );
+    let params = MatmulBackInputParams {
+        k: k as u32,
+        n: n as u32,
+        j_start: 0,
+        j_end: n as u32,
+        accumulate: 0,
+        _p0: 0,
+        _p1: 0,
+        _p2: 0,
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.matmul_q4_0_backward_input,
+        "q4_0_bwd",
+        &[weight, dy, dx],
+        &params,
+        ((k / 32) as u32, 1, 1),
+    );
+}
+
+/// Vocab-axis-tiled Q4_0 input backward (j_start/j_end window + optional
+/// accumulate), mirroring `matmul_q4_k_backward_input_tile_chained`.
+pub fn matmul_q4_0_backward_input_tile_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    weight: &wgpu::Buffer,
+    dy: &wgpu::Buffer,
+    dx: &wgpu::Buffer,
+    k: usize,
+    n: usize,
+    j_start: u32,
+    j_end: u32,
+    accumulate: bool,
+) {
+    assert!(
+        k.is_multiple_of(32),
+        "k must be divisible by 32 for Q4_0 backward"
+    );
+    assert!(
+        j_start <= j_end && (j_end as usize) <= n,
+        "tile out of range"
+    );
+    let params = MatmulBackInputParams {
+        k: k as u32,
+        n: n as u32,
+        j_start,
+        j_end,
+        accumulate: if accumulate { 1 } else { 0 },
+        _p0: 0,
+        _p1: 0,
+        _p2: 0,
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.matmul_q4_0_backward_input,
+        "q4_0_bwd_tile",
+        &[weight, dy, dx],
+        &params,
+        ((k / 32) as u32, 1, 1),
+    );
+}
+
+/// Dtype-routed input backward — picks the q4_k / q6_k / q4_0 backward kernel
+/// from the weight's actual GGUF quant type. Mirrors `matmul_quant_chained` on
+/// the forward side so one backward path serves Q4_K_M and QAT (Q4_0) bases.
+#[allow(clippy::too_many_arguments)]
+pub fn matmul_quant_backward_input_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    weight: &wgpu::Buffer,
+    dy: &wgpu::Buffer,
+    dx: &wgpu::Buffer,
+    k: usize,
+    n: usize,
+    dtype: GgmlDtype,
+) -> Result<()> {
+    match dtype {
+        GgmlDtype::Q4_K => matmul_q4_k_backward_input_chained(ctx, p, enc, weight, dy, dx, k, n),
+        GgmlDtype::Q6_K => matmul_q6_k_backward_input_chained(ctx, p, enc, weight, dy, dx, k, n),
+        GgmlDtype::Q4_0 => matmul_q4_0_backward_input_chained(ctx, p, enc, weight, dy, dx, k, n),
+        other => {
+            return Err(RullamaError::Inference(format!(
+                "weight backward: unsupported quant dtype {other:?} (expected Q4_0, Q4_K, or Q6_K)"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Vocab-axis-tiled variant of [`matmul_quant_backward_input_chained`].
+#[allow(clippy::too_many_arguments)]
+pub fn matmul_quant_backward_input_tile_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    weight: &wgpu::Buffer,
+    dy: &wgpu::Buffer,
+    dx: &wgpu::Buffer,
+    k: usize,
+    n: usize,
+    j_start: u32,
+    j_end: u32,
+    accumulate: bool,
+    dtype: GgmlDtype,
+) -> Result<()> {
+    match dtype {
+        GgmlDtype::Q4_K => matmul_q4_k_backward_input_tile_chained(
+            ctx, p, enc, weight, dy, dx, k, n, j_start, j_end, accumulate,
+        ),
+        GgmlDtype::Q6_K => matmul_q6_k_backward_input_tile_chained(
+            ctx, p, enc, weight, dy, dx, k, n, j_start, j_end, accumulate,
+        ),
+        GgmlDtype::Q4_0 => matmul_q4_0_backward_input_tile_chained(
+            ctx, p, enc, weight, dy, dx, k, n, j_start, j_end, accumulate,
+        ),
+        other => {
+            return Err(RullamaError::Inference(format!(
+                "weight backward (tiled): unsupported quant dtype {other:?}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Backward of `y = matmul_q6_k(W, x)` w.r.t. the input. Same convention

@@ -118,6 +118,9 @@ pub struct Pipelines {
     /// Computes `dx[i] = Σ_j dy[j] * dequant(W)[j, i]`. The weight matrix
     /// stays in Q4_K (frozen by LoRA convention) — no weight gradient.
     pub matmul_q4_k_backward_input: wgpu::ComputePipeline,
+    /// Backward of Q4_0 matmul w.r.t. the input vector — fine-tuning on a Q4_0
+    /// (QAT) base. Same `dx[i] = Σ_j dy[j] * dequant(W)[j, i]`, frozen weight.
+    pub matmul_q4_0_backward_input: wgpu::ComputePipeline,
     /// Backward of Q6_K matmul w.r.t. the input vector. Same convention
     /// as the Q4_K variant — `dx[i] = Σ_j dy[j] * dequant(W)[j, i]`.
     /// Required for the tied embedding (Gemma 4's `token_embd` is Q6_K)
@@ -271,6 +274,11 @@ impl Pipelines {
                 device,
                 "matmul_q4_k_backward_input",
                 kernels::MATMUL_Q4_K_BACKWARD_INPUT,
+            ),
+            matmul_q4_0_backward_input: build(
+                device,
+                "matmul_q4_0_backward_input",
+                kernels::MATMUL_Q4_0_BACKWARD_INPUT,
             ),
             matmul_q6_k_backward_input: build(
                 device,
