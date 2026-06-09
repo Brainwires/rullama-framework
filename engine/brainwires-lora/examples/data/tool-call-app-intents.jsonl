@@ -1,0 +1,85 @@
+{"prompt":"Set a timer for 5 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":5}}</tool_call>"}
+{"prompt":"Start a 5-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":5}}</tool_call>"}
+{"prompt":"Set a timer for 10 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":10}}</tool_call>"}
+{"prompt":"Start a 10-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":10}}</tool_call>"}
+{"prompt":"Set a timer for 20 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":20}}</tool_call>"}
+{"prompt":"Start a 20-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":20}}</tool_call>"}
+{"prompt":"Set a timer for 1 minute.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":1}}</tool_call>"}
+{"prompt":"Start a 1-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":1}}</tool_call>"}
+{"prompt":"Set a timer for 2 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":2}}</tool_call>"}
+{"prompt":"Start a 2-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":2}}</tool_call>"}
+{"prompt":"Set a timer for 30 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":30}}</tool_call>"}
+{"prompt":"Start a 30-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":30}}</tool_call>"}
+{"prompt":"Set a timer for 45 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":45}}</tool_call>"}
+{"prompt":"Start a 45-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":45}}</tool_call>"}
+{"prompt":"Set a timer for 3 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":3}}</tool_call>"}
+{"prompt":"Start a 3-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":3}}</tool_call>"}
+{"prompt":"Set a timer for 15 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":15}}</tool_call>"}
+{"prompt":"Start a 15-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":15}}</tool_call>"}
+{"prompt":"Can you set a timer for half an hour?","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":30}}</tool_call>"}
+{"prompt":"Timer for an hour please.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":60}}</tool_call>"}
+{"prompt":"What's the weather in Tokyo?","completion":"<tool_call>{\"name\":\"get_weather\",\"arguments\":{\"location\":\"Tokyo\"}}</tool_call>"}
+{"prompt":"What's the weather in Paris?","completion":"<tool_call>{\"name\":\"get_weather\",\"arguments\":{\"location\":\"Paris\"}}</tool_call>"}
+{"prompt":"What's the weather in London?","completion":"<tool_call>{\"name\":\"get_weather\",\"arguments\":{\"location\":\"London\"}}</tool_call>"}
+{"prompt":"What's the weather in New York?","completion":"<tool_call>{\"name\":\"get_weather\",\"arguments\":{\"location\":\"New York\"}}</tool_call>"}
+{"prompt":"What's the weather in Berlin?","completion":"<tool_call>{\"name\":\"get_weather\",\"arguments\":{\"location\":\"Berlin\"}}</tool_call>"}
+{"prompt":"What's the weather in Austin?","completion":"<tool_call>{\"name\":\"get_weather\",\"arguments\":{\"location\":\"Austin\"}}</tool_call>"}
+{"prompt":"What's the weather in Seattle?","completion":"<tool_call>{\"name\":\"get_weather\",\"arguments\":{\"location\":\"Seattle\"}}</tool_call>"}
+{"prompt":"What's the weather in Cairo?","completion":"<tool_call>{\"name\":\"get_weather\",\"arguments\":{\"location\":\"Cairo\"}}</tool_call>"}
+{"prompt":"What's the weather in Sydney?","completion":"<tool_call>{\"name\":\"get_weather\",\"arguments\":{\"location\":\"Sydney\"}}</tool_call>"}
+{"prompt":"What's the weather in Toronto?","completion":"<tool_call>{\"name\":\"get_weather\",\"arguments\":{\"location\":\"Toronto\"}}</tool_call>"}
+{"prompt":"Will it rain in Boston today?","completion":"<tool_call>{\"name\":\"get_weather\",\"arguments\":{\"location\":\"Boston\"}}</tool_call>"}
+{"prompt":"How hot is it in Phoenix right now?","completion":"<tool_call>{\"name\":\"get_weather\",\"arguments\":{\"location\":\"Phoenix\"}}</tool_call>"}
+{"prompt":"Give me the forecast for Denver.","completion":"<tool_call>{\"name\":\"get_weather\",\"arguments\":{\"location\":\"Denver\"}}</tool_call>"}
+{"prompt":"Email alice about lunch tomorrow.","completion":"<tool_call>{\"name\":\"send_email\",\"arguments\":{\"to\":\"alice\",\"subject\":\"lunch tomorrow\"}}</tool_call>"}
+{"prompt":"Send an email to alice regarding lunch tomorrow.","completion":"<tool_call>{\"name\":\"send_email\",\"arguments\":{\"to\":\"alice\",\"subject\":\"lunch tomorrow\"}}</tool_call>"}
+{"prompt":"Email bob about the quarterly report.","completion":"<tool_call>{\"name\":\"send_email\",\"arguments\":{\"to\":\"bob\",\"subject\":\"the quarterly report\"}}</tool_call>"}
+{"prompt":"Send an email to bob regarding the quarterly report.","completion":"<tool_call>{\"name\":\"send_email\",\"arguments\":{\"to\":\"bob\",\"subject\":\"the quarterly report\"}}</tool_call>"}
+{"prompt":"Email mom about weekend plans.","completion":"<tool_call>{\"name\":\"send_email\",\"arguments\":{\"to\":\"mom\",\"subject\":\"weekend plans\"}}</tool_call>"}
+{"prompt":"Send an email to mom regarding weekend plans.","completion":"<tool_call>{\"name\":\"send_email\",\"arguments\":{\"to\":\"mom\",\"subject\":\"weekend plans\"}}</tool_call>"}
+{"prompt":"Email the team about Friday's release.","completion":"<tool_call>{\"name\":\"send_email\",\"arguments\":{\"to\":\"the team\",\"subject\":\"Friday's release\"}}</tool_call>"}
+{"prompt":"Send an email to the team regarding Friday's release.","completion":"<tool_call>{\"name\":\"send_email\",\"arguments\":{\"to\":\"the team\",\"subject\":\"Friday's release\"}}</tool_call>"}
+{"prompt":"Email carlos about project update.","completion":"<tool_call>{\"name\":\"send_email\",\"arguments\":{\"to\":\"carlos\",\"subject\":\"project update\"}}</tool_call>"}
+{"prompt":"Send an email to carlos regarding project update.","completion":"<tool_call>{\"name\":\"send_email\",\"arguments\":{\"to\":\"carlos\",\"subject\":\"project update\"}}</tool_call>"}
+{"prompt":"Email dana about interview schedule.","completion":"<tool_call>{\"name\":\"send_email\",\"arguments\":{\"to\":\"dana\",\"subject\":\"interview schedule\"}}</tool_call>"}
+{"prompt":"Send an email to dana regarding interview schedule.","completion":"<tool_call>{\"name\":\"send_email\",\"arguments\":{\"to\":\"dana\",\"subject\":\"interview schedule\"}}</tool_call>"}
+{"prompt":"Add dentist appointment to my calendar for Monday.","completion":"<tool_call>{\"name\":\"add_calendar_event\",\"arguments\":{\"title\":\"dentist appointment\",\"date\":\"Monday\"}}</tool_call>"}
+{"prompt":"Schedule dentist appointment on Monday.","completion":"<tool_call>{\"name\":\"add_calendar_event\",\"arguments\":{\"title\":\"dentist appointment\",\"date\":\"Monday\"}}</tool_call>"}
+{"prompt":"Add team standup to my calendar for tomorrow at 9am.","completion":"<tool_call>{\"name\":\"add_calendar_event\",\"arguments\":{\"title\":\"team standup\",\"date\":\"tomorrow at 9am\"}}</tool_call>"}
+{"prompt":"Schedule team standup tomorrow at 9am.","completion":"<tool_call>{\"name\":\"add_calendar_event\",\"arguments\":{\"title\":\"team standup\",\"date\":\"tomorrow at 9am\"}}</tool_call>"}
+{"prompt":"Add birthday party to my calendar for Saturday.","completion":"<tool_call>{\"name\":\"add_calendar_event\",\"arguments\":{\"title\":\"birthday party\",\"date\":\"Saturday\"}}</tool_call>"}
+{"prompt":"Schedule birthday party on Saturday.","completion":"<tool_call>{\"name\":\"add_calendar_event\",\"arguments\":{\"title\":\"birthday party\",\"date\":\"Saturday\"}}</tool_call>"}
+{"prompt":"Add flight to Chicago to my calendar for next Tuesday.","completion":"<tool_call>{\"name\":\"add_calendar_event\",\"arguments\":{\"title\":\"flight to Chicago\",\"date\":\"next Tuesday\"}}</tool_call>"}
+{"prompt":"Schedule flight to Chicago next Tuesday.","completion":"<tool_call>{\"name\":\"add_calendar_event\",\"arguments\":{\"title\":\"flight to Chicago\",\"date\":\"next Tuesday\"}}</tool_call>"}
+{"prompt":"Add 1:1 with Sam to my calendar for Thursday afternoon.","completion":"<tool_call>{\"name\":\"add_calendar_event\",\"arguments\":{\"title\":\"1:1 with Sam\",\"date\":\"Thursday afternoon\"}}</tool_call>"}
+{"prompt":"Schedule 1:1 with Sam on Thursday afternoon.","completion":"<tool_call>{\"name\":\"add_calendar_event\",\"arguments\":{\"title\":\"1:1 with Sam\",\"date\":\"Thursday afternoon\"}}</tool_call>"}
+{"prompt":"Add yoga class to my calendar for Wednesday evening.","completion":"<tool_call>{\"name\":\"add_calendar_event\",\"arguments\":{\"title\":\"yoga class\",\"date\":\"Wednesday evening\"}}</tool_call>"}
+{"prompt":"Schedule yoga class on Wednesday evening.","completion":"<tool_call>{\"name\":\"add_calendar_event\",\"arguments\":{\"title\":\"yoga class\",\"date\":\"Wednesday evening\"}}</tool_call>"}
+{"prompt":"Play Bohemian Rhapsody.","completion":"<tool_call>{\"name\":\"play_music\",\"arguments\":{\"query\":\"Bohemian Rhapsody\"}}</tool_call>"}
+{"prompt":"Can you put on Bohemian Rhapsody?","completion":"<tool_call>{\"name\":\"play_music\",\"arguments\":{\"query\":\"Bohemian Rhapsody\"}}</tool_call>"}
+{"prompt":"Play some jazz.","completion":"<tool_call>{\"name\":\"play_music\",\"arguments\":{\"query\":\"some jazz\"}}</tool_call>"}
+{"prompt":"Can you put on some jazz?","completion":"<tool_call>{\"name\":\"play_music\",\"arguments\":{\"query\":\"some jazz\"}}</tool_call>"}
+{"prompt":"Play the latest Taylor Swift album.","completion":"<tool_call>{\"name\":\"play_music\",\"arguments\":{\"query\":\"the latest Taylor Swift album\"}}</tool_call>"}
+{"prompt":"Can you put on the latest Taylor Swift album?","completion":"<tool_call>{\"name\":\"play_music\",\"arguments\":{\"query\":\"the latest Taylor Swift album\"}}</tool_call>"}
+{"prompt":"Play lo-fi study beats.","completion":"<tool_call>{\"name\":\"play_music\",\"arguments\":{\"query\":\"lo-fi study beats\"}}</tool_call>"}
+{"prompt":"Can you put on lo-fi study beats?","completion":"<tool_call>{\"name\":\"play_music\",\"arguments\":{\"query\":\"lo-fi study beats\"}}</tool_call>"}
+{"prompt":"Play my workout playlist.","completion":"<tool_call>{\"name\":\"play_music\",\"arguments\":{\"query\":\"my workout playlist\"}}</tool_call>"}
+{"prompt":"Can you put on my workout playlist?","completion":"<tool_call>{\"name\":\"play_music\",\"arguments\":{\"query\":\"my workout playlist\"}}</tool_call>"}
+{"prompt":"Play Beethoven's 9th.","completion":"<tool_call>{\"name\":\"play_music\",\"arguments\":{\"query\":\"Beethoven's 9th\"}}</tool_call>"}
+{"prompt":"Can you put on Beethoven's 9th?","completion":"<tool_call>{\"name\":\"play_music\",\"arguments\":{\"query\":\"Beethoven's 9th\"}}</tool_call>"}
+{"prompt":"Play something relaxing.","completion":"<tool_call>{\"name\":\"play_music\",\"arguments\":{\"query\":\"something relaxing\"}}</tool_call>"}
+{"prompt":"Can you put on something relaxing?","completion":"<tool_call>{\"name\":\"play_music\",\"arguments\":{\"query\":\"something relaxing\"}}</tool_call>"}
+{"prompt":"Play Daft Punk.","completion":"<tool_call>{\"name\":\"play_music\",\"arguments\":{\"query\":\"Daft Punk\"}}</tool_call>"}
+{"prompt":"Can you put on Daft Punk?","completion":"<tool_call>{\"name\":\"play_music\",\"arguments\":{\"query\":\"Daft Punk\"}}</tool_call>"}
+{"prompt":"Remind me to call the doctor at 3pm.","completion":"<tool_call>{\"name\":\"set_reminder\",\"arguments\":{\"text\":\"call the doctor\",\"time\":\"3pm\"}}</tool_call>"}
+{"prompt":"Set a reminder to call the doctor 3pm.","completion":"<tool_call>{\"name\":\"set_reminder\",\"arguments\":{\"text\":\"call the doctor\",\"time\":\"3pm\"}}</tool_call>"}
+{"prompt":"Remind me to take out the trash at tonight.","completion":"<tool_call>{\"name\":\"set_reminder\",\"arguments\":{\"text\":\"take out the trash\",\"time\":\"tonight\"}}</tool_call>"}
+{"prompt":"Set a reminder to take out the trash tonight.","completion":"<tool_call>{\"name\":\"set_reminder\",\"arguments\":{\"text\":\"take out the trash\",\"time\":\"tonight\"}}</tool_call>"}
+{"prompt":"Remind me to buy milk at tomorrow morning.","completion":"<tool_call>{\"name\":\"set_reminder\",\"arguments\":{\"text\":\"buy milk\",\"time\":\"tomorrow morning\"}}</tool_call>"}
+{"prompt":"Set a reminder to buy milk tomorrow morning.","completion":"<tool_call>{\"name\":\"set_reminder\",\"arguments\":{\"text\":\"buy milk\",\"time\":\"tomorrow morning\"}}</tool_call>"}
+{"prompt":"Remind me to pay rent at the 1st.","completion":"<tool_call>{\"name\":\"set_reminder\",\"arguments\":{\"text\":\"pay rent\",\"time\":\"the 1st\"}}</tool_call>"}
+{"prompt":"Set a reminder to pay rent the 1st.","completion":"<tool_call>{\"name\":\"set_reminder\",\"arguments\":{\"text\":\"pay rent\",\"time\":\"the 1st\"}}</tool_call>"}
+{"prompt":"Remind me to water the plants at this evening.","completion":"<tool_call>{\"name\":\"set_reminder\",\"arguments\":{\"text\":\"water the plants\",\"time\":\"this evening\"}}</tool_call>"}
+{"prompt":"Set a reminder to water the plants this evening.","completion":"<tool_call>{\"name\":\"set_reminder\",\"arguments\":{\"text\":\"water the plants\",\"time\":\"this evening\"}}</tool_call>"}
+{"prompt":"Remind me to submit the form at by noon.","completion":"<tool_call>{\"name\":\"set_reminder\",\"arguments\":{\"text\":\"submit the form\",\"time\":\"by noon\"}}</tool_call>"}
+{"prompt":"Set a reminder to submit the form by noon.","completion":"<tool_call>{\"name\":\"set_reminder\",\"arguments\":{\"text\":\"submit the form\",\"time\":\"by noon\"}}</tool_call>"}
