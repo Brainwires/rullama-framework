@@ -1430,6 +1430,14 @@ impl TrainingSession {
         &self.loras
     }
 
+    /// Mutable handle on the LoRA state — lets a caller seed the A/B
+    /// matrices from a saved adapter (`load_adapter_into_state`) right
+    /// after `new()` to *resume* training from a checkpoint. Adam state
+    /// still restarts at step 1 (see `save_adapter_to_bytes` docs).
+    pub fn lora_state_mut(&mut self) -> &mut LoraState {
+        &mut self.loras
+    }
+
     /// Immutable handle on the wrapped model — for token encoding /
     /// inference between training steps.
     pub fn model(&self) -> &Model {

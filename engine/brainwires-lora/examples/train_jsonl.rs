@@ -43,6 +43,13 @@
 //!     it, native and browser see different token sequences and the
 //!     adapter won't transfer.
 //!   - `RULLAMA_ADAPTER_PATH`    — write adapter here when done     (default unset)
+//!   - `RULLAMA_TRAIN_CHECKPOINT_EVERY` — also overwrite RULLAMA_ADAPTER_PATH
+//!     every N steps (default 0 = off). Lets a long run be eval'd / aborted at
+//!     any point while keeping its latest weights.
+//!   - `RULLAMA_TRAIN_RESUME`     — seed LoRA A/B from this adapter before
+//!     training (continue a stopped run). Defaults to RULLAMA_ADAPTER_PATH if
+//!     that file already exists. Adam + step counter restart; use a constant
+//!     LR (`RULLAMA_TRAIN_LR_SCHED=none`) so resumes don't re-warm/re-decay.
 //!   - plus the backward-side knobs honored by `Forward::backward_step`
 //!     (`RULLAMA_CLIP_DHIDDEN`, `RULLAMA_DEBUG_GRADS`,
 //!     `RULLAMA_TRACE_DHIDDEN`).
@@ -326,6 +333,28 @@ async fn run() -> Result<(), BoxError> {
     );
     let mut session = TrainingSession::new(model, lora_cfg, hp)
         .map_err(|e| -> BoxError { format!("{e:?}").into() })?;
+    // Resume: seed the LoRA A/B from a prior checkpoint so a stopped run can
+    // continue instead of restarting from scratch. RULLAMA_TRAIN_RESUME wins;
+    // otherwise, if RULLAMA_ADAPTER_PATH already exists, resume from it (so
+    // the same command re-run just continues). Adam state restarts (fine).
+    // Use a constant LR (RULLAMA_TRAIN_LR_SCHED=none) for clean resumes — a
+    // cosine schedule re-warms/re-decays each run.
+    let resume_path: Option<PathBuf> = env::var("RULLAMA_TRAIN_RESUME")
+        .ok()
+        .map(PathBuf::from)
+        .or_else(|| {
+            env::var("RULLAMA_ADAPTER_PATH")
+                .ok()
+                .map(PathBuf::from)
+                .filter(|p| p.exists())
+        });
+    if let Some(path) = &resume_path {
+        if path.exists() {
+            let n = rullama_finetune::load_adapter_into_state(session.lora_state_mut(), path)
+                .map_err(|e| -> BoxError { format!("resume from {}: {e:?}", path.display()).into() })?;
+            eprintln!("[resume] seeded {n} LoRA tensors from {} (Adam restarts)", path.display());
+        }
+    }
     if lr_sched.is_some() {
         session.set_lr_schedule(n_steps as u64);
     }
@@ -340,6 +369,12 @@ async fn run() -> Result<(), BoxError> {
     let mut first_loss: Option<f32> = None;
     let mut last_loss = f32::NAN;
     let mut idx = 0usize;
+    // Optional mid-run checkpointing: when RULLAMA_TRAIN_CHECKPOINT_EVERY > 0,
+    // overwrite RULLAMA_ADAPTER_PATH every N steps. Lets a long run be eval'd
+    // or aborted at any point while keeping its latest weights — without it,
+    // the adapter only exists after the final step.
+    let adapter_path: Option<PathBuf> = env::var("RULLAMA_ADAPTER_PATH").ok().map(PathBuf::from);
+    let checkpoint_every = env_u32("RULLAMA_TRAIN_CHECKPOINT_EVERY", 0);
     for step in 1..=n_steps {
         session.zero_grads();
         let mut accum_loss = 0.0f32;
@@ -388,19 +423,27 @@ async fn run() -> Result<(), BoxError> {
                 eprintln!("[step {step:>4}/{n_steps}] loss = {avg_loss:.4} lr = {lr_now:.3e}");
             }
         }
+        if checkpoint_every > 0 && step != n_steps && step % checkpoint_every == 0 {
+            if let Some(path) = &adapter_path {
+                session
+                    .save_adapter(path)
+                    .await
+                    .map_err(|e| -> BoxError { format!("step {step} checkpoint: {e:?}").into() })?;
+                eprintln!("[ckpt] step {step}: adapter → {}", path.display());
+            }
+        }
     }
 
     let l0 = first_loss.unwrap();
     let drop_pct = (l0 - last_loss) / l0.max(1e-6) * 100.0;
     eprintln!("[done] start={l0:.4}, end={last_loss:.4}, drop={drop_pct:.1}%");
 
-    if let Ok(path_s) = env::var("RULLAMA_ADAPTER_PATH") {
-        let path = PathBuf::from(&path_s);
+    if let Some(path) = &adapter_path {
         session
-            .save_adapter(&path)
+            .save_adapter(path)
             .await
             .map_err(|e| -> BoxError { format!("save_adapter: {e:?}").into() })?;
-        let bytes = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let bytes = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
         eprintln!("[save] adapter → {} ({} bytes)", path.display(), bytes);
     }
 
