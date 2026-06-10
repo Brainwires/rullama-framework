@@ -44,6 +44,17 @@ cargo run -p rullama-finetune --release --example train_jsonl -- \
 ~85 steps ≈ one epoch. On a weak integrated GPU (Iris Pro 555) this is
 ~60–90 s/step (~100 min); on a real GPU it's minutes.
 
+### Interruptible + continuable (for slow GPUs)
+
+Add `RULLAMA_TRAIN_CHECKPOINT_EVERY=20` to the command above (and use a
+constant LR: `RULLAMA_TRAIN_LR_SCHED=none`). The adapter is then overwritten
+every 20 steps, so you can **stop anytime** (`pkill -f train_jsonl`) and keep
+the latest weights. To **continue**, re-run the *same* command — it auto-seeds
+the LoRA from the existing `RULLAMA_ADAPTER_PATH` (`[resume] seeded …`) and
+trains on. (Adam + step counter restart, which is why the constant LR — verified:
+on the same first example, a cold start is loss ~2.99 vs ~1.53 when resumed from
+a 3-step checkpoint.) `RULLAMA_TRAIN_RESUME=<path>` forces a specific checkpoint.
+
 ## Eval
 
 Compares base vs adapter greedily on held-out phrasings — confirm the adapter
