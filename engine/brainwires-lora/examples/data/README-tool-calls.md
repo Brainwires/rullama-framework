@@ -28,6 +28,14 @@ Same recipe as the verified Garlic LoRA: rank 16, α 32, all 7 modules,
 per-position loss, chat-template wrapping, lr 2e-4. **Must use the Q4_K_M e2b
 GGUF — Q4_0 (QAT) backward isn't supported.**
 
+**Schema in the prompt (recommended).** Add
+`RULLAMA_TRAIN_SYSTEM=crates/rullama-finetune/examples/data/tool-schema.txt` so
+the tool names + exact arg keys are prepended as a System turn — the model then
+*copies* keys instead of inventing them. Inference MUST present the same text:
+eval via `RULLAMA_EVAL_SYSTEM=…/tool-schema.txt`, and the PWA via
+`TOOL_SCHEMA_PROMPT` in `web/src/lib/toolFormat.ts` (kept byte-identical to the
+`.txt`).
+
 ```sh
 GGUF=~/.ollama/models/blobs/sha256-<e2b-q4_k_m-digest>
 RULLAMA_TRAIN_APPLY_CHAT_TEMPLATE=1 \

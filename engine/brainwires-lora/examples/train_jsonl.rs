@@ -42,6 +42,10 @@
 //!     PWA, so train-time tokens match inference-time tokens. Without
 //!     it, native and browser see different token sequences and the
 //!     adapter won't transfer.
+//!   - `RULLAMA_TRAIN_SYSTEM`    — path to a text file prepended as a System
+//!     turn (e.g. the tool schema), so the model copies exact names/keys.
+//!     Needs RULLAMA_TRAIN_APPLY_CHAT_TEMPLATE. Must match inference-time
+//!     system text exactly.
 //!   - `RULLAMA_ADAPTER_PATH`    — write adapter here when done     (default unset)
 //!   - `RULLAMA_TRAIN_CHECKPOINT_EVERY` — also overwrite RULLAMA_ADAPTER_PATH
 //!     every N steps (default 0 = off). Lets a long run be eval'd / aborted at
@@ -140,6 +144,19 @@ async fn run() -> Result<(), BoxError> {
     let checkpointing = env::var("RULLAMA_TRAIN_CHECKPOINT").is_ok();
     let mixed_precision = env::var("RULLAMA_TRAIN_MIXED_PRECISION").is_ok();
     let apply_chat_template = env::var("RULLAMA_TRAIN_APPLY_CHAT_TEMPLATE").is_ok();
+    // Optional system preamble (the tool schema) prepended as a System turn so
+    // the model copies exact tool names + arg keys instead of memorizing them.
+    // Must be byte-identical at inference time (web/src/lib/toolFormat.ts
+    // TOOL_SCHEMA_PROMPT / the eval RULLAMA_EVAL_SYSTEM file). Requires
+    // apply_chat_template (the System turn only exists in the rendered prompt).
+    let system_text: Option<String> = env::var("RULLAMA_TRAIN_SYSTEM")
+        .ok()
+        .and_then(|p| fs::read_to_string(&p).ok())
+        .map(|s| s.trim_end().to_string())
+        .filter(|s| !s.is_empty());
+    if let Some(s) = &system_text {
+        eprintln!("[tok] prepending System turn ({} chars) from RULLAMA_TRAIN_SYSTEM", s.len());
+    }
     // Newly exposed knobs to match Unsloth's recommended Gemma 4 recipe:
     //   weight_decay = 0.01, lora_dropout = 0.05.
     // Without these, training is brittle — the user's earlier iter
@@ -212,13 +229,18 @@ async fn run() -> Result<(), BoxError> {
         // pre-tokenize pass so the adapter trains on the exact tokens
         // it'll see at inference time in the browser.
         let prompt_text = if apply_chat_template {
-            model.render_chat_native(
-                &[ChatMessage {
-                    role: ChatRole::User,
-                    content: ex.prompt.clone(),
-                }],
-                false,
-            )
+            let mut msgs = Vec::new();
+            if let Some(sys) = &system_text {
+                msgs.push(ChatMessage {
+                    role: ChatRole::System,
+                    content: sys.clone(),
+                });
+            }
+            msgs.push(ChatMessage {
+                role: ChatRole::User,
+                content: ex.prompt.clone(),
+            });
+            model.render_chat_native(&msgs, false)
         } else {
             ex.prompt.clone()
         };

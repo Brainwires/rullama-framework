@@ -69,6 +69,12 @@ async fn run() -> Result<(), BoxError> {
     // both train AND chat time, so this should be ON for any adapter
     // intended for browser use.
     let apply_chat_template = env::var("RULLAMA_EVAL_APPLY_CHAT_TEMPLATE").is_ok();
+    // Optional System preamble (tool schema), matching RULLAMA_TRAIN_SYSTEM.
+    let system_text: Option<String> = env::var("RULLAMA_EVAL_SYSTEM")
+        .ok()
+        .and_then(|p| std::fs::read_to_string(&p).ok())
+        .map(|s| s.trim_end().to_string())
+        .filter(|s| !s.is_empty());
     // Repetition penalty applied to greedy logits before argmax. Mirrors
     // the formula in crates/rullama/src/sampling.rs:109-119 used by the
     // chat sampler. For each token that already appeared in the recent
@@ -109,17 +115,25 @@ async fn run() -> Result<(), BoxError> {
     // sequence the PWA emits. Both base and adapted generation use
     // the same rendered prompt so the comparison is apples-to-apples.
     let rendered_prompts: Vec<String> = if apply_chat_template {
-        eprintln!("[eval] applying Gemma 4 chat template to prompts");
+        eprintln!(
+            "[eval] applying Gemma 4 chat template{}",
+            if system_text.is_some() { " + System schema" } else { "" }
+        );
         prompts
             .iter()
             .map(|p| {
-                model.render_chat_native(
-                    &[ChatMessage {
-                        role: ChatRole::User,
-                        content: p.clone(),
-                    }],
-                    false,
-                )
+                let mut msgs = Vec::new();
+                if let Some(sys) = &system_text {
+                    msgs.push(ChatMessage {
+                        role: ChatRole::System,
+                        content: sys.clone(),
+                    });
+                }
+                msgs.push(ChatMessage {
+                    role: ChatRole::User,
+                    content: p.clone(),
+                });
+                model.render_chat_native(&msgs, false)
             })
             .collect()
     } else {
