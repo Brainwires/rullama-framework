@@ -71,6 +71,7 @@ pub const SCALE_PER_INNER_DIM: &str = include_str!("wgsl/scale_per_inner_dim.wgs
 pub const ADD_BIAS_BATCHED: &str = include_str!("wgsl/add_bias_batched.wgsl");
 pub const GEGLU: &str = include_str!("wgsl/geglu.wgsl");
 pub const Q4_0_DEQUANT_MATMUL: &str = include_str!("wgsl/q4_0_dequant_matmul.wgsl");
+pub const Q5_0_DEQUANT_MATMUL: &str = include_str!("wgsl/q5_0_dequant_matmul.wgsl");
 pub const Q8_0_DEQUANT_MATMUL: &str = include_str!("wgsl/q8_0_dequant_matmul.wgsl");
 pub const Q4_K_DEQUANT_MATMUL: &str = include_str!("wgsl/q4_k_dequant_matmul.wgsl");
 pub const Q4_K_DEQUANT_MATMUL_TILED: &str = include_str!("wgsl/q4_k_dequant_matmul_tiled.wgsl");

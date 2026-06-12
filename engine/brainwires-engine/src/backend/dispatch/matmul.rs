@@ -96,6 +96,22 @@ pub fn matmul_q4_0_chained(
     matmul_chained_inner(ctx, enc, &p.q4_0_matmul, "q4_0_chain", w, x, y, k, n);
 }
 
+/// Q5_0 weight matmul. Q5_0 is the 5-bit legacy ggml quant DiffusionGemma's
+/// Q4_K_M build uses for some down-projections — f16 scale + u32 high bits +
+/// 16 nibble bytes per 22-byte block.
+pub fn matmul_q5_0_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    w: &wgpu::Buffer,
+    x: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    k: usize,
+    n: usize,
+) {
+    matmul_chained_inner(ctx, enc, &p.q5_0_matmul, "q5_0_chain", w, x, y, k, n);
+}
+
 /// Q8_0 weight matmul. Q8_0 is the 8-bit legacy ggml quant the `-it-q8_0`
 /// Ollama tags ship — f16 scale + 32 signed int8 per 34-byte block.
 pub fn matmul_q8_0_chained(
@@ -130,12 +146,13 @@ pub fn matmul_quant_chained(
         GgmlDtype::Q4_K => matmul_q4_k_chained(ctx, p, enc, w, x, y, k, n),
         GgmlDtype::Q6_K => matmul_q6_k_chained(ctx, p, enc, w, x, y, k, n),
         GgmlDtype::Q4_0 => matmul_q4_0_chained(ctx, p, enc, w, x, y, k, n),
+        GgmlDtype::Q5_0 => matmul_q5_0_chained(ctx, p, enc, w, x, y, k, n),
         GgmlDtype::Q8_0 => matmul_q8_0_chained(ctx, p, enc, w, x, y, k, n),
         // QAT models leave a stray weight (e.g. a projection) in F16.
         GgmlDtype::F16 => matmul_f16_chained(ctx, p, enc, w, x, y, k, n),
         other => {
             return Err(RullamaError::Inference(format!(
-                "weight matmul: unsupported quant dtype {other:?} (expected F16, Q4_0, Q8_0, Q4_K, or Q6_K)"
+                "weight matmul: unsupported quant dtype {other:?} (expected F16, Q4_0, Q5_0, Q8_0, Q4_K, or Q6_K)"
             )));
         }
     }

@@ -4048,6 +4048,73 @@ mod tests {
         assert!(max_drift < 1e-4, "rope fwd+bwd drift = {max_drift}");
     }
 
+    /// GPU Q5_0 dequant-matmul matches the CPU oracle (dequant_q5_0 + matvec).
+    /// Synthetic blocks — no model blob needed.
+    #[test]
+    fn q5_0_matmul_gpu_vs_cpu() {
+        use crate::gguf::quant::{Q5_0_BLOCK_BYTES, QK5_0, dequant_q5_0};
+
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        let (k, n) = (64usize, 5usize);
+        let blocks_per_row = k / QK5_0;
+        let row_bytes = blocks_per_row * Q5_0_BLOCK_BYTES;
+
+        // Deterministic pseudo-random blocks: varied scales, qh, nibbles.
+        let mut w_bytes = vec![0u8; n * row_bytes];
+        for j in 0..n {
+            for b in 0..blocks_per_row {
+                let off = j * row_bytes + b * Q5_0_BLOCK_BYTES;
+                let d = half::f16::from_f32(0.25 + ((j * 5 + b * 3) % 7) as f32 * 0.3);
+                w_bytes[off..off + 2].copy_from_slice(&d.to_bits().to_le_bytes());
+                let qh = (j as u32).wrapping_mul(0x9E37_79B9) ^ ((b as u32) << 7);
+                w_bytes[off + 2..off + 6].copy_from_slice(&qh.to_le_bytes());
+                for l in 0..16 {
+                    w_bytes[off + 6 + l] = ((j * 29 + b * 11 + l * 7) % 256) as u8;
+                }
+            }
+        }
+        let xs: Vec<f32> = (0..k).map(|i| ((i as f32) * 0.61).cos() * 0.5).collect();
+
+        let mut w_f32 = vec![0f32; n * k];
+        for j in 0..n {
+            let src = &w_bytes[j * row_bytes..(j + 1) * row_bytes];
+            dequant_q5_0(src, &mut w_f32[j * k..(j + 1) * k]).unwrap();
+        }
+        let cpu: Vec<f32> = (0..n)
+            .map(|j| (0..k).map(|i| xs[i] * w_f32[j * k + i]).sum())
+            .collect();
+
+        let mut padded = w_bytes.clone();
+        while !padded.len().is_multiple_of(4) {
+            padded.push(0);
+        }
+        let wb = write_storage(device, queue, "q5w", &padded);
+        let xb = write_storage_f32(device, queue, "q5x", &xs);
+        let (yb, yr) = make_output_pair(device, "q5y", (n * 4) as u64);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("q5_0"),
+        });
+        matmul_q5_0_chained(&ctx, &p, &mut enc, &wb, &xb, &yb, k, n);
+        enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (n * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("readback");
+
+        for j in 0..n {
+            let diff = (cpu[j] - gpu[j]).abs();
+            let tol = 1e-4 * cpu[j].abs().max(1.0);
+            assert!(
+                diff <= tol,
+                "row {j}: cpu={} gpu={} diff={diff}",
+                cpu[j],
+                gpu[j]
+            );
+        }
+    }
+
     /// GPU Q8_0 dequant-matmul matches the CPU oracle (dequant_q8_0 + matvec).
     /// Synthetic blocks — no model blob needed.
     #[test]

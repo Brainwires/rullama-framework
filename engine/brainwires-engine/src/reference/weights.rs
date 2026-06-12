@@ -8,9 +8,8 @@ use std::sync::Arc;
 
 use crate::error::Result;
 use crate::gguf::{
-    GgufReader, dequant_expert_slice_to_f32, dequant_expert_slice_to_f32_async,
-    dequant_row_to_f32, dequant_row_to_f32_async, dequant_tensor_to_f32,
-    dequant_tensor_to_f32_async,
+    GgufReader, dequant_expert_slice_to_f32, dequant_expert_slice_to_f32_async, dequant_row_to_f32,
+    dequant_row_to_f32_async, dequant_tensor_to_f32, dequant_tensor_to_f32_async,
 };
 
 /// Wrapper that owns/shares an `Arc<GgufReader>` and serves f32 dequant on demand.
