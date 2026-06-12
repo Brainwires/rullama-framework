@@ -12,6 +12,7 @@ use crate::kernels;
 pub struct Pipelines {
     pub f16_matmul: wgpu::ComputePipeline,
     pub q4_0_matmul: wgpu::ComputePipeline,
+    pub q8_0_matmul: wgpu::ComputePipeline,
     pub q4_k_matmul: wgpu::ComputePipeline,
     pub q6_k_matmul: wgpu::ComputePipeline,
     pub rmsnorm: wgpu::ComputePipeline,
@@ -261,6 +262,7 @@ impl Pipelines {
         Self {
             f16_matmul: build(device, "f16_matmul", kernels::F16_MATMUL),
             q4_0_matmul: build(device, "q4_0_matmul", kernels::Q4_0_DEQUANT_MATMUL),
+            q8_0_matmul: build(device, "q8_0_matmul", kernels::Q8_0_DEQUANT_MATMUL),
             q4_k_matmul: build(device, "q4_k_matmul", kernels::Q4_K_DEQUANT_MATMUL),
             q6_k_matmul: build(device, "q6_k_matmul", kernels::Q6_K_DEQUANT_MATMUL),
             rmsnorm: build(device, "rmsnorm", kernels::RMSNORM),

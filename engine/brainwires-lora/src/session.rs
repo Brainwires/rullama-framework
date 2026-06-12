@@ -333,19 +333,23 @@ pub fn estimate_training_bytes(
     bytes
 }
 
-/// Reject fine-tuning on a QAT (Q4_0) base. Inference on Q4_0/QAT models works,
-/// but the training backward path's per-weight kernels assume Q4_K/Q6_K, and the
-/// QAT builds also leave `per_layer_model_proj` in F16 (no F16 backward kernel) —
-/// so a Q4_0 base would silently produce garbage gradients. Fail early with an
-/// actionable message: train on the Q4_K_M model, deploy the QAT build.
+/// Reject fine-tuning on a QAT (Q4_0) or Q8_0 base. Inference on those quants
+/// works, but the training backward path's per-weight kernels assume Q4_K/Q6_K,
+/// and the QAT builds also leave `per_layer_model_proj` in F16 (no F16 backward
+/// kernel) — so a Q4_0/Q8_0 base would silently produce garbage gradients. Fail
+/// early with an actionable message: train on the Q4_K_M model, deploy the
+/// quantized build.
 fn reject_qat_base(model: &Model) -> Result<(), TrainingError> {
     if let Ok(dt) = model.forward().wcache().dtype("blk.0.attn_q.weight")
-        && dt == rullama::gguf::GgmlDtype::Q4_0
+        && matches!(
+            dt,
+            rullama::gguf::GgmlDtype::Q4_0 | rullama::gguf::GgmlDtype::Q8_0
+        )
     {
         return Err(TrainingError::Backend(
-            "fine-tuning requires a Q4_K_M base model — the QAT (Q4_0) build is \
-             inference-only. Train on gemma4:e2b (Q4_K_M) and deploy the QAT model \
-             for inference."
+            "fine-tuning requires a Q4_K_M base model — the QAT (Q4_0) and Q8_0 \
+             builds are inference-only. Train on gemma4:e2b (Q4_K_M) and deploy \
+             the quantized model for inference."
                 .into(),
         ));
     }

@@ -4048,6 +4048,78 @@ mod tests {
         assert!(max_drift < 1e-4, "rope fwd+bwd drift = {max_drift}");
     }
 
+    /// GPU Q8_0 dequant-matmul matches the CPU oracle (dequant_q8_0 + matvec).
+    /// Synthetic blocks — no model blob needed.
+    #[test]
+    fn q8_0_matmul_gpu_vs_cpu() {
+        use crate::gguf::quant::{Q8_0_BLOCK_BYTES, QK8_0, dequant_q8_0};
+
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        // W is [k, n] row-major: n rows of k elements, k/32 Q8_0 blocks per row.
+        let (k, n) = (96usize, 7usize);
+        let blocks_per_row = k / QK8_0;
+        let row_bytes = blocks_per_row * Q8_0_BLOCK_BYTES;
+
+        // Deterministic pseudo-random weight bytes: varied scales + full i8 range.
+        let mut w_bytes = vec![0u8; n * row_bytes];
+        for j in 0..n {
+            for b in 0..blocks_per_row {
+                let off = j * row_bytes + b * Q8_0_BLOCK_BYTES;
+                // scale d in ~[0.25, 2.0], distinct per block
+                let d = half::f16::from_f32(0.25 + ((j * 7 + b * 3) % 8) as f32 * 0.25);
+                w_bytes[off..off + 2].copy_from_slice(&d.to_bits().to_le_bytes());
+                for l in 0..QK8_0 {
+                    // signed int8 covering negative/positive/extremes
+                    let q = ((j * 31 + b * 17 + l * 13) % 256) as u8;
+                    w_bytes[off + 2 + l] = q;
+                }
+            }
+        }
+        let xs: Vec<f32> = (0..k).map(|i| ((i as f32) * 0.37).sin() * 0.5).collect();
+
+        // CPU oracle: dequant whole rows, then matvec.
+        let mut w_f32 = vec![0f32; n * k];
+        for j in 0..n {
+            let src = &w_bytes[j * row_bytes..(j + 1) * row_bytes];
+            dequant_q8_0(src, &mut w_f32[j * k..(j + 1) * k]).unwrap();
+        }
+        let cpu: Vec<f32> = (0..n)
+            .map(|j| (0..k).map(|i| xs[i] * w_f32[j * k + i]).sum())
+            .collect();
+
+        // GPU: raw Q8_0 bytes in a storage buffer (96/32=3 blocks × 34 B = 102 B/row
+        // → pad the upload to /4; the kernel byte-addresses past padding safely).
+        let mut padded = w_bytes.clone();
+        while !padded.len().is_multiple_of(4) {
+            padded.push(0);
+        }
+        let wb = write_storage(device, queue, "q8w", &padded);
+        let xb = write_storage_f32(device, queue, "q8x", &xs);
+        let (yb, yr) = make_output_pair(device, "q8y", (n * 4) as u64);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("q8_0"),
+        });
+        matmul_q8_0_chained(&ctx, &p, &mut enc, &wb, &xb, &yb, k, n);
+        enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (n * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("readback");
+
+        for j in 0..n {
+            let diff = (cpu[j] - gpu[j]).abs();
+            let tol = 1e-4 * cpu[j].abs().max(1.0);
+            assert!(
+                diff <= tol,
+                "row {j}: cpu={} gpu={} diff={diff}",
+                cpu[j],
+                gpu[j]
+            );
+        }
+    }
+
     /// Masked target (`u32::MAX`) emits zero gradient and zero loss on the
     /// GPU, matching the CPU oracle's masking behavior.
     #[test]

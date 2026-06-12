@@ -3305,6 +3305,7 @@ fn run_matmul_into_buf(
         GgmlDtype::Q4_K => &pipes.q4_k_matmul,
         GgmlDtype::Q6_K => &pipes.q6_k_matmul,
         GgmlDtype::Q4_0 => &pipes.q4_0_matmul,
+        GgmlDtype::Q8_0 => &pipes.q8_0_matmul,
         other => {
             return Err(RullamaError::Inference(format!(
                 "output proj dtype {other:?} not supported"
