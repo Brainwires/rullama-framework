@@ -1253,9 +1253,21 @@ mod tests {
             eprintln!("skipping: gemma4 GGUF not available");
             return;
         }
-        let bytes = std::fs::read(path).unwrap();
-        let r = crate::gguf::GgufReader::new(bytes).unwrap();
-        let w = crate::gguf::dequant_tensor_to_f32(&r, "blk.0.attn_norm.weight").unwrap();
+        // Header-only reader + per-tensor file read: reading the whole 7.16 GB
+        // blob just to dequant one 1536-float norm tensor used to peak this
+        // test at 6.2 GB resident — enough to OOM the suite on a 16 GB machine
+        // once the other GPU tests' driver allocations share the process.
+        let r = crate::gguf::tensor::reader_from_file_header(path).unwrap();
+        let desc = r.tensor("blk.0.attn_norm.weight").unwrap().clone();
+        assert_eq!(
+            desc.dtype,
+            crate::gguf::GgmlDtype::F32,
+            "norm weight is F32"
+        );
+        let raw = crate::gguf::tensor::read_tensor_raw(path, &r, "blk.0.attn_norm.weight").unwrap();
+        let mut w = vec![0f32; desc.elem_count() as usize];
+        crate::gguf::quant::dequant_into_f32(desc.dtype, &raw, &mut w).unwrap();
+
         let x = rand_vec(w.len(), 0xFEEDFACE);
         let mut cpu = vec![0f32; w.len()];
         cpu_rmsnorm(&x, Some(&w), 1e-6, &mut cpu);

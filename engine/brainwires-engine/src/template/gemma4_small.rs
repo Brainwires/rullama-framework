@@ -184,8 +184,9 @@ mod tests {
             eprintln!("skipping: gemma4 GGUF not available");
             return;
         }
-        let bytes = std::fs::read(path).unwrap();
-        let r = crate::gguf::GgufReader::new(bytes).unwrap();
+        // Header-only read — the tokenizer vocab/merges live in GGUF metadata,
+        // so there's no need to pull the whole 7 GB blob into memory.
+        let r = crate::gguf::tensor::reader_from_file_header(path).unwrap();
         let tok = crate::tokenizer::BpeTokenizer::from_gguf(&r).unwrap();
         let msgs = vec![ChatMessage {
             role: ChatRole::User,

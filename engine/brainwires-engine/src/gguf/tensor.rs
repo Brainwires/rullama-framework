@@ -202,6 +202,47 @@ pub async fn dequant_tensor_to_f32_async(r: &GgufReader, name: &str) -> Result<V
     Ok(out)
 }
 
+/// Test-support: a `GgufReader` over only the HEADER of an on-disk GGUF
+/// (metadata + tensor descs — the first 64 MB). Reading a whole 7+ GB fixture
+/// blob into a Vec just to look up metadata or one tensor peaks gigabytes of
+/// resident memory per test and OOMs the suite on 16 GB machines. Tensor DATA
+/// is not in the returned reader — pair with [`read_tensor_raw`].
+#[cfg(test)]
+pub(crate) fn reader_from_file_header(path: &str) -> Result<GgufReader> {
+    use std::io::Read;
+    let mut f =
+        std::fs::File::open(path).map_err(|e| RullamaError::Gguf(format!("open {path}: {e}")))?;
+    let len = f
+        .metadata()
+        .map_err(|e| RullamaError::Gguf(format!("stat {path}: {e}")))?
+        .len();
+    let take = len.min(64 * 1024 * 1024) as usize;
+    let mut header = vec![0u8; take];
+    f.read_exact(&mut header)
+        .map_err(|e| RullamaError::Gguf(format!("read {path}: {e}")))?;
+    GgufReader::new(header)
+}
+
+/// Test-support: fetch one tensor's raw (still-quantized) bytes straight from
+/// the file via seek + exact read. `r` must come from [`reader_from_file_header`]
+/// on the same path.
+#[cfg(test)]
+pub(crate) fn read_tensor_raw(path: &str, r: &GgufReader, name: &str) -> Result<Vec<u8>> {
+    use std::io::{Read, Seek, SeekFrom};
+    let desc = r.tensor(name)?.clone();
+    let block_elems = desc.dtype.block_elems();
+    let n_blocks = (desc.elem_count() as usize).div_ceil(block_elems);
+    let n_bytes = n_blocks * desc.dtype.block_bytes();
+    let mut f =
+        std::fs::File::open(path).map_err(|e| RullamaError::Gguf(format!("open {path}: {e}")))?;
+    f.seek(SeekFrom::Start(r.data_section_offset() + desc.offset))
+        .map_err(|e| RullamaError::Gguf(format!("seek {path}: {e}")))?;
+    let mut raw = vec![0u8; n_bytes];
+    f.read_exact(&mut raw)
+        .map_err(|e| RullamaError::Gguf(format!("read {name} from {path}: {e}")))?;
+    Ok(raw)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
