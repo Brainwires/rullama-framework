@@ -12,6 +12,7 @@ pub mod forward;
 pub mod forward_chained;
 pub mod forward_gpu;
 pub mod kokoro;
+pub mod moe;
 pub mod ops;
 pub mod rome;
 pub mod styletts2;

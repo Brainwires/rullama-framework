@@ -8,7 +8,8 @@ use std::sync::Arc;
 
 use crate::error::Result;
 use crate::gguf::{
-    GgufReader, dequant_row_to_f32, dequant_row_to_f32_async, dequant_tensor_to_f32,
+    GgufReader, dequant_expert_slice_to_f32, dequant_expert_slice_to_f32_async,
+    dequant_row_to_f32, dequant_row_to_f32_async, dequant_tensor_to_f32,
     dequant_tensor_to_f32_async,
 };
 
@@ -48,6 +49,18 @@ impl Weights {
         }
     }
 
+    /// Whether the named tensor exists (cheap descriptor lookup, no data read).
+    pub fn has(&self, name: &str) -> bool {
+        self.reader.tensor(name).is_ok()
+    }
+
+    /// Load one expert's 2-D `[in, out]` slice of a 3-D stacked MoE tensor
+    /// (`blk.N.ffn_*_exps.weight`). Keeps CPU-oracle peak memory at one
+    /// expert, not all of them.
+    pub fn load_expert(&self, name: &str, expert_idx: usize) -> Result<Vec<f32>> {
+        dequant_expert_slice_to_f32(&self.reader, name, expert_idx)
+    }
+
     // ---------- async (streaming-safe) variants ----------
 
     /// Async load: works for both in-memory and streaming readers. Used by the GPU
@@ -65,5 +78,9 @@ impl Weights {
             Ok(_) => self.load_async(name).await.map(Some),
             Err(_) => Ok(None),
         }
+    }
+
+    pub async fn load_expert_async(&self, name: &str, expert_idx: usize) -> Result<Vec<f32>> {
+        dequant_expert_slice_to_f32_async(&self.reader, name, expert_idx).await
     }
 }

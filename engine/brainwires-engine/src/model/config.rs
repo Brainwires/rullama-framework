@@ -59,6 +59,12 @@ pub struct Gemma4Config {
     /// `rope_dim_swa == head_dim_swa`).
     pub rope_dim_swa: u32,
 
+    // ---- MoE (gemma4:26b-a4b; zero on dense variants) ----
+    /// `gemma4.expert_count` — total routed experts per MoE layer. 0 ⇒ dense model.
+    pub expert_count: u32,
+    /// `gemma4.expert_used_count` — top-k experts selected per token.
+    pub expert_used_count: u32,
+
     // ---- output ----
     /// `gemma4.final_logit_softcapping` (typically 30.0).
     pub final_logit_softcap: f32,
@@ -204,6 +210,18 @@ impl Gemma4Config {
             .transpose()?
             .unwrap_or(head_dim_swa); // fallback: full rotation
 
+        // MoE (mirrors Ollama's c.Uint("expert_count", 0) — absent on dense models)
+        let expert_count = r
+            .get_opt("gemma4.expert_count")
+            .map(|v| v.as_u32())
+            .transpose()?
+            .unwrap_or(0);
+        let expert_used_count = r
+            .get_opt("gemma4.expert_used_count")
+            .map(|v| v.as_u32())
+            .transpose()?
+            .unwrap_or(0);
+
         // output
         let final_logit_softcap = r.get("gemma4.final_logit_softcapping")?.as_f32()?;
         let ple_dim = r
@@ -253,6 +271,8 @@ impl Gemma4Config {
             rope_freq_base_swa,
             rope_dim_global,
             rope_dim_swa,
+            expert_count,
+            expert_used_count,
             final_logit_softcap,
             ple_dim,
             vocab_size,
@@ -266,6 +286,13 @@ impl Gemma4Config {
     /// True iff this checkpoint uses per-layer-input embeddings (E2B/E4B variants).
     pub fn has_ple(&self) -> bool {
         self.ple_dim > 0
+    }
+
+    /// True iff this checkpoint has MoE expert blocks (`gemma4:26b-a4b`).
+    /// Which *layers* carry experts is decided by tensor presence
+    /// (`blk.N.ffn_gate_inp.weight`), mirroring Ollama's nil-field checks.
+    pub fn has_moe(&self) -> bool {
+        self.expert_count > 0 && self.expert_used_count > 0
     }
 
     /// Layer kind for layer `i`.
