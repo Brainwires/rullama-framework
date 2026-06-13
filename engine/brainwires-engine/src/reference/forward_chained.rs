@@ -2290,10 +2290,18 @@ impl Forward {
         // GPU is unaffected. Empirically anything wider than 1 layer per
         // submit (tried 3) re-introduces the iPhone WebContent crash on the
         // first step — the per-layer cadence is the working strip-line.
+        let time_layers = std::env::var("DG_LAYER_TIME").is_ok();
+        let mut t_encode = std::time::Duration::ZERO;
+        let mut t_gpu = std::time::Duration::ZERO;
         for i in 0..n_layers as u32 {
             let cap = capture.map(|c| &c[i as usize]);
             let lora = loras.map(|l| &l[i as usize]);
+            let _te = std::time::Instant::now();
             self.encode_layer(&mut enc, i, pos, cap, lora).await?;
+            if time_layers {
+                t_encode += _te.elapsed();
+            }
+            let _tg = std::time::Instant::now();
             self.ctx.queue.submit(Some(enc.finish()));
             // Per-layer cancel check. Encoder submits are the natural
             // boundary because the GPU is idle between layers under
@@ -2324,7 +2332,24 @@ impl Forward {
             // in cache.)
             if self.forward_destroy_per_layer && i < self.forward_destroy_layer_floor {
                 let _drain = read_buf_stats(&self.ctx, &self.hidden, 1).await?;
-                let _ = self.wcache.drop_blk_layer_range_destroy(i, i + 1);
+                if self.moe_stream_experts {
+                    // Per-expert streaming: keep the non-expert weights (attn +
+                    // dense FFN + norms, ~1.3 GB for all 30 layers) GPU-RESIDENT
+                    // so tokens 2+ re-fetch only the streamed experts, not the
+                    // whole layer. Drop just this layer's per-expert buffers
+                    // (`blk.{i}.ffn_{gate_up,down}_exps.weight#e*`).
+                    let _ = self
+                        .wcache
+                        .drop_prefix_destroy(&format!("blk.{i}.ffn_gate_up_exps"));
+                    let _ = self
+                        .wcache
+                        .drop_prefix_destroy(&format!("blk.{i}.ffn_down_exps"));
+                } else {
+                    let _ = self.wcache.drop_blk_layer_range_destroy(i, i + 1);
+                }
+            }
+            if time_layers {
+                t_gpu += _tg.elapsed();
             }
             // Per-layer progress beacon — fired AFTER the submit so
             // the caller's "layer N done" message correlates with the
@@ -2358,6 +2383,12 @@ impl Forward {
                     d_model,
                 );
             }
+        }
+        if time_layers {
+            eprintln!(
+                "[layer-time] encode(fetch+midsync) {:.2?}  submit+drain(gpu) {:.2?}",
+                t_encode, t_gpu
+            );
         }
 
         // ---- final norm (in-place into hidden via norm_y as scratch) ----
