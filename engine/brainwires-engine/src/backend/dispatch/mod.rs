@@ -4050,6 +4050,56 @@ mod tests {
         assert!(max_drift < 1e-4, "rope fwd+bwd drift = {max_drift}");
     }
 
+    /// DiffusionGemma region-masked attention matches the CPU oracle
+    /// `masked_attention` — across global + SWA-windowed layers and GQA.
+    #[test]
+    fn diffusion_attention_gpu_vs_cpu() {
+        use crate::reference::diffusion::forward::masked_attention;
+
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        // (n_tokens, n_heads, n_kv, head_dim, prompt_len, n_swa, swa_layer)
+        let cases = [
+            (9usize, 4usize, 2usize, 8usize, 3usize, 1024usize, false), // global bidir + GQA
+            (12, 2, 1, 16, 5, 3, true), // SWA-windowed: canvas keeps last 2 prompt
+            (7, 3, 3, 6, 4, 2, true),   // tight SWA window, no GQA
+            (5, 2, 2, 4, 5, 1024, false), // all-prompt (canvas empty): causal
+        ];
+        for (ci, (n, h, kv, hd, plen, nswa, swa)) in cases.into_iter().enumerate() {
+            let q: Vec<f32> = (0..n * h * hd).map(|i| ((i as f32) * 0.31).sin()).collect();
+            let k: Vec<f32> = (0..n * kv * hd)
+                .map(|i| ((i as f32) * 0.27).cos())
+                .collect();
+            let v: Vec<f32> = (0..n * kv * hd)
+                .map(|i| ((i as f32) * 0.19).sin() * 2.0)
+                .collect();
+
+            let cpu = masked_attention(&q, &k, &v, n, h, kv, hd, plen, nswa, swa);
+
+            let qb = write_storage_f32(device, queue, "da.q", &q);
+            let kb = write_storage_f32(device, queue, "da.k", &k);
+            let vb = write_storage_f32(device, queue, "da.v", &v);
+            let (ob, or) = make_output_pair(device, "da.o", (n * h * hd * 4) as u64);
+            let mut enc = device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("da") });
+            diffusion_attention_chained(
+                &ctx, &p, &mut enc, &qb, &kb, &vb, &ob, n, h, kv, hd, plen, nswa, swa,
+            );
+            enc.copy_buffer_to_buffer(&ob, 0, &or, 0, (n * h * hd * 4) as u64);
+            queue.submit(Some(enc.finish()));
+            let gpu = pollster::block_on(read_back_f32(device, &or)).expect("readback");
+
+            let mut max_abs = 0f32;
+            for (a, b) in cpu.iter().zip(gpu.iter()) {
+                max_abs = max_abs.max((a - b).abs());
+            }
+            assert!(max_abs < 1e-4, "case {ci}: max_abs={max_abs}");
+        }
+    }
+
     /// The fused MoE router kernel (rmsnorm → /√d → ×scale → scores → softmax
     /// → top-k → renorm) matches the CPU oracle in reference/moe.rs — at a
     /// small shape AND the real 26b-a4b shape (d_model 2816, 128 experts,

@@ -57,8 +57,24 @@ fn main() -> ExitCode {
     assert_eq!(oracle.len(), canvas.len() * vocab, "oracle shape mismatch");
 
     let weights = Weights::new(Arc::new(r));
+    // Optional self-conditioning: DG_PREV_LOGITS=<prev_logits.bin> enables the
+    // SC path (sc_temp_inv=1.0, matching the eval tool's 5th-arg invocation).
+    let prev = std::env::var("DG_PREV_LOGITS").ok().map(|p| read_f32(&p));
     let t = std::time::Instant::now();
-    let mine = diffusion_forward(&cfg, &weights, &prompt, &canvas).expect("forward");
+    let mine = if let Some(pl) = &prev {
+        eprintln!("self-conditioning ENABLED ({} floats)", pl.len());
+        rullama::reference::diffusion::forward::diffusion_forward_sc(
+            &cfg,
+            &weights,
+            &prompt,
+            &canvas,
+            Some(pl),
+            1.0,
+        )
+        .expect("sc forward")
+    } else {
+        diffusion_forward(&cfg, &weights, &prompt, &canvas).expect("forward")
+    };
     println!("rullama forward: {:.1?}", t.elapsed());
     assert_eq!(mine.len(), oracle.len());
 

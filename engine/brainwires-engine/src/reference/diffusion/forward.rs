@@ -107,6 +107,22 @@ pub fn diffusion_forward(
     prompt_ids: &[u32],
     canvas_ids: &[u32],
 ) -> Result<Vec<f32>> {
+    diffusion_forward_sc(cfg, weights, prompt_ids, canvas_ids, None, 1.0)
+}
+
+/// As [`diffusion_forward`], but with optional self-conditioning: `prev_logits`
+/// is the previous denoise step's RAW canvas logits `[canvas_len, vocab]`
+/// (`None` ⇒ the zero-SC exactness forward; gated off on step 0 in the
+/// sampler). `sc_temp_inv` is 1/temperature of the PREVIOUS step. Mirrors
+/// `dg_canvas_embed`'s SC subgraph in diffusion-gemma.cpp.
+pub fn diffusion_forward_sc(
+    cfg: &DiffusionConfig,
+    weights: &Weights,
+    prompt_ids: &[u32],
+    canvas_ids: &[u32],
+    prev_logits: Option<&[f32]>,
+    sc_temp_inv: f32,
+) -> Result<Vec<f32>> {
     let base = &cfg.base;
     let d_model = base.d_model as usize;
     let n_heads = base.n_heads as usize;
@@ -115,6 +131,7 @@ pub fn diffusion_forward(
     let p = prompt_ids.len();
     let c = canvas_ids.len();
     let n = p + c;
+    let vocab = base.vocab_size as usize;
 
     // ---- 1. scaled word embedding ----
     let embd_scale = (d_model as f32).sqrt();
@@ -129,12 +146,66 @@ pub fn diffusion_forward(
         }
     }
 
-    // ---- 2. canvas embedding (SC off): rms_norm(no weight) on canvas rows ----
+    // ---- 2. canvas embedding ----
+    // SC off: canvas = rms_norm(canvas) (no scale).
+    // SC on:  canvas = rms_norm(canvas + sc_sig(prev_logits)), where
+    //   sc_sig = sc_mlp( rms_norm( (Σ_v softmax(prev/t)[v]·embd_v)·√d , sc_pre_norm ) )
+    //   and sc_mlp is the gated GeGLU sc_gate/sc_up/sc_down.
+    let sc = if let Some(pl) = prev_logits {
+        assert_eq!(pl.len(), c * vocab, "prev_logits must be [canvas, vocab]");
+        // Load the SC weights + the whole embedding table once. GGUF names the
+        // self-conditioning MLP `self_cond_*` (gate/up are Q4_K, down is Q5_0).
+        let tok = weights.load("token_embd.weight")?; // [vocab, d_model] flat
+        let pre_norm = weights.load("self_cond_pre_norm.weight")?;
+        let gate = weights.load("self_cond_gate.weight")?;
+        let up = weights.load("self_cond_up.weight")?;
+        let down = weights.load("self_cond_down.weight")?;
+        let n_ff = gate.len() / d_model;
+        Some((tok, pre_norm, gate, up, down, n_ff))
+    } else {
+        None
+    };
+
     for i in p..n {
-        let slice = &mut hidden[i * d_model..(i + 1) * d_model];
+        let mut combined = hidden[i * d_model..(i + 1) * d_model].to_vec();
+        if let Some((tok, pre_norm, gate, up, down, n_ff)) = &sc {
+            let ci = i - p;
+            // probs = softmax(prev_logits[ci] * sc_temp_inv)
+            let mut probs: Vec<f32> = prev_logits.unwrap()[ci * vocab..(ci + 1) * vocab]
+                .iter()
+                .map(|&l| l * sc_temp_inv)
+                .collect();
+            softmax(&mut probs);
+            // soft[e] = Σ_v probs[v] · embd_v[e]  (weighted average of token embeddings)
+            let mut soft = vec![0f32; d_model];
+            for (v, &pv) in probs.iter().enumerate() {
+                if pv < 1e-9 {
+                    continue; // negligible: trims the 262k-token sum to the softmax support
+                }
+                let emb = &tok[v * d_model..(v + 1) * d_model];
+                for (s, &e) in soft.iter_mut().zip(emb.iter()) {
+                    *s += pv * e;
+                }
+            }
+            for s in &mut soft {
+                *s *= embd_scale;
+            }
+            // sc_sig = sc_down( gelu(sc_gate·normed) ⊙ (sc_up·normed) )
+            let mut normed = vec![0f32; d_model];
+            rmsnorm(&soft, Some(pre_norm), eps, &mut normed);
+            let mut g = vec![0f32; *n_ff];
+            matvec(gate, d_model, *n_ff, &normed, &mut g);
+            let mut u = vec![0f32; *n_ff];
+            matvec(up, d_model, *n_ff, &normed, &mut u);
+            let mut act = vec![0f32; *n_ff];
+            geglu_split(&g, &u, &mut act);
+            let mut sc_sig = vec![0f32; d_model];
+            matvec(down, *n_ff, d_model, &act, &mut sc_sig);
+            add_into(&mut combined, &sc_sig);
+        }
         let mut tmp = vec![0f32; d_model];
-        rmsnorm(slice, None, eps, &mut tmp);
-        slice.copy_from_slice(&tmp);
+        rmsnorm(&combined, None, eps, &mut tmp);
+        hidden[i * d_model..(i + 1) * d_model].copy_from_slice(&tmp);
     }
 
     // ---- 3. transformer layers ----

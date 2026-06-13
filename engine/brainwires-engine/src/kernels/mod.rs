@@ -72,6 +72,7 @@ pub const ADD_BIAS_BATCHED: &str = include_str!("wgsl/add_bias_batched.wgsl");
 pub const GEGLU: &str = include_str!("wgsl/geglu.wgsl");
 pub const Q4_0_DEQUANT_MATMUL: &str = include_str!("wgsl/q4_0_dequant_matmul.wgsl");
 pub const MOE_ROUTER: &str = include_str!("wgsl/moe_router.wgsl");
+pub const DIFFUSION_ATTENTION: &str = include_str!("wgsl/diffusion_attention.wgsl");
 pub const MOE_EXPERT_MATMUL_Q4_K: &str = include_str!("wgsl/moe_expert_matmul_q4_k.wgsl");
 pub const MOE_EXPERT_MATMUL_Q8_0: &str = include_str!("wgsl/moe_expert_matmul_q8_0.wgsl");
 pub const MOE_GEGLU_HALVES: &str = include_str!("wgsl/moe_geglu_halves.wgsl");

@@ -19,6 +19,61 @@ use crate::gguf::GgmlDtype;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
+struct DiffusionAttnParams {
+    n_tokens: u32,
+    n_heads: u32,
+    n_kv_heads: u32,
+    head_dim: u32,
+    prompt_len: u32,
+    n_swa: u32,
+    swa_layer: u32,
+    _pad: u32,
+}
+
+/// DiffusionGemma region-masked full-sequence attention. Q is
+/// `[n_tokens, n_heads, head_dim]`, K/V `[n_tokens, n_kv_heads, head_dim]`,
+/// output `[n_tokens, n_heads, head_dim]`. One workgroup per (query, head);
+/// the region mask is computed in-kernel (mirrors `mask::allowed`).
+#[allow(clippy::too_many_arguments)]
+pub fn diffusion_attention_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    q: &wgpu::Buffer,
+    k: &wgpu::Buffer,
+    v: &wgpu::Buffer,
+    o: &wgpu::Buffer,
+    n_tokens: usize,
+    n_heads: usize,
+    n_kv_heads: usize,
+    head_dim: usize,
+    prompt_len: usize,
+    n_swa: usize,
+    swa_layer: bool,
+) {
+    let params = DiffusionAttnParams {
+        n_tokens: n_tokens as u32,
+        n_heads: n_heads as u32,
+        n_kv_heads: n_kv_heads as u32,
+        head_dim: head_dim as u32,
+        prompt_len: prompt_len as u32,
+        n_swa: n_swa as u32,
+        swa_layer: swa_layer as u32,
+        _pad: 0,
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.diffusion_attention,
+        "diffusion_attention",
+        &[q, k, v, o],
+        &params,
+        (n_tokens as u32, n_heads as u32, 1),
+    );
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 struct MoeRouterParams {
     d_model: u32,
     n_experts: u32,
