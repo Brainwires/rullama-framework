@@ -451,10 +451,18 @@ fn self_attention(
         matvec(&k_w, d_model, n_kv_heads * head_dim, x, &mut k);
         drop(k_w);
 
-        let v_w = weights.load(&format!("{prefix}attn_v.weight"))?;
-        let mut v = vec![0f32; n_kv_heads * head_dim];
-        matvec(&v_w, d_model, n_kv_heads * head_dim, x, &mut v);
-        drop(v_w);
+        // No-V layers (12b / 26b-a4b global attention): the GGUF ships no
+        // attn_v — V := the raw K projection (BEFORE K-norm), then the usual
+        // unweighted V-norm below. Mirrors Ollama's "K=V: use raw K
+        // projection (before K norm) as V" and the GPU forward's fallback.
+        let v = match weights.load_opt(&format!("{prefix}attn_v.weight"))? {
+            Some(v_w) => {
+                let mut v = vec![0f32; n_kv_heads * head_dim];
+                matvec(&v_w, d_model, n_kv_heads * head_dim, x, &mut v);
+                v
+            }
+            None => k.clone(),
+        };
 
         // K-norm (weighted, per kv_head over head_dim)
         let k_norm_w = weights.load(&format!("{prefix}attn_k_norm.weight"))?;

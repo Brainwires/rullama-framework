@@ -64,6 +64,9 @@ pub struct Gemma4Config {
     pub expert_count: u32,
     /// `gemma4.expert_used_count` — top-k experts selected per token.
     pub expert_used_count: u32,
+    /// `gemma4.expert_feed_forward_length` — each expert's FFN intermediate size
+    /// (704 on 26b-a4b vs 2112 for the parallel dense MLP).
+    pub expert_ffn: u32,
 
     // ---- output ----
     /// `gemma4.final_logit_softcapping` (typically 30.0).
@@ -221,6 +224,11 @@ impl Gemma4Config {
             .map(|v| v.as_u32())
             .transpose()?
             .unwrap_or(0);
+        let expert_ffn = r
+            .get_opt("gemma4.expert_feed_forward_length")
+            .map(|v| v.as_u32())
+            .transpose()?
+            .unwrap_or(0);
 
         // output
         let final_logit_softcap = r.get("gemma4.final_logit_softcapping")?.as_f32()?;
@@ -273,6 +281,7 @@ impl Gemma4Config {
             rope_dim_swa,
             expert_count,
             expert_used_count,
+            expert_ffn,
             final_logit_softcap,
             ple_dim,
             vocab_size,

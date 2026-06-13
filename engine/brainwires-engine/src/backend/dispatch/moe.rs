@@ -14,6 +14,8 @@ use bytemuck::{Pod, Zeroable};
 use super::cached_dispatch;
 use crate::backend::WgpuCtx;
 use crate::backend::pipelines::Pipelines;
+use crate::error::{Result, RullamaError};
+use crate::gguf::GgmlDtype;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -76,6 +78,65 @@ pub fn moe_router_chained(
         &params,
         (1, 1, 1),
     );
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct MoeExpertMatmulParams {
+    k: u32,
+    n: u32,
+    slot: u32,
+    slice_blocks: u32,
+}
+
+/// MulmatID-style expert matmul: `y = W[ids[slot]] · x` against the stacked
+/// 3-D expert tensor resident as one buffer. The expert index is read from
+/// the GPU-resident `ids` buffer inside the kernel — no CPU readback.
+///
+/// IMPORTANT: each slot must use its own `y` buffer. `cached_dispatch` keys
+/// its uniform on (pipeline, buffers); identical buffer sets across slots in
+/// one encoder would all read the LAST slot's params (queue writes land
+/// before the encoder runs). Distinct per-slot outputs make distinct keys.
+#[allow(clippy::too_many_arguments)]
+pub fn moe_expert_matmul_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    w: &wgpu::Buffer,
+    ids: &wgpu::Buffer,
+    x: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    k: usize,
+    n: usize,
+    slot: usize,
+    dtype: GgmlDtype,
+) -> Result<()> {
+    let pipeline = match dtype {
+        GgmlDtype::Q4_K => &p.moe_expert_matmul_q4_k,
+        GgmlDtype::Q8_0 => &p.moe_expert_matmul_q8_0,
+        other => {
+            return Err(RullamaError::Inference(format!(
+                "moe expert matmul: unsupported quant dtype {other:?} (expected Q4_K or Q8_0)"
+            )));
+        }
+    };
+    let blocks_per_row = k / dtype.block_elems();
+    let params = MoeExpertMatmulParams {
+        k: k as u32,
+        n: n as u32,
+        slot: slot as u32,
+        slice_blocks: (blocks_per_row * n) as u32,
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        pipeline,
+        "moe_expert_matmul",
+        &[w, ids, x, y],
+        &params,
+        ((n as u32).div_ceil(64), 1, 1),
+    );
+    Ok(())
 }
 
 #[repr(C)]

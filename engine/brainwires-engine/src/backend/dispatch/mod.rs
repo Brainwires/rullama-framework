@@ -4133,6 +4133,169 @@ mod tests {
         }
     }
 
+    /// The MulmatID expert matmul (expert index read from a GPU-resident ids
+    /// buffer) matches CPU dequant-slice + matvec, for both exps dtypes and
+    /// for MULTIPLE slots dispatched inside ONE encoder (the cached-uniform
+    /// hazard case — distinct per-slot outputs must isolate the params).
+    #[test]
+    fn moe_expert_matmul_gpu_vs_cpu() {
+        use crate::gguf::GgmlDtype;
+        use crate::gguf::quant::{Q8_0_BLOCK_BYTES, QK8_0, dequant_q4_k, dequant_q8_0};
+
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        // ---- Q8_0 stacked experts: [k=64, n=5, E=6], 3 slots in one encoder ----
+        let (k, n, n_exp, top_k) = (64usize, 5usize, 6usize, 3usize);
+        let blocks_per_row = k / QK8_0;
+        let row_bytes = blocks_per_row * Q8_0_BLOCK_BYTES;
+        let slice_bytes = row_bytes * n;
+        let mut w_bytes = vec![0u8; n_exp * slice_bytes];
+        for e in 0..n_exp {
+            for j in 0..n {
+                for b in 0..blocks_per_row {
+                    let off = e * slice_bytes + j * row_bytes + b * Q8_0_BLOCK_BYTES;
+                    let d = half::f16::from_f32(0.25 + ((e * 3 + j) % 5) as f32 * 0.25);
+                    w_bytes[off..off + 2].copy_from_slice(&d.to_bits().to_le_bytes());
+                    for l in 0..QK8_0 {
+                        w_bytes[off + 2 + l] = ((e * 53 + j * 19 + b * 11 + l * 7) % 256) as u8;
+                    }
+                }
+            }
+        }
+        let ids: Vec<u32> = vec![4, 0, 5];
+        let xs: Vec<f32> = (0..k).map(|i| ((i as f32) * 0.43).sin()).collect();
+
+        // CPU oracle per slot.
+        let mut cpu_slots = Vec::new();
+        for s in 0..top_k {
+            let e = ids[s] as usize;
+            let mut w_f32 = vec![0f32; k * n];
+            dequant_q8_0(&w_bytes[e * slice_bytes..(e + 1) * slice_bytes], &mut w_f32).unwrap();
+            let y: Vec<f32> = (0..n)
+                .map(|j| (0..k).map(|i| xs[i] * w_f32[j * k + i]).sum())
+                .collect();
+            cpu_slots.push(y);
+        }
+
+        // GPU: all slots in ONE encoder, distinct y buffers.
+        let wb = write_storage(device, queue, "me.w", &w_bytes);
+        let ids_b = write_storage(device, queue, "me.ids", bytemuck::cast_slice(&ids));
+        let xb = write_storage_f32(device, queue, "me.x", &xs);
+        let outs: Vec<_> = (0..top_k)
+            .map(|s| make_output_pair(device, &format!("me.y{s}"), (n * 4) as u64))
+            .collect();
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("moe_e"),
+        });
+        for (s, (yb, _)) in outs.iter().enumerate() {
+            moe_expert_matmul_chained(
+                &ctx,
+                &p,
+                &mut enc,
+                &wb,
+                &ids_b,
+                &xb,
+                yb,
+                k,
+                n,
+                s,
+                GgmlDtype::Q8_0,
+            )
+            .unwrap();
+        }
+        for (yb, yr) in &outs {
+            enc.copy_buffer_to_buffer(yb, 0, yr, 0, (n * 4) as u64);
+        }
+        queue.submit(Some(enc.finish()));
+        for (s, (_, yr)) in outs.iter().enumerate() {
+            let gpu = pollster::block_on(read_back_f32(device, yr)).expect("readback");
+            for j in 0..n {
+                let diff = (cpu_slots[s][j] - gpu[j]).abs();
+                let tol = 1e-4 * cpu_slots[s][j].abs().max(1.0);
+                assert!(
+                    diff <= tol,
+                    "q8_0 slot {s} row {j}: cpu={} gpu={}",
+                    cpu_slots[s][j],
+                    gpu[j]
+                );
+            }
+        }
+
+        // ---- Q4_K stacked experts: [k=256, n=2, E=3], 2 slots ----
+        let (k4, n4, e4, top4) = (256usize, 2usize, 3usize, 2usize);
+        let q4_row = (k4 / 256) * 144;
+        let q4_slice = q4_row * n4;
+        let mut w4 = vec![0u8; e4 * q4_slice];
+        for (i, b) in w4.iter_mut().enumerate() {
+            *b = ((i * 31 + 17) % 256) as u8;
+        }
+        // make the f16 scales sane (first 4 bytes of each 144B block)
+        for blk in 0..(w4.len() / 144) {
+            let off = blk * 144;
+            let d = half::f16::from_f32(0.02 + (blk % 3) as f32 * 0.01);
+            let dm = half::f16::from_f32(0.01);
+            w4[off..off + 2].copy_from_slice(&d.to_bits().to_le_bytes());
+            w4[off + 2..off + 4].copy_from_slice(&dm.to_bits().to_le_bytes());
+        }
+        let ids4: Vec<u32> = vec![2, 1];
+        let x4: Vec<f32> = (0..k4).map(|i| ((i as f32) * 0.17).cos()).collect();
+        let mut cpu4 = Vec::new();
+        for s in 0..top4 {
+            let e = ids4[s] as usize;
+            let mut w_f32 = vec![0f32; k4 * n4];
+            dequant_q4_k(&w4[e * q4_slice..(e + 1) * q4_slice], &mut w_f32).unwrap();
+            let y: Vec<f32> = (0..n4)
+                .map(|j| (0..k4).map(|i| x4[i] * w_f32[j * k4 + i]).sum())
+                .collect();
+            cpu4.push(y);
+        }
+        let wb4 = write_storage(device, queue, "me.w4", &w4);
+        let ids4_b = write_storage(device, queue, "me.ids4", bytemuck::cast_slice(&ids4));
+        let xb4 = write_storage_f32(device, queue, "me.x4", &x4);
+        let outs4: Vec<_> = (0..top4)
+            .map(|s| make_output_pair(device, &format!("me.y4_{s}"), (n4 * 4) as u64))
+            .collect();
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("moe_e4"),
+        });
+        for (s, (yb, _)) in outs4.iter().enumerate() {
+            moe_expert_matmul_chained(
+                &ctx,
+                &p,
+                &mut enc,
+                &wb4,
+                &ids4_b,
+                &xb4,
+                yb,
+                k4,
+                n4,
+                s,
+                GgmlDtype::Q4_K,
+            )
+            .unwrap();
+        }
+        for (yb, yr) in &outs4 {
+            enc.copy_buffer_to_buffer(yb, 0, yr, 0, (n4 * 4) as u64);
+        }
+        queue.submit(Some(enc.finish()));
+        for (s, (_, yr)) in outs4.iter().enumerate() {
+            let gpu = pollster::block_on(read_back_f32(device, yr)).expect("readback");
+            for j in 0..n4 {
+                let diff = (cpu4[s][j] - gpu[j]).abs();
+                let tol = 1e-3 * cpu4[s][j].abs().max(1.0);
+                assert!(
+                    diff <= tol,
+                    "q4_k slot {s} row {j}: cpu={} gpu={}",
+                    cpu4[s][j],
+                    gpu[j]
+                );
+            }
+        }
+    }
+
     /// moe_geglu_halves matches geglu_split run on the two halves.
     #[test]
     fn moe_geglu_halves_gpu_vs_cpu() {

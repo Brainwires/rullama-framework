@@ -15,6 +15,8 @@ pub mod quant;
 pub mod tensor;
 
 pub use dtype::GgmlDtype;
+#[cfg(not(target_arch = "wasm32"))]
+pub use fetcher::FileFetcher;
 #[cfg(target_arch = "wasm32")]
 pub use fetcher::HttpRangeFetcher;
 #[cfg(target_arch = "wasm32")]
