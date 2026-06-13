@@ -338,10 +338,12 @@ async fn diffusion_layer_gpu(
 
     // ===== region-aware dual per-layer scale (CPU) =====
     let enc = weights
-        .load_opt(&format!("{prefix}enc_layer_output_scale.weight"))?
+        .load_opt_async(&format!("{prefix}enc_layer_output_scale.weight"))
+        .await?
         .and_then(|v| v.first().copied());
     let dec = weights
-        .load_opt(&format!("{prefix}layer_output_scale.weight"))?
+        .load_opt_async(&format!("{prefix}layer_output_scale.weight"))
+        .await?
         .and_then(|v| v.first().copied());
     if let Some(s) = enc {
         for i in 0..p {
@@ -464,30 +466,9 @@ async fn ffn_block_gpu(
     // --- MoE FFN: router + 128-expert gate_up/geglu/down, weighted-combined.
     // GPU batched path by default; set DG_CPU_MOE to force the CPU oracle loop
     // (A/B parity debugging). ---
-    let post1 = weights
-        .load_opt(&format!("{prefix}post_ffw_norm_1.weight"))?
-        .or(weights.load_opt(&format!("{prefix}ffn_post_norm_1.weight"))?)
-        .ok_or_else(|| {
-            crate::error::RullamaError::Inference(format!(
-                "MoE layer {layer}: missing post_ffw_norm_1"
-            ))
-        })?;
-    let pre2 = weights
-        .load_opt(&format!("{prefix}pre_ffw_norm_2.weight"))?
-        .or(weights.load_opt(&format!("{prefix}ffn_pre_norm_2.weight"))?)
-        .ok_or_else(|| {
-            crate::error::RullamaError::Inference(format!(
-                "MoE layer {layer}: missing pre_ffw_norm_2"
-            ))
-        })?;
-    let post2 = weights
-        .load_opt(&format!("{prefix}post_ffw_norm_2.weight"))?
-        .or(weights.load_opt(&format!("{prefix}ffn_post_norm_2.weight"))?)
-        .ok_or_else(|| {
-            crate::error::RullamaError::Inference(format!(
-                "MoE layer {layer}: missing post_ffw_norm_2"
-            ))
-        })?;
+    let post1 = load_first_norm(weights, &prefix, "post_ffw_norm_1", "ffn_post_norm_1").await?;
+    let pre2 = load_first_norm(weights, &prefix, "pre_ffw_norm_2", "ffn_pre_norm_2").await?;
+    let post2 = load_first_norm(weights, &prefix, "post_ffw_norm_2", "ffn_post_norm_2").await?;
     let n_experts = base.expert_count as usize;
     let top_k = base.expert_used_count as usize;
 
@@ -763,6 +744,21 @@ async fn moe_acc_gpu(
     gpu.wcache.drop_prefix_destroy(&gu_name);
     gpu.wcache.drop_prefix_destroy(&down_name);
     Ok(moe_acc)
+}
+
+/// Async-load the first present of two norm-weight names (the GGUF uses either
+/// `{prefix}{a}.weight` or the older `{prefix}{b}.weight`), erroring if neither.
+async fn load_first_norm(weights: &Weights, prefix: &str, a: &str, b: &str) -> Result<Vec<f32>> {
+    if let Some(v) = weights
+        .load_opt_async(&format!("{prefix}{a}.weight"))
+        .await?
+    {
+        return Ok(v);
+    }
+    weights
+        .load_opt_async(&format!("{prefix}{b}.weight"))
+        .await?
+        .ok_or_else(|| crate::error::RullamaError::Inference(format!("MoE {prefix}: missing {a}")))
 }
 
 /// Canvas-embedding preamble (CPU): `canvas = rms_norm(canvas + sc_sig)` where

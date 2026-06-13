@@ -35,6 +35,8 @@
 )]
 
 pub mod api;
+/// JS-facing DiffusionGemma surface — `DiffusionGemma` block-diffusion engine.
+pub mod diffusion;
 /// JS-facing embedding surface — `EmbeddingModel` over EmbeddingGemma.
 pub mod embed;
 pub mod error;
