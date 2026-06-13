@@ -353,6 +353,22 @@ fn reject_qat_base(model: &Model) -> Result<(), TrainingError> {
                 .into(),
         ));
     }
+    // Sparse-MoE bases (gemma4:26b-a4b) are inference-only too: backward
+    // through the router top-k + stacked expert tensors isn't implemented,
+    // and a 26B base is far past the in-browser training budget anyway.
+    if model
+        .forward()
+        .wcache()
+        .dtype("blk.0.ffn_gate_inp.weight")
+        .is_ok()
+    {
+        return Err(TrainingError::Backend(
+            "fine-tuning a sparse-MoE base (gemma4:26b-a4b) is not supported — \
+             the expert/router backward path is inference-only. Train on a \
+             dense Q4_K_M model (gemma4:e2b / e4b)."
+                .into(),
+        ));
+    }
     Ok(())
 }
 
