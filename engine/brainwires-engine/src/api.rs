@@ -313,8 +313,20 @@ impl Model {
             None
         };
 
-        let forward =
+        let mut forward =
             Forward::new_with_max_context(cfg, ctx, pipes, weights, wcache, max_context).await?;
+        // Sparse-MoE checkpoints (gemma4:26b-a4b) carry ~16 GB of experts —
+        // far past any GPU's resident budget. Auto-enable weight streaming so
+        // they actually load + run anywhere (incl. the browser): per-layer
+        // destroy keeps peak weight residency to ~1 layer, and per-expert
+        // streaming fetches only the routed top-k slices per layer. Dense
+        // models that fit in memory are left non-streaming (full speed) — this
+        // only flips on when `has_moe()`. Requires the reader to support range
+        // fetches (FileFetcher / HttpRange / OPFS), which all load paths use.
+        if forward.cfg().has_moe() {
+            forward.set_forward_destroy_per_layer(true);
+            forward.set_moe_stream_experts(true);
+        }
         Ok(Self {
             tokenizer,
             forward,
