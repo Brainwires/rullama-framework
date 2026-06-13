@@ -17,6 +17,7 @@
 //! entropy-bound denoiser exactly; the forward graph mirrors
 //! `src/models/diffusion-gemma.cpp`.
 
+pub mod mask;
 pub mod sampler;
 
 use crate::error::{Result, RullamaError};
