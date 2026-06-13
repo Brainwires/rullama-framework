@@ -32,6 +32,8 @@ mod training;
 pub use training::*;
 mod matmul;
 pub use matmul::*;
+mod moe;
+pub use moe::*;
 mod vocoder;
 pub use vocoder::*;
 
@@ -4046,6 +4048,175 @@ mod tests {
             }
         }
         assert!(max_drift < 1e-4, "rope fwd+bwd drift = {max_drift}");
+    }
+
+    /// The fused MoE router kernel (rmsnorm → /√d → ×scale → scores → softmax
+    /// → top-k → renorm) matches the CPU oracle in reference/moe.rs.
+    #[test]
+    fn moe_router_gpu_vs_cpu() {
+        use crate::reference::moe::softmax_topk_renorm;
+        use crate::reference::ops::{matvec, rmsnorm as cpu_rmsnorm_op};
+
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let dummy = make_dummy_storage(device, "dummy");
+
+        let (d_model, n_experts, top_k) = (96usize, 16usize, 4usize);
+        let eps = 1e-6f32;
+        let xs: Vec<f32> = (0..d_model).map(|i| ((i as f32) * 0.73).sin()).collect();
+        let scale: Vec<f32> = (0..d_model).map(|i| 0.5 + ((i % 7) as f32) * 0.2).collect();
+        let router_w: Vec<f32> = (0..n_experts * d_model)
+            .map(|i| ((i as f32) * 0.137).cos() * 0.3)
+            .collect();
+
+        // CPU oracle — same math as reference/moe.rs::route.
+        let mut normed = vec![0f32; d_model];
+        cpu_rmsnorm_op(&xs, None, eps, &mut normed);
+        let inv_sqrt_d = 1.0 / (d_model as f32).sqrt();
+        for (v, s) in normed.iter_mut().zip(scale.iter()) {
+            *v *= inv_sqrt_d * s;
+        }
+        let mut scores = vec![0f32; n_experts];
+        matvec(&router_w, d_model, n_experts, &normed, &mut scores);
+        let cpu_sel = softmax_topk_renorm(&scores, top_k);
+
+        // GPU.
+        let xb = write_storage_f32(device, queue, "mr.x", &xs);
+        let sb = write_storage_f32(device, queue, "mr.scale", &scale);
+        let wb = write_storage_f32(device, queue, "mr.w", &router_w);
+        let (ids_b, ids_r) = make_output_pair(device, "mr.ids", (top_k * 4) as u64);
+        let (w_b, w_r) = make_output_pair(device, "mr.weights", (top_k * 4) as u64);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("moe_r"),
+        });
+        moe_router_chained(
+            &ctx,
+            &p,
+            &mut enc,
+            &xb,
+            Some(&sb),
+            &dummy,
+            &wb,
+            &ids_b,
+            &w_b,
+            d_model,
+            n_experts,
+            top_k,
+            eps,
+        );
+        enc.copy_buffer_to_buffer(&ids_b, 0, &ids_r, 0, (top_k * 4) as u64);
+        enc.copy_buffer_to_buffer(&w_b, 0, &w_r, 0, (top_k * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        // ids are u32 — read raw bits back through the f32 helper and bitcast.
+        let gpu_ids: Vec<u32> = pollster::block_on(read_back_f32(device, &ids_r))
+            .expect("ids")
+            .iter()
+            .map(|f| f.to_bits())
+            .collect();
+        let gpu_w = pollster::block_on(read_back_f32(device, &w_r)).expect("weights");
+
+        for s in 0..top_k {
+            assert_eq!(
+                gpu_ids[s] as usize, cpu_sel[s].0,
+                "slot {s}: gpu expert {} != cpu expert {}",
+                gpu_ids[s], cpu_sel[s].0
+            );
+            let diff = (gpu_w[s] - cpu_sel[s].1).abs();
+            assert!(
+                diff < 1e-5,
+                "slot {s}: gpu weight {} != cpu weight {} (diff {diff})",
+                gpu_w[s],
+                cpu_sel[s].1
+            );
+        }
+    }
+
+    /// moe_geglu_halves matches geglu_split run on the two halves.
+    #[test]
+    fn moe_geglu_halves_gpu_vs_cpu() {
+        use crate::reference::ops::geglu_split;
+
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        let n_ff = 67usize; // deliberately not a multiple of the workgroup
+        let gu: Vec<f32> = (0..2 * n_ff)
+            .map(|i| ((i as f32) * 0.41).sin() * 3.0)
+            .collect();
+        let mut cpu = vec![0f32; n_ff];
+        geglu_split(&gu[..n_ff], &gu[n_ff..], &mut cpu);
+
+        let gub = write_storage_f32(device, queue, "mg.gu", &gu);
+        let (yb, yr) = make_output_pair(device, "mg.y", (n_ff * 4) as u64);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("moe_g"),
+        });
+        moe_geglu_halves_chained(&ctx, &p, &mut enc, &gub, &yb, n_ff);
+        enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (n_ff * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("readback");
+        for i in 0..n_ff {
+            let diff = (cpu[i] - gpu[i]).abs();
+            assert!(diff < 1e-5, "i={i}: cpu={} gpu={}", cpu[i], gpu[i]);
+        }
+    }
+
+    /// moe_combine applies router weights + per-expert down scales and sums slots.
+    #[test]
+    fn moe_combine_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let dummy = make_dummy_storage(device, "dummy");
+
+        let (d_model, top_k, n_experts) = (50usize, 3usize, 8usize);
+        let slots: Vec<f32> = (0..top_k * d_model)
+            .map(|i| ((i as f32) * 0.29).cos())
+            .collect();
+        let ids: Vec<u32> = vec![5, 0, 7];
+        let weights: Vec<f32> = vec![0.5, 0.3, 0.2];
+        let down_scale: Vec<f32> = (0..n_experts).map(|e| 1.0 + e as f32 * 0.1).collect();
+
+        let mut cpu = vec![0f32; d_model];
+        for s in 0..top_k {
+            for i in 0..d_model {
+                cpu[i] += weights[s] * down_scale[ids[s] as usize] * slots[s * d_model + i];
+            }
+        }
+
+        let slots_b = write_storage_f32(device, queue, "mc.slots", &slots);
+        let ids_b = write_storage(device, queue, "mc.ids", bytemuck::cast_slice(&ids));
+        let w_b = write_storage_f32(device, queue, "mc.w", &weights);
+        let ds_b = write_storage_f32(device, queue, "mc.ds", &down_scale);
+        let (yb, yr) = make_output_pair(device, "mc.y", (d_model * 4) as u64);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("moe_c"),
+        });
+        moe_combine_chained(
+            &ctx,
+            &p,
+            &mut enc,
+            &slots_b,
+            &ids_b,
+            &w_b,
+            Some(&ds_b),
+            &dummy,
+            &yb,
+            d_model,
+            top_k,
+        );
+        enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (d_model * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("readback");
+        for i in 0..d_model {
+            let diff = (cpu[i] - gpu[i]).abs();
+            assert!(diff < 1e-5, "i={i}: cpu={} gpu={}", cpu[i], gpu[i]);
+        }
     }
 
     /// GPU Q5_0 dequant-matmul matches the CPU oracle (dequant_q5_0 + matvec).
