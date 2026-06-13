@@ -4100,6 +4100,154 @@ mod tests {
         }
     }
 
+    /// The batched expert matmul applies each (position, slot)'s own expert
+    /// (`ids[pos*top_k+slot]`) to `x[pos]` — matches CPU dequant-slice + matvec
+    /// for both exps dtypes, with positions selecting different experts.
+    #[test]
+    fn moe_expert_matmul_batched_gpu_vs_cpu() {
+        use crate::gguf::GgmlDtype;
+        use crate::gguf::quant::{Q8_0_BLOCK_BYTES, QK8_0, dequant_q4_k, dequant_q8_0};
+
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        // ---- Q8_0: [k=64, n=5, E=6], n_pos=3, top_k=2 (distinct experts/pos) ----
+        let (k, n, n_exp, n_pos, top_k) = (64usize, 5usize, 6usize, 3usize, 2usize);
+        let bpr = k / QK8_0;
+        let row_bytes = bpr * Q8_0_BLOCK_BYTES;
+        let slice_bytes = row_bytes * n;
+        let mut w = vec![0u8; n_exp * slice_bytes];
+        for e in 0..n_exp {
+            for j in 0..n {
+                for b in 0..bpr {
+                    let off = e * slice_bytes + j * row_bytes + b * Q8_0_BLOCK_BYTES;
+                    let d = half::f16::from_f32(0.25 + ((e * 3 + j) % 5) as f32 * 0.25);
+                    w[off..off + 2].copy_from_slice(&d.to_bits().to_le_bytes());
+                    for l in 0..QK8_0 {
+                        w[off + 2 + l] = ((e * 53 + j * 19 + b * 11 + l * 7) % 256) as u8;
+                    }
+                }
+            }
+        }
+        // ids[pos*top_k + slot]: pos0→(4,0) pos1→(5,2) pos2→(1,3)
+        let ids: Vec<u32> = vec![4, 0, 5, 2, 1, 3];
+        let xs: Vec<f32> = (0..n_pos * k).map(|i| ((i as f32) * 0.41).sin()).collect();
+
+        // CPU oracle.
+        let mut cpu = vec![0f32; n_pos * top_k * n];
+        for pos in 0..n_pos {
+            for s in 0..top_k {
+                let e = ids[pos * top_k + s] as usize;
+                let mut wf = vec![0f32; k * n];
+                dequant_q8_0(&w[e * slice_bytes..(e + 1) * slice_bytes], &mut wf).unwrap();
+                let xrow = &xs[pos * k..(pos + 1) * k];
+                for j in 0..n {
+                    cpu[(pos * top_k + s) * n + j] = (0..k).map(|i| xrow[i] * wf[j * k + i]).sum();
+                }
+            }
+        }
+
+        let wb = write_storage(device, queue, "mb.w", &w);
+        let ib = write_storage(device, queue, "mb.ids", bytemuck::cast_slice(&ids));
+        let xb = write_storage_f32(device, queue, "mb.x", &xs);
+        let (yb, yr) = make_output_pair(device, "mb.y", (n_pos * top_k * n * 4) as u64);
+        let mut enc =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("mb") });
+        moe_expert_matmul_batched_chained(
+            &ctx,
+            &p,
+            &mut enc,
+            &wb,
+            &ib,
+            &xb,
+            &yb,
+            n_pos,
+            k,
+            n,
+            top_k,
+            GgmlDtype::Q8_0,
+        )
+        .unwrap();
+        enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (n_pos * top_k * n * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("readback");
+        for i in 0..n_pos * top_k * n {
+            let diff = (cpu[i] - gpu[i]).abs();
+            assert!(
+                diff <= 1e-4 * cpu[i].abs().max(1.0),
+                "q8_0 [{i}]: cpu={} gpu={}",
+                cpu[i],
+                gpu[i]
+            );
+        }
+
+        // ---- Q4_K: [k=256, n=2, E=3], n_pos=2, top_k=2 ----
+        let (k4, n4, e4, np4, tk4) = (256usize, 2usize, 3usize, 2usize, 2usize);
+        let q4_row = (k4 / 256) * 144;
+        let q4_slice = q4_row * n4;
+        let mut w4 = vec![0u8; e4 * q4_slice];
+        for (i, b) in w4.iter_mut().enumerate() {
+            *b = ((i * 31 + 17) % 256) as u8;
+        }
+        for blk in 0..(w4.len() / 144) {
+            let off = blk * 144;
+            let d = half::f16::from_f32(0.02 + (blk % 3) as f32 * 0.01);
+            let dm = half::f16::from_f32(0.01);
+            w4[off..off + 2].copy_from_slice(&d.to_bits().to_le_bytes());
+            w4[off + 2..off + 4].copy_from_slice(&dm.to_bits().to_le_bytes());
+        }
+        let ids4: Vec<u32> = vec![2, 1, 0, 2];
+        let x4: Vec<f32> = (0..np4 * k4).map(|i| ((i as f32) * 0.17).cos()).collect();
+        let mut cpu4 = vec![0f32; np4 * tk4 * n4];
+        for pos in 0..np4 {
+            for s in 0..tk4 {
+                let e = ids4[pos * tk4 + s] as usize;
+                let mut wf = vec![0f32; k4 * n4];
+                dequant_q4_k(&w4[e * q4_slice..(e + 1) * q4_slice], &mut wf).unwrap();
+                let xrow = &x4[pos * k4..(pos + 1) * k4];
+                for j in 0..n4 {
+                    cpu4[(pos * tk4 + s) * n4 + j] =
+                        (0..k4).map(|i| xrow[i] * wf[j * k4 + i]).sum();
+                }
+            }
+        }
+        let wb4 = write_storage(device, queue, "mb.w4", &w4);
+        let ib4 = write_storage(device, queue, "mb.ids4", bytemuck::cast_slice(&ids4));
+        let xb4 = write_storage_f32(device, queue, "mb.x4", &x4);
+        let (yb4, yr4) = make_output_pair(device, "mb.y4", (np4 * tk4 * n4 * 4) as u64);
+        let mut enc =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("mb4") });
+        moe_expert_matmul_batched_chained(
+            &ctx,
+            &p,
+            &mut enc,
+            &wb4,
+            &ib4,
+            &xb4,
+            &yb4,
+            np4,
+            k4,
+            n4,
+            tk4,
+            GgmlDtype::Q4_K,
+        )
+        .unwrap();
+        enc.copy_buffer_to_buffer(&yb4, 0, &yr4, 0, (np4 * tk4 * n4 * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu4 = pollster::block_on(read_back_f32(device, &yr4)).expect("readback");
+        for i in 0..np4 * tk4 * n4 {
+            let diff = (cpu4[i] - gpu4[i]).abs();
+            assert!(
+                diff <= 1e-3 * cpu4[i].abs().max(1.0),
+                "q4_k [{i}]: cpu={} gpu={}",
+                cpu4[i],
+                gpu4[i]
+            );
+        }
+    }
+
     /// The batched router (one workgroup per position) routes every position
     /// identically to the CPU oracle `softmax_topk_renorm` — at the real
     /// 26b-a4b shape (d_model 2816, 128 experts, top-8) over several positions.

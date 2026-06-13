@@ -196,6 +196,62 @@ pub fn moe_expert_matmul_chained(
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
+struct MoeExpertBatchedParams {
+    k: u32,
+    n: u32,
+    top_k: u32,
+    slice_blocks: u32,
+}
+
+/// Batched MulmatID expert matmul: every (position, slot) applies its own
+/// selected expert (`ids[pos*top_k+slot]`) to `x[pos]`, in one dispatch.
+/// `x` is `[n_pos, k]`; output `y` is `[n_pos*top_k, n]`. Q4_K (gate_up) or
+/// Q8_0 (down) per `dtype`.
+#[allow(clippy::too_many_arguments)]
+pub fn moe_expert_matmul_batched_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    w: &wgpu::Buffer,
+    ids: &wgpu::Buffer,
+    x: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    n_pos: usize,
+    k: usize,
+    n: usize,
+    top_k: usize,
+    dtype: GgmlDtype,
+) -> Result<()> {
+    let pipeline = match dtype {
+        GgmlDtype::Q4_K => &p.moe_expert_matmul_batched_q4_k,
+        GgmlDtype::Q8_0 => &p.moe_expert_matmul_batched_q8_0,
+        other => {
+            return Err(RullamaError::Inference(format!(
+                "moe expert matmul (batched): unsupported dtype {other:?} (expected Q4_K or Q8_0)"
+            )));
+        }
+    };
+    let blocks_per_row = k / dtype.block_elems();
+    let params = MoeExpertBatchedParams {
+        k: k as u32,
+        n: n as u32,
+        top_k: top_k as u32,
+        slice_blocks: (blocks_per_row * n) as u32,
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        pipeline,
+        "moe_expert_matmul_batched",
+        &[w, ids, x, y],
+        &params,
+        ((n as u32).div_ceil(64), (n_pos * top_k) as u32, 1),
+    );
+    Ok(())
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 struct MoeRouterBatchedParams {
     n_pos: u32,
     d_model: u32,
