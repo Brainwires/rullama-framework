@@ -4,10 +4,11 @@
 //! Same 26B-A4B sparse-MoE backbone as `gemma4:26b` (the MoE FFN code in
 //! `reference/moe.rs` + `backend/dispatch/moe.rs` is shared), but ONE weight
 //! set runs in two modes:
-//!   - encoder: causal attention, WRITES the KV cache (prompt prefill + block
-//!     commit; self-conditioning zeroed; per-layer `enc_layer_output_scale`)
-//!   - decoder: bidirectional attention over the 256-token canvas, READS the
-//!     prefix KV (denoise steps; per-layer `layer_output_scale`)
+//!
+//! - encoder: causal attention, WRITES the KV cache (prompt prefill + block
+//!   commit; self-conditioning zeroed; per-layer `enc_layer_output_scale`)
+//! - decoder: bidirectional attention over the 256-token canvas, READS the
+//!   prefix KV (denoise steps; per-layer `layer_output_scale`)
 //! plus a self-conditioning gated MLP (`self_cond_{pre_norm,gate,up,down}`)
 //! that feeds softmax(prev step's canvas logits / prev t) — converted to a
 //! probability-weighted embedding average — back onto the canvas embeddings.
@@ -18,6 +19,7 @@
 //! `src/models/diffusion-gemma.cpp`.
 
 pub mod forward;
+pub mod gpu;
 pub mod mask;
 pub mod sampler;
 
