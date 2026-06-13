@@ -4100,6 +4100,97 @@ mod tests {
         }
     }
 
+    /// The batched router (one workgroup per position) routes every position
+    /// identically to the CPU oracle `softmax_topk_renorm` — at the real
+    /// 26b-a4b shape (d_model 2816, 128 experts, top-8) over several positions.
+    #[test]
+    fn moe_router_batched_gpu_vs_cpu() {
+        use crate::reference::moe::softmax_topk_renorm;
+        use crate::reference::ops::{matvec, rmsnorm as cpu_rmsnorm_op};
+
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let dummy = make_dummy_storage(device, "dummy");
+
+        let (n_pos, d_model, n_experts, top_k, eps) =
+            (5usize, 2816usize, 128usize, 8usize, 1e-6f32);
+        let scale: Vec<f32> = (0..d_model).map(|i| 0.5 + ((i % 7) as f32) * 0.2).collect();
+        let router_w: Vec<f32> = (0..n_experts * d_model)
+            .map(|i| ((i as f32) * 0.137).cos() * 0.3)
+            .collect();
+        // distinct hidden state per position
+        let xs: Vec<f32> = (0..n_pos * d_model)
+            .map(|i| ((i as f32) * 0.013).sin() * 1.5)
+            .collect();
+
+        // CPU oracle per position.
+        let mut cpu: Vec<Vec<(usize, f32)>> = Vec::new();
+        for pos in 0..n_pos {
+            let x = &xs[pos * d_model..(pos + 1) * d_model];
+            let mut normed = vec![0f32; d_model];
+            cpu_rmsnorm_op(x, None, eps, &mut normed);
+            let inv = 1.0 / (d_model as f32).sqrt();
+            for (vv, s) in normed.iter_mut().zip(scale.iter()) {
+                *vv *= inv * s;
+            }
+            let mut scores = vec![0f32; n_experts];
+            matvec(&router_w, d_model, n_experts, &normed, &mut scores);
+            cpu.push(softmax_topk_renorm(&scores, top_k));
+        }
+
+        let xb = write_storage_f32(device, queue, "rb.x", &xs);
+        let sb = write_storage_f32(device, queue, "rb.scale", &scale);
+        let wb = write_storage_f32(device, queue, "rb.w", &router_w);
+        let (ids_b, ids_r) = make_output_pair(device, "rb.ids", (n_pos * top_k * 4) as u64);
+        let (w_b, w_r) = make_output_pair(device, "rb.weights", (n_pos * top_k * 4) as u64);
+        let mut enc =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("rb") });
+        moe_router_batched_chained(
+            &ctx,
+            &p,
+            &mut enc,
+            &xb,
+            Some(&sb),
+            &dummy,
+            &wb,
+            &ids_b,
+            &w_b,
+            n_pos,
+            d_model,
+            n_experts,
+            top_k,
+            eps,
+        );
+        enc.copy_buffer_to_buffer(&ids_b, 0, &ids_r, 0, (n_pos * top_k * 4) as u64);
+        enc.copy_buffer_to_buffer(&w_b, 0, &w_r, 0, (n_pos * top_k * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu_ids: Vec<u32> = pollster::block_on(read_back_f32(device, &ids_r))
+            .expect("ids")
+            .iter()
+            .map(|f| f.to_bits())
+            .collect();
+        let gpu_w = pollster::block_on(read_back_f32(device, &w_r)).expect("w");
+
+        for pos in 0..n_pos {
+            for s in 0..top_k {
+                let idx = pos * top_k + s;
+                assert_eq!(
+                    gpu_ids[idx] as usize, cpu[pos][s].0,
+                    "pos {pos} slot {s}: gpu expert {} != cpu {}",
+                    gpu_ids[idx], cpu[pos][s].0
+                );
+                assert!(
+                    (gpu_w[idx] - cpu[pos][s].1).abs() < 1e-5,
+                    "pos {pos} slot {s}: weight gpu {} cpu {}",
+                    gpu_w[idx],
+                    cpu[pos][s].1
+                );
+            }
+        }
+    }
+
     /// The fused MoE router kernel (rmsnorm → /√d → ×scale → scores → softmax
     /// → top-k → renorm) matches the CPU oracle in reference/moe.rs — at a
     /// small shape AND the real 26b-a4b shape (d_model 2816, 128 experts,

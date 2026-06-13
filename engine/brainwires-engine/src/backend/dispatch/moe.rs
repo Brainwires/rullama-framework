@@ -196,6 +196,66 @@ pub fn moe_expert_matmul_chained(
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
+struct MoeRouterBatchedParams {
+    n_pos: u32,
+    d_model: u32,
+    n_experts: u32,
+    top_k: u32,
+    eps: f32,
+    has_scale: u32,
+    _pad0: u32,
+    _pad1: u32,
+}
+
+/// Batched router: routes all `n_pos` positions in ONE dispatch (one workgroup
+/// per position). `x` is `[n_pos, d_model]`; writes `expert_ids[n_pos, top_k]`
+/// (u32) + `expert_weights[n_pos, top_k]` (f32), GPU-resident.
+#[allow(clippy::too_many_arguments)]
+pub fn moe_router_batched_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer,
+    scale: Option<&wgpu::Buffer>,
+    dummy: &wgpu::Buffer,
+    router_w: &wgpu::Buffer,
+    expert_ids: &wgpu::Buffer,
+    expert_weights: &wgpu::Buffer,
+    n_pos: usize,
+    d_model: usize,
+    n_experts: usize,
+    top_k: usize,
+    eps: f32,
+) {
+    let params = MoeRouterBatchedParams {
+        n_pos: n_pos as u32,
+        d_model: d_model as u32,
+        n_experts: n_experts as u32,
+        top_k: top_k as u32,
+        eps,
+        has_scale: if scale.is_some() { 1 } else { 0 },
+        _pad0: 0,
+        _pad1: 0,
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.moe_router_batched,
+        "moe_router_batched",
+        &[
+            x,
+            scale.unwrap_or(dummy),
+            router_w,
+            expert_ids,
+            expert_weights,
+        ],
+        &params,
+        (n_pos as u32, 1, 1),
+    );
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 struct MoeGegluParams {
     n_ff: u32,
     _pad0: u32,
