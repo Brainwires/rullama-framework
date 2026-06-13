@@ -4051,9 +4051,16 @@ mod tests {
     }
 
     /// The fused MoE router kernel (rmsnorm → /√d → ×scale → scores → softmax
-    /// → top-k → renorm) matches the CPU oracle in reference/moe.rs.
+    /// → top-k → renorm) matches the CPU oracle in reference/moe.rs — at a
+    /// small shape AND the real 26b-a4b shape (d_model 2816, 128 experts,
+    /// top-8, where threads beyond expert 64 exercise the strided paths).
     #[test]
     fn moe_router_gpu_vs_cpu() {
+        moe_router_case(96, 16, 4);
+        moe_router_case(2816, 128, 8);
+    }
+
+    fn moe_router_case(d_model: usize, n_experts: usize, top_k: usize) {
         use crate::reference::moe::softmax_topk_renorm;
         use crate::reference::ops::{matvec, rmsnorm as cpu_rmsnorm_op};
 
@@ -4063,13 +4070,25 @@ mod tests {
         let queue = &ctx.queue;
         let dummy = make_dummy_storage(device, "dummy");
 
-        let (d_model, n_experts, top_k) = (96usize, 16usize, 4usize);
         let eps = 1e-6f32;
         let xs: Vec<f32> = (0..d_model).map(|i| ((i as f32) * 0.73).sin()).collect();
         let scale: Vec<f32> = (0..d_model).map(|i| 0.5 + ((i % 7) as f32) * 0.2).collect();
-        let router_w: Vec<f32> = (0..n_experts * d_model)
+        let mut router_w: Vec<f32> = (0..n_experts * d_model)
             .map(|i| ((i as f32) * 0.137).cos() * 0.3)
             .collect();
+        if n_experts > 100 {
+            // Make a HIGH expert win by correlating its row with x: verifies
+            // the upper expert half is actually visible to the kernel (a
+            // top-k that never includes experts ≥ 64 silently masks a
+            // high-half blindness — which is exactly what the original
+            // cos-wave data did: its top-8 were all < 64).
+            for (j, v) in router_w[100 * d_model..101 * d_model]
+                .iter_mut()
+                .enumerate()
+            {
+                *v += ((j as f32) * 0.73).sin() * 0.2;
+            }
+        }
 
         // CPU oracle — same math as reference/moe.rs::route.
         let mut normed = vec![0f32; d_model];

@@ -33,7 +33,7 @@ struct Params {
 @group(0) @binding(4) var<storage, read_write> out_ids: array<u32>;
 @group(0) @binding(5) var<storage, read_write> out_w:   array<f32>;
 
-const WG: u32 = 128u;
+const WG: u32 = 64u;
 const MAX_EXPERTS: u32 = 256u;
 const MAX_TOPK: u32 = 16u;
 
@@ -41,7 +41,7 @@ var<workgroup> tile:   array<f32, WG>;
 var<workgroup> scores: array<f32, MAX_EXPERTS>;
 var<workgroup> inv_rms_shared: f32;
 
-@compute @workgroup_size(128)
+@compute @workgroup_size(64)
 fn main(@builtin(local_invocation_index) tid: u32) {
     let n = params.d_model;
     let n_exp = params.n_experts;

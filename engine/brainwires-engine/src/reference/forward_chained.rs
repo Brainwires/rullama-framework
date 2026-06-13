@@ -28,7 +28,8 @@ use crate::backend::dispatch::{
     lora_matmul_col_chained, lora_matmul_fused_chained, lora_matmul_row_chained,
     lora_outer_add_chained, make_dummy_storage, matmul_q4_k_backward_input_chained,
     matmul_q4_k_backward_input_tile_chained, matmul_q6_k_backward_input_chained,
-    matmul_q6_k_backward_input_tile_chained, matmul_quant_chained, residual_add_chained,
+    matmul_q6_k_backward_input_tile_chained, matmul_quant_chained, moe_combine_chained,
+    moe_expert_matmul_chained, moe_geglu_halves_chained, moe_router_chained, residual_add_chained,
     rmsnorm_backward_chained, rmsnorm_chained, rmsnorm_per_row_backward_chained,
     rmsnorm_per_row_chained, rope_neox_backward_chained, rope_neox_chained, scale_chained,
     softcap_chained,
@@ -215,6 +216,9 @@ pub struct Forward {
     ple_act: wgpu::Buffer,   // ple_dim
     ple_proj: wgpu::Buffer,  // d_model
 
+    // Sparse-MoE per-layer scratch (gemma4:26b-a4b). None on dense models.
+    moe: Option<MoeScratch>,
+
     // Output projection per-tile scratch (sized to max tile rows). Each output tile
     // matmul writes into this; we then copy_buffer_to_buffer into `logits` at the
     // correct vocab-offset (storage-buffer offset alignment is 256, but
@@ -290,6 +294,20 @@ pub struct Forward {
 
     // Cached scale factor for the final logits softcap dispatch.
     pos: u32,
+}
+
+/// GPU scratch for the sparse-MoE FFN: router outputs + per-slot expert
+/// pipelines. See the allocation site for why per-slot buffers are distinct.
+struct MoeScratch {
+    expert_ids: wgpu::Buffer,     // top_k × u32 (router selection, GPU-resident)
+    expert_weights: wgpu::Buffer, // top_k × f32 (renormalized routing weights)
+    gu: Vec<wgpu::Buffer>,        // per slot: fused gate_up output [2*expert_ffn]
+    act: Vec<wgpu::Buffer>,       // per slot: GeGLU output [expert_ffn]
+    down: Vec<wgpu::Buffer>,      // per slot: down projection [d_model]
+    slots: wgpu::Buffer,          // concatenated down outputs [top_k * d_model]
+    moe_out: wgpu::Buffer,        // combined expert sum [d_model]
+    moe_x: wgpu::Buffer,          // pre_ffw_norm_2(hidden), then reused for post-norm out
+    mlp_normed: wgpu::Buffer,     // post_ffw_norm_1(dense mlp out)
 }
 
 impl Forward {
@@ -371,6 +389,36 @@ impl Forward {
         let ple_state = alloc_storage("fwd.ple_state", ple_dim.max(1));
         let ple_act = alloc_storage("fwd.ple_act", ple_dim.max(1));
         let ple_proj = alloc_storage("fwd.ple_proj", d_model);
+
+        // Sparse-MoE scratch (gemma4:26b-a4b). Per-slot gu/act/down buffers are
+        // DELIBERATELY distinct allocations: each slot's expert matmul binds the
+        // same pipeline + weight + ids + x, so a shared output would collapse
+        // their bind-cache keys onto one cached uniform — and every dispatch in
+        // the encoder would read the LAST slot's params (queue writes land
+        // before the command buffer runs).
+        let moe = if cfg.has_moe() {
+            let top_k = cfg.expert_used_count as usize;
+            let e_ffn = cfg.expert_ffn as usize;
+            Some(MoeScratch {
+                expert_ids: alloc_storage("fwd.moe.ids", top_k),
+                expert_weights: alloc_storage("fwd.moe.weights", top_k),
+                gu: (0..top_k)
+                    .map(|s| alloc_storage(&format!("fwd.moe.gu.{s}"), 2 * e_ffn))
+                    .collect(),
+                act: (0..top_k)
+                    .map(|s| alloc_storage(&format!("fwd.moe.act.{s}"), e_ffn))
+                    .collect(),
+                down: (0..top_k)
+                    .map(|s| alloc_storage(&format!("fwd.moe.down.{s}"), d_model))
+                    .collect(),
+                slots: alloc_storage("fwd.moe.slots", top_k * d_model),
+                moe_out: alloc_storage("fwd.moe.out", d_model),
+                moe_x: alloc_storage("fwd.moe.x", d_model),
+                mlp_normed: alloc_storage("fwd.moe.mlp_normed", d_model),
+            })
+        } else {
+            None
+        };
 
         // Output projection tile scratch: large enough to hold the worst-case tile
         // (MAX_TILE_BYTES / row_bytes rows × 4 bytes per row of f32 logits). 80 MiB
@@ -473,6 +521,7 @@ impl Forward {
             ple_state,
             ple_act,
             ple_proj,
+            moe,
             logits_tile,
             logits,
             logits_read,
@@ -2548,6 +2597,74 @@ impl Forward {
         let down_w = self.wcache.buffer_async(&down_name).await?;
         let down_dtype = self.wcache.dtype(&down_name)?;
 
+        // Sparse-MoE weights (gemma4:26b-a4b: every layer carries a routed
+        // expert block IN PARALLEL with the dense MLP above). Tensor presence
+        // decides per layer, mirroring Ollama's nil-field checks. v0 supports
+        // the FUSED ffn_gate_up_exps layout (the only one Google has shipped).
+        struct MoeLayerWeights {
+            router: wgpu::Buffer,
+            router_scale: Option<wgpu::Buffer>,
+            gate_up: wgpu::Buffer,
+            gate_up_dt: GgmlDtype,
+            down: wgpu::Buffer,
+            down_dt: GgmlDtype,
+            down_scale: Option<wgpu::Buffer>,
+            pre_norm_2: wgpu::Buffer,
+            post_norm_1: wgpu::Buffer,
+            post_norm_2: wgpu::Buffer,
+        }
+        let moe_w: Option<MoeLayerWeights> =
+            if self.cfg.has_moe() {
+                let router_name = format!("{prefix}ffn_gate_inp.weight");
+                match self.wcache.buffer_opt_async(&router_name).await? {
+                    Some(router) => {
+                        let gu_name = format!("{prefix}ffn_gate_up_exps.weight");
+                        let gate_up = self.wcache.buffer_opt_async(&gu_name).await?.ok_or_else(
+                            || {
+                                RullamaError::Inference(format!(
+                                    "MoE layer {i}: split ffn_gate_exps/ffn_up_exps layout not yet \
+                             supported (expected fused {gu_name})"
+                                ))
+                            },
+                        )?;
+                        let gate_up_dt = self.wcache.dtype(&gu_name)?;
+                        let d_name = format!("{prefix}ffn_down_exps.weight");
+                        let down = self.wcache.buffer_async(&d_name).await?;
+                        let down_dt = self.wcache.dtype(&d_name)?;
+                        Some(MoeLayerWeights {
+                            router,
+                            router_scale: self
+                                .wcache
+                                .buffer_opt_async(&format!("{prefix}ffn_gate_inp.scale"))
+                                .await?,
+                            gate_up,
+                            gate_up_dt,
+                            down,
+                            down_dt,
+                            down_scale: self
+                                .wcache
+                                .buffer_opt_async(&format!("{prefix}ffn_down_exps.scale"))
+                                .await?,
+                            pre_norm_2: self
+                                .wcache
+                                .buffer_async(&format!("{prefix}pre_ffw_norm_2.weight"))
+                                .await?,
+                            post_norm_1: self
+                                .wcache
+                                .buffer_async(&format!("{prefix}post_ffw_norm_1.weight"))
+                                .await?,
+                            post_norm_2: self
+                                .wcache
+                                .buffer_async(&format!("{prefix}post_ffw_norm_2.weight"))
+                                .await?,
+                        })
+                    }
+                    None => None,
+                }
+            } else {
+                None
+            };
+
         // PLE-injection weights (only when has_ple)
         let (inp_gate_w, proj_w, post_norm_w, inp_gate_dt, proj_dt) = if self.cfg.has_ple() {
             let inp_gate_name = format!("{prefix}inp_gate.weight");
@@ -3130,25 +3247,184 @@ impl Forward {
             );
         }
 
-        rmsnorm_chained(
-            &self.ctx,
-            &self.pipes,
-            enc,
-            &self.ffn_out,
-            Some(&post_ffw_w),
-            &self.dummy,
-            &self.norm_y,
-            d_model,
-            eps,
-        );
-        residual_add_chained(
-            &self.ctx,
-            &self.pipes,
-            enc,
-            &self.hidden,
-            &self.norm_y,
-            d_model,
-        );
+        if let Some(mw) = &moe_w {
+            // ===== Sparse-MoE: dense MLP and routed experts run IN PARALLEL =====
+            // (mirrors Ollama's TextLayer MoE branch and the CPU oracle in
+            // reference/moe.rs):
+            //   mlp = post_ffw_norm_1(dense_ffn_out)
+            //   moe = post_ffw_norm_2(experts(pre_ffw_norm_2(hidden), router(hidden)))
+            //   hidden += post_ffw_norm(mlp + moe)
+            // NOTE: `self.hidden` still holds the post-attention residual here —
+            // it is not mutated until the final residual_add below.
+            let moe = self.moe.as_ref().expect("MoeScratch allocated for MoE cfg");
+            let top_k = self.cfg.expert_used_count as usize;
+            let e_ffn = self.cfg.expert_ffn as usize;
+            let n_experts = self.cfg.expert_count as usize;
+
+            // mlp_normed = post_ffw_norm_1(dense ffn_out)
+            rmsnorm_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &self.ffn_out,
+                Some(&mw.post_norm_1),
+                &self.dummy,
+                &moe.mlp_normed,
+                d_model,
+                eps,
+            );
+
+            // Router on the RAW post-attn hidden (it norms internally).
+            moe_router_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &self.hidden,
+                mw.router_scale.as_ref(),
+                &self.dummy,
+                &mw.router,
+                &moe.expert_ids,
+                &moe.expert_weights,
+                d_model,
+                n_experts,
+                top_k,
+                eps,
+            );
+
+            // moe_x = pre_ffw_norm_2(hidden)
+            rmsnorm_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &self.hidden,
+                Some(&mw.pre_norm_2),
+                &self.dummy,
+                &moe.moe_x,
+                d_model,
+                eps,
+            );
+
+            // Per selected slot: fused gate_up → GeGLU halves → down. The
+            // expert index is read from expert_ids on-GPU (MulmatID).
+            for s in 0..top_k {
+                moe_expert_matmul_chained(
+                    &self.ctx,
+                    &self.pipes,
+                    enc,
+                    &mw.gate_up,
+                    &moe.expert_ids,
+                    &moe.moe_x,
+                    &moe.gu[s],
+                    d_model,
+                    2 * e_ffn,
+                    s,
+                    mw.gate_up_dt,
+                )?;
+                moe_geglu_halves_chained(
+                    &self.ctx,
+                    &self.pipes,
+                    enc,
+                    &moe.gu[s],
+                    &moe.act[s],
+                    e_ffn,
+                );
+                moe_expert_matmul_chained(
+                    &self.ctx,
+                    &self.pipes,
+                    enc,
+                    &mw.down,
+                    &moe.expert_ids,
+                    &moe.act[s],
+                    &moe.down[s],
+                    e_ffn,
+                    d_model,
+                    s,
+                    mw.down_dt,
+                )?;
+                enc.copy_buffer_to_buffer(
+                    &moe.down[s],
+                    0,
+                    &moe.slots,
+                    (s * d_model * 4) as u64,
+                    (d_model * 4) as u64,
+                );
+            }
+
+            // Weighted combine (+ per-expert down scale), then post_ffw_norm_2.
+            moe_combine_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &moe.slots,
+                &moe.expert_ids,
+                &moe.expert_weights,
+                mw.down_scale.as_ref(),
+                &self.dummy,
+                &moe.moe_out,
+                d_model,
+                top_k,
+            );
+            rmsnorm_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &moe.moe_out,
+                Some(&mw.post_norm_2),
+                &self.dummy,
+                &moe.moe_x, // reuse: pre-norm input no longer needed
+                d_model,
+                eps,
+            );
+
+            // combined = mlp_normed + moe_normed; outer post_ffw_norm; residual.
+            residual_add_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &moe.mlp_normed,
+                &moe.moe_x,
+                d_model,
+            );
+            rmsnorm_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &moe.mlp_normed,
+                Some(&post_ffw_w),
+                &self.dummy,
+                &self.norm_y,
+                d_model,
+                eps,
+            );
+            residual_add_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &self.hidden,
+                &self.norm_y,
+                d_model,
+            );
+        } else {
+            rmsnorm_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &self.ffn_out,
+                Some(&post_ffw_w),
+                &self.dummy,
+                &self.norm_y,
+                d_model,
+                eps,
+            );
+            residual_add_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &self.hidden,
+                &self.norm_y,
+                d_model,
+            );
+        }
 
         // ===== PLE injection =====
         if self.cfg.has_ple() {
