@@ -78,6 +78,8 @@ pub const MOE_EXPERT_MATMUL_BATCHED_Q4_K: &str =
     include_str!("wgsl/moe_expert_matmul_batched_q4_k.wgsl");
 pub const MOE_EXPERT_MATMUL_BATCHED_Q8_0: &str =
     include_str!("wgsl/moe_expert_matmul_batched_q8_0.wgsl");
+pub const MOE_GEGLU_HALVES_BATCHED: &str = include_str!("wgsl/moe_geglu_halves_batched.wgsl");
+pub const MOE_COMBINE_BATCHED: &str = include_str!("wgsl/moe_combine_batched.wgsl");
 pub const MOE_EXPERT_MATMUL_Q4_K: &str = include_str!("wgsl/moe_expert_matmul_q4_k.wgsl");
 pub const MOE_EXPERT_MATMUL_Q8_0: &str = include_str!("wgsl/moe_expert_matmul_q8_0.wgsl");
 pub const MOE_GEGLU_HALVES: &str = include_str!("wgsl/moe_geglu_halves.wgsl");

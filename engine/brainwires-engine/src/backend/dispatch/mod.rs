@@ -4050,6 +4050,97 @@ mod tests {
         assert!(max_drift < 1e-4, "rope fwd+bwd drift = {max_drift}");
     }
 
+    /// Batched GeGLU + batched combine match their elementwise CPU semantics
+    /// over multiple canvas positions (completing the diffusion GPU-MoE set:
+    /// router → expert gate_up → geglu → expert down → combine).
+    #[test]
+    fn moe_geglu_and_combine_batched_gpu_vs_cpu() {
+        use crate::reference::ops::geglu_split;
+
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        let dummy = make_dummy_storage(device, "dummy");
+
+        // ---- batched geglu: rows=6, n_ff=20 ----
+        let (rows, n_ff) = (6usize, 20usize);
+        let gu: Vec<f32> = (0..rows * 2 * n_ff)
+            .map(|i| ((i as f32) * 0.23).sin() * 2.5)
+            .collect();
+        let mut cpu_act = vec![0f32; rows * n_ff];
+        for r in 0..rows {
+            let base = r * 2 * n_ff;
+            geglu_split(
+                &gu[base..base + n_ff],
+                &gu[base + n_ff..base + 2 * n_ff],
+                &mut cpu_act[r * n_ff..(r + 1) * n_ff],
+            );
+        }
+        let gub = write_storage_f32(device, queue, "gb.gu", &gu);
+        let (ab, ar) = make_output_pair(device, "gb.a", (rows * n_ff * 4) as u64);
+        let mut enc =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("gb") });
+        moe_geglu_halves_batched_chained(&ctx, &p, &mut enc, &gub, &ab, rows, n_ff);
+        enc.copy_buffer_to_buffer(&ab, 0, &ar, 0, (rows * n_ff * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu_act = pollster::block_on(read_back_f32(device, &ar)).expect("readback");
+        for i in 0..rows * n_ff {
+            assert!((cpu_act[i] - gpu_act[i]).abs() < 1e-5, "geglu[{i}]");
+        }
+
+        // ---- batched combine: n_pos=3, d_model=16, top_k=2 ----
+        let (n_pos, d_model, top_k, n_exp) = (3usize, 16usize, 2usize, 8usize);
+        let slots: Vec<f32> = (0..n_pos * top_k * d_model)
+            .map(|i| ((i as f32) * 0.29).cos())
+            .collect();
+        let ids: Vec<u32> = vec![5, 0, 7, 2, 1, 6]; // [pos*top_k + slot]
+        let weights: Vec<f32> = vec![0.6, 0.4, 0.5, 0.5, 0.7, 0.3];
+        let down_scale: Vec<f32> = (0..n_exp).map(|e| 1.0 + e as f32 * 0.1).collect();
+        let mut cpu = vec![0f32; n_pos * d_model];
+        for pos in 0..n_pos {
+            for s in 0..top_k {
+                let ps = pos * top_k + s;
+                let sc = down_scale[ids[ps] as usize];
+                for i in 0..d_model {
+                    cpu[pos * d_model + i] += weights[ps] * sc * slots[ps * d_model + i];
+                }
+            }
+        }
+        let sb = write_storage_f32(device, queue, "cb.slots", &slots);
+        let ib = write_storage(device, queue, "cb.ids", bytemuck::cast_slice(&ids));
+        let wb = write_storage_f32(device, queue, "cb.w", &weights);
+        let dsb = write_storage_f32(device, queue, "cb.ds", &down_scale);
+        let (yb, yr) = make_output_pair(device, "cb.y", (n_pos * d_model * 4) as u64);
+        let mut enc =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("cb") });
+        moe_combine_batched_chained(
+            &ctx,
+            &p,
+            &mut enc,
+            &sb,
+            &ib,
+            &wb,
+            Some(&dsb),
+            &dummy,
+            &yb,
+            n_pos,
+            d_model,
+            top_k,
+        );
+        enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (n_pos * d_model * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("readback");
+        for i in 0..n_pos * d_model {
+            assert!(
+                (cpu[i] - gpu[i]).abs() < 1e-5,
+                "combine[{i}]: cpu={} gpu={}",
+                cpu[i],
+                gpu[i]
+            );
+        }
+    }
+
     /// DiffusionGemma region-masked attention matches the CPU oracle
     /// `masked_attention` — across global + SWA-windowed layers and GQA.
     #[test]

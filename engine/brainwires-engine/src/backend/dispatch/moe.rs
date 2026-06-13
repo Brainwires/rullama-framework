@@ -196,6 +196,92 @@ pub fn moe_expert_matmul_chained(
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
+struct MoeGegluBatchedParams {
+    rows: u32,
+    n_ff: u32,
+    _p0: u32,
+    _p1: u32,
+}
+
+/// Batched GeGLU: `act[ps,i] = gelu(gu[ps,i])·gu[ps,i+n_ff]` over all
+/// `rows = n_pos*top_k` rows of a fused gate_up buffer.
+pub fn moe_geglu_halves_batched_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    gu: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    rows: usize,
+    n_ff: usize,
+) {
+    let params = MoeGegluBatchedParams {
+        rows: rows as u32,
+        n_ff: n_ff as u32,
+        _p0: 0,
+        _p1: 0,
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.moe_geglu_halves_batched,
+        "moe_geglu_halves_batched",
+        &[gu, y],
+        &params,
+        ((n_ff as u32).div_ceil(64), rows as u32, 1),
+    );
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct MoeCombineBatchedParams {
+    n_pos: u32,
+    d_model: u32,
+    top_k: u32,
+    has_down_scale: u32,
+}
+
+/// Batched combine: `y[pos,i] = Σ_s w[pos*top_k+s]·down_scale[ids[..]]·
+/// slots[(pos*top_k+s)*d_model+i]` over all positions.
+#[allow(clippy::too_many_arguments)]
+pub fn moe_combine_batched_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    slots: &wgpu::Buffer,
+    expert_ids: &wgpu::Buffer,
+    expert_weights: &wgpu::Buffer,
+    down_scale: Option<&wgpu::Buffer>,
+    dummy: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    n_pos: usize,
+    d_model: usize,
+    top_k: usize,
+) {
+    let params = MoeCombineBatchedParams {
+        n_pos: n_pos as u32,
+        d_model: d_model as u32,
+        top_k: top_k as u32,
+        has_down_scale: if down_scale.is_some() { 1 } else { 0 },
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.moe_combine_batched,
+        "moe_combine_batched",
+        &[
+            slots,
+            expert_ids,
+            expert_weights,
+            down_scale.unwrap_or(dummy),
+            y,
+        ],
+        &params,
+        ((d_model as u32).div_ceil(64), n_pos as u32, 1),
+    );
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 struct MoeExpertBatchedParams {
     k: u32,
     n: u32,
