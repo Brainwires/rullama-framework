@@ -292,6 +292,17 @@ pub struct Forward {
     /// `TrainingHyperparams::memory_tight`.
     mobile_mode: bool,
 
+    /// **Per-expert MoE streaming.** When true, the MoE FFN fetches ONLY the
+    /// top-k selected experts per layer (range-fetch one expert slice each via
+    /// `buffer_expert_async`) instead of uploading the whole 128-deep
+    /// `ffn_*_exps` tensor. A token routes to 8 of 128, so this is ~16× less
+    /// streaming bandwidth — the lever that turns the streamed 26b from "fits
+    /// but ~50 s/tok" into something usable. Requires a mid-layer GPU sync to
+    /// read back the router's expert ids before fetching; only sensible
+    /// alongside `forward_destroy_per_layer` (streaming inference). Off by
+    /// default — the whole-tensor path is faster when the model fits.
+    moe_stream_experts: bool,
+
     // Cached scale factor for the final logits softcap dispatch.
     pos: u32,
 }
@@ -308,6 +319,9 @@ struct MoeScratch {
     moe_out: wgpu::Buffer,        // combined expert sum [d_model]
     moe_x: wgpu::Buffer,          // pre_ffw_norm_2(hidden), then reused for post-norm out
     mlp_normed: wgpu::Buffer,     // post_ffw_norm_1(dense mlp out)
+    // Per-expert streaming only:
+    zero_ids: wgpu::Buffer, // top_k × u32 all-zero (index a 1-expert buffer at slot 0)
+    expert_ids_read: wgpu::Buffer, // top_k × u32 staging (COPY_DST|MAP_READ) for the id readback
 }
 
 impl Forward {
@@ -415,6 +429,14 @@ impl Forward {
                 moe_out: alloc_storage("fwd.moe.out", d_model),
                 moe_x: alloc_storage("fwd.moe.x", d_model),
                 mlp_normed: alloc_storage("fwd.moe.mlp_normed", d_model),
+                // wgpu zero-inits storage buffers, so zero_ids is all-zero.
+                zero_ids: alloc_storage("fwd.moe.zero_ids", top_k),
+                expert_ids_read: device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("fwd.moe.ids_read"),
+                    size: (top_k * 4).max(4) as u64,
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                }),
             })
         } else {
             None
@@ -534,6 +556,7 @@ impl Forward {
             max_context,
             cancel_flag: Arc::new(AtomicBool::new(false)),
             forward_destroy_per_layer: false,
+            moe_stream_experts: false,
             // u32::MAX = no floor restriction (every layer destroyed
             // when forward_destroy_per_layer is on). TrainingSession::new
             // overrides this to the actual backward_layer_floor.
@@ -575,6 +598,13 @@ impl Forward {
     /// inference.
     pub fn set_forward_destroy_per_layer(&mut self, on: bool) {
         self.forward_destroy_per_layer = on;
+    }
+
+    /// Enable per-expert MoE streaming (fetch only the top-k selected experts
+    /// per layer). See the field doc on `moe_stream_experts`. Pair with
+    /// `set_forward_destroy_per_layer(true)`.
+    pub fn set_moe_stream_experts(&mut self, on: bool) {
+        self.moe_stream_experts = on;
     }
 
     /// Set the floor used by per-layer forward destroy. Only layers
@@ -2604,66 +2634,78 @@ impl Forward {
         struct MoeLayerWeights {
             router: wgpu::Buffer,
             router_scale: Option<wgpu::Buffer>,
-            gate_up: wgpu::Buffer,
+            // The whole stacked expert tensors — loaded ONLY when not
+            // per-expert-streaming (else `None`, and the expert loop
+            // range-fetches each selected expert by name).
+            gate_up: Option<wgpu::Buffer>,
+            gate_up_name: String,
             gate_up_dt: GgmlDtype,
-            down: wgpu::Buffer,
+            down: Option<wgpu::Buffer>,
+            down_name: String,
             down_dt: GgmlDtype,
             down_scale: Option<wgpu::Buffer>,
             pre_norm_2: wgpu::Buffer,
             post_norm_1: wgpu::Buffer,
             post_norm_2: wgpu::Buffer,
         }
-        let moe_w: Option<MoeLayerWeights> =
-            if self.cfg.has_moe() {
-                let router_name = format!("{prefix}ffn_gate_inp.weight");
-                match self.wcache.buffer_opt_async(&router_name).await? {
-                    Some(router) => {
-                        let gu_name = format!("{prefix}ffn_gate_up_exps.weight");
-                        let gate_up = self.wcache.buffer_opt_async(&gu_name).await?.ok_or_else(
-                            || {
-                                RullamaError::Inference(format!(
-                                    "MoE layer {i}: split ffn_gate_exps/ffn_up_exps layout not yet \
-                             supported (expected fused {gu_name})"
-                                ))
-                            },
-                        )?;
-                        let gate_up_dt = self.wcache.dtype(&gu_name)?;
-                        let d_name = format!("{prefix}ffn_down_exps.weight");
-                        let down = self.wcache.buffer_async(&d_name).await?;
-                        let down_dt = self.wcache.dtype(&d_name)?;
-                        Some(MoeLayerWeights {
-                            router,
-                            router_scale: self
-                                .wcache
-                                .buffer_opt_async(&format!("{prefix}ffn_gate_inp.scale"))
-                                .await?,
-                            gate_up,
-                            gate_up_dt,
-                            down,
-                            down_dt,
-                            down_scale: self
-                                .wcache
-                                .buffer_opt_async(&format!("{prefix}ffn_down_exps.scale"))
-                                .await?,
-                            pre_norm_2: self
-                                .wcache
-                                .buffer_async(&format!("{prefix}pre_ffw_norm_2.weight"))
-                                .await?,
-                            post_norm_1: self
-                                .wcache
-                                .buffer_async(&format!("{prefix}post_ffw_norm_1.weight"))
-                                .await?,
-                            post_norm_2: self
-                                .wcache
-                                .buffer_async(&format!("{prefix}post_ffw_norm_2.weight"))
-                                .await?,
-                        })
+        let moe_w: Option<MoeLayerWeights> = if self.cfg.has_moe() {
+            let router_name = format!("{prefix}ffn_gate_inp.weight");
+            match self.wcache.buffer_opt_async(&router_name).await? {
+                Some(router) => {
+                    let gu_name = format!("{prefix}ffn_gate_up_exps.weight");
+                    if self.wcache.dtype(&gu_name).is_err() {
+                        return Err(RullamaError::Inference(format!(
+                            "MoE layer {i}: split ffn_gate_exps/ffn_up_exps layout not yet \
+                                 supported (expected fused {gu_name})"
+                        )));
                     }
-                    None => None,
+                    let gate_up_dt = self.wcache.dtype(&gu_name)?;
+                    let d_name = format!("{prefix}ffn_down_exps.weight");
+                    let down_dt = self.wcache.dtype(&d_name)?;
+                    // Stream per-expert ⇒ skip the whole-tensor uploads.
+                    let (gate_up, down) = if self.moe_stream_experts {
+                        (None, None)
+                    } else {
+                        (
+                            Some(self.wcache.buffer_async(&gu_name).await?),
+                            Some(self.wcache.buffer_async(&d_name).await?),
+                        )
+                    };
+                    Some(MoeLayerWeights {
+                        router,
+                        router_scale: self
+                            .wcache
+                            .buffer_opt_async(&format!("{prefix}ffn_gate_inp.scale"))
+                            .await?,
+                        gate_up,
+                        gate_up_name: gu_name,
+                        gate_up_dt,
+                        down,
+                        down_name: d_name,
+                        down_dt,
+                        down_scale: self
+                            .wcache
+                            .buffer_opt_async(&format!("{prefix}ffn_down_exps.scale"))
+                            .await?,
+                        pre_norm_2: self
+                            .wcache
+                            .buffer_async(&format!("{prefix}pre_ffw_norm_2.weight"))
+                            .await?,
+                        post_norm_1: self
+                            .wcache
+                            .buffer_async(&format!("{prefix}post_ffw_norm_1.weight"))
+                            .await?,
+                        post_norm_2: self
+                            .wcache
+                            .buffer_async(&format!("{prefix}post_ffw_norm_2.weight"))
+                            .await?,
+                    })
                 }
-            } else {
-                None
-            };
+                None => None,
+            }
+        } else {
+            None
+        };
 
         // PLE-injection weights (only when has_ple)
         let (inp_gate_w, proj_w, post_norm_w, inp_gate_dt, proj_dt) = if self.cfg.has_ple() {
@@ -3304,50 +3346,131 @@ impl Forward {
                 eps,
             );
 
-            // Per selected slot: fused gate_up → GeGLU halves → down. The
-            // expert index is read from expert_ids on-GPU (MulmatID).
-            for s in 0..top_k {
-                moe_expert_matmul_chained(
-                    &self.ctx,
-                    &self.pipes,
-                    enc,
-                    &mw.gate_up,
-                    &moe.expert_ids,
-                    &moe.moe_x,
-                    &moe.gu[s],
-                    d_model,
-                    2 * e_ffn,
-                    s,
-                    mw.gate_up_dt,
-                )?;
-                moe_geglu_halves_chained(
-                    &self.ctx,
-                    &self.pipes,
-                    enc,
-                    &moe.gu[s],
-                    &moe.act[s],
-                    e_ffn,
-                );
-                moe_expert_matmul_chained(
-                    &self.ctx,
-                    &self.pipes,
-                    enc,
-                    &mw.down,
-                    &moe.expert_ids,
-                    &moe.act[s],
-                    &moe.down[s],
-                    e_ffn,
-                    d_model,
-                    s,
-                    mw.down_dt,
-                )?;
+            // Per selected slot: fused gate_up → GeGLU halves → down.
+            if self.moe_stream_experts {
+                // Per-expert streaming. The selected experts are only known
+                // after the router runs, so flush everything up to here (dense
+                // MLP + mlp_normed + router + moe_x), sync, read the top-k ids,
+                // then range-fetch ONLY those experts (≤8 of 128) instead of
+                // the whole 555 MB tensor. The combine below still reads the
+                // GPU-resident expert_ids / expert_weights (they persist across
+                // the submit).
                 enc.copy_buffer_to_buffer(
-                    &moe.down[s],
+                    &moe.expert_ids,
                     0,
-                    &moe.slots,
-                    (s * d_model * 4) as u64,
-                    (d_model * 4) as u64,
+                    &moe.expert_ids_read,
+                    0,
+                    (top_k * 4) as u64,
                 );
+                let fresh =
+                    self.ctx
+                        .device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("fwd.moe.stream.cont"),
+                        });
+                let flushed = std::mem::replace(enc, fresh);
+                self.ctx.queue.submit(Some(flushed.finish()));
+                let id_bytes = read_back_bytes(&self.ctx.device, &moe.expert_ids_read).await?;
+                let ids: Vec<u32> = id_bytes
+                    .chunks_exact(4)
+                    .take(top_k)
+                    .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                    .collect();
+
+                for s in 0..top_k {
+                    let e = ids[s] as usize;
+                    let gu_buf = self.wcache.buffer_expert_async(&mw.gate_up_name, e).await?;
+                    // 1-expert buffer ⇒ index expert 0 (zero_ids, slot 0).
+                    moe_expert_matmul_chained(
+                        &self.ctx,
+                        &self.pipes,
+                        enc,
+                        &gu_buf,
+                        &moe.zero_ids,
+                        &moe.moe_x,
+                        &moe.gu[s],
+                        d_model,
+                        2 * e_ffn,
+                        0,
+                        mw.gate_up_dt,
+                    )?;
+                    moe_geglu_halves_chained(
+                        &self.ctx,
+                        &self.pipes,
+                        enc,
+                        &moe.gu[s],
+                        &moe.act[s],
+                        e_ffn,
+                    );
+                    let down_buf = self.wcache.buffer_expert_async(&mw.down_name, e).await?;
+                    moe_expert_matmul_chained(
+                        &self.ctx,
+                        &self.pipes,
+                        enc,
+                        &down_buf,
+                        &moe.zero_ids,
+                        &moe.act[s],
+                        &moe.down[s],
+                        e_ffn,
+                        d_model,
+                        0,
+                        mw.down_dt,
+                    )?;
+                    enc.copy_buffer_to_buffer(
+                        &moe.down[s],
+                        0,
+                        &moe.slots,
+                        (s * d_model * 4) as u64,
+                        (d_model * 4) as u64,
+                    );
+                }
+            } else {
+                let gate_up = mw.gate_up.as_ref().expect("non-stream: gate_up loaded");
+                let down = mw.down.as_ref().expect("non-stream: down loaded");
+                // Expert index read from expert_ids on-GPU (MulmatID).
+                for s in 0..top_k {
+                    moe_expert_matmul_chained(
+                        &self.ctx,
+                        &self.pipes,
+                        enc,
+                        gate_up,
+                        &moe.expert_ids,
+                        &moe.moe_x,
+                        &moe.gu[s],
+                        d_model,
+                        2 * e_ffn,
+                        s,
+                        mw.gate_up_dt,
+                    )?;
+                    moe_geglu_halves_chained(
+                        &self.ctx,
+                        &self.pipes,
+                        enc,
+                        &moe.gu[s],
+                        &moe.act[s],
+                        e_ffn,
+                    );
+                    moe_expert_matmul_chained(
+                        &self.ctx,
+                        &self.pipes,
+                        enc,
+                        down,
+                        &moe.expert_ids,
+                        &moe.act[s],
+                        &moe.down[s],
+                        e_ffn,
+                        d_model,
+                        s,
+                        mw.down_dt,
+                    )?;
+                    enc.copy_buffer_to_buffer(
+                        &moe.down[s],
+                        0,
+                        &moe.slots,
+                        (s * d_model * 4) as u64,
+                        (d_model * 4) as u64,
+                    );
+                }
             }
 
             // Weighted combine (+ per-expert down scale), then post_ffw_norm_2.

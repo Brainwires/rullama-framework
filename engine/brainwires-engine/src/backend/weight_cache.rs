@@ -138,6 +138,49 @@ impl WeightCache {
         Ok(cloned)
     }
 
+    /// Get a GPU buffer holding ONE expert's slice of a 3-D stacked MoE tensor
+    /// (`blk.N.ffn_*_exps.weight`, dims `[in, out, n_experts]`), range-fetching
+    /// only that expert's bytes instead of the whole `n_experts`-deep tensor.
+    /// This is the per-expert streaming lever: a token routes to top-8 of 128
+    /// experts, so fetching only the selected slices is ~16× less bandwidth
+    /// than `buffer_async` of the full tensor.
+    ///
+    /// Cached under `{name}#e{idx}` — still `blk.N.*`-prefixed, so the per-layer
+    /// destroy (`drop_blk_layer_range_destroy`) reclaims it like any layer
+    /// weight. The returned buffer is a standalone 1-expert tensor: index it in
+    /// the expert matmul with expert id 0.
+    pub async fn buffer_expert_async(&self, name: &str, expert_idx: usize) -> Result<wgpu::Buffer> {
+        let key = format!("{name}#e{expert_idx}");
+        if let Some(b) = self.buffers.borrow().get(&key) {
+            return Ok(b.clone());
+        }
+        let desc = self.reader.tensor(name)?.clone();
+        if desc.dims.len() != 3 {
+            return Err(crate::error::RullamaError::Gguf(format!(
+                "buffer_expert_async: {name} has {} dims, expected 3",
+                desc.dims.len()
+            )));
+        }
+        let in_len = desc.dims[0] as usize;
+        let out_len = desc.dims[1] as usize;
+        let n_experts = desc.dims[2] as usize;
+        if expert_idx >= n_experts {
+            return Err(crate::error::RullamaError::Gguf(format!(
+                "buffer_expert_async: expert {expert_idx} >= {n_experts} for {name}"
+            )));
+        }
+        let bytes_per_row = (in_len / desc.dtype.block_elems()) * desc.dtype.block_bytes();
+        let slice_bytes = bytes_per_row * out_len;
+        let abs =
+            self.reader.data_section_offset() + desc.offset + (expert_idx * slice_bytes) as u64;
+        let bytes = self.reader.fetcher().fetch(abs, slice_bytes as u64).await?;
+        let buf = self.upload(&key, &bytes);
+        drop(bytes);
+        let cloned = buf.clone();
+        self.buffers.borrow_mut().insert(key, buf);
+        Ok(cloned)
+    }
+
     /// Best-effort buffer fetch: Ok(None) if the tensor is absent.
     pub fn buffer_opt(&self, name: &str) -> Result<Option<wgpu::Buffer>> {
         if self.reader.tensor(name).is_err() {

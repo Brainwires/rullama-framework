@@ -37,11 +37,14 @@ fn main() -> ExitCode {
     let mut user_msg = String::from("What is the capital of France? Answer in one word.");
     let mut max_tokens = 2usize;
     let mut stream = true;
+    let mut per_expert = false;
     for a in args {
         if let Some(rest) = a.strip_prefix("--max=") {
             max_tokens = rest.parse().unwrap_or(2);
         } else if a == "--no-stream" {
             stream = false;
+        } else if a == "--per-expert" {
+            per_expert = true;
         } else {
             user_msg = a;
         }
@@ -76,7 +79,13 @@ fn main() -> ExitCode {
         // right after its layer submits. floor default u32::MAX ⇒ ALL layers
         // destroy (no backward to preserve here).
         fwd.set_forward_destroy_per_layer(true);
+        if per_expert {
+            // Fetch only the top-8 selected experts/layer (range-fetch each),
+            // not the whole 128-deep tensor — ~16× less streaming bandwidth.
+            fwd.set_moe_stream_experts(true);
+        }
     }
+    println!("  mode: stream={stream} per_expert={per_expert}");
 
     let mut sampler = Sampler::new(SamplingOptions::greedy());
     let prompt = gemma4_small::render_for_completion(
