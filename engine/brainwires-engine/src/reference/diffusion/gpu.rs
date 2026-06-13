@@ -31,7 +31,9 @@ use std::collections::HashMap;
 use super::DiffusionConfig;
 use super::forward::masked_attention;
 use crate::backend::dispatch::{
-    make_storage_rw, matmul_quant_chained, moe_expert_matmul_batched_chained, read_back_f32,
+    make_dummy_storage, make_storage_rw, matmul_quant_chained, moe_combine_batched_chained,
+    moe_expert_matmul_batched_chained, moe_geglu_halves_batched_chained,
+    moe_router_batched_chained, read_back_f32,
 };
 use crate::backend::{Pipelines, WeightCache, WgpuCtx};
 use crate::error::Result;
@@ -459,7 +461,9 @@ async fn ffn_block_gpu(
         return Ok(());
     }
 
-    // --- MoE (CPU expert-major; increment-2 moves this to the batched GPU path) ---
+    // --- MoE FFN: router + 128-expert gate_up/geglu/down, weighted-combined.
+    // GPU batched path by default; set DG_CPU_MOE to force the CPU oracle loop
+    // (A/B parity debugging). ---
     let post1 = weights
         .load_opt(&format!("{prefix}post_ffw_norm_1.weight"))?
         .or(weights.load_opt(&format!("{prefix}ffn_post_norm_1.weight"))?)
@@ -484,17 +488,82 @@ async fn ffn_block_gpu(
                 "MoE layer {layer}: missing post_ffw_norm_2"
             ))
         })?;
-
-    let router_w = weights.load(&format!("{prefix}ffn_gate_inp.weight"))?;
-    let router_scale = weights.load_opt(&format!("{prefix}ffn_gate_inp.scale"))?;
     let n_experts = base.expert_count as usize;
     let top_k = base.expert_used_count as usize;
+
+    // Expert input = pre_ffw_norm_2(hidden), shared by both MoE paths. The
+    // router reads the RAW hidden (== `residual` here — `hidden` is untouched
+    // until the tail below) and applies its own unweighted norm internally.
+    let mut moe_x_all = vec![0f32; n * d_model];
+    for i in 0..n {
+        rmsnorm(
+            &hidden[i * d_model..(i + 1) * d_model],
+            Some(&pre2),
+            eps,
+            &mut moe_x_all[i * d_model..(i + 1) * d_model],
+        );
+    }
+
+    let moe_acc = if std::env::var("DG_CPU_MOE").is_ok() {
+        moe_acc_cpu(
+            weights, layer, hidden, &moe_x_all, n, d_model, n_experts, top_k, eps,
+        )?
+    } else {
+        moe_acc_gpu(
+            gpu, layer, hidden, &moe_x_all, n, d_model, n_experts, top_k, eps,
+        )
+        .await?
+    };
+
+    for i in 0..n {
+        let mut mlp_normed = vec![0f32; d_model];
+        rmsnorm(
+            &mlp_out_all[i * d_model..(i + 1) * d_model],
+            Some(&post1),
+            eps,
+            &mut mlp_normed,
+        );
+        let mut moe_normed = vec![0f32; d_model];
+        rmsnorm(
+            &moe_acc[i * d_model..(i + 1) * d_model],
+            Some(&post2),
+            eps,
+            &mut moe_normed,
+        );
+        add_into(&mut mlp_normed, &moe_normed);
+        let mut h3 = vec![0f32; d_model];
+        rmsnorm(&mlp_normed, Some(&post_ffw_w), eps, &mut h3);
+        add_into(&mut h3, &residual[i * d_model..(i + 1) * d_model]);
+        hidden[i * d_model..(i + 1) * d_model].copy_from_slice(&h3);
+    }
+    Ok(())
+}
+
+/// CPU expert-major MoE accumulation — the parity oracle path (`DG_CPU_MOE`).
+/// Returns `moe_acc[n, d_model]` = Σ over each position's top-k experts of
+/// `routing_weight · down_scale · down(geglu(gate·x, up·x))`. `raw_hidden`
+/// feeds the router (own unweighted norm); `moe_x_all` (= pre_ffw_norm_2) feeds
+/// the experts.
+#[allow(clippy::too_many_arguments)]
+fn moe_acc_cpu(
+    weights: &Weights,
+    layer: u32,
+    raw_hidden: &[f32],
+    moe_x_all: &[f32],
+    n: usize,
+    d_model: usize,
+    n_experts: usize,
+    top_k: usize,
+    eps: f32,
+) -> Result<Vec<f32>> {
+    let prefix = format!("blk.{layer}.");
+    let router_w = weights.load(&format!("{prefix}ffn_gate_inp.weight"))?;
+    let router_scale = weights.load_opt(&format!("{prefix}ffn_gate_inp.scale"))?;
     let inv_sqrt_d = 1.0 / (d_model as f32).sqrt();
 
-    let mut moe_x_all = vec![0f32; n * d_model];
     let mut selected_all: Vec<Vec<(usize, f32)>> = Vec::with_capacity(n);
     for i in 0..n {
-        let h = &hidden[i * d_model..(i + 1) * d_model];
+        let h = &raw_hidden[i * d_model..(i + 1) * d_model];
         let mut rx = vec![0f32; d_model];
         rmsnorm(h, None, eps, &mut rx);
         for v in &mut rx {
@@ -508,12 +577,6 @@ async fn ffn_block_gpu(
         let mut scores = vec![0f32; n_experts];
         matvec(&router_w, d_model, n_experts, &rx, &mut scores);
         selected_all.push(softmax_topk_renorm(&scores, top_k));
-        rmsnorm(
-            h,
-            Some(&pre2),
-            eps,
-            &mut moe_x_all[i * d_model..(i + 1) * d_model],
-        );
     }
 
     let fused_name = format!("{prefix}ffn_gate_up_exps.weight");
@@ -559,29 +622,147 @@ async fn ffn_block_gpu(
             }
         }
     }
+    Ok(moe_acc)
+}
 
-    for i in 0..n {
-        let mut mlp_normed = vec![0f32; d_model];
-        rmsnorm(
-            &mlp_out_all[i * d_model..(i + 1) * d_model],
-            Some(&post1),
-            eps,
-            &mut mlp_normed,
-        );
-        let mut moe_normed = vec![0f32; d_model];
-        rmsnorm(
-            &moe_acc[i * d_model..(i + 1) * d_model],
-            Some(&post2),
-            eps,
-            &mut moe_normed,
-        );
-        add_into(&mut mlp_normed, &moe_normed);
-        let mut h3 = vec![0f32; d_model];
-        rmsnorm(&mlp_normed, Some(&post_ffw_w), eps, &mut h3);
-        add_into(&mut h3, &residual[i * d_model..(i + 1) * d_model]);
-        hidden[i * d_model..(i + 1) * d_model].copy_from_slice(&h3);
-    }
-    Ok(())
+/// GPU batched MoE accumulation. Routes the whole canvas + runs the 128-expert
+/// gate_up / geglu / down / weighted-combine kernels in one CommandEncoder.
+///
+/// Streaming grain is per-LAYER, not per-expert: a 256-token canvas routes its
+/// top-8 across (nearly) all 128 experts, so the union is the full expert set —
+/// per-expert streaming buys nothing here. Each layer's two stacked expert
+/// tensors (~0.5 GB) are made resident via `buffer_async` and DESTROYED right
+/// after, bounding GPU residency to one layer's experts.
+#[allow(clippy::too_many_arguments)]
+async fn moe_acc_gpu(
+    gpu: &Gpu<'_>,
+    layer: u32,
+    raw_hidden: &[f32],
+    moe_x_all: &[f32],
+    n: usize,
+    d_model: usize,
+    n_experts: usize,
+    top_k: usize,
+    eps: f32,
+) -> Result<Vec<f32>> {
+    let ctx = gpu.ctx;
+    let prefix = format!("blk.{layer}.");
+
+    let router_w = gpu
+        .wcache
+        .buffer_async(&format!("{prefix}ffn_gate_inp.weight"))
+        .await?;
+    let router_scale = gpu
+        .wcache
+        .buffer_opt_async(&format!("{prefix}ffn_gate_inp.scale"))
+        .await?;
+    let gu_name = format!("{prefix}ffn_gate_up_exps.weight");
+    let down_name = format!("{prefix}ffn_down_exps.weight");
+    let gu_desc = gpu.wcache.reader().tensor(&gu_name)?.clone();
+    let down_desc = gpu.wcache.reader().tensor(&down_name)?.clone();
+    let n_ff2 = gu_desc.dims[1] as usize; // 2 * expert_ffn (gate ‖ up)
+    let n_ff = n_ff2 / 2;
+    let gu_dtype = gu_desc.dtype;
+    let down_dtype = down_desc.dtype;
+    let gu_buf = gpu.wcache.buffer_async(&gu_name).await?;
+    let down_buf = gpu.wcache.buffer_async(&down_name).await?;
+    let down_scale = match gpu
+        .wcache
+        .buffer_opt_async(&format!("{prefix}ffn_down_exps.scale"))
+        .await?
+    {
+        Some(s) => Some(s),
+        None => {
+            gpu.wcache
+                .buffer_opt_async(&format!("{prefix}ffn_gate_inp.per_expert_scale"))
+                .await?
+        }
+    };
+
+    let router_xb = upload_f32(&ctx.device, "dg.moe.router_x", raw_hidden);
+    let moe_xb = upload_f32(&ctx.device, "dg.moe.x", moe_x_all);
+    let ids = make_storage_rw(&ctx.device, "dg.moe.ids", n * top_k); // u32 view (4B each)
+    let wts = make_storage_rw(&ctx.device, "dg.moe.wts", n * top_k);
+    let gu_out = make_storage_rw(&ctx.device, "dg.moe.gu", n * top_k * n_ff2);
+    let act = make_storage_rw(&ctx.device, "dg.moe.act", n * top_k * n_ff);
+    let down_out = make_storage_rw(&ctx.device, "dg.moe.down", n * top_k * d_model);
+    let acc = make_storage_rw(&ctx.device, "dg.moe.acc", n * d_model);
+    let dummy = make_dummy_storage(&ctx.device, "dg.moe.dummy");
+    let read = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("dg.moe.read"),
+        size: (n * d_model * 4) as u64,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    let mut enc = ctx
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("dg.moe"),
+        });
+    moe_router_batched_chained(
+        ctx,
+        gpu.pipes,
+        &mut enc,
+        &router_xb,
+        router_scale.as_ref(),
+        &dummy,
+        &router_w,
+        &ids,
+        &wts,
+        n,
+        d_model,
+        n_experts,
+        top_k,
+        eps,
+    );
+    moe_expert_matmul_batched_chained(
+        ctx, gpu.pipes, &mut enc, &gu_buf, &ids, &moe_xb, &gu_out, n, d_model, n_ff2, top_k,
+        gu_dtype,
+    )?;
+    moe_geglu_halves_batched_chained(ctx, gpu.pipes, &mut enc, &gu_out, &act, n * top_k, n_ff);
+    // Down projection: unlike gate_up (whose input `moe_x` is position-indexed,
+    // shared by a position's top_k slots), `act` is SLOT-indexed — each of the
+    // n*top_k slots carries its own geglu output. The batched expert kernel
+    // reads its input at `(ps/top_k)*k`, so to give every slot its own input
+    // row we treat each slot as its own "position": n_pos = n*top_k, top_k = 1
+    // (⇒ pos == ps, reading `act[ps]` with expert `ids[ps]`).
+    moe_expert_matmul_batched_chained(
+        ctx,
+        gpu.pipes,
+        &mut enc,
+        &down_buf,
+        &ids,
+        &act,
+        &down_out,
+        n * top_k,
+        n_ff,
+        d_model,
+        1,
+        down_dtype,
+    )?;
+    moe_combine_batched_chained(
+        ctx,
+        gpu.pipes,
+        &mut enc,
+        &down_out,
+        &ids,
+        &wts,
+        down_scale.as_ref(),
+        &dummy,
+        &acc,
+        n,
+        d_model,
+        top_k,
+    );
+    enc.copy_buffer_to_buffer(&acc, 0, &read, 0, (n * d_model * 4) as u64);
+    ctx.queue.submit(Some(enc.finish()));
+    let moe_acc = read_back_f32(&ctx.device, &read).await?;
+
+    // Free this layer's ~0.5 GB of experts before the next layer streams in.
+    gpu.wcache.drop_prefix_destroy(&gu_name);
+    gpu.wcache.drop_prefix_destroy(&down_name);
+    Ok(moe_acc)
 }
 
 /// Canvas-embedding preamble (CPU): `canvas = rms_norm(canvas + sc_sig)` where
