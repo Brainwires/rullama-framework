@@ -18,10 +18,12 @@ pub struct Pipelines {
     pub moe_geglu_halves: wgpu::ComputePipeline,
     pub moe_combine: wgpu::ComputePipeline,
     pub moe_expert_matmul_q4_k: wgpu::ComputePipeline,
+    pub moe_expert_matmul_q5_0: wgpu::ComputePipeline,
     pub moe_expert_matmul_q8_0: wgpu::ComputePipeline,
     pub diffusion_attention: wgpu::ComputePipeline,
     pub moe_router_batched: wgpu::ComputePipeline,
     pub moe_expert_matmul_batched_q4_k: wgpu::ComputePipeline,
+    pub moe_expert_matmul_batched_q5_0: wgpu::ComputePipeline,
     pub moe_expert_matmul_batched_q8_0: wgpu::ComputePipeline,
     pub moe_geglu_halves_batched: wgpu::ComputePipeline,
     pub moe_combine_batched: wgpu::ComputePipeline,
@@ -284,6 +286,11 @@ impl Pipelines {
                 "moe_expert_matmul_q4_k",
                 kernels::MOE_EXPERT_MATMUL_Q4_K,
             ),
+            moe_expert_matmul_q5_0: build(
+                device,
+                "moe_expert_matmul_q5_0",
+                kernels::MOE_EXPERT_MATMUL_Q5_0,
+            ),
             moe_expert_matmul_q8_0: build(
                 device,
                 "moe_expert_matmul_q8_0",
@@ -295,6 +302,11 @@ impl Pipelines {
                 device,
                 "moe_expert_matmul_batched_q4_k",
                 kernels::MOE_EXPERT_MATMUL_BATCHED_Q4_K,
+            ),
+            moe_expert_matmul_batched_q5_0: build(
+                device,
+                "moe_expert_matmul_batched_q5_0",
+                kernels::MOE_EXPERT_MATMUL_BATCHED_Q5_0,
             ),
             moe_expert_matmul_batched_q8_0: build(
                 device,

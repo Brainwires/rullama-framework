@@ -4191,6 +4191,88 @@ mod tests {
         }
     }
 
+    /// Q5_0 expert matmul (single + batched) — the 26b-a4b / diffusion-gemma
+    /// Q4_K_M mix puts Q5_0 on ~half the `ffn_down_exps`. Synthetic stacked
+    /// experts vs `dequant_q5_0` + matvec.
+    #[test]
+    fn moe_expert_matmul_q5_0_gpu_vs_cpu() {
+        use crate::gguf::GgmlDtype;
+        use crate::gguf::quant::{Q5_0_BLOCK_BYTES, QK5_0, dequant_q5_0};
+
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        // stacked experts [k=64, n=4, E=5]
+        let (k, n, n_exp) = (64usize, 4usize, 5usize);
+        let bpr = k / QK5_0;
+        let row_bytes = bpr * Q5_0_BLOCK_BYTES;
+        let slice_bytes = row_bytes * n;
+        let mut w = vec![0u8; n_exp * slice_bytes];
+        for e in 0..n_exp {
+            for j in 0..n {
+                for b in 0..bpr {
+                    let off = e * slice_bytes + j * row_bytes + b * Q5_0_BLOCK_BYTES;
+                    let d = half::f16::from_f32(0.25 + ((e * 3 + j + b) % 6) as f32 * 0.2);
+                    w[off..off + 2].copy_from_slice(&d.to_bits().to_le_bytes());
+                    let qh = ((e as u32).wrapping_mul(0x9E37_79B9)) ^ ((j as u32) << 5) ^ b as u32;
+                    w[off + 2..off + 6].copy_from_slice(&qh.to_le_bytes());
+                    for l in 0..16 {
+                        w[off + 6 + l] = ((e * 41 + j * 17 + b * 7 + l * 3) % 256) as u8;
+                    }
+                }
+            }
+        }
+        let xs: Vec<f32> = (0..k).map(|i| ((i as f32) * 0.37).sin()).collect();
+
+        // single-position: slot 0 → expert 3, slot 1 → expert 1.
+        let ids: Vec<u32> = vec![3, 1];
+        for (slot, &e) in ids.iter().enumerate() {
+            let mut wf = vec![0f32; k * n];
+            dequant_q5_0(
+                &w[e as usize * slice_bytes..(e as usize + 1) * slice_bytes],
+                &mut wf,
+            )
+            .unwrap();
+            let cpu: Vec<f32> = (0..n)
+                .map(|j| (0..k).map(|i| xs[i] * wf[j * k + i]).sum())
+                .collect();
+
+            let wb = write_storage(device, queue, "q5e.w", &w);
+            let ib = write_storage(device, queue, "q5e.ids", bytemuck::cast_slice(&ids));
+            let xb = write_storage_f32(device, queue, "q5e.x", &xs);
+            let (yb, yr) = make_output_pair(device, "q5e.y", (n * 4) as u64);
+            let mut enc = device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("q5e") });
+            moe_expert_matmul_chained(
+                &ctx,
+                &p,
+                &mut enc,
+                &wb,
+                &ib,
+                &xb,
+                &yb,
+                k,
+                n,
+                slot,
+                GgmlDtype::Q5_0,
+            )
+            .unwrap();
+            enc.copy_buffer_to_buffer(&yb, 0, &yr, 0, (n * 4) as u64);
+            queue.submit(Some(enc.finish()));
+            let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("readback");
+            for j in 0..n {
+                assert!(
+                    (cpu[j] - gpu[j]).abs() <= 1e-3 * cpu[j].abs().max(1.0),
+                    "q5_0 single slot {slot} row {j}: cpu={} gpu={}",
+                    cpu[j],
+                    gpu[j]
+                );
+            }
+        }
+    }
+
     /// The batched expert matmul applies each (position, slot)'s own expert
     /// (`ids[pos*top_k+slot]`) to `x[pos]` — matches CPU dequant-slice + matvec
     /// for both exps dtypes, with positions selecting different experts.

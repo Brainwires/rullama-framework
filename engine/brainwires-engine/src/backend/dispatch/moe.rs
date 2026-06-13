@@ -168,10 +168,11 @@ pub fn moe_expert_matmul_chained(
 ) -> Result<()> {
     let pipeline = match dtype {
         GgmlDtype::Q4_K => &p.moe_expert_matmul_q4_k,
+        GgmlDtype::Q5_0 => &p.moe_expert_matmul_q5_0,
         GgmlDtype::Q8_0 => &p.moe_expert_matmul_q8_0,
         other => {
             return Err(RullamaError::Inference(format!(
-                "moe expert matmul: unsupported quant dtype {other:?} (expected Q4_K or Q8_0)"
+                "moe expert matmul: unsupported quant dtype {other:?} (expected Q4_K, Q5_0, or Q8_0)"
             )));
         }
     };
@@ -310,10 +311,11 @@ pub fn moe_expert_matmul_batched_chained(
 ) -> Result<()> {
     let pipeline = match dtype {
         GgmlDtype::Q4_K => &p.moe_expert_matmul_batched_q4_k,
+        GgmlDtype::Q5_0 => &p.moe_expert_matmul_batched_q5_0,
         GgmlDtype::Q8_0 => &p.moe_expert_matmul_batched_q8_0,
         other => {
             return Err(RullamaError::Inference(format!(
-                "moe expert matmul (batched): unsupported dtype {other:?} (expected Q4_K or Q8_0)"
+                "moe expert matmul (batched): unsupported dtype {other:?} (expected Q4_K, Q5_0, or Q8_0)"
             )));
         }
     };
