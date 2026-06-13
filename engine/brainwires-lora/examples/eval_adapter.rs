@@ -117,7 +117,11 @@ async fn run() -> Result<(), BoxError> {
     let rendered_prompts: Vec<String> = if apply_chat_template {
         eprintln!(
             "[eval] applying Gemma 4 chat template{}",
-            if system_text.is_some() { " + System schema" } else { "" }
+            if system_text.is_some() {
+                " + System schema"
+            } else {
+                ""
+            }
         );
         prompts
             .iter()

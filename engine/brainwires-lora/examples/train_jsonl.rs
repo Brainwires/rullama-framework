@@ -155,7 +155,10 @@ async fn run() -> Result<(), BoxError> {
         .map(|s| s.trim_end().to_string())
         .filter(|s| !s.is_empty());
     if let Some(s) = &system_text {
-        eprintln!("[tok] prepending System turn ({} chars) from RULLAMA_TRAIN_SYSTEM", s.len());
+        eprintln!(
+            "[tok] prepending System turn ({} chars) from RULLAMA_TRAIN_SYSTEM",
+            s.len()
+        );
     }
     // Newly exposed knobs to match Unsloth's recommended Gemma 4 recipe:
     //   weight_decay = 0.01, lora_dropout = 0.05.
@@ -373,8 +376,13 @@ async fn run() -> Result<(), BoxError> {
     if let Some(path) = &resume_path {
         if path.exists() {
             let n = rullama_finetune::load_adapter_into_state(session.lora_state_mut(), path)
-                .map_err(|e| -> BoxError { format!("resume from {}: {e:?}", path.display()).into() })?;
-            eprintln!("[resume] seeded {n} LoRA tensors from {} (Adam restarts)", path.display());
+                .map_err(|e| -> BoxError {
+                    format!("resume from {}: {e:?}", path.display()).into()
+                })?;
+            eprintln!(
+                "[resume] seeded {n} LoRA tensors from {} (Adam restarts)",
+                path.display()
+            );
         }
     }
     if lr_sched.is_some() {
