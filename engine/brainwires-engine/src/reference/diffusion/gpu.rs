@@ -238,7 +238,7 @@ async fn diffusion_layer_gpu(
         .load_async(&format!("{prefix}attn_k_norm.weight"))
         .await?;
     let freqs = if matches!(base.kind(layer), LayerKind::Global) {
-        weights.load_opt("rope_freqs.weight")?
+        weights.load_opt_async("rope_freqs.weight").await?
     } else {
         None
     };
