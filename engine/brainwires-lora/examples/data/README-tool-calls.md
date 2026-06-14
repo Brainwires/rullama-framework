@@ -42,13 +42,23 @@ eval via `RULLAMA_EVAL_SYSTEM=…/tool-schema.txt`, and the PWA via
 `TOOL_SCHEMA_PROMPT` in `web/src/lib/toolFormat.ts` (kept byte-identical to the
 `.txt`).
 
-> **Gradient checkpointing is required with the schema.** The schema makes each
-> prompt long (~155 tokens; ~193 with completion), and the per-layer activation
-> captures (sized by max_seq_len × layers) overflow a weak GPU's memory and
-> crash backward at step 1 with a wgpu "invalid buffer" error. `train_jsonl`
-> **auto-enables** `gradient_checkpointing` when `max_seq_len > 96`; pass
-> `RULLAMA_TRAIN_CHECKPOINT=1` to force it. (~1.5–2× slower per step, but it's
-> the only way the long-sequence backward fits.)
+> **Long-sequence training on a memory-tight GPU.** The schema makes each prompt
+> long (~155 tokens; ~193 with completion). On a small integrated GPU (e.g. Iris
+> Pro 555, 16 GB shared) the per_position backward then OOMs at step 1 with a
+> wgpu "invalid buffer" error. Findings + mitigations, in order:
+> - `train_jsonl` auto-enables `gradient_checkpointing` when `max_seq_len > 96`
+>   (collapses per-layer activation captures). Necessary, not sufficient alone.
+> - `TrainingSession::new` right-sizes the KV cache to `max_seq_len` (was a full
+>   4096-token chat cache ≈ several hundred MB wasted). Frees ~475 MB.
+> - **The dominant long-sequence cost is the per-history K/V LoRA backward loop**
+>   (scales with prompt length), which runs ONLY when `attn_k`/`attn_v` are LoRA
+>   targets. **Dropping them** (`RULLAMA_TRAIN_TARGETS=attn_q,attn_o,ffn_gate,
+>   ffn_up,ffn_down`) lets the full schema train on this GPU. `attn_q`/`attn_o` +
+>   FFN + the schema-in-prompt carry the function-calling signal fine.
+> - Alternatively, the **terse schema** keeps all 7 targets under the memory
+>   ceiling (~143-token sequences) with the same tool names/keys.
+> - `memory_tight` (per-layer weight destroy) is NOT usable here: it's built for
+>   the recompute path and destroys weights the per_position backward needs.
 
 ```sh
 GGUF=~/.ollama/models/blobs/sha256-<e2b-q4_k_m-digest>
