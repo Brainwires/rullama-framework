@@ -42,6 +42,14 @@ eval via `RULLAMA_EVAL_SYSTEM=…/tool-schema.txt`, and the PWA via
 `TOOL_SCHEMA_PROMPT` in `web/src/lib/toolFormat.ts` (kept byte-identical to the
 `.txt`).
 
+> **Gradient checkpointing is required with the schema.** The schema makes each
+> prompt long (~155 tokens; ~193 with completion), and the per-layer activation
+> captures (sized by max_seq_len × layers) overflow a weak GPU's memory and
+> crash backward at step 1 with a wgpu "invalid buffer" error. `train_jsonl`
+> **auto-enables** `gradient_checkpointing` when `max_seq_len > 96`; pass
+> `RULLAMA_TRAIN_CHECKPOINT=1` to force it. (~1.5–2× slower per step, but it's
+> the only way the long-sequence backward fits.)
+
 ```sh
 GGUF=~/.ollama/models/blobs/sha256-<e2b-q4_k_m-digest>
 RULLAMA_TRAIN_APPLY_CHAT_TEMPLATE=1 \

@@ -33,7 +33,9 @@
 //!     (default `none` — constant base lr)
 //!   - `RULLAMA_TRAIN_WARMUP`    — warmup steps (default 0)
 //!   - `RULLAMA_TRAIN_GRAD_CLIP` — max grad L2 norm (default 0 = off)
-//!   - `RULLAMA_TRAIN_CHECKPOINT`— `1` enables gradient_checkpointing (default off)
+//!   - `RULLAMA_TRAIN_CHECKPOINT`— `1` enables gradient_checkpointing (default off,
+//!     but AUTO-enabled when max_seq_len > 96 to fit long-sequence backward in
+//!     GPU memory — e.g. when a System schema is prepended)
 //!   - `RULLAMA_TRAIN_MIXED_PRECISION` — `1` saves adapter in f16     (default off)
 //!   - `RULLAMA_TRAIN_APPLY_CHAT_TEMPLATE` — `1` wraps prompts in the
 //!     Gemma 4 chat template before tokenizing (default off). This is
@@ -141,7 +143,7 @@ async fn run() -> Result<(), BoxError> {
     };
     let warmup = env_u32("RULLAMA_TRAIN_WARMUP", 0) as u64;
     let grad_clip = env_f32("RULLAMA_TRAIN_GRAD_CLIP", 0.0);
-    let checkpointing = env::var("RULLAMA_TRAIN_CHECKPOINT").is_ok();
+    let checkpoint_explicit = env::var("RULLAMA_TRAIN_CHECKPOINT").is_ok();
     let mixed_precision = env::var("RULLAMA_TRAIN_MIXED_PRECISION").is_ok();
     let apply_chat_template = env::var("RULLAMA_TRAIN_APPLY_CHAT_TEMPLATE").is_ok();
     // Optional system preamble (the tool schema) prepended as a System turn so
@@ -337,6 +339,19 @@ async fn run() -> Result<(), BoxError> {
         LossMode::NextToken => max_prompt_len.max(32),
         LossMode::PerPosition => max_seq_len.max(32),
     };
+    // Long sequences (e.g. a System schema prepended to each prompt) blow up
+    // the per-layer activation captures — sized by max_seq_len × n_layers — past
+    // a weak GPU's memory, crashing backward with a wgpu "invalid buffer"
+    // validation error at step 1. Auto-enable gradient checkpointing above a
+    // safe length (the 58-token tool-call runs were fine without it; 193 was
+    // not) unless the caller set RULLAMA_TRAIN_CHECKPOINT explicitly.
+    let checkpointing = checkpoint_explicit || max_seq_len_for_hp > 96;
+    if checkpointing && !checkpoint_explicit {
+        eprintln!(
+            "[hp] auto-enabling gradient_checkpointing (max_seq_len={max_seq_len_for_hp} > 96) \
+             to fit long sequences; set RULLAMA_TRAIN_CHECKPOINT=1 to silence this"
+        );
+    }
     let mut hp = TrainingHyperparams {
         learning_rate: lr,
         weight_decay,
