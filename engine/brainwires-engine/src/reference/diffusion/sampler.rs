@@ -96,43 +96,123 @@ pub trait CanvasForward {
     fn n_vocab(&self) -> usize;
 }
 
-/// Run the entropy-bound denoise loop over one canvas. Returns the final
-/// argmax canvas (length = `canvas_len`).
-pub fn generate_entropy_bound(
-    model: &mut dyn CanvasForward,
+/// One ingested step's stats (the loop-driver / JS surface reads these to
+/// decide whether to keep going and what to render).
+pub struct StepOutcome {
+    pub step_idx: u32,
+    pub total_steps: u32,
+    pub mean_entropy: f32,
+    pub n_accepted: usize,
+    /// Adaptive-stop fired (argmax stable + confident) OR the step budget is
+    /// exhausted — no more forwards needed.
+    pub done: bool,
+}
+
+/// Resumable entropy-bound denoise state — the loop body of
+/// [`generate_entropy_bound`] split so an async / JS-driven caller can run one
+/// step at a time (the GPU forward is `async` on wasm, so it can't be hidden
+/// behind the sync [`CanvasForward`] trait). Native callers use the trait-based
+/// driver below; the wasm `denoiseStep` surface holds a `DenoiseState` and
+/// calls [`DenoiseState::forward_inputs`] → its own async forward →
+/// [`DenoiseState::ingest`].
+pub struct DenoiseState {
+    params: EbParams,
     canvas_len: usize,
-    params: &EbParams,
-    rng: &mut dyn SamplerRng,
-    mut step_cb: Option<&mut dyn FnMut(&StepInfo) -> bool>,
-) -> Result<Vec<u32>> {
-    let n_vocab = model.n_vocab();
-    let s_total = params.max_denoising_steps.max(1);
+    n_vocab: usize,
+    s_total: u32,
+    /// Counts DOWN from `s_total` to 1; reaching 0 means the budget is spent.
+    cur_step: u32,
+    current: Vec<u32>,
+    argmax_canvas: Vec<u32>,
+    prev_argmax: Vec<u32>,
+    prev_logits: Option<Vec<f32>>,
+    prev_temp_inv: f32,
+    held: u32,
+    finished: bool,
+}
 
-    // Random init — uniform over vocab, NOT the mask token.
-    let mut current: Vec<u32> = (0..canvas_len).map(|_| rng.token(n_vocab as u32)).collect();
+impl DenoiseState {
+    /// Random-initialize a canvas (uniform over vocab, NOT the mask token) and
+    /// arm the step budget.
+    pub fn new(
+        canvas_len: usize,
+        n_vocab: usize,
+        params: EbParams,
+        rng: &mut dyn SamplerRng,
+    ) -> Self {
+        let s_total = params.max_denoising_steps.max(1);
+        let current: Vec<u32> = (0..canvas_len).map(|_| rng.token(n_vocab as u32)).collect();
+        Self {
+            params,
+            canvas_len,
+            n_vocab,
+            s_total,
+            cur_step: s_total,
+            current,
+            argmax_canvas: vec![0u32; canvas_len],
+            prev_argmax: vec![u32::MAX; canvas_len], // step 0 is never "stable"
+            prev_logits: None,
+            prev_temp_inv: 1.0,
+            held: 0,
+            finished: false,
+        }
+    }
 
-    let mut argmax_canvas = vec![0u32; canvas_len];
-    let mut prev_argmax: Vec<u32> = vec![u32::MAX; canvas_len]; // step 0 is never "stable"
-    let mut entropy = vec![0f32; canvas_len];
-    let mut denoised = vec![0u32; canvas_len];
-    let mut prev_logits: Option<Vec<f32>> = None;
-    let mut prev_temp_inv = 1.0f32;
-    let mut held = 0u32;
+    /// No more forwards needed (budget spent or adaptive stop fired).
+    pub fn is_done(&self) -> bool {
+        self.finished || self.cur_step == 0
+    }
 
-    for cur_step in (1..=s_total).rev() {
-        let step_idx = s_total - cur_step;
-        let t = params.t_min + (params.t_max - params.t_min) * (cur_step as f32 / s_total as f32);
-        let temp_inv = 1.0 / t;
+    /// The canvas + self-conditioning `(prev_logits, 1/prev_t)` to feed the
+    /// next forward. Borrows `self`; drop the borrow before calling `ingest`.
+    pub fn forward_inputs(&self) -> (&[u32], Option<(&[f32], f32)>) {
+        (
+            &self.current,
+            self.prev_logits.as_deref().map(|l| (l, self.prev_temp_inv)),
+        )
+    }
 
-        let logits = model.forward(&current, prev_logits.as_deref().map(|l| (l, prev_temp_inv)))?;
+    /// The current best-guess (argmax) canvas.
+    pub fn argmax_canvas(&self) -> &[u32] {
+        &self.argmax_canvas
+    }
+
+    /// Owned copy of the canvas to feed the next forward (for the async / JS
+    /// driver, which can't hold a borrow across `await`).
+    pub fn input_canvas(&self) -> Vec<u32> {
+        self.current.clone()
+    }
+
+    /// Move the previous step's logits out for the next forward's
+    /// self-conditioning, paired with `1/prev_t` (`None` on the first step).
+    /// `ingest` will install THIS step's logits afterward, so taking the old
+    /// ones (rather than cloning the ~256×vocab buffer) is sound.
+    pub fn take_prev(&mut self) -> Option<(Vec<f32>, f32)> {
+        let ti = self.prev_temp_inv;
+        self.prev_logits.take().map(|l| (l, ti))
+    }
+
+    /// Ingest this step's raw logits `[canvas_len × n_vocab]`: per-position
+    /// argmax + entropy + multinomial draw, entropy-budget acceptance, renoise
+    /// of the rejected positions, and the adaptive-stop check. Advances the
+    /// state; returns the step's stats + whether the loop is done.
+    pub fn ingest(&mut self, logits: Vec<f32>, rng: &mut dyn SamplerRng) -> StepOutcome {
+        let canvas_len = self.canvas_len;
+        let n_vocab = self.n_vocab;
         debug_assert_eq!(logits.len(), canvas_len * n_vocab);
+        let step_idx = self.s_total - self.cur_step;
+        let t = self.params.t_min
+            + (self.params.t_max - self.params.t_min)
+                * (self.cur_step as f32 / self.s_total as f32);
+        let temp_inv = 1.0 / t;
 
         // Pre-draw the step's randomness in position order (seed-reproducible,
         // matching the reference's single-threaded pre-draw).
         let us: Vec<f32> = (0..canvas_len).map(|_| rng.uniform01()).collect();
         let renoise: Vec<u32> = (0..canvas_len).map(|_| rng.token(n_vocab as u32)).collect();
 
-        // Per position: argmax, entropy of softmax(raw/t), multinomial sample.
+        let mut entropy = vec![0f32; canvas_len];
+        let mut denoised = vec![0u32; canvas_len];
         for pos in 0..canvas_len {
             let row = &logits[pos * n_vocab..(pos + 1) * n_vocab];
             let mut m = f32::NEG_INFINITY;
@@ -166,7 +246,7 @@ pub fn generate_entropy_bound(
                 }
             }
             entropy[pos] = h;
-            argmax_canvas[pos] = amax as u32;
+            self.argmax_canvas[pos] = amax as u32;
             denoised[pos] = sampled as u32;
         }
 
@@ -177,17 +257,17 @@ pub fn generate_entropy_bound(
         let mut accepted = vec![false; canvas_len];
         let mut cum_e = 0f64;
         for &pos in &order {
-            if cum_e <= params.entropy_bound as f64 {
+            if cum_e <= self.params.entropy_bound as f64 {
                 accepted[pos] = true;
             }
             cum_e += entropy[pos] as f64;
         }
 
-        // Renoise + output canvas + stats.
+        // Renoise + stats.
         let mut entropy_sum = 0f32;
         let mut n_accepted = 0usize;
         for pos in 0..canvas_len {
-            current[pos] = if accepted[pos] {
+            self.current[pos] = if accepted[pos] {
                 n_accepted += 1;
                 denoised[pos]
             } else {
@@ -197,36 +277,69 @@ pub fn generate_entropy_bound(
         }
 
         // Adaptive stop: argmax stable AND confident.
-        held = if prev_argmax == argmax_canvas {
-            held + 1
+        self.held = if self.prev_argmax == self.argmax_canvas {
+            self.held + 1
         } else {
             0
         };
         let mean_entropy = entropy_sum / canvas_len as f32;
-        let confident = mean_entropy < params.confidence_threshold;
+        let confident = mean_entropy < self.params.confidence_threshold;
+
+        self.prev_argmax.copy_from_slice(&self.argmax_canvas);
+        self.prev_logits = Some(logits);
+        self.prev_temp_inv = temp_inv;
+        self.cur_step -= 1;
+        if (self.held >= self.params.stability_threshold && confident) || self.cur_step == 0 {
+            self.finished = true;
+        }
+
+        StepOutcome {
+            step_idx,
+            total_steps: self.s_total,
+            mean_entropy,
+            n_accepted,
+            done: self.finished,
+        }
+    }
+}
+
+/// Run the entropy-bound denoise loop over one canvas (synchronous, trait-based
+/// — native callers). Returns the final argmax canvas (length = `canvas_len`).
+pub fn generate_entropy_bound(
+    model: &mut dyn CanvasForward,
+    canvas_len: usize,
+    params: &EbParams,
+    rng: &mut dyn SamplerRng,
+    mut step_cb: Option<&mut dyn FnMut(&StepInfo) -> bool>,
+) -> Result<Vec<u32>> {
+    let n_vocab = model.n_vocab();
+    let mut state = DenoiseState::new(canvas_len, n_vocab, params.clone(), rng);
+
+    while !state.is_done() {
+        let logits = {
+            let (canvas, prev) = state.forward_inputs();
+            model.forward(canvas, prev)?
+        };
+        let outcome = state.ingest(logits, rng);
 
         if let Some(cb) = step_cb.as_deref_mut() {
             let info = StepInfo {
-                step_idx,
-                total_steps: s_total,
-                argmax_canvas: &argmax_canvas,
-                mean_entropy,
-                n_accepted,
+                step_idx: outcome.step_idx,
+                total_steps: outcome.total_steps,
+                argmax_canvas: state.argmax_canvas(),
+                mean_entropy: outcome.mean_entropy,
+                n_accepted: outcome.n_accepted,
             };
             if !cb(&info) {
                 break;
             }
         }
-
-        if held >= params.stability_threshold && confident {
+        if outcome.done {
             break;
         }
-        prev_argmax.copy_from_slice(&argmax_canvas);
-        prev_logits = Some(logits);
-        prev_temp_inv = temp_inv;
     }
 
-    Ok(argmax_canvas)
+    Ok(state.argmax_canvas().to_vec())
 }
 
 #[cfg(test)]
@@ -292,6 +405,50 @@ mod tests {
             model.calls
         );
         assert!(model.saw_self_cond, "later steps must pass prev logits");
+    }
+
+    /// The manual step loop (`input_canvas` + `take_prev` + `ingest`, what the
+    /// async / wasm `denoiseStep` does) must produce the SAME canvas as the
+    /// trait-driven `generate_entropy_bound`, given the same seed — i.e. the
+    /// take-prev plumbing matches the borrow-based driver bit for bit.
+    #[test]
+    fn manual_step_loop_matches_driver() {
+        let target = vec![3u32, 1, 4, 1, 5, 9, 2, 6];
+        let params = EbParams {
+            max_denoising_steps: 12,
+            ..Default::default()
+        };
+
+        let mut m1 = FixedTarget {
+            target: target.clone(),
+            n_vocab: 11,
+            calls: 0,
+            saw_self_cond: false,
+        };
+        let mut rng1 = XorShiftRng(0xABCD);
+        let driver =
+            generate_entropy_bound(&mut m1, target.len(), &params, &mut rng1, None).unwrap();
+
+        let mut m2 = FixedTarget {
+            target: target.clone(),
+            n_vocab: 11,
+            calls: 0,
+            saw_self_cond: false,
+        };
+        let mut rng2 = XorShiftRng(0xABCD);
+        let mut st = DenoiseState::new(target.len(), 11, params.clone(), &mut rng2);
+        while !st.is_done() {
+            let canvas = st.input_canvas();
+            let prev = st.take_prev();
+            let logits = m2
+                .forward(&canvas, prev.as_ref().map(|(l, t)| (l.as_slice(), *t)))
+                .unwrap();
+            st.ingest(logits, &mut rng2);
+        }
+        let manual = st.argmax_canvas().to_vec();
+
+        assert_eq!(driver, manual, "step-driven loop must match the driver");
+        assert_eq!(driver, target);
     }
 
     /// Uniform logits ⇒ max entropy ⇒ nothing confident ⇒ runs to the cap.

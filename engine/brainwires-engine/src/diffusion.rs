@@ -20,6 +20,7 @@
 //! the next layer (a 256-token canvas routes its top-8 across ~all 128 experts,
 //! so per-layer is the right grain). wasm peak stays bounded to one tensor.
 
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use crate::backend::{Pipelines, WeightCache, WgpuCtx};
@@ -27,11 +28,23 @@ use crate::error::Result;
 use crate::gguf::{GgufReader, TensorFetcher};
 use crate::reference::diffusion::DiffusionConfig;
 use crate::reference::diffusion::gpu::diffusion_forward_gpu;
-use crate::reference::diffusion::sampler::{
-    CanvasForward, EbParams, StepInfo, XorShiftRng, generate_entropy_bound,
-};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::reference::diffusion::sampler::{CanvasForward, StepInfo, generate_entropy_bound};
+use crate::reference::diffusion::sampler::{DenoiseState, EbParams, XorShiftRng};
 use crate::reference::weights::Weights;
 use crate::tokenizer::BpeTokenizer;
+
+/// JS-driven denoise generation state: the resumable sampler state plus the
+/// prompt + rng it runs against, and the last step's stats for the getters.
+struct GenState {
+    state: DenoiseState,
+    prompt_ids: Vec<u32>,
+    rng: XorShiftRng,
+    last_step: u32,
+    total_steps: u32,
+    last_accepted: usize,
+    last_mean_entropy: f32,
+}
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -49,6 +62,10 @@ pub struct DiffusionGemma {
     pipes: Pipelines,
     wcache: WeightCache,
     bos: u32,
+    /// JS-driven generation state (the wasm `denoiseStep` loop). `None` until
+    /// `startGenerate`; unused by the native `generate_native` (which keeps its
+    /// own local state).
+    gen_state: RefCell<Option<GenState>>,
 }
 
 impl DiffusionGemma {
@@ -78,7 +95,55 @@ impl DiffusionGemma {
             pipes,
             wcache,
             bos,
+            gen_state: RefCell::new(None),
         })
+    }
+
+    /// Encode a prompt into ids with the leading BOS (shared by native + wasm).
+    fn prompt_ids(&self, prompt: &str) -> Vec<u32> {
+        let mut ids = vec![self.bos];
+        ids.extend(self.tok.encode(prompt));
+        ids
+    }
+
+    /// One async denoise step against the GPU forward. Returns the step outcome
+    /// (and leaves the new argmax canvas in `gen_state`). Drives the wasm
+    /// `denoiseStep`; native callers can use it for step-by-step streaming.
+    /// Errors if `start_generate` wasn't called.
+    pub async fn denoise_step(&self) -> Result<crate::reference::diffusion::sampler::StepOutcome> {
+        // Pull the forward inputs out under a short borrow (no borrow is held
+        // across the await).
+        let (canvas, prev, prompt_ids) = {
+            let mut slot = self.gen_state.borrow_mut();
+            let g = slot.as_mut().ok_or_else(|| {
+                crate::error::RullamaError::Inference("startGenerate not called".into())
+            })?;
+            (
+                g.state.input_canvas(),
+                g.state.take_prev(),
+                g.prompt_ids.clone(),
+            )
+        };
+        let logits = diffusion_forward_gpu(
+            &self.cfg,
+            &self.ctx,
+            &self.pipes,
+            &self.wcache,
+            &self.weights,
+            &prompt_ids,
+            &canvas,
+            prev.as_ref().map(|(l, _)| l.as_slice()),
+            prev.as_ref().map(|(_, t)| *t).unwrap_or(1.0),
+        )
+        .await?;
+        let mut slot = self.gen_state.borrow_mut();
+        let g = slot.as_mut().unwrap();
+        let outcome = g.state.ingest(logits, &mut g.rng);
+        g.last_step = outcome.step_idx;
+        g.total_steps = outcome.total_steps;
+        g.last_accepted = outcome.n_accepted;
+        g.last_mean_entropy = outcome.mean_entropy;
+        Ok(outcome)
     }
 
     /// Load from in-memory GGUF bytes (desktop convenience). For the PWA use the
@@ -100,7 +165,9 @@ impl DiffusionGemma {
 
     /// Run the entropy-bound denoise loop in-process and return the decoded
     /// text. `on_step` (optional) is invoked once per denoise step with the
-    /// current argmax canvas + stats — return `false` to abort early.
+    /// current argmax canvas + stats — return `false` to abort early. Native
+    /// only (blocks on each GPU forward); the wasm path drives `denoiseStep`.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn generate_native(
         &self,
         prompt: &str,
@@ -109,8 +176,7 @@ impl DiffusionGemma {
         seed: u64,
         mut on_step: Option<&mut dyn FnMut(&StepInfo) -> bool>,
     ) -> Result<String> {
-        let mut prompt_ids = vec![self.bos];
-        prompt_ids.extend(self.tok.encode(prompt));
+        let prompt_ids = self.prompt_ids(prompt);
 
         // Adapter: the sampler drives a sync `CanvasForward`; on native we block
         // on each async GPU forward.
@@ -160,5 +226,153 @@ impl DiffusionGemma {
             }
         }
         s.replace('\u{2581}', " ")
+    }
+
+    /// Arm a step-driven generation: encode the prompt, random-init the canvas,
+    /// stash the resumable state in `self.gen_state`. Drive it with [`Self::denoise_step`]
+    /// until the outcome reports `done`. (The wasm `denoiseStep` loop uses this;
+    /// native callers usually prefer the one-shot `generate_native`.)
+    pub fn start_generate(&self, prompt: &str, canvas_len: usize, params: EbParams, seed: u64) {
+        let prompt_ids = self.prompt_ids(prompt);
+        let mut rng = XorShiftRng(seed);
+        let n_vocab = self.cfg.base.vocab_size as usize;
+        let state = DenoiseState::new(canvas_len, n_vocab, params, &mut rng);
+        *self.gen_state.borrow_mut() = Some(GenState {
+            state,
+            prompt_ids,
+            rng,
+            last_step: 0,
+            total_steps: 0,
+            last_accepted: 0,
+            last_mean_entropy: 0.0,
+        });
+    }
+
+    /// Decode the current best-guess canvas to text (`""` if not generating).
+    pub fn canvas_text(&self) -> String {
+        match self.gen_state.borrow().as_ref() {
+            Some(g) => self.detokenize(g.state.argmax_canvas()),
+            None => String::new(),
+        }
+    }
+
+    /// Whether the current generation has converged / spent its step budget.
+    pub fn is_done(&self) -> bool {
+        self.gen_state
+            .borrow()
+            .as_ref()
+            .map(|g| g.state.is_done())
+            .unwrap_or(true)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+impl DiffusionGemma {
+    /// Streaming load from OPFS. `read_fn(offset, length) -> Uint8Array` is the
+    /// worker's sync OPFS reader; weights are fetched on demand (the 16.8 GB
+    /// file never fully enters wasm memory — per-layer MoE experts stream in and
+    /// are destroyed each layer).
+    #[wasm_bindgen(js_name = loadFromOpfs)]
+    pub async fn load_from_opfs_js(
+        read_fn: js_sys::Function,
+        total_bytes: f64,
+    ) -> std::result::Result<DiffusionGemma, JsError> {
+        if !total_bytes.is_finite() || total_bytes < 0.0 {
+            return Err(JsError::new(
+                "loadFromOpfs: total_bytes must be a non-negative finite number",
+            ));
+        }
+        let fetcher = crate::gguf::OpfsFetcher::new(read_fn, total_bytes as u64);
+        let arc: Arc<dyn TensorFetcher> = Arc::new(fetcher);
+        Self::load_streaming_native(arc)
+            .await
+            .map_err(|e| JsError::new(&format!("{e:?}")))
+    }
+
+    /// Default canvas/block length.
+    #[wasm_bindgen(js_name = canvasLen, getter)]
+    pub fn canvas_len_js(&self) -> u32 {
+        DEFAULT_CANVAS_LEN as u32
+    }
+
+    /// Arm a generation. `canvasLen = 0` ⇒ the model default; `maxSteps = 0` ⇒
+    /// the entropy-bound default (48). The JS worker then calls `denoiseStep`
+    /// repeatedly, rendering `canvasText` (or the returned text) each step,
+    /// until `done` is true.
+    #[wasm_bindgen(js_name = startGenerate)]
+    pub fn start_generate_js(&self, prompt: String, canvas_len: u32, max_steps: u32, seed: f64) {
+        let cl = if canvas_len == 0 {
+            DEFAULT_CANVAS_LEN
+        } else {
+            canvas_len as usize
+        };
+        let params = EbParams {
+            max_denoising_steps: if max_steps == 0 { 48 } else { max_steps },
+            ..Default::default()
+        };
+        self.start_generate(&prompt, cl, params, seed as u64);
+    }
+
+    /// Run ONE denoise step (a full canvas forward + sample/accept/renoise) and
+    /// return the current best-guess canvas decoded to text. Read `done` /
+    /// `stepIndex` / `accepted` / `meanEntropy` getters for the loop control +
+    /// progress. Render the returned text in place each step to show the canvas
+    /// condensing out of noise.
+    #[wasm_bindgen(js_name = denoiseStep)]
+    pub async fn denoise_step_js(&self) -> std::result::Result<String, JsError> {
+        if self.is_done() {
+            return Ok(self.canvas_text());
+        }
+        self.denoise_step()
+            .await
+            .map_err(|e| JsError::new(&format!("{e:?}")))?;
+        Ok(self.canvas_text())
+    }
+
+    /// Generation converged / budget spent.
+    #[wasm_bindgen(js_name = done, getter)]
+    pub fn done_js(&self) -> bool {
+        self.is_done()
+    }
+
+    /// 0-based index of the last completed denoise step.
+    #[wasm_bindgen(js_name = stepIndex, getter)]
+    pub fn step_index_js(&self) -> u32 {
+        self.gen_state
+            .borrow()
+            .as_ref()
+            .map(|g| g.last_step)
+            .unwrap_or(0)
+    }
+
+    /// Total step budget for the active generation.
+    #[wasm_bindgen(js_name = totalSteps, getter)]
+    pub fn total_steps_js(&self) -> u32 {
+        self.gen_state
+            .borrow()
+            .as_ref()
+            .map(|g| g.total_steps)
+            .unwrap_or(0)
+    }
+
+    /// Positions accepted (unmasked) on the last step.
+    #[wasm_bindgen(js_name = accepted, getter)]
+    pub fn accepted_js(&self) -> u32 {
+        self.gen_state
+            .borrow()
+            .as_ref()
+            .map(|g| g.last_accepted as u32)
+            .unwrap_or(0)
+    }
+
+    /// Mean per-position entropy on the last step (a confidence signal).
+    #[wasm_bindgen(js_name = meanEntropy, getter)]
+    pub fn mean_entropy_js(&self) -> f32 {
+        self.gen_state
+            .borrow()
+            .as_ref()
+            .map(|g| g.last_mean_entropy)
+            .unwrap_or(0.0)
     }
 }
