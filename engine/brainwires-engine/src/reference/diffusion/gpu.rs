@@ -782,20 +782,27 @@ async fn apply_canvas_embedding(
 
     let sc = if let Some(pl) = prev_logits {
         assert_eq!(pl.len(), c * vocab, "prev_logits must be [canvas, vocab]");
-        let tok = weights.load_async("token_embd.weight").await?;
         let pre_norm = weights.load_async("self_cond_pre_norm.weight").await?;
         let gate = weights.load_async("self_cond_gate.weight").await?;
         let up = weights.load_async("self_cond_up.weight").await?;
         let down = weights.load_async("self_cond_down.weight").await?;
         let n_ff = gate.len() / d_model;
-        Some((tok, pre_norm, gate, up, down, n_ff))
+        Some((pre_norm, gate, up, down, n_ff))
     } else {
         None
     };
 
+    // The self-conditioning signal is Σ_v softmax(prev)[v]·embd_v — a
+    // probability-weighted average of token embeddings. The full embedding
+    // table is vocab×d_model (262144×2816 ≈ 738M f32 = 2.95 GB), which OVERFLOWS
+    // a wasm32 Vec (capacity > isize::MAX). Since softcapped logits make the
+    // softmax sharply peaked, load only the rows for tokens above the support
+    // threshold, cached across canvas positions, instead of the whole table.
+    let mut row_cache: HashMap<usize, Vec<f32>> = HashMap::new();
+
     for i in p..n {
         let mut combined = hidden[i * d_model..(i + 1) * d_model].to_vec();
-        if let Some((tok, pre_norm, gate, up, down, n_ff)) = &sc {
+        if let Some((pre_norm, gate, up, down, n_ff)) = &sc {
             let ci = i - p;
             let mut probs: Vec<f32> = prev_logits.unwrap()[ci * vocab..(ci + 1) * vocab]
                 .iter()
@@ -807,7 +814,11 @@ async fn apply_canvas_embedding(
                 if pv < 1e-9 {
                     continue;
                 }
-                let emb = &tok[v * d_model..(v + 1) * d_model];
+                if !row_cache.contains_key(&v) {
+                    let row = weights.load_row_async("token_embd.weight", v).await?;
+                    row_cache.insert(v, row);
+                }
+                let emb = &row_cache[&v];
                 for (s, &e) in soft.iter_mut().zip(emb.iter()) {
                     *s += pv * e;
                 }
