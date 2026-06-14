@@ -14,9 +14,15 @@ renderer can't drift.
 
 ## Dataset
 
-`tool-call-app-intents.jsonl` — 85 `(prompt, completion)` pairs across 6
+`tool-call-app-intents.jsonl` — ~275 `(prompt, completion)` pairs across 6
 app-intent tools (`set_timer`, `get_weather`, `send_email`,
-`add_calendar_event`, `play_music`, `set_reminder`). Regenerate deterministically:
+`add_calendar_event`, `play_music`, `set_reminder`). Consistent slot keys per
+tool; the two-slot tools (`send_email`, `add_calendar_event`) are
+over-represented (~75 each) since they were the v2 failure mode; varied verbs
+(`schedule`/`book`/`put on my calendar`) all map to `add_calendar_event`. A few
+values are deliberately **held out** for eval (timer 7 · Miami · Priya/"budget
+review" · "classical music" · "call grandma" · "root canal"). Regenerate
+deterministically:
 
 ```sh
 node gen-tool-calls.mjs > tool-call-app-intents.jsonl
