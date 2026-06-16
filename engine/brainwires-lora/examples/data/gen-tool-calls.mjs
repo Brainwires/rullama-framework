@@ -43,10 +43,14 @@ const pick = (arr, i) => arr[i % arr.length];
         (n) => `Can you set a ${n} minute timer?`,
         (n) => `Give me a ${n} minute timer.`,
     ];
-    mins.forEach((n, i) => add(pick(tpl, i)(n), "set_timer", { duration_minutes: n }));
-    add("Set a timer for half an hour.", "set_timer", { duration_minutes: 30 });
-    add("Set a timer for an hour.", "set_timer", { duration_minutes: 60 });
-    add("Set a one minute timer.", "set_timer", { duration_minutes: 1 });
+    // Natural-language duration (copy the user's wording — no unit conversion;
+    // small models mangle "30 seconds" when forced into a minutes field).
+    const mlabel = (n) => `${n} ${n === 1 ? "minute" : "minutes"}`;
+    mins.forEach((n, i) => add(pick(tpl, i)(n), "set_timer", { duration: mlabel(n) }));
+    add("Set a timer for 30 seconds.", "set_timer", { duration: "30 seconds" });
+    add("Set a timer for 90 seconds.", "set_timer", { duration: "90 seconds" });
+    add("Set a timer for half an hour.", "set_timer", { duration: "half an hour" });
+    add("Set a timer for an hour.", "set_timer", { duration: "an hour" });
 }
 
 // ── get_weather(location) ──────────────────────────────────────────────────

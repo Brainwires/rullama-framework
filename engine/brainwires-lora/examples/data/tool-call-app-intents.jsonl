@@ -1,32 +1,33 @@
-{"prompt":"Set a timer for 1 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":1}}</tool_call>"}
-{"prompt":"Start a 2-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":2}}</tool_call>"}
-{"prompt":"Timer for 3 minutes, please.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":3}}</tool_call>"}
-{"prompt":"Can you set a 4 minute timer?","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":4}}</tool_call>"}
-{"prompt":"Give me a 5 minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":5}}</tool_call>"}
-{"prompt":"Set a timer for 6 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":6}}</tool_call>"}
-{"prompt":"Start a 8-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":8}}</tool_call>"}
-{"prompt":"Timer for 9 minutes, please.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":9}}</tool_call>"}
-{"prompt":"Can you set a 10 minute timer?","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":10}}</tool_call>"}
-{"prompt":"Give me a 11 minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":11}}</tool_call>"}
-{"prompt":"Set a timer for 12 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":12}}</tool_call>"}
-{"prompt":"Start a 14-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":14}}</tool_call>"}
-{"prompt":"Timer for 15 minutes, please.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":15}}</tool_call>"}
-{"prompt":"Can you set a 16 minute timer?","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":16}}</tool_call>"}
-{"prompt":"Give me a 18 minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":18}}</tool_call>"}
-{"prompt":"Set a timer for 20 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":20}}</tool_call>"}
-{"prompt":"Start a 22-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":22}}</tool_call>"}
-{"prompt":"Timer for 25 minutes, please.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":25}}</tool_call>"}
-{"prompt":"Can you set a 30 minute timer?","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":30}}</tool_call>"}
-{"prompt":"Give me a 35 minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":35}}</tool_call>"}
-{"prompt":"Set a timer for 40 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":40}}</tool_call>"}
-{"prompt":"Start a 45-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":45}}</tool_call>"}
-{"prompt":"Timer for 50 minutes, please.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":50}}</tool_call>"}
-{"prompt":"Can you set a 60 minute timer?","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":60}}</tool_call>"}
-{"prompt":"Give me a 75 minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":75}}</tool_call>"}
-{"prompt":"Set a timer for 90 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":90}}</tool_call>"}
-{"prompt":"Set a timer for half an hour.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":30}}</tool_call>"}
-{"prompt":"Set a timer for an hour.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":60}}</tool_call>"}
-{"prompt":"Set a one minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration_minutes\":1}}</tool_call>"}
+{"prompt":"Set a timer for 1 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"1 minute\"}}</tool_call>"}
+{"prompt":"Start a 2-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"2 minutes\"}}</tool_call>"}
+{"prompt":"Timer for 3 minutes, please.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"3 minutes\"}}</tool_call>"}
+{"prompt":"Can you set a 4 minute timer?","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"4 minutes\"}}</tool_call>"}
+{"prompt":"Give me a 5 minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"5 minutes\"}}</tool_call>"}
+{"prompt":"Set a timer for 6 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"6 minutes\"}}</tool_call>"}
+{"prompt":"Start a 8-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"8 minutes\"}}</tool_call>"}
+{"prompt":"Timer for 9 minutes, please.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"9 minutes\"}}</tool_call>"}
+{"prompt":"Can you set a 10 minute timer?","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"10 minutes\"}}</tool_call>"}
+{"prompt":"Give me a 11 minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"11 minutes\"}}</tool_call>"}
+{"prompt":"Set a timer for 12 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"12 minutes\"}}</tool_call>"}
+{"prompt":"Start a 14-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"14 minutes\"}}</tool_call>"}
+{"prompt":"Timer for 15 minutes, please.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"15 minutes\"}}</tool_call>"}
+{"prompt":"Can you set a 16 minute timer?","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"16 minutes\"}}</tool_call>"}
+{"prompt":"Give me a 18 minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"18 minutes\"}}</tool_call>"}
+{"prompt":"Set a timer for 20 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"20 minutes\"}}</tool_call>"}
+{"prompt":"Start a 22-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"22 minutes\"}}</tool_call>"}
+{"prompt":"Timer for 25 minutes, please.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"25 minutes\"}}</tool_call>"}
+{"prompt":"Can you set a 30 minute timer?","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"30 minutes\"}}</tool_call>"}
+{"prompt":"Give me a 35 minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"35 minutes\"}}</tool_call>"}
+{"prompt":"Set a timer for 40 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"40 minutes\"}}</tool_call>"}
+{"prompt":"Start a 45-minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"45 minutes\"}}</tool_call>"}
+{"prompt":"Timer for 50 minutes, please.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"50 minutes\"}}</tool_call>"}
+{"prompt":"Can you set a 60 minute timer?","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"60 minutes\"}}</tool_call>"}
+{"prompt":"Give me a 75 minute timer.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"75 minutes\"}}</tool_call>"}
+{"prompt":"Set a timer for 90 minutes.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"90 minutes\"}}</tool_call>"}
+{"prompt":"Set a timer for 30 seconds.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"30 seconds\"}}</tool_call>"}
+{"prompt":"Set a timer for 90 seconds.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"90 seconds\"}}</tool_call>"}
+{"prompt":"Set a timer for half an hour.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"half an hour\"}}</tool_call>"}
+{"prompt":"Set a timer for an hour.","completion":"<tool_call>{\"name\":\"set_timer\",\"arguments\":{\"duration\":\"an hour\"}}</tool_call>"}
 {"prompt":"What's the weather in Tokyo?","completion":"<tool_call>{\"name\":\"get_weather\",\"arguments\":{\"location\":\"Tokyo\"}}</tool_call>"}
 {"prompt":"What's the weather like in Paris?","completion":"<tool_call>{\"name\":\"get_weather\",\"arguments\":{\"location\":\"Paris\"}}</tool_call>"}
 {"prompt":"How's the weather in London today?","completion":"<tool_call>{\"name\":\"get_weather\",\"arguments\":{\"location\":\"London\"}}</tool_call>"}
