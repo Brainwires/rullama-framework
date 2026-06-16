@@ -2296,12 +2296,17 @@ impl Forward {
         for i in 0..n_layers as u32 {
             let cap = capture.map(|c| &c[i as usize]);
             let lora = loras.map(|l| &l[i as usize]);
-            let _te = std::time::Instant::now();
+            // `Instant::now()` panics on wasm32-unknown-unknown ("time not
+            // implemented on this platform") — only call it when per-layer
+            // timing is actually requested (DG_LAYER_TIME, native debug only;
+            // env vars don't exist in the browser so this is always false on
+            // wasm). Calling it unconditionally crashed every browser forward.
+            let _te = time_layers.then(std::time::Instant::now);
             self.encode_layer(&mut enc, i, pos, cap, lora).await?;
-            if time_layers {
-                t_encode += _te.elapsed();
+            if let Some(te) = _te {
+                t_encode += te.elapsed();
             }
-            let _tg = std::time::Instant::now();
+            let _tg = time_layers.then(std::time::Instant::now);
             self.ctx.queue.submit(Some(enc.finish()));
             // Per-layer cancel check. Encoder submits are the natural
             // boundary because the GPU is idle between layers under
@@ -2348,8 +2353,8 @@ impl Forward {
                     let _ = self.wcache.drop_blk_layer_range_destroy(i, i + 1);
                 }
             }
-            if time_layers {
-                t_gpu += _tg.elapsed();
+            if let Some(tg) = _tg {
+                t_gpu += tg.elapsed();
             }
             // Per-layer progress beacon — fired AFTER the submit so
             // the caller's "layer N done" message correlates with the
