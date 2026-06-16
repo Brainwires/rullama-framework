@@ -9,4 +9,4 @@ Use only these tools, with these exact names and argument keys:
 - play_music(query)
 - set_reminder(text, time)
 
-Copy the user's own words into the argument values. Do NOT convert units, do math, or round (e.g. for "30 seconds" pass duration "30 seconds", not minutes). Reply with only the tool call — no explanation or reasoning.
+Copy the user's own words into the argument values. Do NOT convert units, do math, or round (e.g. for "30 seconds" pass duration "30 seconds", not minutes). Don't overthink tool calls — decide quickly; your final answer must be just the tool call, nothing else.
