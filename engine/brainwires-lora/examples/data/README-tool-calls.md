@@ -28,11 +28,39 @@ deterministically:
 node gen-tool-calls.mjs > tool-call-app-intents.jsonl
 ```
 
-## Train (recipe)
+## Do you even need to fine-tune? (read first)
 
-Same recipe as the verified Garlic LoRA: rank 16, α 32, all 7 modules,
-per-position loss, chat-template wrapping, lr 2e-4. **Must use the Q4_K_M e2b
-GGUF — Q4_0 (QAT) backward isn't supported.**
+Deep-research finding (June 2026): **the base Gemma 4 2B + this schema in the
+system prompt already emits ~5/6 correct tool calls with no fine-tuning** — it
+just mixes JSON `{"name","arguments"}` and pythonic `func(arg=value)` syntax,
+both of which are standard (BFCL). The chat renderer now parses **both**
+(`web/src/lib/parseToolCalls.ts` + `TOOL_PARAMS`), so base+schema is a working
+tool-caller with no LoRA, no runtime cost, nothing to merge. **Try that first.**
+
+A LoRA is now OPTIONAL polish (format consistency, fixing the odd wrong-tool
+pick). If you do train one, use the PROVEN recipe below — our earlier
+constant-LR runs diverged (loss 0.5→7, degenerate repetition), which the
+literature predicts.
+
+## Train (recipe) — corrected, research-backed
+
+Proven sub-2B function-call recipe (ToolACE, BFCL-grade, same rank): **lr 1e-4,
+COSINE schedule + ~0.1 warmup, grad-clip 1.0**, per-position loss, chat-template
++ schema System turn, LoRA on all-linear incl. MLP (`ffn_*`). **NOT** lr 2e-4
+constant/no-warmup — that's a documented divergence trigger.
+
+```sh
+… RULLAMA_TRAIN_LR=1e-4 RULLAMA_TRAIN_LR_SCHED=cosine RULLAMA_TRAIN_WARMUP=20 \
+  RULLAMA_TRAIN_GRAD_CLIP=1.0 RULLAMA_TRAIN_RANK=16 RULLAMA_TRAIN_ALPHA=32 …
+```
+
+**Data scale matters more than anything:** proven sub-2B callers (Salesforce
+xLAM-1b-fc-r 78.94% BFCL, OPPO Hammer-1.5B 73.04%) used **~60k** synthetic
+examples (APIGen), not a few hundred. The 275-example set here is a
+proof-of-concept; scale toward thousands (+ ~10% irrelevance/negative examples,
++ Hammer-style function-name masking) before expecting benchmark reliability.
+
+**Must use the Q4_K_M e2b GGUF — Q4_0 (QAT) backward isn't supported.**
 
 **Schema in the prompt (recommended).** Add
 `RULLAMA_TRAIN_SYSTEM=crates/rullama-finetune/examples/data/tool-schema.txt` so
