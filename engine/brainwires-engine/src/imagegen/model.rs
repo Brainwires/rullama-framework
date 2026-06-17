@@ -203,6 +203,37 @@ pub fn rgb_chw_to_rgba8(rgb: &[f32], h: usize, w: usize) -> Vec<u8> {
     out
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cfg_combine_scales() {
+        // scale 1 ⇒ positive; scale 4 pushes away from negative
+        assert_eq!(cfg_combine(&[1.0, -2.0], &[0.5, 0.5], 1.0), vec![1.0, -2.0]);
+        assert_eq!(cfg_combine(&[1.0], &[0.0], 4.0), vec![4.0]);
+    }
+
+    #[test]
+    fn gaussian_noise_is_deterministic_and_finite() {
+        let a = gaussian_noise(1000, 42);
+        let b = gaussian_noise(1000, 42);
+        assert_eq!(a, b, "same seed ⇒ same noise (no Math.random)");
+        assert_ne!(a, gaussian_noise(1000, 43), "different seed ⇒ different");
+        assert!(a.iter().all(|v| v.is_finite()));
+        let mean = a.iter().sum::<f32>() / a.len() as f32;
+        assert!(mean.abs() < 0.15, "≈zero-mean N(0,1), got {mean}");
+    }
+
+    #[test]
+    fn rgba8_layout_is_interleaved_with_opaque_alpha() {
+        // 1×2 image, channel-first [R0 R1 | G0 G1 | B0 B1]
+        let rgb = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]; // px0 red, px1 green
+        let out = rgb_chw_to_rgba8(&rgb, 1, 2);
+        assert_eq!(out, vec![255, 0, 0, 255, 0, 255, 0, 255]);
+    }
+}
+
 // ---------- wasm-bindgen surface ----------
 
 #[cfg(target_arch = "wasm32")]
