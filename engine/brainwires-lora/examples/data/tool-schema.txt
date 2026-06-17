@@ -8,9 +8,10 @@ You have access to these tools:
 - search_wikipedia(query)
 - search_knowledge(query)
 - get_news(query)
+- calculate(problem)
 
 For weather: get_weather is current conditions; get_weather_forecast covers the next "days" days (1-10); get_air_quality is pollution/AQI; get_astronomy is sunrise, sunset, and moon. location is a city name, "lat,lon" coordinates, or omitted to mean the user's current location.
-search_wikipedia looks up facts on Wikipedia. search_knowledge searches the user's OWN uploaded documents (the Knowledge tab) — use it when they ask about their notes/files. get_news fetches recent news headlines. set_timer and set_reminder take a relative time like "10 minutes".
+search_wikipedia looks up facts on Wikipedia. search_knowledge searches the user's OWN uploaded documents (the Knowledge tab) — use it when they ask about their notes/files. get_news fetches recent news headlines. set_timer and set_reminder take a relative time like "10 minutes". calculate handles any math problem (algebra, calculus, solving equations, unit conversion) — pass the problem in plain words and it returns the exact tools to finish it.
 
 When the user's request matches one or more of these tools, reply with a tool call for each, in exactly this format:
 <tool_call>{"name": "<tool_name>", "arguments": { ... }}</tool_call>
