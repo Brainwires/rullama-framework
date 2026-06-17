@@ -2152,6 +2152,62 @@ pub fn adaln_modulate_chained(
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct Conv2dChwParams {
+    in_c: u32,
+    in_h: u32,
+    in_w: u32,
+    out_c: u32,
+    out_h: u32,
+    out_w: u32,
+    k: u32,
+    pad: u32,
+}
+
+/// Channel-first f32 conv2d (stride 1, zero-pad). Buffers: x [in_C,in_H,in_W],
+/// weight [out_C,in_C,k,k], bias [out_C], y [out_C,out_H,out_W].
+/// Oracle: `reference::imagegen::conv2d_chw`.
+#[allow(clippy::too_many_arguments)]
+pub fn conv2d_chw_f32_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer,
+    weight: &wgpu::Buffer,
+    bias: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    in_c: usize,
+    in_h: usize,
+    in_w: usize,
+    out_c: usize,
+    k: usize,
+    pad: usize,
+) {
+    let out_h = in_h + 2 * pad - k + 1;
+    let out_w = in_w + 2 * pad - k + 1;
+    let params = Conv2dChwParams {
+        in_c: in_c as u32,
+        in_h: in_h as u32,
+        in_w: in_w as u32,
+        out_c: out_c as u32,
+        out_h: out_h as u32,
+        out_w: out_w as u32,
+        k: k as u32,
+        pad: pad as u32,
+    };
+    let total = (out_c * out_h * out_w) as u32;
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.conv2d_chw_f32,
+        "conv2d_chw",
+        &[x, weight, bias, y],
+        &params,
+        (total.div_ceil(64), 1, 1),
+    );
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct RopeInterleavedParams {
     seq: u32,
     heads: u32,
@@ -3283,6 +3339,40 @@ mod tests {
             .map(|(c, g)| (c - g).abs())
             .fold(0.0f32, f32::max);
         assert!(md < 1e-4, "rope_interleaved max_diff = {md}");
+    }
+
+    #[test]
+    fn conv2d_chw_f32_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        // 3→5 channels, 7×6 spatial, 3×3 kernel, pad 1 (resnet-style).
+        let (in_c, in_h, in_w, out_c, k, pad) = (3usize, 7usize, 6usize, 5usize, 3usize, 1usize);
+        let x: Vec<f32> = (0..in_c * in_h * in_w).map(|i| ((i % 11) as f32 - 5.0) * 0.1).collect();
+        let w: Vec<f32> = (0..out_c * in_c * k * k).map(|i| ((i % 7) as f32 - 3.0) * 0.05).collect();
+        let b: Vec<f32> = (0..out_c).map(|i| i as f32 * 0.1).collect();
+
+        let cpu = crate::reference::imagegen::conv2d_chw(&x, in_c, in_h, in_w, &w, &b, out_c, k, pad);
+
+        let x_buf = write_storage_f32(device, queue, "x", &x);
+        let w_buf = write_storage_f32(device, queue, "w", &w);
+        let b_buf = write_storage_f32(device, queue, "b", &b);
+        let (y_buf, y_read) = make_output_pair(device, "y", (cpu.len() * 4) as u64);
+        let mut enc = device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("conv") });
+        conv2d_chw_f32_chained(&ctx, &p, &mut enc, &x_buf, &w_buf, &b_buf, &y_buf, in_c, in_h, in_w, out_c, k, pad);
+        enc.copy_buffer_to_buffer(&y_buf, 0, &y_read, 0, (cpu.len() * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &y_read)).expect("readback");
+
+        let md = cpu
+            .iter()
+            .zip(&gpu)
+            .map(|(c, g)| (c - g).abs())
+            .fold(0.0f32, f32::max);
+        assert!(md < 1e-4, "conv2d_chw max_diff = {md}");
     }
 
     /// GPU vs CPU parity for `cross_entropy_backward` on a vocab vector with a

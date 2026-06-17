@@ -106,9 +106,67 @@ pub fn rope_interleaved(
     }
 }
 
+/// Channel-first f32 conv2d (square kernel, stride 1, zero-pad), matching
+/// `kernels/wgsl/conv2d_chw_f32.wgsl`. `x` is `[in_c,in_h,in_w]`, `weight`
+/// `[out_c,in_c,k,k]`, `bias` `[out_c]`; returns `[out_c,out_h,out_w]` with
+/// `out = in + 2*pad - k + 1`.
+#[allow(clippy::too_many_arguments)]
+pub fn conv2d_chw(
+    x: &[f32],
+    in_c: usize,
+    in_h: usize,
+    in_w: usize,
+    weight: &[f32],
+    bias: &[f32],
+    out_c: usize,
+    k: usize,
+    pad: usize,
+) -> Vec<f32> {
+    let out_h = in_h + 2 * pad - k + 1;
+    let out_w = in_w + 2 * pad - k + 1;
+    let mut y = vec![0.0f32; out_c * out_h * out_w];
+    for co in 0..out_c {
+        for oy in 0..out_h {
+            for ox in 0..out_w {
+                let mut acc = bias[co];
+                let iy0 = oy as isize - pad as isize;
+                let ix0 = ox as isize - pad as isize;
+                for ci in 0..in_c {
+                    let xb = ci * in_h * in_w;
+                    let wb = (co * in_c + ci) * k * k;
+                    for ky in 0..k {
+                        let iy = iy0 + ky as isize;
+                        if iy < 0 || iy >= in_h as isize {
+                            continue;
+                        }
+                        for kx in 0..k {
+                            let ix = ix0 + kx as isize;
+                            if ix < 0 || ix >= in_w as isize {
+                                continue;
+                            }
+                            acc += x[xb + iy as usize * in_w + ix as usize] * weight[wb + ky * k + kx];
+                        }
+                    }
+                }
+                y[(co * out_h + oy) * out_w + ox] = acc;
+            }
+        }
+    }
+    y
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conv2d_chw_identity_kernel() {
+        // 1×1 kernel = 2.0, bias 0 → output = 2·input (pad 0).
+        let x = vec![1.0f32, 2.0, 3.0, 4.0]; // [1,2,2]
+        let w = vec![2.0f32]; // [1,1,1,1]
+        let y = conv2d_chw(&x, 1, 2, 2, &w, &[0.0], 1, 1, 0);
+        assert_eq!(y, vec![2.0, 4.0, 6.0, 8.0]);
+    }
 
     #[test]
     fn rope_interleaved_zero_angle_is_identity() {
