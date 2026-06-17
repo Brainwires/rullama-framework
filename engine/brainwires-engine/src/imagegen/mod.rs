@@ -22,8 +22,11 @@
 //! (IM3), the sampling loop (IM4), and the `ImageModel` wasm surface (IM5).
 
 pub mod config;
+pub mod dit_forward;
 pub mod dtype;
 pub mod manifest;
+pub mod model;
+pub mod qwen3_forward;
 pub mod safetensors;
 pub mod scheduler;
 pub mod sharded;
@@ -32,8 +35,13 @@ pub mod streaming;
 pub mod timestep;
 
 pub use config::{Qwen3Config, SchedulerConfig, TransformerConfig, VaeConfig};
+pub use dit_forward::DitGpu;
 pub use dtype::StDtype;
 pub use manifest::{BlobRef, ImageManifest, MEDIA_JSON, MEDIA_TENSOR};
+#[cfg(target_arch = "wasm32")]
+pub use model::ImageModel;
+pub use model::{ImageBundle, rgb_chw_to_rgba8};
+pub use qwen3_forward::Qwen3Gpu;
 pub use safetensors::{SafetensorsBlob, SafetensorsHeader, TensorEntry, read_header};
 pub use scheduler::{FlowMatchScheduler, calculate_shift, latent_hw, time_shift};
 pub use sharded::ShardIndex;

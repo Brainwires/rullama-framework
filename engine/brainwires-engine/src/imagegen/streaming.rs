@@ -109,6 +109,20 @@ impl<S: BlobSource> StreamingShards<S> {
             .await
     }
 
+    /// Stream `len` raw bytes at `byte_off` within a tensor — for partial reads
+    /// (e.g. a single embedding row from a multi-hundred-MB table), keeping wasm
+    /// memory bounded.
+    pub async fn tensor_byte_range(&self, name: &str, byte_off: u64, len: u64) -> Result<Vec<u8>> {
+        let l = self
+            .index
+            .get(name)
+            .ok_or_else(|| RullamaError::Image(format!("tensor {name:?} not in index")))?;
+        if l.start + byte_off + len > l.end {
+            return Err(RullamaError::Image(format!("range past tensor {name:?}")));
+        }
+        self.src.read_range(&l.shard, l.start + byte_off, len).await
+    }
+
     /// Stream + dequantize a float tensor to f32.
     pub async fn tensor_f32(&self, name: &str) -> Result<Vec<f32>> {
         let dt = self
