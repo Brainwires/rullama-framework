@@ -39,6 +39,11 @@ safetensors = "0.4"
 pollster = { workspace = true }
 env_logger = { workspace = true }
 
+# Native-only, for examples (real-prompt image gen tokenization). Examples
+# build native, so this never affects the wasm lib bundle.
+[dev-dependencies]
+tokenizers = { workspace = true }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }

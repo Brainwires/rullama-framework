@@ -38,8 +38,15 @@ fn main() {
         vae_st: &vae_st, vae_cfg: &vae_cfg,
     };
 
-    // Synthetic caption tokens (Qwen2 tokenizer is a separate piece).
-    let tokens: Vec<u32> = vec![151644, 9707, 11, 1879, 13, 151645];
+    // Real caption tokens via the Qwen2 tokenizer (tokenizer.json). Prompt from
+    // $IMG_PROMPT, wrapped in the Qwen chat format the encoder expects.
+    let prompt = std::env::var("IMG_PROMPT").unwrap_or_else(|_| "a photo of a cat".to_string());
+    let wrapped = format!("<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n");
+    let tk = tokenizers::Tokenizer::from_file(format!("{root}/tokenizer/tokenizer.json"))
+        .expect("load tokenizer.json");
+    let enc = tk.encode(wrapped, false).expect("encode prompt");
+    let tokens: Vec<u32> = enc.get_ids().to_vec();
+    println!("prompt {prompt:?} → {} tokens", tokens.len());
     let down = vae_cfg.downscale() as usize;
     println!("generating {}×{} image, {steps} steps, seed {seed}...", lw * down, lh * down);
 
