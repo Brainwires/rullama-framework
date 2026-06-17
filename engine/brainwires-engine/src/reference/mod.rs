@@ -20,6 +20,9 @@ pub mod ops;
 /// native-only (the GPU encoder forward is the wasm-facing path).
 #[cfg(not(target_arch = "wasm32"))]
 pub mod qwen3;
+/// VAE decoder CPU oracle (reads safetensors from disk). Native-only.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod vae;
 pub mod rome;
 pub mod styletts2;
 pub mod weights;
