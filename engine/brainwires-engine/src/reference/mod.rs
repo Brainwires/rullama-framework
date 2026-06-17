@@ -18,6 +18,9 @@ pub mod moe;
 pub mod ops;
 /// Qwen3 text-encoder CPU oracle. Reads sharded safetensors from disk, so
 /// native-only (the GPU encoder forward is the wasm-facing path).
+/// S3-DiT denoiser CPU oracle (reads safetensors from disk). Native-only.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod dit;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod qwen3;
 /// VAE decoder CPU oracle (reads safetensors from disk). Native-only.
