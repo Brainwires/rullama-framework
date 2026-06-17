@@ -2152,6 +2152,45 @@ pub fn adaln_modulate_chained(
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct Upsample2xChwParams {
+    c: u32,
+    h: u32,
+    w: u32,
+    _p: u32,
+}
+
+/// 2D nearest 2× upsample, channel-first `[C,H,W] → [C,2H,2W]`.
+/// Oracle: `reference::imagegen::upsample2x_chw`.
+pub fn upsample2x_chw_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    c: usize,
+    h: usize,
+    w: usize,
+) {
+    let params = Upsample2xChwParams {
+        c: c as u32,
+        h: h as u32,
+        w: w as u32,
+        _p: 0,
+    };
+    let total = (c * 2 * h * 2 * w) as u32;
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.upsample2x_chw,
+        "upsample2x_chw",
+        &[x, y],
+        &params,
+        (total.div_ceil(64), 1, 1),
+    );
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct Conv2dChwParams {
     in_c: u32,
     in_h: u32,
@@ -3373,6 +3412,29 @@ mod tests {
             .map(|(c, g)| (c - g).abs())
             .fold(0.0f32, f32::max);
         assert!(md < 1e-4, "conv2d_chw max_diff = {md}");
+    }
+
+    #[test]
+    fn upsample2x_chw_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        let (c, h, w) = (4usize, 5usize, 6usize);
+        let x: Vec<f32> = (0..c * h * w).map(|i| (i as f32) * 0.01 - 1.0).collect();
+        let cpu = crate::reference::imagegen::upsample2x_chw(&x, c, h, w);
+
+        let x_buf = write_storage_f32(device, queue, "x", &x);
+        let (y_buf, y_read) = make_output_pair(device, "y", (cpu.len() * 4) as u64);
+        let mut enc = device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("up") });
+        upsample2x_chw_chained(&ctx, &p, &mut enc, &x_buf, &y_buf, c, h, w);
+        enc.copy_buffer_to_buffer(&y_buf, 0, &y_read, 0, (cpu.len() * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &y_read)).expect("readback");
+        let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
+        assert!(md < 1e-6, "upsample2x_chw max_diff = {md}");
     }
 
     /// GPU vs CPU parity for `cross_entropy_backward` on a vocab vector with a

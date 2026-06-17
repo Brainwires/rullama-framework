@@ -155,9 +155,32 @@ pub fn conv2d_chw(
     y
 }
 
+/// 2D nearest 2× upsample, channel-first `[C,H,W] → [C,2H,2W]`.
+/// Matches `kernels/wgsl/upsample2x_chw.wgsl`.
+pub fn upsample2x_chw(x: &[f32], c: usize, h: usize, w: usize) -> Vec<f32> {
+    let (h2, w2) = (h * 2, w * 2);
+    let mut out = vec![0.0f32; c * h2 * w2];
+    for ch in 0..c {
+        for y in 0..h2 {
+            for xx in 0..w2 {
+                out[(ch * h2 + y) * w2 + xx] = x[(ch * h + y / 2) * w + xx / 2];
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn upsample2x_chw_doubles_both_axes() {
+        // 1 channel, 1×2 → 2×4, each pixel replicated 2×2.
+        let x = vec![1.0f32, 2.0];
+        let y = upsample2x_chw(&x, 1, 1, 2);
+        assert_eq!(y, vec![1.0, 1.0, 2.0, 2.0, 1.0, 1.0, 2.0, 2.0]);
+    }
 
     #[test]
     fn conv2d_chw_identity_kernel() {
