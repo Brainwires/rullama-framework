@@ -79,9 +79,55 @@ pub fn adaln_modulate(
     out
 }
 
+/// Interleaved (GPT-J) RoPE over `[seq, heads, head_dim]`, in place, with
+/// precomputed per-token `cos`/`sin` `[seq, head_dim/2]` (shared across heads).
+/// Matches `kernels/wgsl/rope_interleaved.wgsl`.
+pub fn rope_interleaved(
+    x: &mut [f32],
+    seq: usize,
+    heads: usize,
+    head_dim: usize,
+    cos: &[f32],
+    sin: &[f32],
+) {
+    let half = head_dim / 2;
+    for t in 0..seq {
+        for hh in 0..heads {
+            let base = (t * heads + hh) * head_dim;
+            for i in 0..half {
+                let c = cos[t * half + i];
+                let s = sin[t * half + i];
+                let x1 = x[base + 2 * i];
+                let x2 = x[base + 2 * i + 1];
+                x[base + 2 * i] = x1 * c - x2 * s;
+                x[base + 2 * i + 1] = x1 * s + x2 * c;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rope_interleaved_zero_angle_is_identity() {
+        let mut x = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let orig = x.clone();
+        // seq=2, heads=1, hd=4, half=2; cos=1, sin=0 → identity
+        let cos = vec![1.0f32; 4];
+        let sin = vec![0.0f32; 4];
+        rope_interleaved(&mut x, 2, 1, 4, &cos, &sin);
+        assert_eq!(x, orig);
+    }
+
+    #[test]
+    fn rope_interleaved_quarter_turn() {
+        // single token/head, hd=2, angle=π/2 → cos0,sin1: (x1,x2)→(-x2, x1)
+        let mut x = vec![1.0f32, 0.0];
+        rope_interleaved(&mut x, 1, 1, 2, &[0.0], &[1.0]);
+        assert!((x[0] - 0.0).abs() < 1e-6 && (x[1] - 1.0).abs() < 1e-6, "{x:?}");
+    }
 
     #[test]
     fn adaln_zero_scale_zero_shift_is_identity() {

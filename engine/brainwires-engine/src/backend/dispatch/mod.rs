@@ -2150,6 +2150,48 @@ pub fn adaln_modulate_chained(
     );
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct RopeInterleavedParams {
+    seq: u32,
+    heads: u32,
+    hd: u32,
+    half: u32,
+}
+
+/// In-place interleaved (GPT-J) RoPE over `[seq, heads, head_dim]` with
+/// precomputed per-token `cos`/`sin` `[seq, head_dim/2]` (shared across heads).
+/// Oracle: `reference::imagegen::rope_interleaved`.
+pub fn rope_interleaved_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer,
+    cos: &wgpu::Buffer,
+    sin: &wgpu::Buffer,
+    seq: usize,
+    heads: usize,
+    head_dim: usize,
+) {
+    let half = head_dim / 2;
+    let params = RopeInterleavedParams {
+        seq: seq as u32,
+        heads: heads as u32,
+        hd: head_dim as u32,
+        half: half as u32,
+    };
+    let total = (seq * heads * half) as u32;
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.rope_interleaved,
+        "rope_interleaved",
+        &[x, cos, sin],
+        &params,
+        (total.div_ceil(64), 1, 1),
+    );
+}
+
 /// Chained softcap: in-place would be ideal, but the WGSL has separate `x`, `y`
 /// bindings — so caller passes both. Output buffer can equal input on the host
 /// side (alias the same wgpu::Buffer through both bindings).
@@ -3200,6 +3242,47 @@ mod tests {
             .map(|(c, g)| (c - g).abs())
             .fold(0.0f32, f32::max);
         assert!(md < 1e-4, "adaln_modulate max_diff = {md}");
+    }
+
+    #[test]
+    fn rope_interleaved_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        let seq = 7usize;
+        let heads = 5usize;
+        let hd = 16usize; // even
+        let half = hd / 2;
+        let total = seq * heads * hd;
+        let x: Vec<f32> = (0..total).map(|i| ((i % 19) as f32 - 9.0) * 0.1).collect();
+        // arbitrary per-token cos/sin (not necessarily a real angle pair — the
+        // kernel just applies the given rotation, so any values exercise it)
+        let cos: Vec<f32> = (0..seq * half).map(|i| (i as f32 * 0.3).cos()).collect();
+        let sin: Vec<f32> = (0..seq * half).map(|i| (i as f32 * 0.3).sin()).collect();
+
+        let mut cpu = x.clone();
+        crate::reference::imagegen::rope_interleaved(&mut cpu, seq, heads, hd, &cos, &sin);
+
+        let x_buf = make_storage_rw(device, "x", total);
+        queue.write_buffer(&x_buf, 0, bytemuck::cast_slice(&x));
+        let c_buf = write_storage_f32(device, queue, "c", &cos);
+        let s_buf = write_storage_f32(device, queue, "s", &sin);
+        let (_scratch, read) = make_output_pair(device, "rb", (total * 4) as u64);
+        let mut enc = device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("rope") });
+        rope_interleaved_chained(&ctx, &p, &mut enc, &x_buf, &c_buf, &s_buf, seq, heads, hd);
+        enc.copy_buffer_to_buffer(&x_buf, 0, &read, 0, (total * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &read)).expect("readback");
+
+        let md = cpu
+            .iter()
+            .zip(&gpu)
+            .map(|(c, g)| (c - g).abs())
+            .fold(0.0f32, f32::max);
+        assert!(md < 1e-4, "rope_interleaved max_diff = {md}");
     }
 
     /// GPU vs CPU parity for `cross_entropy_backward` on a vocab vector with a
