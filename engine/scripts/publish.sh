@@ -83,19 +83,26 @@ fi
 echo "==> cargo publish -p rullama (v$VERSION)"
 cargo publish -p rullama
 
-# Poll crates.io for the new rullama version to appear before publishing
-# finetune. The registry index updates within seconds in normal operation;
-# we give it up to 5 minutes.
+# Wait for the new rullama version to appear in the registry index before
+# publishing finetune (its `rullama = { version }` dep must resolve from
+# crates.io). Modern `cargo publish` already blocks until the crate is
+# available, so this is mostly a double-check — but we poll the SPARSE INDEX
+# (index.crates.io), not the crates.io web API: the old API poll sent a bare
+# request, and crates.io now 403s anything without a User-Agent, so it never
+# saw the crate go live and timed out. The sparse index returns one
+# newline-delimited JSON record per published version.
 echo "==> waiting for rullama $VERSION on crates.io"
-URL="https://crates.io/api/v1/crates/rullama/$VERSION"
+# Sparse-index path: 4+ char names live at <first2>/<next2>/<name>.
+INDEX_URL="https://index.crates.io/ru/ll/rullama"
+UA="rullama-publish.sh (https://github.com/Brainwires/rullama)"
 for i in $(seq 1 60); do
-    if curl -fsS -o /dev/null "$URL"; then
+    if curl -fsS -H "User-Agent: $UA" "$INDEX_URL" 2>/dev/null | grep -q "\"vers\":\"$VERSION\""; then
         echo "    rullama $VERSION is live"
         break
     fi
     if [[ "$i" == "60" ]]; then
-        echo "publish.sh: timed out waiting for $URL after 5 minutes" >&2
-        echo "publish.sh: rullama-finetune was NOT published. Re-run without --bump:" >&2
+        echo "publish.sh: timed out waiting for rullama $VERSION at $INDEX_URL after 5 minutes" >&2
+        echo "publish.sh: rullama-finetune was NOT published. Once rullama is live, run:" >&2
         echo "    cargo publish -p rullama-finetune" >&2
         exit 1
     fi
