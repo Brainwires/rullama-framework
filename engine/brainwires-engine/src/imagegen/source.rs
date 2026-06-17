@@ -30,6 +30,17 @@ pub trait BlobSource {
         b.truncate(max);
         Ok(b)
     }
+
+    /// Read `len` bytes starting at `offset` — the per-tensor streaming read
+    /// (a tensor's byte span within a multi-GB shard). Default reads the whole
+    /// blob and slices; ranged sources (file `read_at`, HTTP `Range`) override.
+    async fn read_range(&self, blob_filename: &str, offset: u64, len: u64) -> Result<Vec<u8>> {
+        let b = self.read_blob(blob_filename).await?;
+        let (s, e) = (offset as usize, (offset + len) as usize);
+        b.get(s..e).map(|sl| sl.to_vec()).ok_or_else(|| {
+            crate::error::RullamaError::Image(format!("range {s}..{e} past blob {blob_filename}"))
+        })
+    }
 }
 
 // ---------- FileBlobSource (native-only) ----------
@@ -81,6 +92,17 @@ mod native {
             f.take(max as u64)
                 .read_to_end(&mut buf)
                 .map_err(|e| RullamaError::Image(format!("read blob {}: {e}", p.display())))?;
+            Ok(buf)
+        }
+
+        async fn read_range(&self, blob_filename: &str, offset: u64, len: u64) -> Result<Vec<u8>> {
+            use std::os::unix::fs::FileExt;
+            let p = self.path(blob_filename);
+            let f = std::fs::File::open(&p)
+                .map_err(|e| RullamaError::Image(format!("open blob {}: {e}", p.display())))?;
+            let mut buf = vec![0u8; len as usize];
+            f.read_exact_at(&mut buf, offset)
+                .map_err(|e| RullamaError::Image(format!("read range {}: {e}", p.display())))?;
             Ok(buf)
         }
     }
@@ -143,3 +165,100 @@ mod native {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::{find_manifest, ollama_models_root, FileBlobSource};
+
+// ---------- HttpRangeBlobSource (wasm32-only) ----------
+
+#[cfg(target_arch = "wasm32")]
+mod wasm {
+    use super::*;
+    use crate::error::RullamaError;
+
+    /// Browser blob source that fetches component files (`transformer/…safetensors`)
+    /// under a base URL, using HTTP `Range` for per-tensor reads — the image
+    /// analogue of `gguf::HttpRangeFetcher`. The R2/CDN origin serves `Range`
+    /// (206 + Content-Range), so a multi-GB shard is never fetched whole.
+    pub struct HttpRangeBlobSource {
+        base_url: String,
+    }
+
+    impl HttpRangeBlobSource {
+        /// `base_url` is the model root, e.g.
+        /// `https://models.brainwires.dev/z-image-turbo` (no trailing slash).
+        pub fn new(base_url: impl Into<String>) -> Self {
+            Self { base_url: base_url.into() }
+        }
+
+        fn url(&self, name: &str) -> String {
+            format!("{}/{}", self.base_url.trim_end_matches('/'), name)
+        }
+
+        async fn fetch(&self, name: &str, range: Option<(u64, u64)>) -> Result<Vec<u8>> {
+            use wasm_bindgen::JsCast;
+            use wasm_bindgen_futures::JsFuture;
+            let init = web_sys::RequestInit::new();
+            init.set_method("GET");
+            if let Some((off, len)) = range {
+                if len == 0 {
+                    return Ok(Vec::new());
+                }
+                let headers = web_sys::Headers::new()
+                    .map_err(|e| RullamaError::Image(format!("Headers: {e:?}")))?;
+                headers
+                    .set("Range", &format!("bytes={off}-{}", off + len - 1))
+                    .map_err(|e| RullamaError::Image(format!("set Range: {e:?}")))?;
+                init.set_headers(&headers);
+            }
+            let url = self.url(name);
+            let request = web_sys::Request::new_with_str_and_init(&url, &init)
+                .map_err(|e| RullamaError::Image(format!("Request: {e:?}")))?;
+            let resp_val = JsFuture::from(super::wasm_global_fetch(&request)?)
+                .await
+                .map_err(|e| RullamaError::Image(format!("fetch {url}: {e:?}")))?;
+            let resp: web_sys::Response = resp_val
+                .dyn_into()
+                .map_err(|e| RullamaError::Image(format!("response cast: {e:?}")))?;
+            if !resp.ok() && resp.status() != 206 {
+                return Err(RullamaError::Image(format!("HTTP {} for {url}", resp.status())));
+            }
+            let ab = JsFuture::from(
+                resp.array_buffer()
+                    .map_err(|e| RullamaError::Image(format!("array_buffer: {e:?}")))?,
+            )
+            .await
+            .map_err(|e| RullamaError::Image(format!("await body: {e:?}")))?;
+            Ok(js_sys::Uint8Array::new(&ab).to_vec())
+        }
+    }
+
+    #[async_trait(?Send)]
+    impl BlobSource for HttpRangeBlobSource {
+        async fn read_blob(&self, name: &str) -> Result<Vec<u8>> {
+            self.fetch(name, None).await
+        }
+        async fn read_prefix(&self, name: &str, max: usize) -> Result<Vec<u8>> {
+            self.fetch(name, Some((0, max as u64))).await
+        }
+        async fn read_range(&self, name: &str, offset: u64, len: u64) -> Result<Vec<u8>> {
+            self.fetch(name, Some((offset, len))).await
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub use wasm::HttpRangeBlobSource;
+
+/// `fetch()` via Window or WorkerGlobalScope (mirrors gguf::fetcher::global_fetch).
+#[cfg(target_arch = "wasm32")]
+fn wasm_global_fetch(request: &web_sys::Request) -> Result<js_sys::Promise> {
+    use wasm_bindgen::JsCast;
+    let global = js_sys::global();
+    if let Some(window) = global.dyn_ref::<web_sys::Window>() {
+        return Ok(window.fetch_with_request(request));
+    }
+    if let Some(scope) = global.dyn_ref::<web_sys::WorkerGlobalScope>() {
+        return Ok(scope.fetch_with_request(request));
+    }
+    Err(crate::error::RullamaError::Image(
+        "no Window or WorkerGlobalScope for fetch()".into(),
+    ))
+}

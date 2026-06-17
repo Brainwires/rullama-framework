@@ -42,3 +42,5 @@ pub use timestep::sinusoidal_timestep_embedding;
 pub use source::BlobSource;
 #[cfg(not(target_arch = "wasm32"))]
 pub use source::{find_manifest, ollama_models_root, FileBlobSource};
+#[cfg(target_arch = "wasm32")]
+pub use source::HttpRangeBlobSource;
