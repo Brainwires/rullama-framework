@@ -24,7 +24,11 @@
 pub mod dtype;
 pub mod manifest;
 pub mod safetensors;
+pub mod source;
 
 pub use dtype::StDtype;
 pub use manifest::{BlobRef, ImageManifest, MEDIA_JSON, MEDIA_TENSOR};
-pub use safetensors::{SafetensorsBlob, TensorEntry};
+pub use safetensors::{read_header, SafetensorsBlob, SafetensorsHeader, TensorEntry};
+pub use source::BlobSource;
+#[cfg(not(target_arch = "wasm32"))]
+pub use source::{find_manifest, ollama_models_root, FileBlobSource};

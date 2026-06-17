@@ -40,6 +40,58 @@ impl TensorEntry {
     }
 }
 
+/// Header-only view of a blob: tensor dtypes/shapes + `__metadata__`, parsed
+/// from just the leading `8 + header_size` bytes (no data region needed).
+/// Used by the inspector to census a model without loading weight tensors.
+#[derive(Debug, Clone)]
+pub struct SafetensorsHeader {
+    pub header_size: usize,
+    pub tensors: BTreeMap<String, (StDtype, Vec<usize>)>,
+    pub metadata: BTreeMap<String, String>,
+}
+
+/// Parse only the header from a blob prefix (must contain at least
+/// `8 + header_size` bytes). Skips data-region bounds checks.
+pub fn read_header(prefix: &[u8]) -> Result<SafetensorsHeader> {
+    if prefix.len() < 8 {
+        return Err(RullamaError::Image("blob prefix < 8 bytes".into()));
+    }
+    let header_size = u64::from_le_bytes(prefix[0..8].try_into().expect("8 bytes")) as usize;
+    let end = 8usize
+        .checked_add(header_size)
+        .ok_or_else(|| RullamaError::Image("header size overflow".into()))?;
+    if end > prefix.len() {
+        return Err(RullamaError::Image(format!(
+            "prefix too short: need {end} bytes for header, have {}",
+            prefix.len()
+        )));
+    }
+    let raw: BTreeMap<String, serde_json::Value> = serde_json::from_slice(&prefix[8..end])
+        .map_err(|e| RullamaError::Image(format!("safetensors header JSON: {e}")))?;
+    let mut tensors = BTreeMap::new();
+    let mut metadata = BTreeMap::new();
+    for (name, val) in raw {
+        if name == "__metadata__" {
+            if let serde_json::Value::Object(map) = val {
+                for (k, v) in map {
+                    if let serde_json::Value::String(s) = v {
+                        metadata.insert(k, s);
+                    }
+                }
+            }
+            continue;
+        }
+        let e: RawEntry = serde_json::from_value(val)
+            .map_err(|err| RullamaError::Image(format!("tensor {name:?}: {err}")))?;
+        tensors.insert(name, (StDtype::parse(&e.dtype)?, e.shape));
+    }
+    Ok(SafetensorsHeader {
+        header_size,
+        tensors,
+        metadata,
+    })
+}
+
 /// A parsed safetensors blob: header metadata + tensor table + the data region
 /// offset. Owns the blob bytes so tensor slices stay valid.
 pub struct SafetensorsBlob {
