@@ -50,6 +50,8 @@ pub mod backend;
 #[doc(hidden)]
 pub mod gguf;
 #[doc(hidden)]
+pub mod imagegen;
+#[doc(hidden)]
 pub mod kernels;
 #[doc(hidden)]
 pub mod model;

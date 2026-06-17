@@ -14,6 +14,9 @@ pub enum RullamaError {
     #[error("GGUF parse error: {0}")]
     Gguf(String),
 
+    #[error("image model error: {0}")]
+    Image(String),
+
     #[error("model config error: {0}")]
     Config(String),
 
