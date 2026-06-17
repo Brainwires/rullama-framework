@@ -28,6 +28,7 @@ pub mod safetensors;
 pub mod scheduler;
 pub mod sharded;
 pub mod source;
+pub mod streaming;
 pub mod timestep;
 
 pub use config::{Qwen3Config, SchedulerConfig, TransformerConfig, VaeConfig};
@@ -36,6 +37,7 @@ pub use manifest::{BlobRef, ImageManifest, MEDIA_JSON, MEDIA_TENSOR};
 pub use safetensors::{read_header, SafetensorsBlob, SafetensorsHeader, TensorEntry};
 pub use scheduler::{calculate_shift, latent_hw, time_shift, FlowMatchScheduler};
 pub use sharded::ShardIndex;
+pub use streaming::StreamingShards;
 #[cfg(not(target_arch = "wasm32"))]
 pub use sharded::ShardedSafetensors;
 pub use timestep::sinusoidal_timestep_embedding;
