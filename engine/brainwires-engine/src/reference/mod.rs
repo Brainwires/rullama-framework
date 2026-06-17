@@ -23,6 +23,9 @@ pub mod ops;
 pub mod dit;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod qwen3;
+/// End-to-end image-generation pipeline (CPU oracle). Native-only.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod pipeline;
 /// VAE decoder CPU oracle (reads safetensors from disk). Native-only.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod vae;
