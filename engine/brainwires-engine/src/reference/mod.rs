@@ -29,6 +29,9 @@ pub mod pipeline;
 /// VAE decoder CPU oracle (reads safetensors from disk). Native-only.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod vae;
+/// GPU VAE decoder (first full GPU component forward). Native-only.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod vae_gpu;
 pub mod rome;
 pub mod styletts2;
 pub mod weights;
