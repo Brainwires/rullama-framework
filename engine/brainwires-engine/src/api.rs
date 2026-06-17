@@ -313,8 +313,20 @@ impl Model {
             None
         };
 
-        let forward =
+        let mut forward =
             Forward::new_with_max_context(cfg, ctx, pipes, weights, wcache, max_context).await?;
+        // Sparse-MoE checkpoints (gemma4:26b-a4b) carry ~16 GB of experts —
+        // far past any GPU's resident budget. Auto-enable weight streaming so
+        // they actually load + run anywhere (incl. the browser): per-layer
+        // destroy keeps peak weight residency to ~1 layer, and per-expert
+        // streaming fetches only the routed top-k slices per layer. Dense
+        // models that fit in memory are left non-streaming (full speed) — this
+        // only flips on when `has_moe()`. Requires the reader to support range
+        // fetches (FileFetcher / HttpRange / OPFS), which all load paths use.
+        if forward.cfg().has_moe() {
+            forward.set_forward_destroy_per_layer(true);
+            forward.set_moe_stream_experts(true);
+        }
         Ok(Self {
             tokenizer,
             forward,
@@ -674,6 +686,23 @@ impl Model {
 
     pub fn reset_native(&mut self) {
         self.forward.reset();
+        self.sampler.clear_history();
+    }
+
+    /// Truncate the KV cache to its first `n` positions, keeping `[0, n)` and
+    /// rewinding so the next `step` appends at `n`. Used for longest-common-
+    /// prefix reuse: keep the shared head (e.g. the system prompt) and
+    /// re-prefill only the divergent tail — so a new conversation hot-starts
+    /// without re-reading the system block.
+    ///
+    /// Truncation is a divergence point (we're abandoning the tail that was
+    /// resident), so the sampler's rep-penalty history is cleared too — the
+    /// continuation past `n` is a fresh sampling context, matching what
+    /// [`reset_native`] does for a from-scratch turn. (For a full-prefix
+    /// continuation of the *same* conversation the caller doesn't truncate, so
+    /// sampler history is preserved as before.)
+    pub fn truncate_kv_native(&mut self, n: u32) {
+        self.forward.truncate_kv(n);
         self.sampler.clear_history();
     }
 
@@ -2323,6 +2352,15 @@ impl Model {
     #[wasm_bindgen(js_name = reset)]
     pub fn reset_js(&mut self) {
         self.reset_native()
+    }
+
+    /// Truncate the KV cache to its first `n` positions (keep `[0, n)`,
+    /// rewind to `n`). Powers longest-common-prefix reuse — keep the shared
+    /// head (system prompt) and re-prefill only the divergent tail. Clears
+    /// sampler history (the continuation is a fresh sampling context).
+    #[wasm_bindgen(js_name = truncateKv)]
+    pub fn truncate_kv_js(&mut self, n: u32) {
+        self.truncate_kv_native(n)
     }
 
     /// Snapshot KV cache + sampler state into a single Uint8Array. Caller

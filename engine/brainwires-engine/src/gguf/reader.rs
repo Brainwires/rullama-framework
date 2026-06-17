@@ -201,6 +201,11 @@ impl GgufReader {
         Ok((start, len))
     }
 
+    /// Whether this reader streams tensor data via its fetcher (no in-memory copy).
+    pub fn is_streaming(&self) -> bool {
+        self.in_memory.is_none()
+    }
+
     /// Borrowed bytes for a tensor's payload. Only works for in-memory readers; on a
     /// streaming reader returns an error directing the caller to `fetch_tensor_bytes`.
     pub fn tensor_bytes(&self, name: &str) -> Result<&[u8]> {

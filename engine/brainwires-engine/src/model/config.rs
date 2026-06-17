@@ -24,8 +24,8 @@ pub struct Gemma4Config {
 
     // ---- attention ----
     pub n_heads: u32,
-    /// SWA layers' KV head count (`gemma4.attention.head_count_kv`). Some GGUFs use a
-    /// per-layer array; for now we accept the scalar form.
+    /// SWA layers' KV head count (`gemma4.attention.head_count_kv`). The 12b stores
+    /// this as a per-layer array (8 on SWA layers, 1 on global) — parsed below.
     pub n_kv_heads_swa: u32,
     /// Global layers' KV head count, if explicitly differentiated. Falls back to
     /// `n_kv_heads_swa` when the optional key is absent.
@@ -59,6 +59,15 @@ pub struct Gemma4Config {
     /// `rope_dim_swa == head_dim_swa`).
     pub rope_dim_swa: u32,
 
+    // ---- MoE (gemma4:26b-a4b; zero on dense variants) ----
+    /// `gemma4.expert_count` — total routed experts per MoE layer. 0 ⇒ dense model.
+    pub expert_count: u32,
+    /// `gemma4.expert_used_count` — top-k experts selected per token.
+    pub expert_used_count: u32,
+    /// `gemma4.expert_feed_forward_length` — each expert's FFN intermediate size
+    /// (704 on 26b-a4b vs 2112 for the parallel dense MLP).
+    pub expert_ffn: u32,
+
     // ---- output ----
     /// `gemma4.final_logit_softcapping` (typically 30.0).
     pub final_logit_softcap: f32,
@@ -82,31 +91,28 @@ impl Gemma4Config {
                 "expected architecture 'gemma4', got '{arch}'"
             )));
         }
+        Self::from_gguf_with_prefix(r, "gemma4")
+    }
 
-        let n_layers = r.get("gemma4.block_count")?.as_u32()?;
-        let d_model = r.get("gemma4.embedding_length")?.as_u32()?;
-        let max_pos = r.get("gemma4.context_length")?.as_u32()?;
+    /// Parse the backbone config under an alternate metadata prefix.
+    /// DiffusionGemma ships the IDENTICAL key set under `diffusion-gemma.*`
+    /// — same per-layer arrays, same MoE fields. The caller owns the
+    /// `general.architecture` guard.
+    pub fn from_gguf_with_prefix(r: &GgufReader, prefix: &str) -> Result<Self> {
+        let k = |s: &str| format!("{prefix}.{s}");
+
+        let n_layers = r.get(&k("block_count"))?.as_u32()?;
+        let d_model = r.get(&k("embedding_length"))?.as_u32()?;
+        let max_pos = r.get(&k("context_length"))?.as_u32()?;
 
         // attention
-        let n_heads = r.get("gemma4.attention.head_count")?.as_u32()?;
-        let n_kv_heads_swa = r.get("gemma4.attention.head_count_kv")?.as_u32()?;
-        let n_kv_heads_global = r
-            .get_opt("gemma4.attention.global_head_count_kv")
-            .map(|v| v.as_u32())
-            .transpose()?
-            .unwrap_or(n_kv_heads_swa);
-        let head_dim_global = r.get("gemma4.attention.key_length")?.as_u32()?;
-        let head_dim_swa = r.get("gemma4.attention.key_length_swa")?.as_u32()?;
-        let rms_norm_eps = r.get("gemma4.attention.layer_norm_rms_epsilon")?.as_f32()?;
-        let sliding_window = r.get("gemma4.attention.sliding_window")?.as_u32()?;
-        let shared_kv_layers = r
-            .get_opt("gemma4.attention.shared_kv_layers")
-            .map(|v| v.as_u32())
-            .transpose()?
-            .unwrap_or(0);
+        let n_heads = r.get(&k("attention.head_count"))?.as_u32()?;
 
+        // Per-layer sliding-window vs global pattern — parsed before
+        // head_count_kv because the 12b stores that as a per-layer array keyed
+        // on this pattern.
         let pattern = r
-            .get("gemma4.attention.sliding_window_pattern")?
+            .get(&k("attention.sliding_window_pattern"))?
             .as_bool_array()?;
         if pattern.len() as u32 != n_layers {
             return Err(RullamaError::Config(format!(
@@ -126,8 +132,65 @@ impl Gemma4Config {
             })
             .collect();
 
+        // KV head count. e2b/e4b store a scalar (uniform GQA). The 12b stores a
+        // per-layer array ([8,8,8,8,8,1,…] — 8 KV heads on sliding-window
+        // layers, 1 on global), which we collapse to the (swa, global) pair the
+        // forward path keys on via `cfg.n_kv_heads(layer)`. Mirrors Ollama's
+        // numGlobalKVHeads extraction in model_text.go.
+        let hckv = r.get(&k("attention.head_count_kv"))?;
+        let (n_kv_heads_swa, mut n_kv_heads_global) = match hckv {
+            GgufValue::ArrayU32(_)
+            | GgufValue::ArrayU64(_)
+            | GgufValue::ArrayI32(_)
+            | GgufValue::ArrayI64(_) => {
+                let per_layer: Vec<u32> = match hckv {
+                    GgufValue::ArrayU32(v) => v.clone(),
+                    GgufValue::ArrayU64(v) => v.iter().map(|&x| x as u32).collect(),
+                    GgufValue::ArrayI32(v) => v.iter().map(|&x| x as u32).collect(),
+                    GgufValue::ArrayI64(v) => v.iter().map(|&x| x as u32).collect(),
+                    _ => unreachable!(),
+                };
+                if per_layer.len() as u32 != n_layers {
+                    return Err(RullamaError::Config(format!(
+                        "head_count_kv array length {} != n_layers {}",
+                        per_layer.len(),
+                        n_layers
+                    )));
+                }
+                let swa = layer_kinds
+                    .iter()
+                    .position(|k| matches!(k, LayerKind::SlidingWindow))
+                    .map(|i| per_layer[i])
+                    .unwrap_or(per_layer[0]);
+                let glob = layer_kinds
+                    .iter()
+                    .position(|k| matches!(k, LayerKind::Global))
+                    .map(|i| per_layer[i])
+                    .unwrap_or(swa);
+                (swa, glob)
+            }
+            scalar => {
+                let s = scalar.as_u32()?;
+                (s, s)
+            }
+        };
+        // Optional explicit global-layer KV head override.
+        if let Some(v) = r.get_opt(&k("attention.global_head_count_kv")) {
+            n_kv_heads_global = v.as_u32()?;
+        }
+
+        let head_dim_global = r.get(&k("attention.key_length"))?.as_u32()?;
+        let head_dim_swa = r.get(&k("attention.key_length_swa"))?.as_u32()?;
+        let rms_norm_eps = r.get(&k("attention.layer_norm_rms_epsilon"))?.as_f32()?;
+        let sliding_window = r.get(&k("attention.sliding_window"))?.as_u32()?;
+        let shared_kv_layers = r
+            .get_opt(&k("attention.shared_kv_layers"))
+            .map(|v| v.as_u32())
+            .transpose()?
+            .unwrap_or(0);
+
         // FFN intermediate sizes: GGUF stores as either a scalar or a per-layer array.
-        let ffn_inter: Vec<u32> = match r.get("gemma4.feed_forward_length")? {
+        let ffn_inter: Vec<u32> = match r.get(&k("feed_forward_length"))? {
             GgufValue::ArrayU32(v) => v.clone(),
             GgufValue::ArrayU64(v) => v.iter().map(|&x| x as u32).collect(),
             GgufValue::ArrayI32(v) => v.iter().map(|&x| x as u32).collect(),
@@ -146,23 +209,40 @@ impl Gemma4Config {
         }
 
         // RoPE
-        let rope_freq_base = r.get("gemma4.rope.freq_base")?.as_f32()?;
-        let rope_freq_base_swa = r.get("gemma4.rope.freq_base_swa")?.as_f32()?;
+        let rope_freq_base = r.get(&k("rope.freq_base"))?.as_f32()?;
+        let rope_freq_base_swa = r.get(&k("rope.freq_base_swa"))?.as_f32()?;
         let rope_dim_global = r
-            .get_opt("gemma4.rope.dimension_count")
+            .get_opt(&k("rope.dimension_count"))
             .map(|v| v.as_u32())
             .transpose()?
             .unwrap_or(head_dim_global / 4); // fallback: 25% partial rotation
         let rope_dim_swa = r
-            .get_opt("gemma4.rope.dimension_count_swa")
+            .get_opt(&k("rope.dimension_count_swa"))
             .map(|v| v.as_u32())
             .transpose()?
             .unwrap_or(head_dim_swa); // fallback: full rotation
 
+        // MoE (mirrors Ollama's c.Uint("expert_count", 0) — absent on dense models)
+        let expert_count = r
+            .get_opt(&k("expert_count"))
+            .map(|v| v.as_u32())
+            .transpose()?
+            .unwrap_or(0);
+        let expert_used_count = r
+            .get_opt(&k("expert_used_count"))
+            .map(|v| v.as_u32())
+            .transpose()?
+            .unwrap_or(0);
+        let expert_ffn = r
+            .get_opt(&k("expert_feed_forward_length"))
+            .map(|v| v.as_u32())
+            .transpose()?
+            .unwrap_or(0);
+
         // output
-        let final_logit_softcap = r.get("gemma4.final_logit_softcapping")?.as_f32()?;
+        let final_logit_softcap = r.get(&k("final_logit_softcapping"))?.as_f32()?;
         let ple_dim = r
-            .get_opt("gemma4.embedding_length_per_layer_input")
+            .get_opt(&k("embedding_length_per_layer_input"))
             .map(|v| v.as_u32())
             .transpose()?
             .unwrap_or(0);
@@ -208,6 +288,9 @@ impl Gemma4Config {
             rope_freq_base_swa,
             rope_dim_global,
             rope_dim_swa,
+            expert_count,
+            expert_used_count,
+            expert_ffn,
             final_logit_softcap,
             ple_dim,
             vocab_size,
@@ -221,6 +304,13 @@ impl Gemma4Config {
     /// True iff this checkpoint uses per-layer-input embeddings (E2B/E4B variants).
     pub fn has_ple(&self) -> bool {
         self.ple_dim > 0
+    }
+
+    /// True iff this checkpoint has MoE expert blocks (`gemma4:26b-a4b`).
+    /// Which *layers* carry experts is decided by tensor presence
+    /// (`blk.N.ffn_gate_inp.weight`), mirroring Ollama's nil-field checks.
+    pub fn has_moe(&self) -> bool {
+        self.expert_count > 0 && self.expert_used_count > 0
     }
 
     /// Layer kind for layer `i`.

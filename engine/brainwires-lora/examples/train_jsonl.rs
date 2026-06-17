@@ -33,7 +33,9 @@
 //!     (default `none` — constant base lr)
 //!   - `RULLAMA_TRAIN_WARMUP`    — warmup steps (default 0)
 //!   - `RULLAMA_TRAIN_GRAD_CLIP` — max grad L2 norm (default 0 = off)
-//!   - `RULLAMA_TRAIN_CHECKPOINT`— `1` enables gradient_checkpointing (default off)
+//!   - `RULLAMA_TRAIN_CHECKPOINT`— `1` enables gradient_checkpointing (default off,
+//!     but AUTO-enabled when max_seq_len > 96 to fit long-sequence backward in
+//!     GPU memory — e.g. when a System schema is prepended)
 //!   - `RULLAMA_TRAIN_MIXED_PRECISION` — `1` saves adapter in f16     (default off)
 //!   - `RULLAMA_TRAIN_APPLY_CHAT_TEMPLATE` — `1` wraps prompts in the
 //!     Gemma 4 chat template before tokenizing (default off). This is
@@ -42,7 +44,22 @@
 //!     PWA, so train-time tokens match inference-time tokens. Without
 //!     it, native and browser see different token sequences and the
 //!     adapter won't transfer.
+//!   - `RULLAMA_TRAIN_SYSTEM`    — path to a text file prepended as a System
+//!     turn (e.g. the tool schema), so the model copies exact names/keys.
+//!     Needs RULLAMA_TRAIN_APPLY_CHAT_TEMPLATE. Must match inference-time
+//!     system text exactly.
 //!   - `RULLAMA_ADAPTER_PATH`    — write adapter here when done     (default unset)
+//!   - `RULLAMA_TRAIN_CHECKPOINT_EVERY` — also overwrite RULLAMA_ADAPTER_PATH
+//!     every N steps (default 0 = off). Lets a long run be eval'd / aborted at
+//!     any point while keeping its latest weights.
+//!   - `RULLAMA_TRAIN_RESUME`     — seed LoRA A/B from this adapter before
+//!     training (continue a stopped run). Defaults to RULLAMA_ADAPTER_PATH if
+//!     that file already exists. Adam + step counter restart — so the FIRST
+//!     post-resume steps can overshoot (non-zero B + no Adam variance yet) and
+//!     spike the loss. **Lower the LR on resume** (e.g. RULLAMA_TRAIN_LR=5e-5)
+//!     or add warmup. The run auto-backs-up the adapter to `<path>.preresume`,
+//!     refuses to checkpoint a diverged loss, and aborts on a divergence streak,
+//!     so a bad resume can't clobber a good adapter.
 //!   - plus the backward-side knobs honored by `Forward::backward_step`
 //!     (`RULLAMA_CLIP_DHIDDEN`, `RULLAMA_DEBUG_GRADS`,
 //!     `RULLAMA_TRACE_DHIDDEN`).
@@ -130,9 +147,25 @@ async fn run() -> Result<(), BoxError> {
     };
     let warmup = env_u32("RULLAMA_TRAIN_WARMUP", 0) as u64;
     let grad_clip = env_f32("RULLAMA_TRAIN_GRAD_CLIP", 0.0);
-    let checkpointing = env::var("RULLAMA_TRAIN_CHECKPOINT").is_ok();
+    let checkpoint_explicit = env::var("RULLAMA_TRAIN_CHECKPOINT").is_ok();
     let mixed_precision = env::var("RULLAMA_TRAIN_MIXED_PRECISION").is_ok();
     let apply_chat_template = env::var("RULLAMA_TRAIN_APPLY_CHAT_TEMPLATE").is_ok();
+    // Optional system preamble (the tool schema) prepended as a System turn so
+    // the model copies exact tool names + arg keys instead of memorizing them.
+    // Must be byte-identical at inference time (web/src/lib/toolFormat.ts
+    // TOOL_SCHEMA_PROMPT / the eval RULLAMA_EVAL_SYSTEM file). Requires
+    // apply_chat_template (the System turn only exists in the rendered prompt).
+    let system_text: Option<String> = env::var("RULLAMA_TRAIN_SYSTEM")
+        .ok()
+        .and_then(|p| fs::read_to_string(&p).ok())
+        .map(|s| s.trim_end().to_string())
+        .filter(|s| !s.is_empty());
+    if let Some(s) = &system_text {
+        eprintln!(
+            "[tok] prepending System turn ({} chars) from RULLAMA_TRAIN_SYSTEM",
+            s.len()
+        );
+    }
     // Newly exposed knobs to match Unsloth's recommended Gemma 4 recipe:
     //   weight_decay = 0.01, lora_dropout = 0.05.
     // Without these, training is brittle — the user's earlier iter
@@ -201,17 +234,22 @@ async fn run() -> Result<(), BoxError> {
         // When `apply_chat_template` is set, wrap the prompt in the same
         // `<start_of_turn>user\n...<end_of_turn>\n<start_of_turn>model\n`
         // sequence the PWA emits via `client.renderChat([...], false)`.
-        // Mirrors `examples/web/src/components/FineTunePanel.tsx`'s
+        // Mirrors `web/src/components/FineTunePanel.tsx`'s
         // pre-tokenize pass so the adapter trains on the exact tokens
         // it'll see at inference time in the browser.
         let prompt_text = if apply_chat_template {
-            model.render_chat_native(
-                &[ChatMessage {
-                    role: ChatRole::User,
-                    content: ex.prompt.clone(),
-                }],
-                false,
-            )
+            let mut msgs = Vec::new();
+            if let Some(sys) = &system_text {
+                msgs.push(ChatMessage {
+                    role: ChatRole::System,
+                    content: sys.clone(),
+                });
+            }
+            msgs.push(ChatMessage {
+                role: ChatRole::User,
+                content: ex.prompt.clone(),
+            });
+            model.render_chat_native(&msgs, false)
         } else {
             ex.prompt.clone()
         };
@@ -305,6 +343,19 @@ async fn run() -> Result<(), BoxError> {
         LossMode::NextToken => max_prompt_len.max(32),
         LossMode::PerPosition => max_seq_len.max(32),
     };
+    // Long sequences (e.g. a System schema prepended to each prompt) blow up
+    // the per-layer activation captures — sized by max_seq_len × n_layers — past
+    // a weak GPU's memory, crashing backward with a wgpu "invalid buffer"
+    // validation error at step 1. Auto-enable gradient checkpointing above a
+    // safe length (the 58-token tool-call runs were fine without it; 193 was
+    // not) unless the caller set RULLAMA_TRAIN_CHECKPOINT explicitly.
+    let checkpointing = checkpoint_explicit || max_seq_len_for_hp > 96;
+    if checkpointing && !checkpoint_explicit {
+        eprintln!(
+            "[hp] auto-enabling gradient_checkpointing (max_seq_len={max_seq_len_for_hp} > 96) \
+             to fit long sequences; set RULLAMA_TRAIN_CHECKPOINT=1 to silence this"
+        );
+    }
     let mut hp = TrainingHyperparams {
         learning_rate: lr,
         weight_decay,
@@ -326,6 +377,31 @@ async fn run() -> Result<(), BoxError> {
     );
     let mut session = TrainingSession::new(model, lora_cfg, hp)
         .map_err(|e| -> BoxError { format!("{e:?}").into() })?;
+    // Resume: seed the LoRA A/B from a prior checkpoint so a stopped run can
+    // continue instead of restarting from scratch. RULLAMA_TRAIN_RESUME wins;
+    // otherwise, if RULLAMA_ADAPTER_PATH already exists, resume from it (so
+    // the same command re-run just continues). Adam state restarts (fine).
+    // Use a constant LR (RULLAMA_TRAIN_LR_SCHED=none) for clean resumes — a
+    // cosine schedule re-warms/re-decays each run.
+    let resume_path: Option<PathBuf> = env::var("RULLAMA_TRAIN_RESUME")
+        .ok()
+        .map(PathBuf::from)
+        .or_else(|| {
+            env::var("RULLAMA_ADAPTER_PATH")
+                .ok()
+                .map(PathBuf::from)
+                .filter(|p| p.exists())
+        });
+    if let Some(path) = &resume_path
+        && path.exists()
+    {
+        let n = rullama_finetune::load_adapter_into_state(session.lora_state_mut(), path)
+            .map_err(|e| -> BoxError { format!("resume from {}: {e:?}", path.display()).into() })?;
+        eprintln!(
+            "[resume] seeded {n} LoRA tensors from {} (Adam restarts)",
+            path.display()
+        );
+    }
     if lr_sched.is_some() {
         session.set_lr_schedule(n_steps as u64);
     }
@@ -340,6 +416,33 @@ async fn run() -> Result<(), BoxError> {
     let mut first_loss: Option<f32> = None;
     let mut last_loss = f32::NAN;
     let mut idx = 0usize;
+    // Optional mid-run checkpointing: when RULLAMA_TRAIN_CHECKPOINT_EVERY > 0,
+    // overwrite RULLAMA_ADAPTER_PATH every N steps. Lets a long run be eval'd
+    // or aborted at any point while keeping its latest weights — without it,
+    // the adapter only exists after the final step.
+    let adapter_path: Option<PathBuf> = env::var("RULLAMA_ADAPTER_PATH").ok().map(PathBuf::from);
+    let checkpoint_every = env_u32("RULLAMA_TRAIN_CHECKPOINT_EVERY", 0);
+
+    // Safety: stash the pre-run adapter before any checkpoint can overwrite it,
+    // so a diverging resume can never destroy a good adapter (Adam restarts on
+    // resume + non-zero B can spike the loss). Restorable from `<path>.preresume`.
+    if let Some(path) = &adapter_path
+        && path.exists()
+    {
+        let bak = PathBuf::from(format!("{}.preresume", path.display()));
+        match fs::copy(path, &bak) {
+            Ok(_) => eprintln!("[backup] pre-run adapter → {}", bak.display()),
+            Err(e) => eprintln!("[warn] could not back up adapter to {}: {e}", bak.display()),
+        }
+    }
+    // Divergence guard: track the best loss; refuse to checkpoint (or do the
+    // final save) when the loss has clearly blown up, and abort after a short
+    // streak — so a diverging run can't clobber a good checkpoint or burn
+    // compute. Noise tolerance is wide (4× best) to not trip on batch-1 jitter.
+    let mut best_loss = f32::INFINITY;
+    let mut diverge_streak = 0u32;
+    let mut aborted = false;
+
     for step in 1..=n_steps {
         session.zero_grads();
         let mut accum_loss = 0.0f32;
@@ -379,6 +482,16 @@ async fn run() -> Result<(), BoxError> {
             first_loss = Some(avg_loss);
         }
         last_loss = avg_loss;
+        if avg_loss < best_loss {
+            best_loss = avg_loss;
+        }
+        // "Diverged" = NaN or loss ≥ 4× the best seen (and clearly above noise).
+        let diverged = avg_loss.is_nan() || (avg_loss > 2.0 && avg_loss > best_loss.max(1.0) * 4.0);
+        if diverged {
+            diverge_streak += 1;
+        } else {
+            diverge_streak = 0;
+        }
         if step == 1 || step % log_every == 0 || step == n_steps {
             if grad_clip > 0.0 {
                 eprintln!(
@@ -388,19 +501,43 @@ async fn run() -> Result<(), BoxError> {
                 eprintln!("[step {step:>4}/{n_steps}] loss = {avg_loss:.4} lr = {lr_now:.3e}");
             }
         }
+        if checkpoint_every > 0 && step != n_steps && step % checkpoint_every == 0 {
+            if diverged {
+                eprintln!(
+                    "[ckpt] step {step}: SKIPPED — loss {avg_loss:.3} diverged (best {best_loss:.3}); not overwriting the good adapter"
+                );
+            } else if let Some(path) = &adapter_path {
+                session
+                    .save_adapter(path)
+                    .await
+                    .map_err(|e| -> BoxError { format!("step {step} checkpoint: {e:?}").into() })?;
+                eprintln!("[ckpt] step {step}: adapter → {}", path.display());
+            }
+        }
+        if diverge_streak >= 5 {
+            eprintln!(
+                "[abort] loss diverged {diverge_streak} steps (best {best_loss:.3}, now {avg_loss:.3}) — stopping to protect the adapter. \
+                 The on-disk adapter is the last good checkpoint; pre-run weights are at <path>.preresume."
+            );
+            aborted = true;
+            break;
+        }
     }
 
     let l0 = first_loss.unwrap();
     let drop_pct = (l0 - last_loss) / l0.max(1e-6) * 100.0;
     eprintln!("[done] start={l0:.4}, end={last_loss:.4}, drop={drop_pct:.1}%");
 
-    if let Ok(path_s) = env::var("RULLAMA_ADAPTER_PATH") {
-        let path = PathBuf::from(&path_s);
+    if aborted {
+        eprintln!(
+            "[save] SKIPPED final save (run aborted on divergence). On-disk adapter is the last good checkpoint; pre-run backup at <path>.preresume."
+        );
+    } else if let Some(path) = &adapter_path {
         session
-            .save_adapter(&path)
+            .save_adapter(path)
             .await
             .map_err(|e| -> BoxError { format!("save_adapter: {e:?}").into() })?;
-        let bytes = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let bytes = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
         eprintln!("[save] adapter → {} ({} bytes)", path.display(), bytes);
     }
 

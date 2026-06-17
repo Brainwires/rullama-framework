@@ -124,6 +124,48 @@ pub async fn matmul_q4_k(
     dispatch_matmul(ctx, kernels::Q4_K_DEQUANT_MATMUL, w_bytes, x, k, n).await
 }
 
+/// Run `y = x @ W` on the GPU where `W` is stored as Q4_0-packed row-major bytes.
+/// Each row has `k/32` blocks of 18 bytes, so total weight bytes = `(k/32)*18*n`.
+/// Q4_0 is the legacy ggml quant Google ships QAT Gemma in.
+pub async fn matmul_q4_0(
+    ctx: &WgpuCtx,
+    w_bytes: &[u8],
+    x: &[f32],
+    k: usize,
+    n: usize,
+) -> Result<Vec<f32>> {
+    if !k.is_multiple_of(32) {
+        return Err(RullamaError::Inference(format!(
+            "k {k} must be a multiple of 32 for Q4_0 matmul"
+        )));
+    }
+    let row_bytes = (k / 32) * 18;
+    let expected = row_bytes * n;
+    if w_bytes.len() != expected {
+        return Err(RullamaError::Inference(format!(
+            "Q4_0 W bytes {} != (k/32)*18*n = {}",
+            w_bytes.len(),
+            expected
+        )));
+    }
+    if x.len() != k {
+        return Err(RullamaError::Inference(format!(
+            "x.len() {} != k {}",
+            x.len(),
+            k
+        )));
+    }
+    // Each row's byte length must be a multiple of 4 for u32-indexed weight
+    // storage. (k/32)*18 is /4 whenever k is a multiple of 64 — true of every
+    // gemma4 weight input dim (d_model / ffn_len are multiples of 256).
+    if !row_bytes.is_multiple_of(4) {
+        return Err(RullamaError::Inference(format!(
+            "Q4_0 row_bytes {row_bytes} not multiple of 4 (k={k})"
+        )));
+    }
+    dispatch_matmul(ctx, kernels::Q4_0_DEQUANT_MATMUL, w_bytes, x, k, n).await
+}
+
 /// Run `y = x @ W` on the GPU where `W` is stored as Q6_K-packed row-major bytes.
 /// Each row has `k/256` super-blocks of 210 bytes, so total weight bytes = `(k/256)*210*n`.
 pub async fn matmul_q6_k(
@@ -353,6 +395,58 @@ mod tests {
         }
     }
 
+    /// Q4_0 fused dequant+matmul GPU kernel vs the CPU dequant oracle. Synthesizes
+    /// random Q4_0 blocks (no model file needed), dequantizes them on CPU via the
+    /// ggml-exact `dequant_q4_0`, runs a plain f32 matmul, and compares to the GPU
+    /// `matmul_q4_0` kernel. This is the project-mandated GPU-vs-CPU parity test for
+    /// the new Q4_0 kernel.
+    #[test]
+    fn q4_0_matmul_gpu_vs_cpu_oracle() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let k = 128usize; // 4 blocks/row (mult of 64 → row_bytes /4)
+        let n = 16usize;
+        let blocks_per_row = k / 32;
+
+        // Deterministic LCG for reproducible random weights + input.
+        let mut state: u32 = 0x1234_5678;
+        let mut next_u = || {
+            state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+            state
+        };
+
+        // Build Q4_0 weight bytes: per block, an f16 scale d in ~[-0.1, 0.1] then
+        // 16 random nibble-bytes.
+        let mut w_bytes = Vec::with_capacity(n * blocks_per_row * 18);
+        for _ in 0..(n * blocks_per_row) {
+            let dv = ((next_u() >> 8) as f32 / 16777216.0 - 0.5) * 0.2;
+            w_bytes.extend_from_slice(&f16::from_f32(dv).to_le_bytes());
+            for _ in 0..16 {
+                w_bytes.push((next_u() & 0xFF) as u8);
+            }
+        }
+        let x: Vec<f32> = (0..k)
+            .map(|_| (next_u() >> 8) as f32 / 16777216.0 - 0.5)
+            .collect();
+
+        // CPU reference: dequant → f32 matmul.
+        let mut w_f32 = vec![0f32; k * n];
+        crate::gguf::quant::dequant_q4_0(&w_bytes, &mut w_f32).expect("dequant");
+        let cpu = cpu_matmul_f32(&w_f32, &x, k, n);
+
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let gpu = pollster::block_on(matmul_q4_0(&ctx, &w_bytes, &x, k, n)).expect("gpu");
+
+        let mut max_abs = 0f32;
+        for i in 0..n {
+            max_abs = max_abs.max((gpu[i] - cpu[i]).abs());
+        }
+        eprintln!("q4_0 matmul GPU vs CPU: max_abs={max_abs:.3e}");
+        assert!(
+            max_abs < 1e-4,
+            "Q4_0 GPU vs CPU max_abs {max_abs} exceeds 1e-4"
+        );
+    }
+
     /// Layer-0 fragment integration: run all four projection matmuls of layer 0
     /// (Q, K, V, O — three Q4_K and one Q6_K) on GPU and on CPU using the dequant
     /// path, and confirm they agree pairwise. This is the closest thing we have to
@@ -366,8 +460,8 @@ mod tests {
             eprintln!("skipping: gemma4 GGUF not available at {path}");
             return;
         }
-        let bytes = std::fs::read(path).expect("read");
-        let r = crate::gguf::GgufReader::new(bytes).expect("parse");
+        // Header-only reader + per-tensor file reads — never the whole 7 GB blob.
+        let r = crate::gguf::tensor::reader_from_file_header(path).expect("parse header");
 
         // Deterministic input: a normalized-ish vector of length d_model = 1536.
         let d_model = 1536usize;
@@ -381,46 +475,53 @@ mod tests {
         let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
 
         // ---- Q proj: Q4_K, [d_model, n_q=2048] ----
-        let q_desc = r.tensor("blk.0.attn_q.weight").expect("Q desc");
-        let q_bytes = r.tensor_bytes("blk.0.attn_q.weight").expect("Q bytes");
+        let q_desc = r.tensor("blk.0.attn_q.weight").expect("Q desc").clone();
+        let q_bytes =
+            crate::gguf::tensor::read_tensor_raw(path, &r, "blk.0.attn_q.weight").expect("Q bytes");
         let n_q = q_desc.dims[1] as usize;
         let mut q_w_f32 = vec![0f32; d_model * n_q];
-        crate::gguf::quant::dequant_q4_k(q_bytes, &mut q_w_f32).expect("Q dequant");
+        crate::gguf::quant::dequant_q4_k(&q_bytes, &mut q_w_f32).expect("Q dequant");
         let cpu_q = cpu_matmul_f32(&q_w_f32, &x_qkv, d_model, n_q);
         let gpu_q =
-            pollster::block_on(matmul_q4_k(&ctx, q_bytes, &x_qkv, d_model, n_q)).expect("Q gpu");
+            pollster::block_on(matmul_q4_k(&ctx, &q_bytes, &x_qkv, d_model, n_q)).expect("Q gpu");
 
         // ---- K proj: Q4_K, [d_model, n_k=256] ----
-        let k_desc = r.tensor("blk.0.attn_k.weight").expect("K desc");
-        let k_bytes = r.tensor_bytes("blk.0.attn_k.weight").expect("K bytes");
+        let k_desc = r.tensor("blk.0.attn_k.weight").expect("K desc").clone();
+        let k_bytes =
+            crate::gguf::tensor::read_tensor_raw(path, &r, "blk.0.attn_k.weight").expect("K bytes");
         let n_k = k_desc.dims[1] as usize;
         let mut k_w_f32 = vec![0f32; d_model * n_k];
-        crate::gguf::quant::dequant_q4_k(k_bytes, &mut k_w_f32).expect("K dequant");
+        crate::gguf::quant::dequant_q4_k(&k_bytes, &mut k_w_f32).expect("K dequant");
         let cpu_k = cpu_matmul_f32(&k_w_f32, &x_qkv, d_model, n_k);
         let gpu_k =
-            pollster::block_on(matmul_q4_k(&ctx, k_bytes, &x_qkv, d_model, n_k)).expect("K gpu");
+            pollster::block_on(matmul_q4_k(&ctx, &k_bytes, &x_qkv, d_model, n_k)).expect("K gpu");
 
         // ---- V proj: Q6_K, [d_model, n_v=256] ----
-        let v_desc = r.tensor("blk.0.attn_v.weight").expect("V desc");
-        let v_bytes = r.tensor_bytes("blk.0.attn_v.weight").expect("V bytes");
+        let v_desc = r.tensor("blk.0.attn_v.weight").expect("V desc").clone();
+        let v_bytes =
+            crate::gguf::tensor::read_tensor_raw(path, &r, "blk.0.attn_v.weight").expect("V bytes");
         let n_v = v_desc.dims[1] as usize;
         let mut v_w_f32 = vec![0f32; d_model * n_v];
-        crate::gguf::quant::dequant_q6_k(v_bytes, &mut v_w_f32).expect("V dequant");
+        crate::gguf::quant::dequant_q6_k(&v_bytes, &mut v_w_f32).expect("V dequant");
         let cpu_v = cpu_matmul_f32(&v_w_f32, &x_qkv, d_model, n_v);
         let gpu_v =
-            pollster::block_on(matmul_q6_k(&ctx, v_bytes, &x_qkv, d_model, n_v)).expect("V gpu");
+            pollster::block_on(matmul_q6_k(&ctx, &v_bytes, &x_qkv, d_model, n_v)).expect("V gpu");
 
         // ---- O proj: Q4_K, [n_q, d_model] applied to "attention" vector of length n_q.
         // Synthesize an attention-output stand-in (we don't compute real attention here).
         let attn_out: Vec<f32> = (0..n_q).map(|_| next()).collect();
-        let o_desc = r.tensor("blk.0.attn_output.weight").expect("O desc");
-        let o_bytes = r.tensor_bytes("blk.0.attn_output.weight").expect("O bytes");
+        let o_desc = r
+            .tensor("blk.0.attn_output.weight")
+            .expect("O desc")
+            .clone();
+        let o_bytes = crate::gguf::tensor::read_tensor_raw(path, &r, "blk.0.attn_output.weight")
+            .expect("O bytes");
         assert_eq!(o_desc.dims, vec![n_q as u64, d_model as u64]);
         let mut o_w_f32 = vec![0f32; n_q * d_model];
-        crate::gguf::quant::dequant_q4_k(o_bytes, &mut o_w_f32).expect("O dequant");
+        crate::gguf::quant::dequant_q4_k(&o_bytes, &mut o_w_f32).expect("O dequant");
         let cpu_o = cpu_matmul_f32(&o_w_f32, &attn_out, n_q, d_model);
-        let gpu_o =
-            pollster::block_on(matmul_q4_k(&ctx, o_bytes, &attn_out, n_q, d_model)).expect("O gpu");
+        let gpu_o = pollster::block_on(matmul_q4_k(&ctx, &o_bytes, &attn_out, n_q, d_model))
+            .expect("O gpu");
 
         for (name, c, g) in [
             ("Q [1536,2048]", &cpu_q, &gpu_q),
@@ -457,17 +558,17 @@ mod tests {
             eprintln!("skipping: gemma4 GGUF not available at {path}");
             return;
         }
-        let bytes = std::fs::read(path).expect("read");
-        let r = crate::gguf::GgufReader::new(bytes).expect("parse");
+        // Header-only reader + per-tensor file read — never the whole 7 GB blob.
+        let r = crate::gguf::tensor::reader_from_file_header(path).expect("parse header");
 
         // attn_q.weight is Q4_K with shape [1536, 2048] in our E2B fixture.
         let name = "blk.0.attn_q.weight";
-        let desc = r.tensor(name).expect("tensor");
+        let desc = r.tensor(name).expect("tensor").clone();
         assert!(matches!(desc.dtype, crate::gguf::GgmlDtype::Q4_K));
         assert_eq!(desc.dims, vec![1536, 2048]);
         let k = desc.dims[0] as usize;
         let n = desc.dims[1] as usize;
-        let w_bytes = r.tensor_bytes(name).expect("bytes");
+        let w_bytes = crate::gguf::tensor::read_tensor_raw(path, &r, name).expect("bytes");
 
         let mut state: u32 = 0xC0FF_EE42;
         let mut next = || {
@@ -477,11 +578,11 @@ mod tests {
         let x: Vec<f32> = (0..k).map(|_| next()).collect();
 
         let mut w_f32 = vec![0f32; k * n];
-        crate::gguf::quant::dequant_q4_k(w_bytes, &mut w_f32).expect("dequant");
+        crate::gguf::quant::dequant_q4_k(&w_bytes, &mut w_f32).expect("dequant");
         let cpu_y = cpu_matmul_f32(&w_f32, &x, k, n);
 
         let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
-        let gpu_y = pollster::block_on(matmul_q4_k(&ctx, w_bytes, &x, k, n)).expect("matmul");
+        let gpu_y = pollster::block_on(matmul_q4_k(&ctx, &w_bytes, &x, k, n)).expect("matmul");
 
         let mut max_abs = 0f32;
         let mut max_rel = 0f32;
@@ -516,18 +617,18 @@ mod tests {
             eprintln!("skipping: gemma4 GGUF not available at {path}");
             return;
         }
-        let bytes = std::fs::read(path).expect("read");
-        let r = crate::gguf::GgufReader::new(bytes).expect("parse");
+        // Header-only reader + per-tensor file read — never the whole 7 GB blob.
+        let r = crate::gguf::tensor::reader_from_file_header(path).expect("parse header");
 
         // attn_v.weight is Q6_K with shape [1536, 256] in our E2B fixture:
         //   k = 1536, n = 256
         let name = "blk.0.attn_v.weight";
-        let desc = r.tensor(name).expect("tensor");
+        let desc = r.tensor(name).expect("tensor").clone();
         assert!(matches!(desc.dtype, crate::gguf::GgmlDtype::Q6_K));
         assert_eq!(desc.dims, vec![1536, 256]);
         let k = desc.dims[0] as usize;
         let n = desc.dims[1] as usize;
-        let w_bytes = r.tensor_bytes(name).expect("bytes");
+        let w_bytes = crate::gguf::tensor::read_tensor_raw(path, &r, name).expect("bytes");
 
         // Deterministic input.
         let mut state: u32 = 0xDEAD_BEEF;
@@ -539,12 +640,12 @@ mod tests {
 
         // CPU reference: full dequant then matvec.
         let mut w_f32 = vec![0f32; k * n];
-        crate::gguf::quant::dequant_q6_k(w_bytes, &mut w_f32).expect("dequant");
+        crate::gguf::quant::dequant_q6_k(&w_bytes, &mut w_f32).expect("dequant");
         let cpu_y = cpu_matmul_f32(&w_f32, &x, k, n);
 
         // GPU.
         let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
-        let gpu_y = pollster::block_on(matmul_q6_k(&ctx, w_bytes, &x, k, n)).expect("matmul");
+        let gpu_y = pollster::block_on(matmul_q6_k(&ctx, &w_bytes, &x, k, n)).expect("matmul");
 
         let mut max_abs = 0f32;
         let mut max_rel = 0f32;

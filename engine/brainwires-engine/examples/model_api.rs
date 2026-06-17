@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use rullama::api::{ChatMessage, ChatRole, Model};
-use rullama::gguf::{InMemoryFetcher, TensorFetcher};
+use rullama::gguf::{FileFetcher, TensorFetcher};
 use rullama::sampling::SamplingOptions;
 
 fn main() -> ExitCode {
@@ -45,13 +45,16 @@ fn main() -> ExitCode {
         if streaming { "streaming" } else { "in-memory" }
     );
     let t0 = Instant::now();
-    let bytes = fs::read(&path).expect("read");
     let mut model = if streaming {
-        // Wrap the same bytes in an InMemoryFetcher so we exercise the M6 streaming
-        // code path on native (HttpRangeFetcher is wasm32-only).
-        let fetcher: Arc<dyn TensorFetcher> = Arc::new(InMemoryFetcher::new(bytes));
+        // FileFetcher = native positioned-read streaming (the path the browser's
+        // HttpRange/OPFS fetchers mirror). Never reads the whole blob into RAM,
+        // so a 26B MoE that can't fit memory still loads — and `Model::load`
+        // auto-enables per-expert weight streaming for MoE checkpoints.
+        let fetcher: Arc<dyn TensorFetcher> =
+            Arc::new(FileFetcher::open(std::path::Path::new(&path)).expect("open"));
         pollster::block_on(Model::load_streaming(fetcher)).expect("load_streaming")
     } else {
+        let bytes = fs::read(&path).expect("read");
         pollster::block_on(Model::load_native(bytes)).expect("load_native")
     };
     println!("  loaded in {:?}", t0.elapsed());

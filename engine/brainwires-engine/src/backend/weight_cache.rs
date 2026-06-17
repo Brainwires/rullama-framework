@@ -87,14 +87,26 @@ impl WeightCache {
 
     /// Internal: create+upload a single GPU buffer from a slice.
     fn upload(&self, name: &str, bytes: &[u8]) -> wgpu::Buffer {
+        // write_buffer requires a COPY_BUFFER_ALIGNMENT (4-byte) multiple. Most
+        // tensors are already aligned, but a row-aligned Q6_K tile can land on a
+        // non-/4 boundary (row_bytes = (k/256)*210 is odd-multiple when k/256 is
+        // odd — e.g. the 12b token_embd, d_model 3840 → 3150 B/row → an 8,388,450 B
+        // tile). Pad up; the extra bytes are past the last block and never read.
+        let padded_len = (bytes.len() + 3) & !3;
         let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(name),
-            size: bytes.len() as u64,
+            size: padded_len as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        self.queue.write_buffer(&buf, 0, bytes);
-        crate::backend::gpu_mem::record_alloc(&format!("weight:{name}"), bytes.len() as u64);
+        if padded_len == bytes.len() {
+            self.queue.write_buffer(&buf, 0, bytes);
+        } else {
+            let mut padded = bytes.to_vec();
+            padded.resize(padded_len, 0);
+            self.queue.write_buffer(&buf, 0, &padded);
+        }
+        crate::backend::gpu_mem::record_alloc(&format!("weight:{name}"), padded_len as u64);
         buf
     }
 
@@ -123,6 +135,49 @@ impl WeightCache {
         drop(bytes);
         let cloned = buf.clone();
         self.buffers.borrow_mut().insert(name.to_string(), buf);
+        Ok(cloned)
+    }
+
+    /// Get a GPU buffer holding ONE expert's slice of a 3-D stacked MoE tensor
+    /// (`blk.N.ffn_*_exps.weight`, dims `[in, out, n_experts]`), range-fetching
+    /// only that expert's bytes instead of the whole `n_experts`-deep tensor.
+    /// This is the per-expert streaming lever: a token routes to top-8 of 128
+    /// experts, so fetching only the selected slices is ~16× less bandwidth
+    /// than `buffer_async` of the full tensor.
+    ///
+    /// Cached under `{name}#e{idx}` — still `blk.N.*`-prefixed, so the per-layer
+    /// destroy (`drop_blk_layer_range_destroy`) reclaims it like any layer
+    /// weight. The returned buffer is a standalone 1-expert tensor: index it in
+    /// the expert matmul with expert id 0.
+    pub async fn buffer_expert_async(&self, name: &str, expert_idx: usize) -> Result<wgpu::Buffer> {
+        let key = format!("{name}#e{expert_idx}");
+        if let Some(b) = self.buffers.borrow().get(&key) {
+            return Ok(b.clone());
+        }
+        let desc = self.reader.tensor(name)?.clone();
+        if desc.dims.len() != 3 {
+            return Err(crate::error::RullamaError::Gguf(format!(
+                "buffer_expert_async: {name} has {} dims, expected 3",
+                desc.dims.len()
+            )));
+        }
+        let in_len = desc.dims[0] as usize;
+        let out_len = desc.dims[1] as usize;
+        let n_experts = desc.dims[2] as usize;
+        if expert_idx >= n_experts {
+            return Err(crate::error::RullamaError::Gguf(format!(
+                "buffer_expert_async: expert {expert_idx} >= {n_experts} for {name}"
+            )));
+        }
+        let bytes_per_row = (in_len / desc.dtype.block_elems()) * desc.dtype.block_bytes();
+        let slice_bytes = bytes_per_row * out_len;
+        let abs =
+            self.reader.data_section_offset() + desc.offset + (expert_idx * slice_bytes) as u64;
+        let bytes = self.reader.fetcher().fetch(abs, slice_bytes as u64).await?;
+        let buf = self.upload(&key, &bytes);
+        drop(bytes);
+        let cloned = buf.clone();
+        self.buffers.borrow_mut().insert(key, buf);
         Ok(cloned)
     }
 
@@ -451,6 +506,69 @@ impl WeightCache {
         }
 
         Ok(self.commit_tiles(key, bufs, metas))
+    }
+
+    /// Number of tiles `buffer_tiles_async` would split `name` into at this tile size.
+    pub fn tile_count(&self, name: &str, max_bytes_per_tile: usize) -> Result<usize> {
+        let layout = self.tile_layout(name, max_bytes_per_tile)?;
+        Ok(layout.n_rows.div_ceil(layout.rows_per_tile))
+    }
+
+    /// Fetch ONE tile (by index) and upload it to a fresh GPU buffer **without caching**, so the
+    /// caller can `.destroy()` it right after use. The memory-tight counterpart to
+    /// `buffer_tiles_async`, which uploads *every* tile and caches them all (~315 MiB resident for
+    /// `token_embd.weight` on gemma4:e2b — the brick at the iPhone forward→head jetsam wall).
+    /// Streaming + destroying one tile at a time holds the head-projection peak at
+    /// ~`max_bytes_per_tile` instead of the whole tensor.
+    pub async fn fetch_tile_uncached(
+        &self,
+        name: &str,
+        max_bytes_per_tile: usize,
+        tile_idx: usize,
+    ) -> Result<TiledTensor> {
+        let layout = self.tile_layout(name, max_bytes_per_tile)?;
+        let row_start = tile_idx * layout.rows_per_tile;
+        if row_start >= layout.n_rows {
+            return Err(RullamaError::Inference(format!(
+                "fetch_tile_uncached: tile {tile_idx} out of range for {name} ({} rows)",
+                layout.n_rows
+            )));
+        }
+        let row_end = (row_start + layout.rows_per_tile).min(layout.n_rows);
+        let byte_start = (row_start * layout.row_bytes) as u64;
+        let byte_len = ((row_end - row_start) * layout.row_bytes) as u64;
+        let chunk = self
+            .reader
+            .fetch_tensor_range(name, byte_start, byte_len)
+            .await?;
+        // Create the tile buffer directly, NOT via `upload` — `upload` calls
+        // `gpu_mem::record_alloc("weight:…")`, but the caller destroys this tile one matmul later
+        // and there's no matching `record_free`. Routing transient tiles through `upload` makes the
+        // gpu_mem `w` counter climb one tile per call with no balancing free — the false
+        // "+315 MiB/token" the iPhone training beacon showed (the GPU memory itself is freed fine by
+        // the caller's invalidate + destroy). These tiles are intentionally untracked.
+        // write_buffer requires a COPY_BUFFER_ALIGNMENT (4-byte) multiple. A
+        // row-aligned tile can land non-4-aligned when row_bytes isn't /4 — e.g.
+        // Q6_K row_bytes = (k/256)*210 is odd-multiple-of-210 when k/256 is odd
+        // (the 12b's token_embd, d_model 3840 → 3150 B/row → an 8,388,450 B tile).
+        // Pad up; the extra bytes sit past the last block of the last row and are
+        // never read by the matmul kernel.
+        let mut data = chunk;
+        let padded_len = (data.len() + 3) & !3;
+        data.resize(padded_len, 0);
+        let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("weight_cache.stream_tile"),
+            size: data.len() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(&buf, 0, &data);
+        drop(data);
+        Ok(TiledTensor {
+            buffer: buf,
+            row_start,
+            n_rows: row_end - row_start,
+        })
     }
 
     fn tiles_cached(&self, key: &(String, usize)) -> Option<Vec<TiledTensor>> {

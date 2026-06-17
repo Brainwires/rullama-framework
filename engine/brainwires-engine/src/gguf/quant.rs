@@ -167,6 +167,150 @@ pub fn dequant_q6_k(src: &[u8], out: &mut [f32]) -> Result<()> {
 
 // ---------- F16 / F32 ----------
 
+// ---------- Q4_0 ----------
+//
+// The legacy ggml quant Google ships QAT (quantization-aware-trained) Gemma in.
+// Block layout (18 bytes total, 32 elements):
+//   d  : f16          (block scale)
+//   qs : 16 bytes     (32 × 4-bit quants — low nibbles are the first 16
+//                      elements, high nibbles the next 16; offset by -8)
+//
+// Mirrors `dequantize_row_q4_0` in ggml-quants.c (Ollama's build dep):
+//   y[l]      = (qs[l] & 0xF) - 8) * d
+//   y[l + 16] = (qs[l] >> 4)  - 8) * d
+
+pub const Q4_0_BLOCK_BYTES: usize = 18;
+/// Elements per Q4_0 block (legacy ggml `QK4_0`).
+pub const QK4_0: usize = 32;
+
+/// Dequantize a Q4_0-encoded byte stream into `out` (length = number of blocks × 32).
+pub fn dequant_q4_0(src: &[u8], out: &mut [f32]) -> Result<()> {
+    if !src.len().is_multiple_of(Q4_0_BLOCK_BYTES) {
+        return Err(RullamaError::Gguf(format!(
+            "Q4_0 source not multiple of {Q4_0_BLOCK_BYTES} bytes (got {})",
+            src.len()
+        )));
+    }
+    let nb = src.len() / Q4_0_BLOCK_BYTES;
+    if out.len() != nb * QK4_0 {
+        return Err(RullamaError::Gguf(format!(
+            "Q4_0 dest expected {} elements, got {}",
+            nb * QK4_0,
+            out.len()
+        )));
+    }
+    // Byte-indexed (not bytemuck cast) since 18-byte blocks aren't u32-aligned.
+    for bi in 0..nb {
+        let off = bi * Q4_0_BLOCK_BYTES;
+        let d = f16::from_bits(u16::from_le_bytes([src[off], src[off + 1]])).to_f32();
+        let qs = &src[off + 2..off + Q4_0_BLOCK_BYTES];
+        let dst = &mut out[bi * QK4_0..(bi + 1) * QK4_0];
+        for l in 0..16 {
+            let q = qs[l];
+            dst[l] = ((q & 0x0F) as f32 - 8.0) * d;
+            dst[l + 16] = ((q >> 4) as f32 - 8.0) * d;
+        }
+    }
+    Ok(())
+}
+
+// ---------- Q5_0 ----------
+//
+// 5-bit legacy ggml quant (shows up in DiffusionGemma's Q4_K_M build for
+// ffn_down / ffn_down_exps / self_cond_down). Block layout (22 bytes,
+// 32 elements):
+//   d  : f16          (block scale)
+//   qh : 4 bytes      (LE u32 — the 5th bit of each quant)
+//   qs : 16 bytes     (32 × 4-bit low nibbles, two per byte)
+//
+// Mirrors `dequantize_row_q5_0` in ggml-quants.c (Ollama's build dep):
+//   xh_0 = ((qh >> j) << 4) & 0x10        (bit j → element j)
+//   xh_1 = (qh >> (j + 12)) & 0x10        (bit j+16 → element j+16)
+//   y[j]      = (((qs[j] & 0xF) | xh_0) - 16) * d
+//   y[j + 16] = (((qs[j] >> 4)  | xh_1) - 16) * d
+
+pub const Q5_0_BLOCK_BYTES: usize = 22;
+/// Elements per Q5_0 block (legacy ggml `QK5_0`).
+pub const QK5_0: usize = 32;
+
+/// Dequantize a Q5_0-encoded byte stream into `out` (length = number of blocks × 32).
+pub fn dequant_q5_0(src: &[u8], out: &mut [f32]) -> Result<()> {
+    if !src.len().is_multiple_of(Q5_0_BLOCK_BYTES) {
+        return Err(RullamaError::Gguf(format!(
+            "Q5_0 source not multiple of {Q5_0_BLOCK_BYTES} bytes (got {})",
+            src.len()
+        )));
+    }
+    let nb = src.len() / Q5_0_BLOCK_BYTES;
+    if out.len() != nb * QK5_0 {
+        return Err(RullamaError::Gguf(format!(
+            "Q5_0 dest expected {} elements, got {}",
+            nb * QK5_0,
+            out.len()
+        )));
+    }
+    // Byte-indexed (not bytemuck cast) since 22-byte blocks aren't u32-aligned.
+    for bi in 0..nb {
+        let off = bi * Q5_0_BLOCK_BYTES;
+        let d = f16::from_bits(u16::from_le_bytes([src[off], src[off + 1]])).to_f32();
+        let qh = u32::from_le_bytes([src[off + 2], src[off + 3], src[off + 4], src[off + 5]]);
+        let qs = &src[off + 6..off + Q5_0_BLOCK_BYTES];
+        let dst = &mut out[bi * QK5_0..(bi + 1) * QK5_0];
+        for (j, q) in qs.iter().enumerate() {
+            let xh_0 = ((qh >> j) << 4) & 0x10;
+            let xh_1 = (qh >> (j + 12)) & 0x10;
+            let x0 = ((u32::from(q & 0x0F) | xh_0) as i32) - 16;
+            let x1 = ((u32::from(q >> 4) | xh_1) as i32) - 16;
+            dst[j] = x0 as f32 * d;
+            dst[j + 16] = x1 as f32 * d;
+        }
+    }
+    Ok(())
+}
+
+// ---------- Q8_0 ----------
+//
+// 8-bit legacy ggml quant (the `-it-q8_0` Ollama tags). Block layout
+// (34 bytes total, 32 elements):
+//   d  : f16          (block scale)
+//   qs : 32 bytes     (32 × signed int8 quants)
+//
+// Mirrors `dequantize_row_q8_0` in ggml-quants.c (Ollama's build dep):
+//   y[i] = qs[i] * d
+
+pub const Q8_0_BLOCK_BYTES: usize = 34;
+/// Elements per Q8_0 block (legacy ggml `QK8_0`).
+pub const QK8_0: usize = 32;
+
+/// Dequantize a Q8_0-encoded byte stream into `out` (length = number of blocks × 32).
+pub fn dequant_q8_0(src: &[u8], out: &mut [f32]) -> Result<()> {
+    if !src.len().is_multiple_of(Q8_0_BLOCK_BYTES) {
+        return Err(RullamaError::Gguf(format!(
+            "Q8_0 source not multiple of {Q8_0_BLOCK_BYTES} bytes (got {})",
+            src.len()
+        )));
+    }
+    let nb = src.len() / Q8_0_BLOCK_BYTES;
+    if out.len() != nb * QK8_0 {
+        return Err(RullamaError::Gguf(format!(
+            "Q8_0 dest expected {} elements, got {}",
+            nb * QK8_0,
+            out.len()
+        )));
+    }
+    // Byte-indexed (not bytemuck cast) since 34-byte blocks aren't u32-aligned.
+    for bi in 0..nb {
+        let off = bi * Q8_0_BLOCK_BYTES;
+        let d = f16::from_bits(u16::from_le_bytes([src[off], src[off + 1]])).to_f32();
+        let qs = &src[off + 2..off + Q8_0_BLOCK_BYTES];
+        let dst = &mut out[bi * QK8_0..(bi + 1) * QK8_0];
+        for (l, q) in qs.iter().enumerate() {
+            dst[l] = (*q as i8) as f32 * d;
+        }
+    }
+    Ok(())
+}
+
 /// Convert a BF16 byte stream (little-endian, high 16 bits of an IEEE-754 f32) to f32.
 pub fn bf16_to_f32(src: &[u8], out: &mut [f32]) -> Result<()> {
     if !src.len().is_multiple_of(2) {
@@ -240,9 +384,53 @@ pub fn dequant_into_f32(dtype: GgmlDtype, src: &[u8], out: &mut [f32]) -> Result
         GgmlDtype::BF16 => bf16_to_f32(src, out),
         GgmlDtype::Q4_K => dequant_q4_k(src, out),
         GgmlDtype::Q6_K => dequant_q6_k(src, out),
+        GgmlDtype::Q4_0 => dequant_q4_0(src, out),
+        GgmlDtype::Q5_0 => dequant_q5_0(src, out),
+        GgmlDtype::Q8_0 => dequant_q8_0(src, out),
         other => Err(RullamaError::Gguf(format!(
-            "dtype {other:?} is not in v1 dequant scope (only F32, F16, BF16, Q4_K, Q6_K)"
+            "dtype {other:?} is not in dequant scope (only F32, F16, BF16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K)"
         ))),
+    }
+}
+
+/// F16 little-endian bytes → raw f16 bit patterns (passthrough, no precision
+/// change). Used by the f16-resident StyleTTS2 path to keep big weights f16
+/// in host memory instead of expanding them to f32.
+pub fn f16_to_f16_bits(src: &[u8], out: &mut [u16]) -> Result<()> {
+    if !src.len().is_multiple_of(2) {
+        return Err(RullamaError::Gguf(format!(
+            "F16 source byte length {} is odd",
+            src.len()
+        )));
+    }
+    if out.len() * 2 != src.len() {
+        return Err(RullamaError::Gguf(format!(
+            "F16 dest expected {} elements, got {}",
+            src.len() / 2,
+            out.len()
+        )));
+    }
+    for (i, chunk) in src.chunks_exact(2).enumerate() {
+        out[i] = u16::from_le_bytes([chunk[0], chunk[1]]);
+    }
+    Ok(())
+}
+
+/// Dequantize any supported dtype into raw f16 bit patterns (little-endian
+/// half). F16 passes through losslessly; everything else is dequantized to f32
+/// and downcast to f16. `out[i]` holds the u16 bit pattern — upload as 2 LE
+/// bytes per element (the same layout `write_storage_f16` produces).
+pub fn dequant_into_f16(dtype: GgmlDtype, src: &[u8], out: &mut [u16]) -> Result<()> {
+    match dtype {
+        GgmlDtype::F16 => f16_to_f16_bits(src, out),
+        _ => {
+            let mut tmp = vec![0f32; out.len()];
+            dequant_into_f32(dtype, src, &mut tmp)?;
+            for (o, &v) in out.iter_mut().zip(tmp.iter()) {
+                *o = f16::from_f32(v).to_bits();
+            }
+            Ok(())
+        }
     }
 }
 
@@ -280,6 +468,157 @@ mod tests {
         dequant_q4_k(&src, &mut out).unwrap();
         for &v in &out {
             assert_eq!(v, 0.0, "dequant of all-zero quants must be zero");
+        }
+    }
+
+    #[test]
+    fn q4_0_dequant_matches_ggml_oracle() {
+        // One block: d=2.0 (f16 0x4000). qs[0]=0x3A → low nibble 0xA=10, high 0x3=3.
+        // ggml: y[0]=(10-8)*2= 4,  y[16]=(3-8)*2=-10.  qs[15]=0x80 → low 0, high 8:
+        //       y[15]=(0-8)*2=-16, y[31]=(8-8)*2=0.  All other qs=0 → low/high 0 → -16.
+        let mut buf = vec![0u8; Q4_0_BLOCK_BYTES];
+        buf[0..2].copy_from_slice(&0x4000u16.to_le_bytes()); // d = 2.0
+        buf[2] = 0x3A; // qs[0]
+        buf[2 + 15] = 0x80; // qs[15]
+        let mut out = vec![999f32; QK4_0];
+        dequant_q4_0(&buf, &mut out).unwrap();
+        assert_eq!(out[0], 4.0);
+        assert_eq!(out[16], -10.0);
+        assert_eq!(out[15], -16.0);
+        assert_eq!(out[31], 0.0);
+        // every other low/high nibble is 0 → (0-8)*2 = -16
+        for l in 1..15 {
+            assert_eq!(out[l], -16.0, "low nibble {l}");
+            assert_eq!(out[l + 16], -16.0, "high nibble {l}");
+        }
+    }
+
+    #[test]
+    fn q4_0_into_f32_dispatch_routes() {
+        // Same block, but via the public dtype dispatcher used by the loader.
+        let mut buf = vec![0u8; Q4_0_BLOCK_BYTES];
+        buf[0..2].copy_from_slice(&0x3C00u16.to_le_bytes()); // d = 1.0
+        for b in &mut buf[2..] {
+            *b = 0x88; // every nibble = 8 → (8-8)*1 = 0
+        }
+        let mut out = vec![999f32; QK4_0];
+        dequant_into_f32(GgmlDtype::Q4_0, &buf, &mut out).unwrap();
+        assert!(out.iter().all(|&v| v == 0.0), "nibble 8 with offset -8 → 0");
+    }
+
+    #[test]
+    fn q5_0_dequant_matches_ggml_oracle() {
+        // One block: d=2.0 (f16 0x4000). All qh/qs zero → every quant is
+        // (0|0)-16 = -16 → -32.0. Then set element 0 to nibble 0xF + high
+        // bit (qh bit 0) → (0xF|0x10)-16 = 15 → 30.0, and element 16 to
+        // nibble 0x3 (qs[0] high nibble) + high bit (qh bit 16) →
+        // (0x3|0x10)-16 = 3 → 6.0.
+        let mut buf = vec![0u8; Q5_0_BLOCK_BYTES];
+        buf[0..2].copy_from_slice(&0x4000u16.to_le_bytes()); // d = 2.0
+        let qh: u32 = 1 | (1 << 16); // high bit for elements 0 and 16
+        buf[2..6].copy_from_slice(&qh.to_le_bytes());
+        buf[6] = 0x3F; // qs[0]: low nibble 0xF (elem 0), high nibble 0x3 (elem 16)
+        let mut out = vec![999f32; QK5_0];
+        dequant_q5_0(&buf, &mut out).unwrap();
+        assert_eq!(out[0], 30.0);
+        assert_eq!(out[16], 6.0);
+        for j in 1..16 {
+            assert_eq!(out[j], -32.0, "elem {j}");
+            assert_eq!(out[j + 16], -32.0, "elem {}", j + 16);
+        }
+    }
+
+    #[test]
+    fn q5_0_into_f32_dispatch_routes() {
+        // d=1.0, all-zero qh, every nibble 0x0 → (0|0)-16 = -16 → -16.0.
+        let mut buf = vec![0u8; Q5_0_BLOCK_BYTES];
+        buf[0..2].copy_from_slice(&0x3C00u16.to_le_bytes());
+        let mut out = vec![999f32; QK5_0];
+        dequant_into_f32(GgmlDtype::Q5_0, &buf, &mut out).unwrap();
+        assert!(out.iter().all(|&v| v == -16.0));
+    }
+
+    #[test]
+    fn q8_0_dequant_matches_ggml_oracle() {
+        // One block: d=2.0 (f16 0x4000). qs are signed int8:
+        // ggml: y[i] = qs[i] * d.
+        let mut buf = vec![0u8; Q8_0_BLOCK_BYTES];
+        buf[0..2].copy_from_slice(&0x4000u16.to_le_bytes()); // d = 2.0
+        buf[2] = 10; // qs[0]  = 10   → 20.0
+        buf[2 + 1] = 0x80; // qs[1]  = -128 → -256.0
+        buf[2 + 15] = 0xFF; // qs[15] = -1   → -2.0
+        buf[2 + 31] = 127; // qs[31] = 127  → 254.0
+        let mut out = vec![999f32; QK8_0];
+        dequant_q8_0(&buf, &mut out).unwrap();
+        assert_eq!(out[0], 20.0);
+        assert_eq!(out[1], -256.0);
+        assert_eq!(out[15], -2.0);
+        assert_eq!(out[31], 254.0);
+        for l in 2..15 {
+            assert_eq!(out[l], 0.0, "untouched qs[{l}] must dequant to 0");
+        }
+        for l in 16..31 {
+            assert_eq!(out[l], 0.0, "untouched qs[{l}] must dequant to 0");
+        }
+    }
+
+    #[test]
+    fn q8_0_into_f32_dispatch_routes() {
+        // Two blocks via the public dtype dispatcher used by the loader.
+        let mut buf = vec![0u8; 2 * Q8_0_BLOCK_BYTES];
+        buf[0..2].copy_from_slice(&0x3C00u16.to_le_bytes()); // block 0: d = 1.0
+        buf[2] = 0x05; // qs[0] = 5 → 5.0
+        let b1 = Q8_0_BLOCK_BYTES;
+        buf[b1..b1 + 2].copy_from_slice(&0x3800u16.to_le_bytes()); // block 1: d = 0.5
+        buf[b1 + 2] = 0xFC; // qs[0] = -4 → -2.0
+        let mut out = vec![999f32; 2 * QK8_0];
+        dequant_into_f32(GgmlDtype::Q8_0, &buf, &mut out).unwrap();
+        assert_eq!(out[0], 5.0);
+        assert_eq!(out[32], -2.0);
+        assert!(out[1..32].iter().all(|&v| v == 0.0));
+        assert!(out[33..].iter().all(|&v| v == 0.0));
+    }
+
+    #[test]
+    fn dequant_into_f16_f16_passthrough_is_lossless() {
+        // F16 source → identical f16 bits, and decoding them back equals the originals.
+        let vals = [1.0f32, 2.0, -0.5, 0.0, 65504.0]; // last is f16::MAX
+        let mut src = Vec::new();
+        for &v in &vals {
+            src.extend_from_slice(&f16::from_f32(v).to_bits().to_le_bytes());
+        }
+        let mut bits = vec![0u16; vals.len()];
+        dequant_into_f16(GgmlDtype::F16, &src, &mut bits).unwrap();
+        for (i, &v) in vals.iter().enumerate() {
+            assert_eq!(
+                bits[i],
+                f16::from_f32(v).to_bits(),
+                "f16 passthrough bit-exact at {i}"
+            );
+            assert_eq!(
+                f16::from_bits(bits[i]).to_f32(),
+                v,
+                "decoded value matches at {i}"
+            );
+        }
+    }
+
+    #[test]
+    fn dequant_into_f16_f32_downcast() {
+        // F32 source → f16 bits equal to a direct f32→f16 conversion.
+        let vals = [1.0f32, 2.0, -0.5, 0.1];
+        let mut src = Vec::new();
+        for &v in &vals {
+            src.extend_from_slice(&v.to_le_bytes());
+        }
+        let mut bits = vec![0u16; vals.len()];
+        dequant_into_f16(GgmlDtype::F32, &src, &mut bits).unwrap();
+        for (i, &v) in vals.iter().enumerate() {
+            assert_eq!(
+                bits[i],
+                f16::from_f32(v).to_bits(),
+                "f32→f16 downcast matches at {i}"
+            );
         }
     }
 

@@ -81,6 +81,57 @@ impl TensorFetcher for InMemoryFetcher {
     }
 }
 
+// ---------- FileFetcher (native-only) ----------
+
+/// Native fetcher that reads byte ranges straight from an on-disk GGUF via
+/// positioned reads (`read_at` — no seek state, no mutex). Lets native
+/// examples and the CPU oracle stream blobs bigger than RAM (e.g. the 18 GB
+/// `gemma4:26b`) instead of `fs::read`ing the whole file.
+#[cfg(not(target_arch = "wasm32"))]
+pub struct FileFetcher {
+    file: std::fs::File,
+    len: u64,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl FileFetcher {
+    pub fn open(path: &std::path::Path) -> Result<Self> {
+        let file = std::fs::File::open(path)
+            .map_err(|e| RullamaError::Gguf(format!("open {}: {e}", path.display())))?;
+        let len = file
+            .metadata()
+            .map_err(|e| RullamaError::Gguf(format!("stat {}: {e}", path.display())))?
+            .len();
+        Ok(Self { file, len })
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
+impl TensorFetcher for FileFetcher {
+    fn total_len(&self) -> u64 {
+        self.len
+    }
+
+    async fn fetch(&self, offset: u64, len: u64) -> Result<Vec<u8>> {
+        use std::os::unix::fs::FileExt;
+        let end = offset.checked_add(len).ok_or_else(|| {
+            RullamaError::Gguf(format!("FileFetcher: range overflow {offset}+{len}"))
+        })?;
+        if end > self.len {
+            return Err(RullamaError::Gguf(format!(
+                "FileFetcher: range {offset}..{end} extends past file end ({})",
+                self.len
+            )));
+        }
+        let mut buf = vec![0u8; len as usize];
+        self.file
+            .read_exact_at(&mut buf, offset)
+            .map_err(|e| RullamaError::Gguf(format!("FileFetcher read {offset}+{len}: {e}")))?;
+        Ok(buf)
+    }
+}
+
 // ---------- HttpRangeFetcher (wasm32-only) ----------
 
 /// Browser-side fetcher that pulls byte ranges from an HTTP URL via `fetch()` with a

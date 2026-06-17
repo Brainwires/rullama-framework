@@ -11,6 +11,22 @@ use crate::kernels;
 
 pub struct Pipelines {
     pub f16_matmul: wgpu::ComputePipeline,
+    pub q4_0_matmul: wgpu::ComputePipeline,
+    pub q5_0_matmul: wgpu::ComputePipeline,
+    pub q8_0_matmul: wgpu::ComputePipeline,
+    pub moe_router: wgpu::ComputePipeline,
+    pub moe_geglu_halves: wgpu::ComputePipeline,
+    pub moe_combine: wgpu::ComputePipeline,
+    pub moe_expert_matmul_q4_k: wgpu::ComputePipeline,
+    pub moe_expert_matmul_q5_0: wgpu::ComputePipeline,
+    pub moe_expert_matmul_q8_0: wgpu::ComputePipeline,
+    pub diffusion_attention: wgpu::ComputePipeline,
+    pub moe_router_batched: wgpu::ComputePipeline,
+    pub moe_expert_matmul_batched_q4_k: wgpu::ComputePipeline,
+    pub moe_expert_matmul_batched_q5_0: wgpu::ComputePipeline,
+    pub moe_expert_matmul_batched_q8_0: wgpu::ComputePipeline,
+    pub moe_geglu_halves_batched: wgpu::ComputePipeline,
+    pub moe_combine_batched: wgpu::ComputePipeline,
     pub q4_k_matmul: wgpu::ComputePipeline,
     pub q6_k_matmul: wgpu::ComputePipeline,
     pub rmsnorm: wgpu::ComputePipeline,
@@ -21,6 +37,19 @@ pub struct Pipelines {
     pub residual_add: wgpu::ComputePipeline,
     pub scale: wgpu::ComputePipeline,
     pub rmsnorm_per_row: wgpu::ComputePipeline,
+    pub layernorm_affine: wgpu::ComputePipeline,
+    pub conv1d: wgpu::ComputePipeline,
+    pub conv1d_f16: wgpu::ComputePipeline,
+    pub conv_transpose1d: wgpu::ComputePipeline,
+    pub conv_transpose1d_f16: wgpu::ComputePipeline,
+    pub leaky_relu: wgpu::ComputePipeline,
+    pub gelu_exact: wgpu::ComputePipeline,
+    pub snake: wgpu::ComputePipeline,
+    pub adain: wgpu::ComputePipeline,
+    pub istft: wgpu::ComputePipeline,
+    pub transpose2d: wgpu::ComputePipeline,
+    pub nearest_upsample2x: wgpu::ComputePipeline,
+    pub spec_phase: wgpu::ComputePipeline,
     pub q4_k_matmul_tiled: wgpu::ComputePipeline,
     pub q6_k_matmul_tiled: wgpu::ComputePipeline,
     /// f16-LDS variants of the Q4_K / Q6_K dequant matmul. Inner loop uses
@@ -32,7 +61,10 @@ pub struct Pipelines {
     /// WG=256 non-tiled Q4_K — 4 waves per WG for better latency hiding.
     pub q4_k_matmul_wg256: wgpu::ComputePipeline,
     pub conv2d: wgpu::ComputePipeline,
+    pub conv2d_chf: wgpu::ComputePipeline,
+    pub conv2d_chf_f16: wgpu::ComputePipeline,
     pub avg_pool2d: wgpu::ComputePipeline,
+    pub avg_pool2d_half_chf: wgpu::ComputePipeline,
     pub clamp: wgpu::ComputePipeline,
     pub quick_geglu: wgpu::ComputePipeline,
     pub rope_2d: wgpu::ComputePipeline,
@@ -101,6 +133,9 @@ pub struct Pipelines {
     /// Computes `dx[i] = Σ_j dy[j] * dequant(W)[j, i]`. The weight matrix
     /// stays in Q4_K (frozen by LoRA convention) — no weight gradient.
     pub matmul_q4_k_backward_input: wgpu::ComputePipeline,
+    /// Backward of Q4_0 matmul w.r.t. the input vector — fine-tuning on a Q4_0
+    /// (QAT) base. Same `dx[i] = Σ_j dy[j] * dequant(W)[j, i]`, frozen weight.
+    pub matmul_q4_0_backward_input: wgpu::ComputePipeline,
     /// Backward of Q6_K matmul w.r.t. the input vector. Same convention
     /// as the Q4_K variant — `dx[i] = Σ_j dy[j] * dequant(W)[j, i]`.
     /// Required for the tied embedding (Gemma 4's `token_embd` is Q6_K)
@@ -240,6 +275,50 @@ impl Pipelines {
     pub fn new(device: &wgpu::Device) -> Self {
         Self {
             f16_matmul: build(device, "f16_matmul", kernels::F16_MATMUL),
+            q4_0_matmul: build(device, "q4_0_matmul", kernels::Q4_0_DEQUANT_MATMUL),
+            q5_0_matmul: build(device, "q5_0_matmul", kernels::Q5_0_DEQUANT_MATMUL),
+            q8_0_matmul: build(device, "q8_0_matmul", kernels::Q8_0_DEQUANT_MATMUL),
+            moe_router: build(device, "moe_router", kernels::MOE_ROUTER),
+            moe_geglu_halves: build(device, "moe_geglu_halves", kernels::MOE_GEGLU_HALVES),
+            moe_combine: build(device, "moe_combine", kernels::MOE_COMBINE),
+            moe_expert_matmul_q4_k: build(
+                device,
+                "moe_expert_matmul_q4_k",
+                kernels::MOE_EXPERT_MATMUL_Q4_K,
+            ),
+            moe_expert_matmul_q5_0: build(
+                device,
+                "moe_expert_matmul_q5_0",
+                kernels::MOE_EXPERT_MATMUL_Q5_0,
+            ),
+            moe_expert_matmul_q8_0: build(
+                device,
+                "moe_expert_matmul_q8_0",
+                kernels::MOE_EXPERT_MATMUL_Q8_0,
+            ),
+            diffusion_attention: build(device, "diffusion_attention", kernels::DIFFUSION_ATTENTION),
+            moe_router_batched: build(device, "moe_router_batched", kernels::MOE_ROUTER_BATCHED),
+            moe_expert_matmul_batched_q4_k: build(
+                device,
+                "moe_expert_matmul_batched_q4_k",
+                kernels::MOE_EXPERT_MATMUL_BATCHED_Q4_K,
+            ),
+            moe_expert_matmul_batched_q5_0: build(
+                device,
+                "moe_expert_matmul_batched_q5_0",
+                kernels::MOE_EXPERT_MATMUL_BATCHED_Q5_0,
+            ),
+            moe_expert_matmul_batched_q8_0: build(
+                device,
+                "moe_expert_matmul_batched_q8_0",
+                kernels::MOE_EXPERT_MATMUL_BATCHED_Q8_0,
+            ),
+            moe_geglu_halves_batched: build(
+                device,
+                "moe_geglu_halves_batched",
+                kernels::MOE_GEGLU_HALVES_BATCHED,
+            ),
+            moe_combine_batched: build(device, "moe_combine_batched", kernels::MOE_COMBINE_BATCHED),
             q4_k_matmul: build(device, "q4_k_matmul", kernels::Q4_K_DEQUANT_MATMUL),
             q6_k_matmul: build(device, "q6_k_matmul", kernels::Q6_K_DEQUANT_MATMUL),
             rmsnorm: build(device, "rmsnorm", kernels::RMSNORM),
@@ -253,6 +332,11 @@ impl Pipelines {
                 device,
                 "matmul_q4_k_backward_input",
                 kernels::MATMUL_Q4_K_BACKWARD_INPUT,
+            ),
+            matmul_q4_0_backward_input: build(
+                device,
+                "matmul_q4_0_backward_input",
+                kernels::MATMUL_Q4_0_BACKWARD_INPUT,
             ),
             matmul_q6_k_backward_input: build(
                 device,
@@ -301,6 +385,23 @@ impl Pipelines {
             residual_add: build(device, "residual_add", kernels::RESIDUAL_ADD),
             scale: build(device, "scale", kernels::SCALE),
             rmsnorm_per_row: build(device, "rmsnorm_per_row", kernels::RMSNORM_PER_ROW),
+            layernorm_affine: build(device, "layernorm_affine", kernels::LAYERNORM_AFFINE),
+            conv1d: build(device, "conv1d", kernels::CONV1D),
+            conv1d_f16: build(device, "conv1d_f16", kernels::CONV1D_F16),
+            conv_transpose1d: build(device, "conv_transpose1d", kernels::CONV_TRANSPOSE1D),
+            conv_transpose1d_f16: build(
+                device,
+                "conv_transpose1d_f16",
+                kernels::CONV_TRANSPOSE1D_F16,
+            ),
+            leaky_relu: build(device, "leaky_relu", kernels::LEAKY_RELU),
+            gelu_exact: build(device, "gelu_exact", kernels::GELU_EXACT),
+            snake: build(device, "snake", kernels::SNAKE),
+            adain: build(device, "adain", kernels::ADAIN),
+            istft: build(device, "istft", kernels::ISTFT),
+            transpose2d: build(device, "transpose2d", kernels::TRANSPOSE2D),
+            nearest_upsample2x: build(device, "nearest_upsample2x", kernels::NEAREST_UPSAMPLE2X),
+            spec_phase: build(device, "spec_phase", kernels::SPEC_PHASE),
             q4_k_matmul_tiled: build(
                 device,
                 "q4_k_matmul_tiled",
@@ -312,7 +413,10 @@ impl Pipelines {
                 kernels::Q6_K_DEQUANT_MATMUL_TILED,
             ),
             conv2d: build(device, "conv2d", kernels::CONV2D),
+            conv2d_chf: build(device, "conv2d_chf", kernels::CONV2D_CHF),
+            conv2d_chf_f16: build(device, "conv2d_chf_f16", kernels::CONV2D_CHF_F16),
             avg_pool2d: build(device, "avg_pool2d", kernels::AVG_POOL2D),
+            avg_pool2d_half_chf: build(device, "avg_pool2d_half_chf", kernels::AVG_POOL2D_HALF_CHF),
             clamp: build(device, "clamp", kernels::CLAMP),
             quick_geglu: build(device, "quick_geglu", kernels::QUICK_GEGLU),
             rope_2d: build(device, "rope_2d", kernels::ROPE_2D),

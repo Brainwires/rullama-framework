@@ -19,6 +19,14 @@
 //! - [`session`] — `TrainingSession` driving one training step
 //!   end-to-end (forward → loss → backward → Adam).
 
+// See the equivalent note in the rullama crate root — numeric/GPU training code
+// where these lints add noise without readability gains.
+#![allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::needless_range_loop
+)]
+
 /// JSONL dataset loader + tokenizer trait.
 pub mod dataset_loader;
 /// Per-LoRA GPU state: A and B matrices for each wrapped projection.

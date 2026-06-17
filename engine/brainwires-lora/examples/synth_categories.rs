@@ -1,7 +1,7 @@
 //! Native CLI to validate the synthetic-dataset thinking-mode addition.
 //!
 //! Runs the SAME categories meta-prompt that
-//! `examples/web/src/lib/syntheticDataset.ts::categoriesPrompt` builds
+//! `web/src/lib/syntheticDataset.ts::categoriesPrompt` builds
 //! in the browser, but on the native chat path so we can compare the
 //! thinking-mode-on and thinking-mode-off outputs side-by-side on
 //! Gemma 4 e2b without round-tripping through the PWA.

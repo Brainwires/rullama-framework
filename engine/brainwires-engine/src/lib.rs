@@ -22,7 +22,23 @@
 //! patch release without notice. External callers that pin against them
 //! do so at their own risk.
 
+// Numerically-heavy GPU/reference code: kernel dispatchers carry many dimension
+// params, math returns multi-field tuples, and tight index loops over parallel
+// arrays read clearer than iterator gymnastics. These three lints fire
+// pervasively here for no real readability win (already allowed ad-hoc on dozens
+// of functions); allow them crate-wide rather than scatter refactors through
+// parity-validated math.
+#![allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::needless_range_loop
+)]
+
 pub mod api;
+/// JS-facing DiffusionGemma surface — `DiffusionGemma` block-diffusion engine.
+pub mod diffusion;
+/// JS-facing embedding surface — `EmbeddingModel` over EmbeddingGemma.
+pub mod embed;
 pub mod error;
 /// Inference-time LoRA adapter — parsed from safetensors bytes,
 /// attaches to a `Model` via `loadAdapter` / `clearAdapter`.
@@ -41,10 +57,12 @@ pub mod model;
 pub mod multimodal;
 #[doc(hidden)]
 pub mod reference;
+pub mod styletts2_clone;
 #[doc(hidden)]
 pub mod template;
 #[doc(hidden)]
 pub mod tokenizer;
+pub mod tts;
 
 pub use error::RullamaError;
 

@@ -588,6 +588,31 @@ pub fn matmul_q6_k_backward_input(w_bytes: &[u8], dy: &[f32], k: usize, n: usize
     }
 }
 
+/// Backward of `y = matmul_q4_0(W, x)` w.r.t. `x`. Same shape conventions as the
+/// Q4_K variant — `W` is `[n, k]` row-major (k/32 Q4_0 blocks of 18 bytes), `dy`
+/// has length `n`, `dx` has length `k`. Used to fine-tune on a Q4_0 (QAT) base.
+/// The weight is frozen (LoRA convention) — no weight gradient.
+pub fn matmul_q4_0_backward_input(w_bytes: &[u8], dy: &[f32], k: usize, n: usize, dx: &mut [f32]) {
+    assert_eq!(dy.len(), n, "dy length mismatch");
+    assert_eq!(dx.len(), k, "dx length mismatch");
+    assert_eq!(k % 32, 0, "k must be divisible by 32 for Q4_0");
+
+    let total = n * k;
+    let mut w_f32 = vec![0.0f32; total];
+    crate::gguf::quant::dequant_q4_0(w_bytes, &mut w_f32).expect("Q4_0 dequant");
+
+    for x in dx.iter_mut() {
+        *x = 0.0;
+    }
+    for j in 0..n {
+        let row = &w_f32[j * k..(j + 1) * k];
+        let dyj = dy[j];
+        for i in 0..k {
+            dx[i] += dyj * row[i];
+        }
+    }
+}
+
 /// Per-row RMSNorm backward — runs `rmsnorm_backward` independently per
 /// row. `x` is `[n_rows × n]`, `w` is the shared per-element weight
 /// `[n]` (`None` ⇒ unweighted), `dy` and `dx` are both `[n_rows × n]`.

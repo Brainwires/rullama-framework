@@ -27,11 +27,12 @@ use crate::backend::dispatch::{
     attention_probs_chained, cross_entropy_backward_chained, geglu_backward_chained, geglu_chained,
     lora_matmul_col_chained, lora_matmul_fused_chained, lora_matmul_row_chained,
     lora_outer_add_chained, make_dummy_storage, matmul_q4_k_backward_input_chained,
-    matmul_q4_k_backward_input_tile_chained, matmul_q4_k_chained,
-    matmul_q6_k_backward_input_chained, matmul_q6_k_backward_input_tile_chained,
-    matmul_q6_k_chained, residual_add_chained, rmsnorm_backward_chained, rmsnorm_chained,
-    rmsnorm_per_row_backward_chained, rmsnorm_per_row_chained, rope_neox_backward_chained,
-    rope_neox_chained, scale_chained, softcap_chained,
+    matmul_q4_k_backward_input_tile_chained, matmul_q6_k_backward_input_chained,
+    matmul_q6_k_backward_input_tile_chained, matmul_quant_chained, moe_combine_chained,
+    moe_expert_matmul_chained, moe_geglu_halves_chained, moe_router_chained, residual_add_chained,
+    rmsnorm_backward_chained, rmsnorm_chained, rmsnorm_per_row_backward_chained,
+    rmsnorm_per_row_chained, rope_neox_backward_chained, rope_neox_chained, scale_chained,
+    softcap_chained,
 };
 
 /// Activation capture buffers for one transformer layer. Used by the
@@ -105,7 +106,7 @@ pub struct LoraSlot<'a> {
 /// `(phase, current, total)` where `phase` is one of `"forward"` /
 /// `"backward"` and `current` is 1-based logical layer index. Used
 /// by training to drive a VisionProgress-style status strip (see
-/// `examples/web/src/components/TrainingProgress.tsx`) — without the
+/// `web/src/components/TrainingProgress.tsx`) — without the
 /// per-layer beacons the user stares at a "step 0 / N" counter while
 /// a 30 s pipeline-compile + first step grinds in silence.
 pub type LayerProgressCb<'a> = dyn Fn(&str, u32, u32) + 'a;
@@ -215,6 +216,9 @@ pub struct Forward {
     ple_act: wgpu::Buffer,   // ple_dim
     ple_proj: wgpu::Buffer,  // d_model
 
+    // Sparse-MoE per-layer scratch (gemma4:26b-a4b). None on dense models.
+    moe: Option<MoeScratch>,
+
     // Output projection per-tile scratch (sized to max tile rows). Each output tile
     // matmul writes into this; we then copy_buffer_to_buffer into `logits` at the
     // correct vocab-offset (storage-buffer offset alignment is 256, but
@@ -288,8 +292,36 @@ pub struct Forward {
     /// `TrainingHyperparams::memory_tight`.
     mobile_mode: bool,
 
+    /// **Per-expert MoE streaming.** When true, the MoE FFN fetches ONLY the
+    /// top-k selected experts per layer (range-fetch one expert slice each via
+    /// `buffer_expert_async`) instead of uploading the whole 128-deep
+    /// `ffn_*_exps` tensor. A token routes to 8 of 128, so this is ~16× less
+    /// streaming bandwidth — the lever that turns the streamed 26b from "fits
+    /// but ~50 s/tok" into something usable. Requires a mid-layer GPU sync to
+    /// read back the router's expert ids before fetching; only sensible
+    /// alongside `forward_destroy_per_layer` (streaming inference). Off by
+    /// default — the whole-tensor path is faster when the model fits.
+    moe_stream_experts: bool,
+
     // Cached scale factor for the final logits softcap dispatch.
     pos: u32,
+}
+
+/// GPU scratch for the sparse-MoE FFN: router outputs + per-slot expert
+/// pipelines. See the allocation site for why per-slot buffers are distinct.
+struct MoeScratch {
+    expert_ids: wgpu::Buffer,     // top_k × u32 (router selection, GPU-resident)
+    expert_weights: wgpu::Buffer, // top_k × f32 (renormalized routing weights)
+    gu: Vec<wgpu::Buffer>,        // per slot: fused gate_up output [2*expert_ffn]
+    act: Vec<wgpu::Buffer>,       // per slot: GeGLU output [expert_ffn]
+    down: Vec<wgpu::Buffer>,      // per slot: down projection [d_model]
+    slots: wgpu::Buffer,          // concatenated down outputs [top_k * d_model]
+    moe_out: wgpu::Buffer,        // combined expert sum [d_model]
+    moe_x: wgpu::Buffer,          // pre_ffw_norm_2(hidden), then reused for post-norm out
+    mlp_normed: wgpu::Buffer,     // post_ffw_norm_1(dense mlp out)
+    // Per-expert streaming only:
+    zero_ids: wgpu::Buffer, // top_k × u32 all-zero (index a 1-expert buffer at slot 0)
+    expert_ids_read: wgpu::Buffer, // top_k × u32 staging (COPY_DST|MAP_READ) for the id readback
 }
 
 impl Forward {
@@ -371,6 +403,44 @@ impl Forward {
         let ple_state = alloc_storage("fwd.ple_state", ple_dim.max(1));
         let ple_act = alloc_storage("fwd.ple_act", ple_dim.max(1));
         let ple_proj = alloc_storage("fwd.ple_proj", d_model);
+
+        // Sparse-MoE scratch (gemma4:26b-a4b). Per-slot gu/act/down buffers are
+        // DELIBERATELY distinct allocations: each slot's expert matmul binds the
+        // same pipeline + weight + ids + x, so a shared output would collapse
+        // their bind-cache keys onto one cached uniform — and every dispatch in
+        // the encoder would read the LAST slot's params (queue writes land
+        // before the command buffer runs).
+        let moe = if cfg.has_moe() {
+            let top_k = cfg.expert_used_count as usize;
+            let e_ffn = cfg.expert_ffn as usize;
+            Some(MoeScratch {
+                expert_ids: alloc_storage("fwd.moe.ids", top_k),
+                expert_weights: alloc_storage("fwd.moe.weights", top_k),
+                gu: (0..top_k)
+                    .map(|s| alloc_storage(&format!("fwd.moe.gu.{s}"), 2 * e_ffn))
+                    .collect(),
+                act: (0..top_k)
+                    .map(|s| alloc_storage(&format!("fwd.moe.act.{s}"), e_ffn))
+                    .collect(),
+                down: (0..top_k)
+                    .map(|s| alloc_storage(&format!("fwd.moe.down.{s}"), d_model))
+                    .collect(),
+                slots: alloc_storage("fwd.moe.slots", top_k * d_model),
+                moe_out: alloc_storage("fwd.moe.out", d_model),
+                moe_x: alloc_storage("fwd.moe.x", d_model),
+                mlp_normed: alloc_storage("fwd.moe.mlp_normed", d_model),
+                // wgpu zero-inits storage buffers, so zero_ids is all-zero.
+                zero_ids: alloc_storage("fwd.moe.zero_ids", top_k),
+                expert_ids_read: device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("fwd.moe.ids_read"),
+                    size: (top_k * 4).max(4) as u64,
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                }),
+            })
+        } else {
+            None
+        };
 
         // Output projection tile scratch: large enough to hold the worst-case tile
         // (MAX_TILE_BYTES / row_bytes rows × 4 bytes per row of f32 logits). 80 MiB
@@ -473,6 +543,7 @@ impl Forward {
             ple_state,
             ple_act,
             ple_proj,
+            moe,
             logits_tile,
             logits,
             logits_read,
@@ -485,6 +556,7 @@ impl Forward {
             max_context,
             cancel_flag: Arc::new(AtomicBool::new(false)),
             forward_destroy_per_layer: false,
+            moe_stream_experts: false,
             // u32::MAX = no floor restriction (every layer destroyed
             // when forward_destroy_per_layer is on). TrainingSession::new
             // overrides this to the actual backward_layer_floor.
@@ -526,6 +598,13 @@ impl Forward {
     /// inference.
     pub fn set_forward_destroy_per_layer(&mut self, on: bool) {
         self.forward_destroy_per_layer = on;
+    }
+
+    /// Enable per-expert MoE streaming (fetch only the top-k selected experts
+    /// per layer). See the field doc on `moe_stream_experts`. Pair with
+    /// `set_forward_destroy_per_layer(true)`.
+    pub fn set_moe_stream_experts(&mut self, on: bool) {
+        self.moe_stream_experts = on;
     }
 
     /// Set the floor used by per-layer forward destroy. Only layers
@@ -1003,6 +1082,13 @@ impl Forward {
         // Tiled output projection — same MAX_TILE_BYTES discipline as
         // the in-line one in `run_forward_from_hidden`.
         const MAX_TILE_BYTES: usize = 8 * 1024 * 1024;
+        // Mobile: stream token_embd one tile at a time and destroy each (peak ~8 MiB) instead of
+        // the cached ~315 MiB. This head is the documented iPhone forward→head jetsam point.
+        if self.mobile_mode {
+            self.output_proj_token_embd_streaming(token_embd_dtype)
+                .await?;
+            return Ok(());
+        }
         let tiles = wc
             .buffer_tiles_async("token_embd.weight", MAX_TILE_BYTES)
             .await?;
@@ -1037,6 +1123,60 @@ impl Forward {
         Ok(())
     }
 
+    /// Streaming head output projection for `mobile_mode`: fetch one `token_embd` tile, matmul it
+    /// into `logits`, **destroy it**, yield — so token_embd GPU residency is ~one 8 MiB tile
+    /// instead of the cached ~315 MiB that jetsam-killed the iPhone at the forward→head
+    /// transition. Assumes `self.norm_x` already holds the final-normed hidden state. Bit-identical
+    /// to the cached tile loop (same matmuls, same tiles) — it just frees each tile after its use.
+    async fn output_proj_token_embd_streaming(&self, token_embd_dtype: GgmlDtype) -> Result<()> {
+        const MAX_TILE_BYTES: usize = 8 * 1024 * 1024;
+        let d_model = self.cfg.d_model as usize;
+        let wc = self.wcache.clone();
+        let n_tiles = wc.tile_count("token_embd.weight", MAX_TILE_BYTES)?;
+        for i in 0..n_tiles {
+            let tile = wc
+                .fetch_tile_uncached("token_embd.weight", MAX_TILE_BYTES, i)
+                .await?;
+            let mut enc = self
+                .ctx
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("fwd.outproj.stream_tile"),
+                });
+            run_matmul_into_buf(
+                &self.ctx,
+                &self.pipes,
+                &mut enc,
+                token_embd_dtype,
+                &tile.buffer,
+                &self.norm_x,
+                &self.logits_tile,
+                tile.n_rows,
+                d_model,
+                "fwd.outproj_stream_tile",
+            )?;
+            enc.copy_buffer_to_buffer(
+                &self.logits_tile,
+                0,
+                &self.logits,
+                (tile.row_start as u64) * 4,
+                (tile.n_rows as u64) * 4,
+            );
+            self.ctx.queue.submit(Some(enc.finish()));
+            // Invalidate this tile's bind-group cache entries BEFORE destroy. wgpu keeps a buffer's
+            // memory alive as long as a cached BindGroup references it, so destroy() alone frees
+            // nothing — and prefill runs this outproj on EVERY token, so without the invalidate the
+            // fresh per-tile buffers leak ~315 MiB/token (the iPhone prefill climb). Mirrors
+            // WeightCache::drop_*_destroy. The submit already captured the bind group, so dropping
+            // the cache entry now is safe; the memory frees once the GPU drains.
+            let tile_id = crate::backend::buf_id(&tile.buffer);
+            self.ctx.bind_cache.invalidate_buffers(&[tile_id]);
+            tile.buffer.destroy();
+            self.wasm_yield_zero().await;
+        }
+        Ok(())
+    }
+
     /// Overwrite `self.hidden` from a slice of `src` at byte offset
     /// `src_offset`. Used by the single-forward PerPosition
     /// orchestrator to point the final-norm + output proj at a
@@ -1058,6 +1198,32 @@ impl Forward {
         self.pos = 0;
         for l in self.kv_lens.iter_mut() {
             *l = 0;
+        }
+    }
+
+    /// Drop all KV-cache positions at index `>= n`, keeping `[0, n)` intact,
+    /// and rewind `pos` to `n` so the next `step()` appends at position `n`.
+    ///
+    /// This is the partial counterpart to [`reset`]: it lets the caller keep
+    /// a shared prefix of the cache (e.g. the system prompt) and re-prefill
+    /// only the divergent tail — the enabler for hot-starting a new
+    /// conversation without re-reading the system block.
+    ///
+    /// Sound for every layer type because the cache is **linear** (position
+    /// `i` lives at byte offset `i * row_bytes`; the bytes beyond `n` are
+    /// simply stale and get overwritten by future appends) and sliding-window
+    /// attention is applied as a **compute-time mask**, not a ring buffer — so
+    /// truncating to `n` and recomputing `earliest = max(0, pos+1-window)`
+    /// stays correct. Donor (KV-sharing) layers inherit the truncation through
+    /// the shared buffer + their own `kv_lens` entry. No GPU work — the buffers
+    /// retain their data; only the `pos`/`kv_lens` bookkeeping changes.
+    ///
+    /// `n` is clamped to the current `pos` (you can only truncate down).
+    pub fn truncate_kv(&mut self, n: u32) {
+        let n = n.min(self.pos);
+        self.pos = n;
+        for l in self.kv_lens.iter_mut() {
+            *l = (*l).min(n);
         }
     }
 
@@ -2062,17 +2228,18 @@ impl Forward {
         let token_embd_dtype = wc.dtype("token_embd.weight")?;
 
         // PLE prep weights
-        let (ple_proj_w_buf, ple_proj_norm_w_buf, ple_proj_n) = if self.cfg.has_ple() {
-            if wc.dtype("per_layer_model_proj.weight")? != GgmlDtype::Q4_K {
-                return Err(RullamaError::Inference(
-                    "per_layer_model_proj expected Q4_K".into(),
-                ));
-            }
+        let (ple_proj_w_buf, ple_proj_norm_w_buf, ple_proj_n, ple_proj_dt) = if self.cfg.has_ple() {
+            let proj_dt = wc.dtype("per_layer_model_proj.weight")?;
             let proj_w = wc.buffer_async("per_layer_model_proj.weight").await?;
             let proj_norm = wc.buffer_async("per_layer_proj_norm.weight").await?;
-            (Some(proj_w), Some(proj_norm), n_layers * ple_dim)
+            (
+                Some(proj_w),
+                Some(proj_norm),
+                n_layers * ple_dim,
+                Some(proj_dt),
+            )
         } else {
-            (None, None, 0)
+            (None, None, 0, None)
         };
 
         // ---- build the per-token CommandEncoder ----
@@ -2094,7 +2261,7 @@ impl Forward {
             let proj_w = ple_proj_w_buf.as_ref().unwrap();
             let proj_norm_w = ple_proj_norm_w_buf.as_ref().unwrap();
 
-            matmul_q4_k_chained(
+            matmul_quant_chained(
                 &self.ctx,
                 &self.pipes,
                 &mut enc,
@@ -2103,7 +2270,8 @@ impl Forward {
                 &self.per_layer_proj,
                 d_model,
                 ple_proj_n,
-            );
+                ple_proj_dt.unwrap(),
+            )?;
             scale_chained(
                 &self.ctx,
                 &self.pipes,
@@ -2148,10 +2316,23 @@ impl Forward {
         // GPU is unaffected. Empirically anything wider than 1 layer per
         // submit (tried 3) re-introduces the iPhone WebContent crash on the
         // first step — the per-layer cadence is the working strip-line.
+        let time_layers = std::env::var("DG_LAYER_TIME").is_ok();
+        let mut t_encode = std::time::Duration::ZERO;
+        let mut t_gpu = std::time::Duration::ZERO;
         for i in 0..n_layers as u32 {
             let cap = capture.map(|c| &c[i as usize]);
             let lora = loras.map(|l| &l[i as usize]);
+            // `Instant::now()` panics on wasm32-unknown-unknown ("time not
+            // implemented on this platform") — only call it when per-layer
+            // timing is actually requested (DG_LAYER_TIME, native debug only;
+            // env vars don't exist in the browser so this is always false on
+            // wasm). Calling it unconditionally crashed every browser forward.
+            let _te = time_layers.then(std::time::Instant::now);
             self.encode_layer(&mut enc, i, pos, cap, lora).await?;
+            if let Some(te) = _te {
+                t_encode += te.elapsed();
+            }
+            let _tg = time_layers.then(std::time::Instant::now);
             self.ctx.queue.submit(Some(enc.finish()));
             // Per-layer cancel check. Encoder submits are the natural
             // boundary because the GPU is idle between layers under
@@ -2182,7 +2363,24 @@ impl Forward {
             // in cache.)
             if self.forward_destroy_per_layer && i < self.forward_destroy_layer_floor {
                 let _drain = read_buf_stats(&self.ctx, &self.hidden, 1).await?;
-                let _ = self.wcache.drop_blk_layer_range_destroy(i, i + 1);
+                if self.moe_stream_experts {
+                    // Per-expert streaming: keep the non-expert weights (attn +
+                    // dense FFN + norms, ~1.3 GB for all 30 layers) GPU-RESIDENT
+                    // so tokens 2+ re-fetch only the streamed experts, not the
+                    // whole layer. Drop just this layer's per-expert buffers
+                    // (`blk.{i}.ffn_{gate_up,down}_exps.weight#e*`).
+                    let _ = self
+                        .wcache
+                        .drop_prefix_destroy(&format!("blk.{i}.ffn_gate_up_exps"));
+                    let _ = self
+                        .wcache
+                        .drop_prefix_destroy(&format!("blk.{i}.ffn_down_exps"));
+                } else {
+                    let _ = self.wcache.drop_blk_layer_range_destroy(i, i + 1);
+                }
+            }
+            if let Some(tg) = _tg {
+                t_gpu += tg.elapsed();
             }
             // Per-layer progress beacon — fired AFTER the submit so
             // the caller's "layer N done" message correlates with the
@@ -2216,6 +2414,12 @@ impl Forward {
                     d_model,
                 );
             }
+        }
+        if time_layers {
+            eprintln!(
+                "[layer-time] encode(fetch+midsync) {:.2?}  submit+drain(gpu) {:.2?}",
+                t_encode, t_gpu
+            );
         }
 
         // ---- final norm (in-place into hidden via norm_y as scratch) ----
@@ -2255,36 +2459,44 @@ impl Forward {
         // staging allocation, it's a single 80 MiB wgpu::Buffer creation
         // on top of ~2 GB of resident layer weights. 8 MiB tiles work.
         const MAX_TILE_BYTES: usize = 8 * 1024 * 1024;
-        let tiles = wc
-            .buffer_tiles_async("token_embd.weight", MAX_TILE_BYTES)
-            .await?;
-        for tile in &tiles {
-            run_matmul_into_buf(
-                &self.ctx,
-                &self.pipes,
-                &mut enc,
-                token_embd_dtype,
-                &tile.buffer,
-                &self.norm_x,
-                &self.logits_tile,
-                tile.n_rows,
-                d_model,
-                "fwd.output_tile",
-            )?;
-            enc.copy_buffer_to_buffer(
-                &self.logits_tile,
-                0,
-                &self.logits,
-                (tile.row_start as u64) * 4,
-                (tile.n_rows as u64) * 4,
-            );
-            self.ctx.queue.submit(Some(enc.finish()));
-            enc = self
-                .ctx
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("fwd.out_proj_encoder.cont"),
-                });
+        // Mobile: stream + destroy token_embd one tile at a time (~8 MiB peak) instead of the
+        // cached ~315 MiB. `enc` is empty here (final norm was flushed above), so the helper's
+        // own per-tile encoders don't conflict, and `enc` stays valid for the lm_head inject below.
+        if self.mobile_mode {
+            self.output_proj_token_embd_streaming(token_embd_dtype)
+                .await?;
+        } else {
+            let tiles = wc
+                .buffer_tiles_async("token_embd.weight", MAX_TILE_BYTES)
+                .await?;
+            for tile in &tiles {
+                run_matmul_into_buf(
+                    &self.ctx,
+                    &self.pipes,
+                    &mut enc,
+                    token_embd_dtype,
+                    &tile.buffer,
+                    &self.norm_x,
+                    &self.logits_tile,
+                    tile.n_rows,
+                    d_model,
+                    "fwd.output_tile",
+                )?;
+                enc.copy_buffer_to_buffer(
+                    &self.logits_tile,
+                    0,
+                    &self.logits,
+                    (tile.row_start as u64) * 4,
+                    (tile.n_rows as u64) * 4,
+                );
+                self.ctx.queue.submit(Some(enc.finish()));
+                enc = self
+                    .ctx
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("fwd.out_proj_encoder.cont"),
+                    });
+            }
         }
 
         // ---- lm_head LoRA forward inject ----
@@ -2430,65 +2642,148 @@ impl Forward {
             .buffer_async(&format!("{prefix}post_ffw_norm.weight"))
             .await?;
 
-        let q_w = self
-            .wcache
-            .buffer_async(&format!("{prefix}attn_q.weight"))
-            .await?;
+        // Weight quant dtype is read alongside each buffer so the matmul routes to
+        // the matching dequant kernel — Q4_K for standard Q4_K_M models, Q4_0 for
+        // the QAT models (gemma4:*-it-qat), Q6_K where present. (Previously q/k/o/
+        // gate/up assumed Q4_K, which is only true for the Q4_K_M mix.)
+        let q_name = format!("{prefix}attn_q.weight");
+        let q_w = self.wcache.buffer_async(&q_name).await?;
+        let q_dt = self.wcache.dtype(&q_name)?;
         let q_norm_w = self
             .wcache
             .buffer_async(&format!("{prefix}attn_q_norm.weight"))
             .await?;
-        let o_w = self
-            .wcache
-            .buffer_async(&format!("{prefix}attn_output.weight"))
-            .await?;
+        let o_name = format!("{prefix}attn_output.weight");
+        let o_w = self.wcache.buffer_async(&o_name).await?;
+        let o_dt = self.wcache.dtype(&o_name)?;
 
-        let (k_w, k_norm_w, v_w, v_w_dtype) = if donor.is_none() {
-            let kw = self
-                .wcache
-                .buffer_async(&format!("{prefix}attn_k.weight"))
-                .await?;
+        let (k_w, k_norm_w, v_w, v_w_dtype, k_w_dtype) = if donor.is_none() {
+            let k_name = format!("{prefix}attn_k.weight");
+            let kw = self.wcache.buffer_async(&k_name).await?;
+            let k_dt = self.wcache.dtype(&k_name)?;
             let knw = self
                 .wcache
                 .buffer_async(&format!("{prefix}attn_k_norm.weight"))
                 .await?;
             let v_name = format!("{prefix}attn_v.weight");
-            let vw = self.wcache.buffer_async(&v_name).await?;
-            let dt = self.wcache.dtype(&v_name)?;
-            (Some(kw), Some(knw), Some(vw), Some(dt))
+            // Larger Gemma 4 variants (12b) ship NO attn_v on global layers —
+            // those reuse the raw K projection as V (handled at the matmul site
+            // below). buffer_opt_async returns None there.
+            let vw = self.wcache.buffer_opt_async(&v_name).await?;
+            let dt = match &vw {
+                Some(_) => Some(self.wcache.dtype(&v_name)?),
+                None => None,
+            };
+            (Some(kw), Some(knw), vw, dt, Some(k_dt))
         } else {
-            (None, None, None, None)
+            (None, None, None, None, None)
         };
 
-        let gate_w = self
-            .wcache
-            .buffer_async(&format!("{prefix}ffn_gate.weight"))
-            .await?;
-        let up_w = self
-            .wcache
-            .buffer_async(&format!("{prefix}ffn_up.weight"))
-            .await?;
+        let gate_name = format!("{prefix}ffn_gate.weight");
+        let gate_w = self.wcache.buffer_async(&gate_name).await?;
+        let gate_dt = self.wcache.dtype(&gate_name)?;
+        let up_name = format!("{prefix}ffn_up.weight");
+        let up_w = self.wcache.buffer_async(&up_name).await?;
+        let up_dt = self.wcache.dtype(&up_name)?;
         let down_name = format!("{prefix}ffn_down.weight");
         let down_w = self.wcache.buffer_async(&down_name).await?;
         let down_dtype = self.wcache.dtype(&down_name)?;
 
+        // Sparse-MoE weights (gemma4:26b-a4b: every layer carries a routed
+        // expert block IN PARALLEL with the dense MLP above). Tensor presence
+        // decides per layer, mirroring Ollama's nil-field checks. v0 supports
+        // the FUSED ffn_gate_up_exps layout (the only one Google has shipped).
+        struct MoeLayerWeights {
+            router: wgpu::Buffer,
+            router_scale: Option<wgpu::Buffer>,
+            // The whole stacked expert tensors — loaded ONLY when not
+            // per-expert-streaming (else `None`, and the expert loop
+            // range-fetches each selected expert by name).
+            gate_up: Option<wgpu::Buffer>,
+            gate_up_name: String,
+            gate_up_dt: GgmlDtype,
+            down: Option<wgpu::Buffer>,
+            down_name: String,
+            down_dt: GgmlDtype,
+            down_scale: Option<wgpu::Buffer>,
+            pre_norm_2: wgpu::Buffer,
+            post_norm_1: wgpu::Buffer,
+            post_norm_2: wgpu::Buffer,
+        }
+        let moe_w: Option<MoeLayerWeights> = if self.cfg.has_moe() {
+            let router_name = format!("{prefix}ffn_gate_inp.weight");
+            match self.wcache.buffer_opt_async(&router_name).await? {
+                Some(router) => {
+                    let gu_name = format!("{prefix}ffn_gate_up_exps.weight");
+                    if self.wcache.dtype(&gu_name).is_err() {
+                        return Err(RullamaError::Inference(format!(
+                            "MoE layer {i}: split ffn_gate_exps/ffn_up_exps layout not yet \
+                                 supported (expected fused {gu_name})"
+                        )));
+                    }
+                    let gate_up_dt = self.wcache.dtype(&gu_name)?;
+                    let d_name = format!("{prefix}ffn_down_exps.weight");
+                    let down_dt = self.wcache.dtype(&d_name)?;
+                    // Stream per-expert ⇒ skip the whole-tensor uploads.
+                    let (gate_up, down) = if self.moe_stream_experts {
+                        (None, None)
+                    } else {
+                        (
+                            Some(self.wcache.buffer_async(&gu_name).await?),
+                            Some(self.wcache.buffer_async(&d_name).await?),
+                        )
+                    };
+                    Some(MoeLayerWeights {
+                        router,
+                        router_scale: self
+                            .wcache
+                            .buffer_opt_async(&format!("{prefix}ffn_gate_inp.scale"))
+                            .await?,
+                        gate_up,
+                        gate_up_name: gu_name,
+                        gate_up_dt,
+                        down,
+                        down_name: d_name,
+                        down_dt,
+                        down_scale: self
+                            .wcache
+                            .buffer_opt_async(&format!("{prefix}ffn_down_exps.scale"))
+                            .await?,
+                        pre_norm_2: self
+                            .wcache
+                            .buffer_async(&format!("{prefix}pre_ffw_norm_2.weight"))
+                            .await?,
+                        post_norm_1: self
+                            .wcache
+                            .buffer_async(&format!("{prefix}post_ffw_norm_1.weight"))
+                            .await?,
+                        post_norm_2: self
+                            .wcache
+                            .buffer_async(&format!("{prefix}post_ffw_norm_2.weight"))
+                            .await?,
+                    })
+                }
+                None => None,
+            }
+        } else {
+            None
+        };
+
         // PLE-injection weights (only when has_ple)
-        let (inp_gate_w, proj_w, post_norm_w) = if self.cfg.has_ple() {
-            let a = self
-                .wcache
-                .buffer_async(&format!("{prefix}inp_gate.weight"))
-                .await?;
-            let b = self
-                .wcache
-                .buffer_async(&format!("{prefix}proj.weight"))
-                .await?;
+        let (inp_gate_w, proj_w, post_norm_w, inp_gate_dt, proj_dt) = if self.cfg.has_ple() {
+            let inp_gate_name = format!("{prefix}inp_gate.weight");
+            let a = self.wcache.buffer_async(&inp_gate_name).await?;
+            let a_dt = self.wcache.dtype(&inp_gate_name)?;
+            let proj_name = format!("{prefix}proj.weight");
+            let b = self.wcache.buffer_async(&proj_name).await?;
+            let b_dt = self.wcache.dtype(&proj_name)?;
             let c = self
                 .wcache
                 .buffer_async(&format!("{prefix}post_norm.weight"))
                 .await?;
-            (Some(a), Some(b), Some(c))
+            (Some(a), Some(b), Some(c), Some(a_dt), Some(b_dt))
         } else {
-            (None, None, None)
+            (None, None, None, None, None)
         };
 
         let factors_w = if matches!(kind, LayerKind::Global) {
@@ -2526,7 +2821,7 @@ impl Forward {
         }
 
         // Q/K/V projections from norm_x
-        matmul_q4_k_chained(
+        matmul_quant_chained(
             &self.ctx,
             &self.pipes,
             enc,
@@ -2535,7 +2830,8 @@ impl Forward {
             &self.q,
             d_model,
             n_heads * head_dim,
-        );
+            q_dt,
+        )?;
 
         // ---- LoRA forward correction (q) — fused ----
         // Fused into ONE dispatch: z=A·norm_x AND self.q+=scale·B·z.
@@ -2617,10 +2913,9 @@ impl Forward {
         if donor.is_none() {
             let kw = k_w.as_ref().unwrap();
             let knw = k_norm_w.as_ref().unwrap();
-            let vw = v_w.as_ref().unwrap();
-            let vdt = v_w_dtype.unwrap();
+            let kdt = k_w_dtype.unwrap();
 
-            matmul_q4_k_chained(
+            matmul_quant_chained(
                 &self.ctx,
                 &self.pipes,
                 enc,
@@ -2629,7 +2924,8 @@ impl Forward {
                 &self.k,
                 d_model,
                 n_kv_heads * head_dim,
-            );
+                kdt,
+            )?;
 
             // ---- LoRA forward correction (k) — fused ----
             if let Some(slot) = loras.and_then(|l| l.k.as_ref()) {
@@ -2688,8 +2984,13 @@ impl Forward {
                 rope_base,
             );
 
-            match vdt {
-                GgmlDtype::Q6_K => matmul_q6_k_chained(
+            // Value projection. Global layers in the 12b ship no attn_v — they
+            // reuse the raw K projection (self.k, before K-norm) as V, per the
+            // Ollama reference (model_text.go: "K=V: use raw K projection
+            // (before K norm) as V"). The unweighted V-norm below then applies
+            // to it exactly as it would to a real V.
+            if let (Some(vw), Some(vdt)) = (v_w.as_ref(), v_w_dtype) {
+                matmul_quant_chained(
                     &self.ctx,
                     &self.pipes,
                     enc,
@@ -2698,22 +2999,16 @@ impl Forward {
                     &self.v,
                     d_model,
                     n_kv_heads * head_dim,
-                ),
-                GgmlDtype::Q4_K => matmul_q4_k_chained(
-                    &self.ctx,
-                    &self.pipes,
-                    enc,
-                    vw,
-                    &self.norm_x,
+                    vdt,
+                )?;
+            } else {
+                enc.copy_buffer_to_buffer(
+                    &self.k,
+                    0,
                     &self.v,
-                    d_model,
-                    n_kv_heads * head_dim,
-                ),
-                other => {
-                    return Err(RullamaError::Inference(format!(
-                        "attn_v dtype {other:?} unsupported"
-                    )));
-                }
+                    0,
+                    (n_kv_heads * head_dim * 4) as u64,
+                );
             }
 
             // ---- LoRA forward correction (v) — fused ----
@@ -2819,7 +3114,7 @@ impl Forward {
         }
 
         // attn_proj = matmul(attn_out_buf, attn_output.weight)
-        matmul_q4_k_chained(
+        matmul_quant_chained(
             &self.ctx,
             &self.pipes,
             enc,
@@ -2828,7 +3123,8 @@ impl Forward {
             &self.attn_proj,
             n_heads * head_dim,
             d_model,
-        );
+            o_dt,
+        )?;
 
         // ---- LoRA forward correction (o) — fused ----
         if let Some(slot) = loras.and_then(|l| l.o.as_ref()) {
@@ -2917,7 +3213,7 @@ impl Forward {
             );
         }
 
-        matmul_q4_k_chained(
+        matmul_quant_chained(
             &self.ctx,
             &self.pipes,
             enc,
@@ -2926,7 +3222,8 @@ impl Forward {
             &self.ffn_gate,
             d_model,
             ffn_n,
-        );
+            gate_dt,
+        )?;
 
         // ---- LoRA forward correction (ffn_gate) — fused ----
         if let Some(slot) = loras.and_then(|l| l.ffn_gate.as_ref()) {
@@ -2947,7 +3244,7 @@ impl Forward {
             );
         }
 
-        matmul_q4_k_chained(
+        matmul_quant_chained(
             &self.ctx,
             &self.pipes,
             enc,
@@ -2956,7 +3253,8 @@ impl Forward {
             &self.ffn_up,
             d_model,
             ffn_n,
-        );
+            up_dt,
+        )?;
 
         // ---- LoRA forward correction (ffn_up) — fused ----
         if let Some(slot) = loras.and_then(|l| l.ffn_up.as_ref()) {
@@ -3011,33 +3309,17 @@ impl Forward {
             );
         }
 
-        match down_dtype {
-            GgmlDtype::Q6_K => matmul_q6_k_chained(
-                &self.ctx,
-                &self.pipes,
-                enc,
-                &down_w,
-                &self.ffn_act,
-                &self.ffn_out,
-                ffn_n,
-                d_model,
-            ),
-            GgmlDtype::Q4_K => matmul_q4_k_chained(
-                &self.ctx,
-                &self.pipes,
-                enc,
-                &down_w,
-                &self.ffn_act,
-                &self.ffn_out,
-                ffn_n,
-                d_model,
-            ),
-            other => {
-                return Err(RullamaError::Inference(format!(
-                    "ffn_down dtype {other:?} unsupported"
-                )));
-            }
-        }
+        matmul_quant_chained(
+            &self.ctx,
+            &self.pipes,
+            enc,
+            &down_w,
+            &self.ffn_act,
+            &self.ffn_out,
+            ffn_n,
+            d_model,
+            down_dtype,
+        )?;
 
         // ---- LoRA forward correction (ffn_down) — fused ----
         if let Some(slot) = loras.and_then(|l| l.ffn_down.as_ref()) {
@@ -3069,25 +3351,265 @@ impl Forward {
             );
         }
 
-        rmsnorm_chained(
-            &self.ctx,
-            &self.pipes,
-            enc,
-            &self.ffn_out,
-            Some(&post_ffw_w),
-            &self.dummy,
-            &self.norm_y,
-            d_model,
-            eps,
-        );
-        residual_add_chained(
-            &self.ctx,
-            &self.pipes,
-            enc,
-            &self.hidden,
-            &self.norm_y,
-            d_model,
-        );
+        if let Some(mw) = &moe_w {
+            // ===== Sparse-MoE: dense MLP and routed experts run IN PARALLEL =====
+            // (mirrors Ollama's TextLayer MoE branch and the CPU oracle in
+            // reference/moe.rs):
+            //   mlp = post_ffw_norm_1(dense_ffn_out)
+            //   moe = post_ffw_norm_2(experts(pre_ffw_norm_2(hidden), router(hidden)))
+            //   hidden += post_ffw_norm(mlp + moe)
+            // NOTE: `self.hidden` still holds the post-attention residual here —
+            // it is not mutated until the final residual_add below.
+            let moe = self.moe.as_ref().expect("MoeScratch allocated for MoE cfg");
+            let top_k = self.cfg.expert_used_count as usize;
+            let e_ffn = self.cfg.expert_ffn as usize;
+            let n_experts = self.cfg.expert_count as usize;
+
+            // mlp_normed = post_ffw_norm_1(dense ffn_out)
+            rmsnorm_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &self.ffn_out,
+                Some(&mw.post_norm_1),
+                &self.dummy,
+                &moe.mlp_normed,
+                d_model,
+                eps,
+            );
+
+            // Router on the RAW post-attn hidden (it norms internally).
+            moe_router_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &self.hidden,
+                mw.router_scale.as_ref(),
+                &self.dummy,
+                &mw.router,
+                &moe.expert_ids,
+                &moe.expert_weights,
+                d_model,
+                n_experts,
+                top_k,
+                eps,
+            );
+
+            // moe_x = pre_ffw_norm_2(hidden)
+            rmsnorm_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &self.hidden,
+                Some(&mw.pre_norm_2),
+                &self.dummy,
+                &moe.moe_x,
+                d_model,
+                eps,
+            );
+
+            // Per selected slot: fused gate_up → GeGLU halves → down.
+            if self.moe_stream_experts {
+                // Per-expert streaming. The selected experts are only known
+                // after the router runs, so flush everything up to here (dense
+                // MLP + mlp_normed + router + moe_x), sync, read the top-k ids,
+                // then range-fetch ONLY those experts (≤8 of 128) instead of
+                // the whole 555 MB tensor. The combine below still reads the
+                // GPU-resident expert_ids / expert_weights (they persist across
+                // the submit).
+                enc.copy_buffer_to_buffer(
+                    &moe.expert_ids,
+                    0,
+                    &moe.expert_ids_read,
+                    0,
+                    (top_k * 4) as u64,
+                );
+                let fresh =
+                    self.ctx
+                        .device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("fwd.moe.stream.cont"),
+                        });
+                let flushed = std::mem::replace(enc, fresh);
+                self.ctx.queue.submit(Some(flushed.finish()));
+                let id_bytes = read_back_bytes(&self.ctx.device, &moe.expert_ids_read).await?;
+                let ids: Vec<u32> = id_bytes
+                    .chunks_exact(4)
+                    .take(top_k)
+                    .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                    .collect();
+
+                for s in 0..top_k {
+                    let e = ids[s] as usize;
+                    let gu_buf = self.wcache.buffer_expert_async(&mw.gate_up_name, e).await?;
+                    // 1-expert buffer ⇒ index expert 0 (zero_ids, slot 0).
+                    moe_expert_matmul_chained(
+                        &self.ctx,
+                        &self.pipes,
+                        enc,
+                        &gu_buf,
+                        &moe.zero_ids,
+                        &moe.moe_x,
+                        &moe.gu[s],
+                        d_model,
+                        2 * e_ffn,
+                        0,
+                        mw.gate_up_dt,
+                    )?;
+                    moe_geglu_halves_chained(
+                        &self.ctx,
+                        &self.pipes,
+                        enc,
+                        &moe.gu[s],
+                        &moe.act[s],
+                        e_ffn,
+                    );
+                    let down_buf = self.wcache.buffer_expert_async(&mw.down_name, e).await?;
+                    moe_expert_matmul_chained(
+                        &self.ctx,
+                        &self.pipes,
+                        enc,
+                        &down_buf,
+                        &moe.zero_ids,
+                        &moe.act[s],
+                        &moe.down[s],
+                        e_ffn,
+                        d_model,
+                        0,
+                        mw.down_dt,
+                    )?;
+                    enc.copy_buffer_to_buffer(
+                        &moe.down[s],
+                        0,
+                        &moe.slots,
+                        (s * d_model * 4) as u64,
+                        (d_model * 4) as u64,
+                    );
+                }
+            } else {
+                let gate_up = mw.gate_up.as_ref().expect("non-stream: gate_up loaded");
+                let down = mw.down.as_ref().expect("non-stream: down loaded");
+                // Expert index read from expert_ids on-GPU (MulmatID).
+                for s in 0..top_k {
+                    moe_expert_matmul_chained(
+                        &self.ctx,
+                        &self.pipes,
+                        enc,
+                        gate_up,
+                        &moe.expert_ids,
+                        &moe.moe_x,
+                        &moe.gu[s],
+                        d_model,
+                        2 * e_ffn,
+                        s,
+                        mw.gate_up_dt,
+                    )?;
+                    moe_geglu_halves_chained(
+                        &self.ctx,
+                        &self.pipes,
+                        enc,
+                        &moe.gu[s],
+                        &moe.act[s],
+                        e_ffn,
+                    );
+                    moe_expert_matmul_chained(
+                        &self.ctx,
+                        &self.pipes,
+                        enc,
+                        down,
+                        &moe.expert_ids,
+                        &moe.act[s],
+                        &moe.down[s],
+                        e_ffn,
+                        d_model,
+                        s,
+                        mw.down_dt,
+                    )?;
+                    enc.copy_buffer_to_buffer(
+                        &moe.down[s],
+                        0,
+                        &moe.slots,
+                        (s * d_model * 4) as u64,
+                        (d_model * 4) as u64,
+                    );
+                }
+            }
+
+            // Weighted combine (+ per-expert down scale), then post_ffw_norm_2.
+            moe_combine_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &moe.slots,
+                &moe.expert_ids,
+                &moe.expert_weights,
+                mw.down_scale.as_ref(),
+                &self.dummy,
+                &moe.moe_out,
+                d_model,
+                top_k,
+            );
+            rmsnorm_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &moe.moe_out,
+                Some(&mw.post_norm_2),
+                &self.dummy,
+                &moe.moe_x, // reuse: pre-norm input no longer needed
+                d_model,
+                eps,
+            );
+
+            // combined = mlp_normed + moe_normed; outer post_ffw_norm; residual.
+            residual_add_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &moe.mlp_normed,
+                &moe.moe_x,
+                d_model,
+            );
+            rmsnorm_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &moe.mlp_normed,
+                Some(&post_ffw_w),
+                &self.dummy,
+                &self.norm_y,
+                d_model,
+                eps,
+            );
+            residual_add_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &self.hidden,
+                &self.norm_y,
+                d_model,
+            );
+        } else {
+            rmsnorm_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &self.ffn_out,
+                Some(&post_ffw_w),
+                &self.dummy,
+                &self.norm_y,
+                d_model,
+                eps,
+            );
+            residual_add_chained(
+                &self.ctx,
+                &self.pipes,
+                enc,
+                &self.hidden,
+                &self.norm_y,
+                d_model,
+            );
+        }
 
         // ===== PLE injection =====
         if self.cfg.has_ple() {
@@ -3097,7 +3619,7 @@ impl Forward {
             let ple_dim = self.cfg.ple_dim as usize;
 
             // ple_state = matmul(hidden, inp_gate_w) [d_model -> ple_dim]
-            matmul_q4_k_chained(
+            matmul_quant_chained(
                 &self.ctx,
                 &self.pipes,
                 enc,
@@ -3106,7 +3628,8 @@ impl Forward {
                 &self.ple_state,
                 d_model,
                 ple_dim,
-            );
+                inp_gate_dt.unwrap(),
+            )?;
 
             // ---- CAPTURE: ple_state (input gate branch to PLE GEGLU) ----
             if let Some(cap) = capture {
@@ -3153,7 +3676,7 @@ impl Forward {
             }
 
             // projected = matmul(ple_act, proj_w) [ple_dim -> d_model]
-            matmul_q4_k_chained(
+            matmul_quant_chained(
                 &self.ctx,
                 &self.pipes,
                 enc,
@@ -3162,7 +3685,8 @@ impl Forward {
                 &self.ple_proj,
                 ple_dim,
                 d_model,
-            );
+                proj_dt.unwrap(),
+            )?;
 
             // ---- CAPTURE: ple_proj (input to PLE rmsnorm) ----
             if let Some(cap) = capture {
@@ -3241,6 +3765,8 @@ fn run_matmul_into_buf(
     let pipeline = match dtype {
         GgmlDtype::Q4_K => &pipes.q4_k_matmul,
         GgmlDtype::Q6_K => &pipes.q6_k_matmul,
+        GgmlDtype::Q4_0 => &pipes.q4_0_matmul,
+        GgmlDtype::Q8_0 => &pipes.q8_0_matmul,
         other => {
             return Err(RullamaError::Inference(format!(
                 "output proj dtype {other:?} not supported"
@@ -4333,7 +4859,15 @@ impl Forward {
             // max-abs back down. Preserves direction (every element
             // scaled by the same factor); Adam doesn't care about
             // absolute scale.
-            if clip_max > 0.0 {
+            // **Per-layer adaptive grad-clip — DESKTOP ONLY.** This reads d_hidden's max-abs via
+            // `read_buf_stats` (a fresh-buffer `map_async`) on EVERY backward layer. On iPhone
+            // Safari that `map_async`, issued mid-backward right after `backward_layer`'s submit,
+            // does NOT resolve — the page hangs with the log frozen at `backward 1/35` (no crash,
+            // no jetsam; tracked memory flat at ~237 MiB). It's a hang, not OOM, and it's downstream
+            // of the 4398 yield (which is why that yield didn't fix it). Skip it on mobile: for a
+            // stable step `max_abs < clip_max`, so no scale would apply anyway (bit-identical), and
+            // a diverging step is caught by the NaN auto-halt one level up.
+            if clip_max > 0.0 && !self.mobile_mode {
                 let (max_abs, _) =
                     read_buf_stats(&self.ctx, scratch.d_hidden, self.cfg.d_model as usize).await?;
                 if max_abs > clip_max && max_abs.is_finite() {
@@ -4389,9 +4923,17 @@ impl Forward {
             // GPU heap pressure isn't the bottleneck — keeping the
             // 35 backward-layer weight sets resident across the walk
             // saves ~35 re-fetches per step and ~1 GiB of churn.
-            if self.mobile_mode {
-                let _destroyed_layer = self.wcache.drop_prefix_destroy(&format!("blk.{i}."));
-            }
+            // **Per-layer weight reclaim — DISABLED.** This was only safe because the clip's
+            // `read_buf_stats` above drained the GPU first (so `backward_layer`'s in-flight submit
+            // no longer referenced `blk.{i}.*` when we destroyed it). That `map_async` drain is
+            // removed on mobile (it hung — see above), so a destroy here would be a use-after-
+            // destroy against still-in-flight work. Memory has the headroom to keep the ~10 walked
+            // layers resident (~400 MiB on top of the ~237 MiB baseline, far under the iPhone
+            // budget), and recompute then hits the WeightCache instead of re-fetching from OPFS
+            // (also faster). Desktop never destroyed here anyway (Mac fast path).
+            //
+            // NOTE: the mobile backward is now a pure submit-stream — no per-layer CPU/GPU sync
+            // (no clip readback, no destroy). The GPU drains naturally at the optimizer step.
             // Diagnostic: marks per-layer completion. If this fires for
             // layer N but no `bwd.layer.recompute` for layer N-1 does,
             // the death is in the inter-layer transition AFTER destroy

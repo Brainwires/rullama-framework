@@ -333,6 +333,45 @@ pub fn estimate_training_bytes(
     bytes
 }
 
+/// Reject fine-tuning on a QAT (Q4_0) or Q8_0 base. Inference on those quants
+/// works, but the training backward path's per-weight kernels assume Q4_K/Q6_K,
+/// and the QAT builds also leave `per_layer_model_proj` in F16 (no F16 backward
+/// kernel) — so a Q4_0/Q8_0 base would silently produce garbage gradients. Fail
+/// early with an actionable message: train on the Q4_K_M model, deploy the
+/// quantized build.
+fn reject_qat_base(model: &Model) -> Result<(), TrainingError> {
+    if let Ok(dt) = model.forward().wcache().dtype("blk.0.attn_q.weight")
+        && matches!(
+            dt,
+            rullama::gguf::GgmlDtype::Q4_0 | rullama::gguf::GgmlDtype::Q8_0
+        )
+    {
+        return Err(TrainingError::Backend(
+            "fine-tuning requires a Q4_K_M base model — the QAT (Q4_0) and Q8_0 \
+             builds are inference-only. Train on gemma4:e2b (Q4_K_M) and deploy \
+             the quantized model for inference."
+                .into(),
+        ));
+    }
+    // Sparse-MoE bases (gemma4:26b-a4b) are inference-only too: backward
+    // through the router top-k + stacked expert tensors isn't implemented,
+    // and a 26B base is far past the in-browser training budget anyway.
+    if model
+        .forward()
+        .wcache()
+        .dtype("blk.0.ffn_gate_inp.weight")
+        .is_ok()
+    {
+        return Err(TrainingError::Backend(
+            "fine-tuning a sparse-MoE base (gemma4:26b-a4b) is not supported — \
+             the expert/router backward path is inference-only. Train on a \
+             dense Q4_K_M model (gemma4:e2b / e4b)."
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
 impl TrainingSession {
     /// Allocate all training state for `model`:
     /// - One `LoraLayer` per `(layer, projection)` pair specified in
@@ -345,8 +384,31 @@ impl TrainingSession {
         lora_cfg: LoraConfig,
         hp: TrainingHyperparams,
     ) -> Result<Self, TrainingError> {
+        reject_qat_base(&model)?;
         let cfg = model.forward().cfg().clone();
         let ctx = Arc::new(model.forward().ctx().clone());
+
+        // Right-size the KV cache to the training sequence length. The base
+        // Model loads with a full chat KV cache (MAX_CONTEXT=4096 ≈ several
+        // hundred MB) that training never uses past ~max_seq_len positions.
+        // On a tight GPU that fixed overhead, on top of the long-sequence
+        // backward working set, OOMs the device (a small alloc fails with a
+        // wgpu "invalid buffer" error). Shrinking frees the bulk back for the
+        // scratch / LoRA / Adam buffers. The PWA does this via JS before
+        // training; native paths (train_jsonl) were missing it. `+8` is a
+        // small safety margin over the longest sequence; capped at 4096.
+        let kv_context = (hp.max_seq_len as u32).saturating_add(8).clamp(1, 4096);
+        match model.forward_mut().shrink_kv(kv_context) {
+            Ok(prev) => {
+                if prev > kv_context {
+                    tracing::info!("shrank KV cache {prev} -> {kv_context} positions for training");
+                }
+            }
+            Err(e) => {
+                // Non-fatal: fall back to the full cache (just less headroom).
+                tracing::warn!("shrink_kv({kv_context}) failed, keeping full cache: {e:?}");
+            }
+        }
 
         // **MeBP per-layer destroy ON.** Tested OFF first because
         // the recompute alloc churn caused crashes — but that was with
@@ -459,6 +521,7 @@ impl TrainingSession {
         lora_cfg: &LoraConfig,
         hp: &TrainingHyperparams,
     ) -> Result<u64, TrainingError> {
+        reject_qat_base(model)?;
         let cfg = model.forward().cfg().clone();
         let ctx = Arc::new(model.forward().ctx().clone());
         let estimated = estimate_training_bytes(&cfg, lora_cfg, hp);
@@ -1107,6 +1170,18 @@ impl TrainingSession {
         let d_model = self.model.forward().cfg().d_model as u64;
         let d_model_bytes = d_model * 4;
 
+        // Diagnostic GPU-memory profiling (RULLAMA_TRAIN_MEMLOG=1): localizes
+        // where the resident total climbs on long sequences. Off by default.
+        let memlog = std::env::var("RULLAMA_TRAIN_MEMLOG").is_ok();
+        if memlog {
+            eprintln!(
+                "[mem] step start ({} pos, {} active): {}",
+                input_ids.len(),
+                n_active,
+                rullama::backend::gpu_mem::breakdown_str()
+            );
+        }
+
         self.model.forward_mut().reset();
 
         let lora_slots: Vec<LayerLoraSlots> = (0..n_layers)
@@ -1208,6 +1283,13 @@ impl TrainingSession {
             // Removed. Forward::wasm_yield_zero is kept for the
             // recompute→backward_layer yield where it demonstrably
             // helped.)
+        }
+        if memlog {
+            eprintln!(
+                "[mem] after forward sweep ({} pos): {}",
+                input_ids.len(),
+                rullama::backend::gpu_mem::breakdown_str()
+            );
         }
 
         // 2. Build grad views + scratch view (mirrors `forward_backward`).
@@ -1407,6 +1489,14 @@ impl TrainingSession {
     /// `forward_backward` and `optimizer_step`.
     pub fn lora_state(&self) -> &LoraState {
         &self.loras
+    }
+
+    /// Mutable handle on the LoRA state — lets a caller seed the A/B
+    /// matrices from a saved adapter (`load_adapter_into_state`) right
+    /// after `new()` to *resume* training from a checkpoint. Adam state
+    /// still restarts at step 1 (see `save_adapter_to_bytes` docs).
+    pub fn lora_state_mut(&mut self) -> &mut LoraState {
+        &mut self.loras
     }
 
     /// Immutable handle on the wrapped model — for token encoding /

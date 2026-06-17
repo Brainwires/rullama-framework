@@ -267,6 +267,7 @@ fn layer_forward(
     // ===== MLP BLOCK =====
     let residual = hidden.clone();
     let ffn_n = cfg.ffn(i) as usize;
+    let is_moe_layer = cfg.has_moe() && crate::reference::moe::layer_has_moe(weights, i);
 
     // pre-FFN norm
     let mlp_norm_w = weights.load(&format!("{prefix}ffn_norm.weight"))?;
@@ -295,13 +296,67 @@ fn layer_forward(
     matvec(&down_w, ffn_n, d_model, &act, &mut mlp_out);
     drop(down_w);
 
-    // post-FFN norm + residual
-    let post_ffw_w = weights.load(&format!("{prefix}post_ffw_norm.weight"))?;
-    let mut h3 = vec![0f32; d_model];
-    rmsnorm(&mlp_out, Some(&post_ffw_w), eps, &mut h3);
-    drop(post_ffw_w);
-    add_into(&mut h3, &residual);
-    *hidden = h3;
+    if is_moe_layer {
+        // MoE layers (gemma4:26b-a4b): dense MLP and routed experts run IN
+        // PARALLEL on the same hidden state, each with its own inner post-norm
+        // (post_ffw_norm_1 / post_ffw_norm_2); the sum gets the outer
+        // post_ffw_norm. Mirrors Ollama's TextLayer.Forward MoE branch.
+        let mlp_norm1_w = weights
+            .load_opt(&format!("{prefix}post_ffw_norm_1.weight"))?
+            .or(weights.load_opt(&format!("{prefix}ffn_post_norm_1.weight"))?)
+            .ok_or_else(|| {
+                crate::error::RullamaError::Inference(format!(
+                    "MoE layer {i}: missing post_ffw_norm_1.weight"
+                ))
+            })?;
+        let mut mlp_normed = vec![0f32; d_model];
+        rmsnorm(&mlp_out, Some(&mlp_norm1_w), eps, &mut mlp_normed);
+        drop(mlp_norm1_w);
+
+        // Router consumes the RAW hidden state (it does its own unweighted
+        // RMSNorm internally); the expert input is pre_ffw_norm_2(hidden).
+        let selected = crate::reference::moe::route(cfg, weights, i, hidden)?;
+        let moe_norm_w = weights
+            .load_opt(&format!("{prefix}pre_ffw_norm_2.weight"))?
+            .or(weights.load_opt(&format!("{prefix}ffn_pre_norm_2.weight"))?)
+            .ok_or_else(|| {
+                crate::error::RullamaError::Inference(format!(
+                    "MoE layer {i}: missing pre_ffw_norm_2.weight"
+                ))
+            })?;
+        let mut moe_x = vec![0f32; d_model];
+        rmsnorm(hidden, Some(&moe_norm_w), eps, &mut moe_x);
+        drop(moe_norm_w);
+        let moe_out = crate::reference::moe::moe_experts(cfg, weights, i, &moe_x, &selected)?;
+        let post_moe_w = weights
+            .load_opt(&format!("{prefix}post_ffw_norm_2.weight"))?
+            .or(weights.load_opt(&format!("{prefix}ffn_post_norm_2.weight"))?)
+            .ok_or_else(|| {
+                crate::error::RullamaError::Inference(format!(
+                    "MoE layer {i}: missing post_ffw_norm_2.weight"
+                ))
+            })?;
+        let mut moe_normed = vec![0f32; d_model];
+        rmsnorm(&moe_out, Some(&post_moe_w), eps, &mut moe_normed);
+        drop(post_moe_w);
+
+        // combined = post_ffw_norm(mlp_normed + moe_normed) + residual
+        add_into(&mut mlp_normed, &moe_normed);
+        let post_ffw_w = weights.load(&format!("{prefix}post_ffw_norm.weight"))?;
+        let mut h3 = vec![0f32; d_model];
+        rmsnorm(&mlp_normed, Some(&post_ffw_w), eps, &mut h3);
+        drop(post_ffw_w);
+        add_into(&mut h3, &residual);
+        *hidden = h3;
+    } else {
+        // post-FFN norm + residual (dense layers)
+        let post_ffw_w = weights.load(&format!("{prefix}post_ffw_norm.weight"))?;
+        let mut h3 = vec![0f32; d_model];
+        rmsnorm(&mlp_out, Some(&post_ffw_w), eps, &mut h3);
+        drop(post_ffw_w);
+        add_into(&mut h3, &residual);
+        *hidden = h3;
+    }
 
     // ===== PLE INJECTION =====
     if let Some(pli) = per_layer_input {
@@ -396,10 +451,18 @@ fn self_attention(
         matvec(&k_w, d_model, n_kv_heads * head_dim, x, &mut k);
         drop(k_w);
 
-        let v_w = weights.load(&format!("{prefix}attn_v.weight"))?;
-        let mut v = vec![0f32; n_kv_heads * head_dim];
-        matvec(&v_w, d_model, n_kv_heads * head_dim, x, &mut v);
-        drop(v_w);
+        // No-V layers (12b / 26b-a4b global attention): the GGUF ships no
+        // attn_v — V := the raw K projection (BEFORE K-norm), then the usual
+        // unweighted V-norm below. Mirrors Ollama's "K=V: use raw K
+        // projection (before K norm) as V" and the GPU forward's fallback.
+        let v = match weights.load_opt(&format!("{prefix}attn_v.weight"))? {
+            Some(v_w) => {
+                let mut v = vec![0f32; n_kv_heads * head_dim];
+                matvec(&v_w, d_model, n_kv_heads * head_dim, x, &mut v);
+                v
+            }
+            None => k.clone(),
+        };
 
         // K-norm (weighted, per kv_head over head_dim)
         let k_norm_w = weights.load(&format!("{prefix}attn_k_norm.weight"))?;
