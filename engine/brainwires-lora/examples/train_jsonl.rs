@@ -392,17 +392,15 @@ async fn run() -> Result<(), BoxError> {
                 .map(PathBuf::from)
                 .filter(|p| p.exists())
         });
-    if let Some(path) = &resume_path {
-        if path.exists() {
-            let n = rullama_finetune::load_adapter_into_state(session.lora_state_mut(), path)
-                .map_err(|e| -> BoxError {
-                    format!("resume from {}: {e:?}", path.display()).into()
-                })?;
-            eprintln!(
-                "[resume] seeded {n} LoRA tensors from {} (Adam restarts)",
-                path.display()
-            );
-        }
+    if let Some(path) = &resume_path
+        && path.exists()
+    {
+        let n = rullama_finetune::load_adapter_into_state(session.lora_state_mut(), path)
+            .map_err(|e| -> BoxError { format!("resume from {}: {e:?}", path.display()).into() })?;
+        eprintln!(
+            "[resume] seeded {n} LoRA tensors from {} (Adam restarts)",
+            path.display()
+        );
     }
     if lr_sched.is_some() {
         session.set_lr_schedule(n_steps as u64);
@@ -428,13 +426,13 @@ async fn run() -> Result<(), BoxError> {
     // Safety: stash the pre-run adapter before any checkpoint can overwrite it,
     // so a diverging resume can never destroy a good adapter (Adam restarts on
     // resume + non-zero B can spike the loss). Restorable from `<path>.preresume`.
-    if let Some(path) = &adapter_path {
-        if path.exists() {
-            let bak = PathBuf::from(format!("{}.preresume", path.display()));
-            match fs::copy(path, &bak) {
-                Ok(_) => eprintln!("[backup] pre-run adapter → {}", bak.display()),
-                Err(e) => eprintln!("[warn] could not back up adapter to {}: {e}", bak.display()),
-            }
+    if let Some(path) = &adapter_path
+        && path.exists()
+    {
+        let bak = PathBuf::from(format!("{}.preresume", path.display()));
+        match fs::copy(path, &bak) {
+            Ok(_) => eprintln!("[backup] pre-run adapter → {}", bak.display()),
+            Err(e) => eprintln!("[warn] could not back up adapter to {}: {e}", bak.display()),
         }
     }
     // Divergence guard: track the best loss; refuse to checkpoint (or do the

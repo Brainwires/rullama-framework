@@ -814,11 +814,14 @@ async fn apply_canvas_embedding(
                 if pv < 1e-9 {
                     continue;
                 }
-                if !row_cache.contains_key(&v) {
-                    let row = weights.load_row_async("token_embd.weight", v).await?;
-                    row_cache.insert(v, row);
-                }
-                let emb = &row_cache[&v];
+                // entry() rather than contains_key+insert: the value is a
+                // fallible `.await`, which or_insert_with can't express.
+                let emb = match row_cache.entry(v) {
+                    std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert(weights.load_row_async("token_embd.weight", v).await?)
+                    }
+                };
                 for (s, &e) in soft.iter_mut().zip(emb.iter()) {
                     *s += pv * e;
                 }

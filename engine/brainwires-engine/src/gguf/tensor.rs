@@ -243,6 +243,52 @@ pub(crate) fn read_tensor_raw(path: &str, r: &GgufReader, name: &str) -> Result<
     Ok(raw)
 }
 
+/// Async equivalent of [`dequant_row_to_f32`]. Fetches only the row's bytes when the
+/// underlying fetcher supports byte-range reads (e.g. HTTP Range).
+pub async fn dequant_row_to_f32_async(
+    r: &GgufReader,
+    name: &str,
+    row_idx: usize,
+) -> Result<Vec<f32>> {
+    let desc = r.tensor(name)?.clone();
+    if desc.dims.len() != 2 {
+        return Err(RullamaError::Gguf(format!(
+            "dequant_row_to_f32_async: tensor {} has {} dims, expected 2",
+            desc.name,
+            desc.dims.len()
+        )));
+    }
+    let row_len = desc.dims[0] as usize;
+    let n_rows = desc.dims[1] as usize;
+    if row_idx >= n_rows {
+        return Err(RullamaError::Gguf(format!(
+            "row {row_idx} out of bounds for tensor {} ({} rows)",
+            desc.name, n_rows
+        )));
+    }
+
+    let block_elems = desc.dtype.block_elems();
+    if !row_len.is_multiple_of(block_elems) {
+        return Err(RullamaError::Gguf(format!(
+            "row_len {} not multiple of block_elems {} for {}",
+            row_len, block_elems, desc.name
+        )));
+    }
+    let blocks_per_row = row_len / block_elems;
+    let bytes_per_row = blocks_per_row * desc.dtype.block_bytes();
+
+    // Fetch only the row's bytes via the fetcher (Range request when streaming).
+    let row_bytes = {
+        let abs_offset =
+            (r.tensor(name)?.offset + (row_idx * bytes_per_row) as u64) + r.data_section_offset();
+        r.fetcher().fetch(abs_offset, bytes_per_row as u64).await?
+    };
+
+    let mut out = vec![0f32; row_len];
+    dequant_into_f32(desc.dtype, &row_bytes, &mut out)?;
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -356,50 +402,4 @@ mod tests {
         assert!(dequant_expert_slice_to_f32(&r, "exps", 1).is_err()); // only 1 expert
         assert!(dequant_expert_slice_to_f32(&r, "exps", 0).is_ok());
     }
-}
-
-/// Async equivalent of [`dequant_row_to_f32`]. Fetches only the row's bytes when the
-/// underlying fetcher supports byte-range reads (e.g. HTTP Range).
-pub async fn dequant_row_to_f32_async(
-    r: &GgufReader,
-    name: &str,
-    row_idx: usize,
-) -> Result<Vec<f32>> {
-    let desc = r.tensor(name)?.clone();
-    if desc.dims.len() != 2 {
-        return Err(RullamaError::Gguf(format!(
-            "dequant_row_to_f32_async: tensor {} has {} dims, expected 2",
-            desc.name,
-            desc.dims.len()
-        )));
-    }
-    let row_len = desc.dims[0] as usize;
-    let n_rows = desc.dims[1] as usize;
-    if row_idx >= n_rows {
-        return Err(RullamaError::Gguf(format!(
-            "row {row_idx} out of bounds for tensor {} ({} rows)",
-            desc.name, n_rows
-        )));
-    }
-
-    let block_elems = desc.dtype.block_elems();
-    if !row_len.is_multiple_of(block_elems) {
-        return Err(RullamaError::Gguf(format!(
-            "row_len {} not multiple of block_elems {} for {}",
-            row_len, block_elems, desc.name
-        )));
-    }
-    let blocks_per_row = row_len / block_elems;
-    let bytes_per_row = blocks_per_row * desc.dtype.block_bytes();
-
-    // Fetch only the row's bytes via the fetcher (Range request when streaming).
-    let row_bytes = {
-        let abs_offset =
-            (r.tensor(name)?.offset + (row_idx * bytes_per_row) as u64) + r.data_section_offset();
-        r.fetcher().fetch(abs_offset, bytes_per_row as u64).await?
-    };
-
-    let mut out = vec![0f32; row_len];
-    dequant_into_f32(desc.dtype, &row_bytes, &mut out)?;
-    Ok(out)
 }
