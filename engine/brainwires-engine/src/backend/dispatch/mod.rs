@@ -2108,6 +2108,48 @@ pub fn groupnorm_chained(
     );
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct AdaLnModulateParams {
+    hidden: u32,
+    total: u32,
+    _p0: u32,
+    _p1: u32,
+}
+
+/// adaLN modulation `y[t,c] = x[t,c] * (1 + scale[c]) + shift[c]` over a
+/// `[seq, hidden]` tensor, with length-`hidden` `scale`/`shift` broadcast
+/// across tokens. Oracle: `reference::imagegen::adaln_modulate`.
+#[allow(clippy::too_many_arguments)]
+pub fn adaln_modulate_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer,
+    scale: &wgpu::Buffer,
+    shift: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    seq: usize,
+    hidden: usize,
+) {
+    let total = (seq * hidden) as u32;
+    let params = AdaLnModulateParams {
+        hidden: hidden as u32,
+        total,
+        _p0: 0,
+        _p1: 0,
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.adaln_modulate,
+        "adaln_mod",
+        &[x, scale, shift, y],
+        &params,
+        (total.div_ceil(64), 1, 1),
+    );
+}
+
 /// Chained softcap: in-place would be ideal, but the WGSL has separate `x`, `y`
 /// bindings — so caller passes both. Output buffer can equal input on the host
 /// side (alias the same wgpu::Buffer through both bindings).
@@ -3123,6 +3165,41 @@ mod tests {
             .map(|(c, g)| (c - g).abs())
             .fold(0.0f32, f32::max);
         assert!(md < 1e-4, "groupnorm max_diff = {md}");
+    }
+
+    #[test]
+    fn adaln_modulate_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        let seq = 11usize;
+        let hidden = 53usize;
+        let total = seq * hidden;
+        let x: Vec<f32> = (0..total).map(|i| ((i as i32 % 23 - 11) as f32) * 0.05).collect();
+        let scale: Vec<f32> = (0..hidden).map(|i| (i as f32 * 0.17).sin() * 0.4).collect();
+        let shift: Vec<f32> = (0..hidden).map(|i| (i as f32 * 0.11).cos() * 0.3).collect();
+
+        let cpu = crate::reference::imagegen::adaln_modulate(&x, seq, hidden, &scale, &shift);
+
+        let x_buf = write_storage_f32(device, queue, "x", &x);
+        let s_buf = write_storage_f32(device, queue, "s", &scale);
+        let sh_buf = write_storage_f32(device, queue, "sh", &shift);
+        let (y_buf, y_read) = make_output_pair(device, "y", (total * 4) as u64);
+        let mut enc = device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("adaln") });
+        adaln_modulate_chained(&ctx, &p, &mut enc, &x_buf, &s_buf, &sh_buf, &y_buf, seq, hidden);
+        enc.copy_buffer_to_buffer(&y_buf, 0, &y_read, 0, (total * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &y_read)).expect("readback");
+
+        let md = cpu
+            .iter()
+            .zip(&gpu)
+            .map(|(c, g)| (c - g).abs())
+            .fold(0.0f32, f32::max);
+        assert!(md < 1e-4, "adaln_modulate max_diff = {md}");
     }
 
     /// GPU vs CPU parity for `cross_entropy_backward` on a vocab vector with a

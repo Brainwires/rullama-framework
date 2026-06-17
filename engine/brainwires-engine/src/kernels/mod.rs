@@ -18,6 +18,7 @@ pub const AVG_POOL2D_HALF_CHF: &str = include_str!("wgsl/avg_pool2d_half_chf.wgs
 pub const ISTFT: &str = include_str!("wgsl/istft.wgsl");
 pub const LAYERNORM_AFFINE: &str = include_str!("wgsl/layernorm_affine.wgsl");
 pub const GROUPNORM: &str = include_str!("wgsl/groupnorm.wgsl");
+pub const ADALN_MODULATE: &str = include_str!("wgsl/adaln_modulate.wgsl");
 pub const LEAKY_RELU: &str = include_str!("wgsl/leaky_relu.wgsl");
 pub const GELU_EXACT: &str = include_str!("wgsl/gelu_exact.wgsl");
 pub const NEAREST_UPSAMPLE2X: &str = include_str!("wgsl/nearest_upsample2x.wgsl");

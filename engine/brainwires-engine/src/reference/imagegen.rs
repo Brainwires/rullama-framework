@@ -56,9 +56,50 @@ pub fn group_norm(
     out
 }
 
+/// adaLN modulation `y[t,c] = x[t,c] * (1 + scale[c]) + shift[c]`, matching
+/// `kernels/wgsl/adaln_modulate.wgsl`. `x` is `[seq, hidden]` flat; `scale`
+/// and `shift` are length-`hidden`, broadcast across tokens.
+pub fn adaln_modulate(
+    x: &[f32],
+    seq: usize,
+    hidden: usize,
+    scale: &[f32],
+    shift: &[f32],
+) -> Vec<f32> {
+    assert_eq!(x.len(), seq * hidden);
+    assert_eq!(scale.len(), hidden);
+    assert_eq!(shift.len(), hidden);
+    let mut out = vec![0.0f32; x.len()];
+    for t in 0..seq {
+        for c in 0..hidden {
+            let i = t * hidden + c;
+            out[i] = x[i] * (1.0 + scale[c]) + shift[c];
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn adaln_zero_scale_zero_shift_is_identity() {
+        let x = vec![1.0, -2.0, 3.0, 4.0, 5.0, -6.0];
+        let scale = vec![0.0; 3];
+        let shift = vec![0.0; 3];
+        assert_eq!(adaln_modulate(&x, 2, 3, &scale, &shift), x);
+    }
+
+    #[test]
+    fn adaln_broadcasts_per_channel_across_tokens() {
+        // 2 tokens, 2 channels. scale/shift differ by channel, same per token.
+        let x = vec![1.0, 1.0, 2.0, 2.0];
+        let scale = vec![1.0, 0.0]; // ch0 ×2, ch1 ×1
+        let shift = vec![0.0, 5.0]; // ch1 +5
+        let y = adaln_modulate(&x, 2, 2, &scale, &shift);
+        assert_eq!(y, vec![2.0, 6.0, 4.0, 7.0]);
+    }
 
     #[test]
     fn group_norm_one_group_is_layernorm_over_all() {
