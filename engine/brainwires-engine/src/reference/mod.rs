@@ -16,6 +16,10 @@ pub mod imagegen;
 pub mod kokoro;
 pub mod moe;
 pub mod ops;
+/// Qwen3 text-encoder CPU oracle. Reads sharded safetensors from disk, so
+/// native-only (the GPU encoder forward is the wasm-facing path).
+#[cfg(not(target_arch = "wasm32"))]
+pub mod qwen3;
 pub mod rome;
 pub mod styletts2;
 pub mod weights;
