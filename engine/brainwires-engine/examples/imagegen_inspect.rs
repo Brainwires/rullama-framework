@@ -85,7 +85,7 @@ fn main() {
                 let dt: Vec<String> = h
                     .tensors
                     .values()
-                    .map(|(d, _)| format!("{d:?}"))
+                    .map(|e| format!("{:?}", e.dtype))
                     .collect::<std::collections::BTreeSet<_>>()
                     .into_iter()
                     .collect();

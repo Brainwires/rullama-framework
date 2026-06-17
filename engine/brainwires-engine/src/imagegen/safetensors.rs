@@ -40,14 +40,30 @@ impl TensorEntry {
     }
 }
 
-/// Header-only view of a blob: tensor dtypes/shapes + `__metadata__`, parsed
-/// from just the leading `8 + header_size` bytes (no data region needed).
-/// Used by the inspector to census a model without loading weight tensors.
+/// Header-only view of a blob: tensor table + `__metadata__` + the byte offset
+/// where the data region starts, parsed from just the leading
+/// `8 + header_size` bytes. With `data_start` + a tensor's `data_offsets`, a
+/// caller can range-read one tensor without materializing the rest of the
+/// (possibly multi-GB) blob.
 #[derive(Debug, Clone)]
 pub struct SafetensorsHeader {
     pub header_size: usize,
-    pub tensors: BTreeMap<String, (StDtype, Vec<usize>)>,
+    /// Absolute byte offset of the data region (`8 + header_size`).
+    pub data_start: usize,
+    pub tensors: BTreeMap<String, TensorEntry>,
     pub metadata: BTreeMap<String, String>,
+}
+
+impl SafetensorsHeader {
+    /// Absolute `[start, end)` byte range of a tensor within the blob/file.
+    pub fn tensor_range(&self, name: &str) -> Option<(usize, usize)> {
+        self.tensors.get(name).map(|e| {
+            (
+                self.data_start + e.data_offsets.0,
+                self.data_start + e.data_offsets.1,
+            )
+        })
+    }
 }
 
 /// Parse only the header from a blob prefix (must contain at least
@@ -83,10 +99,18 @@ pub fn read_header(prefix: &[u8]) -> Result<SafetensorsHeader> {
         }
         let e: RawEntry = serde_json::from_value(val)
             .map_err(|err| RullamaError::Image(format!("tensor {name:?}: {err}")))?;
-        tensors.insert(name, (StDtype::parse(&e.dtype)?, e.shape));
+        tensors.insert(
+            name,
+            TensorEntry {
+                dtype: StDtype::parse(&e.dtype)?,
+                shape: e.shape,
+                data_offsets: (e.data_offsets[0], e.data_offsets[1]),
+            },
+        );
     }
     Ok(SafetensorsHeader {
         header_size,
+        data_start: end,
         tensors,
         metadata,
     })
