@@ -689,6 +689,23 @@ impl Model {
         self.sampler.clear_history();
     }
 
+    /// Truncate the KV cache to its first `n` positions, keeping `[0, n)` and
+    /// rewinding so the next `step` appends at `n`. Used for longest-common-
+    /// prefix reuse: keep the shared head (e.g. the system prompt) and
+    /// re-prefill only the divergent tail — so a new conversation hot-starts
+    /// without re-reading the system block.
+    ///
+    /// Truncation is a divergence point (we're abandoning the tail that was
+    /// resident), so the sampler's rep-penalty history is cleared too — the
+    /// continuation past `n` is a fresh sampling context, matching what
+    /// [`reset_native`] does for a from-scratch turn. (For a full-prefix
+    /// continuation of the *same* conversation the caller doesn't truncate, so
+    /// sampler history is preserved as before.)
+    pub fn truncate_kv_native(&mut self, n: u32) {
+        self.forward.truncate_kv(n);
+        self.sampler.clear_history();
+    }
+
     /// Snapshot KV cache + position + sampler state into a single byte
     /// blob suitable for OPFS-backed suspend/resume. Layout:
     ///
@@ -2335,6 +2352,15 @@ impl Model {
     #[wasm_bindgen(js_name = reset)]
     pub fn reset_js(&mut self) {
         self.reset_native()
+    }
+
+    /// Truncate the KV cache to its first `n` positions (keep `[0, n)`,
+    /// rewind to `n`). Powers longest-common-prefix reuse — keep the shared
+    /// head (system prompt) and re-prefill only the divergent tail. Clears
+    /// sampler history (the continuation is a fresh sampling context).
+    #[wasm_bindgen(js_name = truncateKv)]
+    pub fn truncate_kv_js(&mut self, n: u32) {
+        self.truncate_kv_native(n)
     }
 
     /// Snapshot KV cache + sampler state into a single Uint8Array. Caller

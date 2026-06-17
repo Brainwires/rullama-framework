@@ -1201,6 +1201,32 @@ impl Forward {
         }
     }
 
+    /// Drop all KV-cache positions at index `>= n`, keeping `[0, n)` intact,
+    /// and rewind `pos` to `n` so the next `step()` appends at position `n`.
+    ///
+    /// This is the partial counterpart to [`reset`]: it lets the caller keep
+    /// a shared prefix of the cache (e.g. the system prompt) and re-prefill
+    /// only the divergent tail — the enabler for hot-starting a new
+    /// conversation without re-reading the system block.
+    ///
+    /// Sound for every layer type because the cache is **linear** (position
+    /// `i` lives at byte offset `i * row_bytes`; the bytes beyond `n` are
+    /// simply stale and get overwritten by future appends) and sliding-window
+    /// attention is applied as a **compute-time mask**, not a ring buffer — so
+    /// truncating to `n` and recomputing `earliest = max(0, pos+1-window)`
+    /// stays correct. Donor (KV-sharing) layers inherit the truncation through
+    /// the shared buffer + their own `kv_lens` entry. No GPU work — the buffers
+    /// retain their data; only the `pos`/`kv_lens` bookkeeping changes.
+    ///
+    /// `n` is clamped to the current `pos` (you can only truncate down).
+    pub fn truncate_kv(&mut self, n: u32) {
+        let n = n.min(self.pos);
+        self.pos = n;
+        for l in self.kv_lens.iter_mut() {
+            *l = (*l).min(n);
+        }
+    }
+
     /// Re-allocate the per-layer KV cache buffers at a smaller `max_context`.
     /// Discards any cached content (kv_lens reset to 0, pos = 0) and returns
     /// the previous `max_context` so the caller can restore on demand.
