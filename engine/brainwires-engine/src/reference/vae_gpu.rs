@@ -137,7 +137,7 @@ impl<'a> VaeGpu<'a> {
         let res = if self.st.has(&format!("{p}.conv_shortcut.weight")) {
             self.conv(x, &format!("{p}.conv_shortcut"), 0)?
         } else {
-            Act { buf: clone_buf(&self.ctx, &x.buf, x.c * x.h * x.w), c: x.c, h: x.h, w: x.w }
+            Act { buf: clone_buf(self.ctx, &x.buf, x.c * x.h * x.w), c: x.c, h: x.h, w: x.w }
         };
         let mut enc = self.encoder("resadd");
         residual_add_chained(self.ctx, self.pipes, &mut enc, &h.buf, &res.buf, h.c * h.h * h.w);
