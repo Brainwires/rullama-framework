@@ -14,6 +14,10 @@
 //! over (t,h,w) position coords. QK-RMSNorm eps 1e-5; block RMSNorm eps = norm_eps;
 //! attention scale 1/√head_dim; tanh-gated residuals.
 
+use crate::backend::dispatch::{
+    add_bias_batched_chained, make_storage_rw, matmul_bf16_batched_chained, read_back_f32,
+};
+use crate::backend::{Pipelines, WgpuCtx};
 use crate::error::{Result, RullamaError};
 use crate::imagegen::config::TransformerConfig;
 use crate::imagegen::sharded::ShardedSafetensors;
@@ -21,14 +25,38 @@ use crate::imagegen::sinusoidal_timestep_embedding;
 
 const TEMB_DIM: usize = 256;
 
+/// GPU handles for the matmul-accelerated path.
+pub struct GpuHandles<'a> {
+    pub ctx: &'a WgpuCtx,
+    pub pipes: &'a Pipelines,
+}
+
 pub struct DitForward<'a> {
     st: &'a ShardedSafetensors,
     cfg: &'a TransformerConfig,
+    /// When set, the (dominant) linears run on the GPU bf16 matmul; everything
+    /// else stays on the validated CPU path. Output is bit-for-bit the CPU
+    /// forward except for bf16-matmul rounding (~1e-2).
+    gpu: Option<GpuHandles<'a>>,
 }
 
 impl<'a> DitForward<'a> {
     pub fn new(st: &'a ShardedSafetensors, cfg: &'a TransformerConfig) -> Self {
-        Self { st, cfg }
+        Self { st, cfg, gpu: None }
+    }
+
+    /// Same forward, but linears dispatch to the GPU bf16 matmul kernel.
+    pub fn with_gpu(
+        st: &'a ShardedSafetensors,
+        cfg: &'a TransformerConfig,
+        ctx: &'a WgpuCtx,
+        pipes: &'a Pipelines,
+    ) -> Self {
+        Self {
+            st,
+            cfg,
+            gpu: Some(GpuHandles { ctx, pipes }),
+        }
     }
 
     /// Predict velocity for one latent `[in_ch, lh, lw]` at timestep `t`, given
@@ -302,6 +330,9 @@ impl<'a> DitForward<'a> {
         } else {
             None
         };
+        if let Some(g) = &self.gpu {
+            return self.linear_gpu(g, x, rows, in_dim, &w, out_dim, b.as_deref());
+        }
         let mut y = vec![0.0f32; rows * out_dim];
         for r in 0..rows {
             let xr = &x[r * in_dim..(r + 1) * in_dim];
@@ -315,6 +346,60 @@ impl<'a> DitForward<'a> {
             }
         }
         Ok(y)
+    }
+
+    /// GPU bf16 matmul: `y[r,o] = Σ_i x[r,i]·W[o,i] (+ b[o])`. `w`/`b` are the
+    /// already-loaded f32 weights; `w` is packed to bf16 for the kernel.
+    fn linear_gpu(
+        &self,
+        g: &GpuHandles,
+        x: &[f32],
+        rows: usize,
+        in_dim: usize,
+        w: &[f32],
+        out_dim: usize,
+        bias: Option<&[f32]>,
+    ) -> Result<Vec<f32>> {
+        use wgpu::util::DeviceExt;
+        let dev = &g.ctx.device;
+        // pack weight to bf16 (kernel reads array<u32>, 2 bf16/word; pad to even)
+        let mut wb: Vec<u8> = Vec::with_capacity(w.len() * 2 + 2);
+        for &v in w {
+            wb.extend_from_slice(&half::bf16::from_f32(v).to_bits().to_le_bytes());
+        }
+        if w.len() % 2 == 1 {
+            wb.extend_from_slice(&[0u8, 0u8]);
+        }
+        let w_buf = dev.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("dit.w"),
+            contents: &wb,
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        let x_buf = dev.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("dit.x"),
+            contents: bytemuck::cast_slice(x),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        let y_buf = make_storage_rw(dev, "dit.y", rows * out_dim);
+        let mut enc = dev.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("dit.mm") });
+        matmul_bf16_batched_chained(g.ctx, g.pipes, &mut enc, &w_buf, &x_buf, &y_buf, in_dim, out_dim, rows);
+        if let Some(b) = bias {
+            let b_buf = dev.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("dit.b"),
+                contents: bytemuck::cast_slice(b),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+            add_bias_batched_chained(g.ctx, g.pipes, &mut enc, &y_buf, &b_buf, out_dim, rows);
+        }
+        let read = dev.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("dit.read"),
+            size: (rows * out_dim * 4) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        enc.copy_buffer_to_buffer(&y_buf, 0, &read, 0, (rows * out_dim * 4) as u64);
+        g.ctx.queue.submit(Some(enc.finish()));
+        pollster::block_on(read_back_f32(dev, &read))
     }
 }
 
