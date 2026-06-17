@@ -2152,6 +2152,45 @@ pub fn adaln_modulate_chained(
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct GatedResidualAddParams {
+    dim: u32,
+    total: u32,
+    _p0: u32,
+    _p1: u32,
+}
+
+/// DiT gated residual: `x[t,c] += tanh(gate[c]) * branch[t,c]` over `[seq,dim]`,
+/// `gate` length `dim`. Oracle: `reference::imagegen::gated_residual_add`.
+pub fn gated_residual_add_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer,
+    gate: &wgpu::Buffer,
+    branch: &wgpu::Buffer,
+    seq: usize,
+    dim: usize,
+) {
+    let total = (seq * dim) as u32;
+    let params = GatedResidualAddParams {
+        dim: dim as u32,
+        total,
+        _p0: 0,
+        _p1: 0,
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.gated_residual_add,
+        "gated_resadd",
+        &[x, gate, branch],
+        &params,
+        (total.div_ceil(64), 1, 1),
+    );
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct Upsample2xChwParams {
     c: u32,
     h: u32,
@@ -3435,6 +3474,36 @@ mod tests {
         let gpu = pollster::block_on(read_back_f32(device, &y_read)).expect("readback");
         let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
         assert!(md < 1e-6, "upsample2x_chw max_diff = {md}");
+    }
+
+    #[test]
+    fn gated_residual_add_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        let (seq, dim) = (9usize, 40usize);
+        let x: Vec<f32> = (0..seq * dim).map(|i| ((i % 13) as f32 - 6.0) * 0.1).collect();
+        let gate: Vec<f32> = (0..dim).map(|i| (i as f32 * 0.2).sin()).collect();
+        let branch: Vec<f32> = (0..seq * dim).map(|i| ((i % 7) as f32 - 3.0) * 0.2).collect();
+
+        let mut cpu = x.clone();
+        crate::reference::imagegen::gated_residual_add(&mut cpu, seq, dim, &gate, &branch);
+
+        let x_buf = make_storage_rw(device, "x", seq * dim);
+        queue.write_buffer(&x_buf, 0, bytemuck::cast_slice(&x));
+        let g_buf = write_storage_f32(device, queue, "g", &gate);
+        let br_buf = write_storage_f32(device, queue, "br", &branch);
+        let (_s, read) = make_output_pair(device, "rb", (seq * dim * 4) as u64);
+        let mut enc = device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("gra") });
+        gated_residual_add_chained(&ctx, &p, &mut enc, &x_buf, &g_buf, &br_buf, seq, dim);
+        enc.copy_buffer_to_buffer(&x_buf, 0, &read, 0, (seq * dim * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &read)).expect("readback");
+        let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
+        assert!(md < 1e-4, "gated_residual_add max_diff = {md}");
     }
 
     /// GPU vs CPU parity for `cross_entropy_backward` on a vocab vector with a

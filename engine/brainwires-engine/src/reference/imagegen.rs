@@ -155,6 +155,16 @@ pub fn conv2d_chw(
     y
 }
 
+/// DiT gated residual add `x[t,c] += tanh(gate[c]) * branch[t,c]` over
+/// `[seq,dim]` (gate length `dim`). Matches `kernels/wgsl/gated_residual_add.wgsl`.
+pub fn gated_residual_add(x: &mut [f32], seq: usize, dim: usize, gate: &[f32], branch: &[f32]) {
+    for t in 0..seq {
+        for c in 0..dim {
+            x[t * dim + c] += gate[c].tanh() * branch[t * dim + c];
+        }
+    }
+}
+
 /// 2D nearest 2× upsample, channel-first `[C,H,W] → [C,2H,2W]`.
 /// Matches `kernels/wgsl/upsample2x_chw.wgsl`.
 pub fn upsample2x_chw(x: &[f32], c: usize, h: usize, w: usize) -> Vec<f32> {

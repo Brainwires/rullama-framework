@@ -22,6 +22,7 @@ pub const ADALN_MODULATE: &str = include_str!("wgsl/adaln_modulate.wgsl");
 pub const ROPE_INTERLEAVED: &str = include_str!("wgsl/rope_interleaved.wgsl");
 pub const CONV2D_CHW_F32: &str = include_str!("wgsl/conv2d_chw_f32.wgsl");
 pub const UPSAMPLE2X_CHW: &str = include_str!("wgsl/upsample2x_chw.wgsl");
+pub const GATED_RESIDUAL_ADD: &str = include_str!("wgsl/gated_residual_add.wgsl");
 pub const LEAKY_RELU: &str = include_str!("wgsl/leaky_relu.wgsl");
 pub const GELU_EXACT: &str = include_str!("wgsl/gelu_exact.wgsl");
 pub const NEAREST_UPSAMPLE2X: &str = include_str!("wgsl/nearest_upsample2x.wgsl");
