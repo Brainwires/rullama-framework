@@ -68,6 +68,23 @@ impl FlowMatchScheduler {
     }
 }
 
+/// Resolution-dependent shift `mu`, linearly interpolated from the image token
+/// count (`latent_h/patch * latent_w/patch`). Mirrors `zimage.go`'s
+/// `CalculateShift`: `mu = m*seq + b` over `[256→0.5, 4096→1.15]`.
+///
+/// NOTE: Z-Image's `scheduler_config.json` says `use_dynamic_shifting=false`,
+/// but Ollama (our oracle) ignores that and ALWAYS applies this dynamic `mu` —
+/// so the live schedule is `FlowMatchScheduler::new(steps, true, calculate_shift(seq))`.
+pub fn calculate_shift(img_seq_len: usize) -> f32 {
+    let base_seq = 256.0f32;
+    let max_seq = 4096.0f32;
+    let base_shift = 0.5f32;
+    let max_shift = 1.15f32;
+    let m = (max_shift - base_shift) / (max_seq - base_seq);
+    let b = base_shift - m * base_seq;
+    (img_seq_len as f32) * m + b
+}
+
 /// Dynamic time shift: `exp(mu) / (exp(mu) + (1/t - 1))`, with `t<=0 → 0`.
 /// Mirrors `scheduler.go`'s `timeShift`.
 pub fn time_shift(mu: f32, t: f32) -> f32 {
@@ -143,5 +160,27 @@ mod tests {
     #[test]
     fn latent_shape_divides_by_downscale() {
         assert_eq!(latent_hw(1024, 768, 8), (128, 96));
+    }
+
+    #[test]
+    fn calculate_shift_endpoints() {
+        // Linear in seq len: 256 → 0.5, 4096 → 1.15.
+        assert!((calculate_shift(256) - 0.5).abs() < 1e-5);
+        assert!((calculate_shift(4096) - 1.15).abs() < 1e-5);
+        // midpoint of the range is the midpoint shift
+        let mid = calculate_shift((256 + 4096) / 2);
+        assert!((mid - (0.5 + 1.15) / 2.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn dynamic_schedule_with_calculated_mu_still_spans_1_to_0() {
+        // A realistic 1024² image: 128×128 latent, patch 2 → 64×64 = 4096 tokens.
+        let mu = calculate_shift(64 * 64);
+        let s = FlowMatchScheduler::new(9, true, mu);
+        assert!((s.sigmas[0] - 1.0).abs() < 1e-5);
+        assert!(s.sigmas[9].abs() < 1e-5);
+        for w in s.sigmas.windows(2) {
+            assert!(w[1] < w[0]);
+        }
     }
 }

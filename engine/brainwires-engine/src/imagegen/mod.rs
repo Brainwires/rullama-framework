@@ -33,7 +33,7 @@ pub use config::{Qwen3Config, SchedulerConfig, TransformerConfig, VaeConfig};
 pub use dtype::StDtype;
 pub use manifest::{BlobRef, ImageManifest, MEDIA_JSON, MEDIA_TENSOR};
 pub use safetensors::{read_header, SafetensorsBlob, SafetensorsHeader, TensorEntry};
-pub use scheduler::{latent_hw, time_shift, FlowMatchScheduler};
+pub use scheduler::{calculate_shift, latent_hw, time_shift, FlowMatchScheduler};
 pub use timestep::sinusoidal_timestep_embedding;
 pub use source::BlobSource;
 #[cfg(not(target_arch = "wasm32"))]
