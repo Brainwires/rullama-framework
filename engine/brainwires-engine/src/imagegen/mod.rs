@@ -24,11 +24,13 @@
 pub mod dtype;
 pub mod manifest;
 pub mod safetensors;
+pub mod scheduler;
 pub mod source;
 
 pub use dtype::StDtype;
 pub use manifest::{BlobRef, ImageManifest, MEDIA_JSON, MEDIA_TENSOR};
 pub use safetensors::{read_header, SafetensorsBlob, SafetensorsHeader, TensorEntry};
+pub use scheduler::{latent_hw, time_shift, FlowMatchScheduler};
 pub use source::BlobSource;
 #[cfg(not(target_arch = "wasm32"))]
 pub use source::{find_manifest, ollama_models_root, FileBlobSource};
