@@ -21,6 +21,7 @@
 //! `Range`, the Qwen3 encoder (IM1), the DiT denoiser (IM2), the VAE decoder
 //! (IM3), the sampling loop (IM4), and the `ImageModel` wasm surface (IM5).
 
+pub mod config;
 pub mod dtype;
 pub mod manifest;
 pub mod safetensors;
@@ -28,6 +29,7 @@ pub mod scheduler;
 pub mod source;
 pub mod timestep;
 
+pub use config::{Qwen3Config, SchedulerConfig, TransformerConfig, VaeConfig};
 pub use dtype::StDtype;
 pub use manifest::{BlobRef, ImageManifest, MEDIA_JSON, MEDIA_TENSOR};
 pub use safetensors::{read_header, SafetensorsBlob, SafetensorsHeader, TensorEntry};
