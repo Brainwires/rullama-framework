@@ -2057,6 +2057,57 @@ pub fn layernorm_affine_chained(
     );
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct GroupNormParams {
+    n_groups: u32,
+    chans_per_grp: u32,
+    hw: u32,
+    eps: f32,
+    has_affine: u32,
+    _pad: [u32; 3],
+}
+
+/// GroupNorm over a single image in channel-contiguous `[C, H*W]` layout
+/// (`C = n_groups * chans_per_grp`), one workgroup per group. Optional
+/// per-channel (gamma, beta) affine; pass `None` (with a dummy) to skip it.
+/// Oracle: `reference::imagegen::group_norm`.
+#[allow(clippy::too_many_arguments)]
+pub fn groupnorm_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    x: &wgpu::Buffer,
+    gamma: Option<&wgpu::Buffer>,
+    beta: Option<&wgpu::Buffer>,
+    dummy: &wgpu::Buffer,
+    y: &wgpu::Buffer,
+    n_groups: usize,
+    chans_per_grp: usize,
+    hw: usize,
+    eps: f32,
+) {
+    let params = GroupNormParams {
+        n_groups: n_groups as u32,
+        chans_per_grp: chans_per_grp as u32,
+        hw: hw as u32,
+        eps,
+        has_affine: gamma.is_some() as u32,
+        _pad: [0; 3],
+    };
+    let g = gamma.unwrap_or(dummy);
+    let b = beta.unwrap_or(dummy);
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.groupnorm,
+        "groupnorm",
+        &[x, g, b, y],
+        &params,
+        (n_groups as u32, 1, 1),
+    );
+}
+
 /// Chained softcap: in-place would be ideal, but the WGSL has separate `x`, `y`
 /// bindings — so caller passes both. Output buffer can equal input on the host
 /// side (alias the same wgpu::Buffer through both bindings).
@@ -3008,6 +3059,70 @@ mod tests {
             .map(|(c, g)| (c - g).abs())
             .fold(0.0f32, f32::max);
         assert!(md < 1e-4, "layernorm_affine max_diff = {md}");
+    }
+
+    #[test]
+    fn groupnorm_gpu_vs_cpu() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        // 6 channels in 3 groups of 2, spatial 5×4 = 20 → C=6, hw=20.
+        let n_groups = 3usize;
+        let chans_per_grp = 2usize;
+        let hw = 20usize;
+        let chans = n_groups * chans_per_grp;
+        let total = chans * hw;
+        let eps = 1e-5f32;
+
+        let x: Vec<f32> = (0..total)
+            .map(|i| ((i as i32 % 37 - 18) as f32) * 0.07 + (i as f32 * 0.001))
+            .collect();
+        let gamma: Vec<f32> = (0..chans).map(|i| (i as f32 * 0.3).sin() * 0.5 + 1.0).collect();
+        let beta: Vec<f32> = (0..chans).map(|i| (i as f32 * 0.2).cos() * 0.25).collect();
+
+        let cpu = crate::reference::imagegen::group_norm(
+            &x,
+            n_groups,
+            chans_per_grp,
+            hw,
+            Some(&gamma),
+            Some(&beta),
+            eps,
+        );
+
+        let x_buf = write_storage_f32(device, queue, "x", &x);
+        let g_buf = write_storage_f32(device, queue, "g", &gamma);
+        let b_buf = write_storage_f32(device, queue, "b", &beta);
+        let (y_buf, y_read) = make_output_pair(device, "y", (total * 4) as u64);
+        let dummy = make_dummy_storage(device, "dummy");
+        let mut enc =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("gn") });
+        groupnorm_chained(
+            &ctx,
+            &p,
+            &mut enc,
+            &x_buf,
+            Some(&g_buf),
+            Some(&b_buf),
+            &dummy,
+            &y_buf,
+            n_groups,
+            chans_per_grp,
+            hw,
+            eps,
+        );
+        enc.copy_buffer_to_buffer(&y_buf, 0, &y_read, 0, (total * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &y_read)).expect("readback");
+
+        let md = cpu
+            .iter()
+            .zip(&gpu)
+            .map(|(c, g)| (c - g).abs())
+            .fold(0.0f32, f32::max);
+        assert!(md < 1e-4, "groupnorm max_diff = {md}");
     }
 
     /// GPU vs CPU parity for `cross_entropy_backward` on a vocab vector with a
