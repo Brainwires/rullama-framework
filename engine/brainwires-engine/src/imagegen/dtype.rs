@@ -54,7 +54,7 @@ impl StDtype {
             other => {
                 return Err(RullamaError::Image(format!(
                     "unsupported safetensors dtype {other:?}"
-                )))
+                )));
             }
         })
     }
@@ -119,7 +119,7 @@ impl StDtype {
             _ => {
                 return Err(RullamaError::Image(format!(
                     "dequant_to_f32 called on non-float dtype {self:?}"
-                )))
+                )));
             }
         }
         Ok(out)

@@ -115,11 +115,27 @@ impl<'a> DitForward<'a> {
 
         // ---- noise refiners (image, modulated) ----
         for i in 0..cfg.n_refiner_layers as usize {
-            x = self.block(&x, img_len, Some(&temb), img_cos, img_sin, &format!("noise_refiner.{i}"), eps)?;
+            x = self.block(
+                &x,
+                img_len,
+                Some(&temb),
+                img_cos,
+                img_sin,
+                &format!("noise_refiner.{i}"),
+                eps,
+            )?;
         }
         // ---- context refiners (caption, no modulation) ----
         for i in 0..cfg.n_refiner_layers as usize {
-            cap_emb = self.block(&cap_emb, cap_len, None, cap_cos, cap_sin, &format!("context_refiner.{i}"), eps)?;
+            cap_emb = self.block(
+                &cap_emb,
+                cap_len,
+                None,
+                cap_cos,
+                cap_sin,
+                &format!("context_refiner.{i}"),
+                eps,
+            )?;
         }
 
         // ---- concat [img, cap], run main layers with unified RoPE ----
@@ -128,7 +144,15 @@ impl<'a> DitForward<'a> {
         unified[..img_len * dim].copy_from_slice(&x);
         unified[img_len * dim..].copy_from_slice(&cap_emb);
         for i in 0..cfg.n_layers as usize {
-            unified = self.block(&unified, total, Some(&temb), &ucos, &usin, &format!("layers.{i}"), eps)?;
+            unified = self.block(
+                &unified,
+                total,
+                Some(&temb),
+                &ucos,
+                &usin,
+                &format!("layers.{i}"),
+                eps,
+            )?;
         }
 
         // ---- take image tokens, final layer, unpatchify ----
@@ -153,7 +177,14 @@ impl<'a> DitForward<'a> {
 
         if let Some(temb) = temb {
             // adaLN: temb[256] → [4*dim], split scale_msa/gate_msa/scale_mlp/gate_mlp
-            let chunks = self.linear(temb, 1, TEMB_DIM, &format!("{p}.adaLN_modulation.0"), 4 * dim, true)?;
+            let chunks = self.linear(
+                temb,
+                1,
+                TEMB_DIM,
+                &format!("{p}.adaLN_modulation.0"),
+                4 * dim,
+                true,
+            )?;
             let (s_msa, g_msa) = (&chunks[..dim], &chunks[dim..2 * dim]);
             let (s_mlp, g_mlp) = (&chunks[2 * dim..3 * dim], &chunks[3 * dim..4 * dim]);
 
@@ -193,7 +224,14 @@ impl<'a> DitForward<'a> {
         Ok(out)
     }
 
-    fn attention(&self, x: &[f32], seq: usize, cos: &[f32], sin: &[f32], p: &str) -> Result<Vec<f32>> {
+    fn attention(
+        &self,
+        x: &[f32],
+        seq: usize,
+        cos: &[f32],
+        sin: &[f32],
+        p: &str,
+    ) -> Result<Vec<f32>> {
         let dim = self.cfg.dim as usize;
         let nh = self.cfg.n_heads as usize;
         let hd = self.cfg.head_dim() as usize;
@@ -242,7 +280,14 @@ impl<'a> DitForward<'a> {
                 }
             }
         }
-        self.linear(&ctx, seq, dim, &format!("{p}.attention.to_out.0"), dim, false)
+        self.linear(
+            &ctx,
+            seq,
+            dim,
+            &format!("{p}.attention.to_out.0"),
+            dim,
+            false,
+        )
     }
 
     fn feed_forward(&self, x: &[f32], seq: usize, p: &str) -> Result<Vec<f32>> {
@@ -263,7 +308,14 @@ impl<'a> DitForward<'a> {
         // scale = adaLN(silu(temb)) [dim]
         let mut s = temb.to_vec();
         silu_(&mut s);
-        let scale = self.linear(&s, 1, TEMB_DIM, "all_final_layer.2-1.adaLN_modulation.1", dim, true)?;
+        let scale = self.linear(
+            &s,
+            1,
+            TEMB_DIM,
+            "all_final_layer.2-1.adaLN_modulation.1",
+            dim,
+            true,
+        )?;
         // layernorm(no affine) then ·(1+scale)
         let mut h = layernorm_no_affine(x, seq, dim, 1e-6);
         mod_scale(&mut h, seq, dim, &scale);
@@ -323,7 +375,15 @@ impl<'a> DitForward<'a> {
     }
 
     /// Linear `y[r,o]=Σ x[r,i]·W[o,i] (+ b[o])`, weight `<p>.weight` [out,in].
-    fn linear(&self, x: &[f32], rows: usize, in_dim: usize, p: &str, out_dim: usize, bias: bool) -> Result<Vec<f32>> {
+    fn linear(
+        &self,
+        x: &[f32],
+        rows: usize,
+        in_dim: usize,
+        p: &str,
+        out_dim: usize,
+        bias: bool,
+    ) -> Result<Vec<f32>> {
         let w = self.w(&format!("{p}.weight"))?;
         let b = if bias {
             Some(self.w(&format!("{p}.bias"))?)
@@ -381,8 +441,12 @@ impl<'a> DitForward<'a> {
             usage: wgpu::BufferUsages::STORAGE,
         });
         let y_buf = make_storage_rw(dev, "dit.y", rows * out_dim);
-        let mut enc = dev.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("dit.mm") });
-        matmul_bf16_batched_chained(g.ctx, g.pipes, &mut enc, &w_buf, &x_buf, &y_buf, in_dim, out_dim, rows);
+        let mut enc = dev.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("dit.mm"),
+        });
+        matmul_bf16_batched_chained(
+            g.ctx, g.pipes, &mut enc, &w_buf, &x_buf, &y_buf, in_dim, out_dim, rows,
+        );
         if let Some(b) = bias {
             let b_buf = dev.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("dit.b"),
@@ -422,7 +486,11 @@ fn head_rmsnorm(x: &mut [f32], seq: usize, heads: usize, hd: usize, w: &[f32], e
     for t in 0..seq {
         for hh in 0..heads {
             let base = (t * heads + hh) * hd;
-            let ms = x[base..base + hd].iter().map(|v| (*v as f64) * (*v as f64)).sum::<f64>() / hd as f64;
+            let ms = x[base..base + hd]
+                .iter()
+                .map(|v| (*v as f64) * (*v as f64))
+                .sum::<f64>()
+                / hd as f64;
             let inv = (1.0 / (ms + eps as f64).sqrt()) as f32;
             for d in 0..hd {
                 x[base + d] = x[base + d] * inv * w[d];
@@ -436,7 +504,11 @@ fn layernorm_no_affine(x: &[f32], rows: usize, dim: usize, eps: f32) -> Vec<f32>
     for r in 0..rows {
         let row = &x[r * dim..(r + 1) * dim];
         let mean = row.iter().map(|v| *v as f64).sum::<f64>() / dim as f64;
-        let var = row.iter().map(|v| (*v as f64 - mean) * (*v as f64 - mean)).sum::<f64>() / dim as f64;
+        let var = row
+            .iter()
+            .map(|v| (*v as f64 - mean) * (*v as f64 - mean))
+            .sum::<f64>()
+            / dim as f64;
         let inv = (1.0 / (var + eps as f64).sqrt()) as f32;
         for c in 0..dim {
             out[r * dim + c] = ((row[c] as f64 - mean) as f32) * inv;
@@ -471,7 +543,15 @@ fn silu_(v: &mut [f32]) {
 
 /// Interleaved RoPE over `[seq, heads, hd]`: even/odd pairs rotated by per-token
 /// cos/sin `[seq, half]` (shared across heads).
-fn rope_interleaved(x: &mut [f32], seq: usize, heads: usize, hd: usize, cos: &[f32], sin: &[f32], half: usize) {
+fn rope_interleaved(
+    x: &mut [f32],
+    seq: usize,
+    heads: usize,
+    hd: usize,
+    cos: &[f32],
+    sin: &[f32],
+    half: usize,
+) {
     for t in 0..seq {
         for hh in 0..heads {
             let base = (t * heads + hh) * hd;
@@ -520,7 +600,8 @@ fn unpatchify(patches: &[f32], c: usize, h: usize, w: usize, p: usize) -> Vec<f3
                 for sx in 0..p {
                     for ch in 0..c {
                         let f = (sy * p + sx) * c + ch;
-                        out[ch * h * w + (r * p + sy) * w + (col * p + sx)] = patches[tok * fpp + f];
+                        out[ch * h * w + (r * p + sy) * w + (col * p + sx)] =
+                            patches[tok * fpp + f];
                     }
                 }
             }

@@ -202,7 +202,9 @@ mod tests {
         // encoder output width matches the DiT's caption feature dim
         assert_eq!(
             c.hidden_size,
-            TransformerConfig::parse(TRANSFORMER.as_bytes()).unwrap().cap_feat_dim
+            TransformerConfig::parse(TRANSFORMER.as_bytes())
+                .unwrap()
+                .cap_feat_dim
         );
     }
 

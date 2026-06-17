@@ -16,8 +16,9 @@ fn main() {
         .nth(1)
         .unwrap_or_else(|| "weights/Z-Image-Turbo/transformer".to_string());
 
-    let cfg = TransformerConfig::parse(&std::fs::read(format!("{dir}/config.json")).expect("config"))
-        .expect("parse DiT config");
+    let cfg =
+        TransformerConfig::parse(&std::fs::read(format!("{dir}/config.json")).expect("config"))
+            .expect("parse DiT config");
     let dim = cfg.dim as usize;
     let hd = cfg.head_dim() as usize;
     let inter = 10240usize; // SwiGLU width (from weights; not in config.json)
@@ -39,10 +40,18 @@ fn main() {
     // global embedders / final layer
     check(&st, "t_embedder.mlp.0.weight", &[1024, temb]);
     check(&st, "t_embedder.mlp.2.weight", &[temb, 1024]);
-    check(&st, "cap_embedder.1.weight", &[dim, cfg.cap_feat_dim as usize]);
+    check(
+        &st,
+        "cap_embedder.1.weight",
+        &[dim, cfg.cap_feat_dim as usize],
+    );
     check(&st, "all_x_embedder.2-1.weight", &[dim, patch_in]);
     check(&st, "all_final_layer.2-1.linear.weight", &[patch_in, dim]);
-    check(&st, "all_final_layer.2-1.adaLN_modulation.1.weight", &[dim, temb]);
+    check(
+        &st,
+        "all_final_layer.2-1.adaLN_modulation.1.weight",
+        &[dim, temb],
+    );
 
     // a transformer block's tensors. `has_adaln` is true for the timestep-
     // modulated blocks (main layers + noise_refiner); the context_refiner
@@ -59,7 +68,11 @@ fn main() {
         check(&st, &format!("{p}.attention_norm1.weight"), &[dim]);
         if has_adaln {
             // adaLN modulation: 4·dim params from the 256-d timestep embedding.
-            check(&st, &format!("{p}.adaLN_modulation.0.weight"), &[4 * dim, temb]);
+            check(
+                &st,
+                &format!("{p}.adaLN_modulation.0.weight"),
+                &[4 * dim, temb],
+            );
         } else {
             assert!(
                 !st.has(&format!("{p}.adaLN_modulation.0.weight")),
@@ -76,7 +89,9 @@ fn main() {
     }
 
     // spot-check range-read + dequant
-    let w = st.tensor_f32("layers.0.attention_norm1.weight").expect("read");
+    let w = st
+        .tensor_f32("layers.0.attention_norm1.weight")
+        .expect("read");
     println!(
         "layers.0.attention_norm1: {} elems dtype {:?} mean {:.4}",
         w.len(),

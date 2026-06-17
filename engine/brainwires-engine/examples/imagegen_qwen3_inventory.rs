@@ -44,7 +44,11 @@ fn main() {
     let hd = cfg.head_dim as usize;
 
     // embed_tokens: [vocab, hidden]
-    check(&st, "model.embed_tokens.weight", &[cfg.vocab_size as usize, h]);
+    check(
+        &st,
+        "model.embed_tokens.weight",
+        &[cfg.vocab_size as usize, h],
+    );
     check(&st, "model.norm.weight", &[h]);
 
     // Every layer's projection/norm shapes.

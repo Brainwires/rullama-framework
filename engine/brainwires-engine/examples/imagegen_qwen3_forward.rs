@@ -51,7 +51,11 @@ fn main() {
 
     println!("done in {dt:.2?}");
     println!("output [{}, {h}], all finite = {finite}", tokens.len());
-    println!("  token0 hidden: L2={:.3}  [0..4]={:?}", l2(first), &first[..4]);
+    println!(
+        "  token0 hidden: L2={:.3}  [0..4]={:?}",
+        l2(first),
+        &first[..4]
+    );
     println!(
         "  tokenN hidden: L2={:.3}  [0..4]={:?}",
         l2(last),

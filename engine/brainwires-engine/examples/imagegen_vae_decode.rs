@@ -47,10 +47,14 @@ fn main() {
     let finite = rgb.iter().all(|v| v.is_finite());
     let in_range = rgb.iter().all(|v| (0.0..=1.0).contains(v));
     let mean = rgb.iter().sum::<f32>() / rgb.len() as f32;
-    let (mn, mx) = rgb.iter().fold((f32::MAX, f32::MIN), |(a, b), &v| (a.min(v), b.max(v)));
+    let (mn, mx) = rgb
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(a, b), &v| (a.min(v), b.max(v)));
 
     println!("done in {dt:.2?}");
-    println!("RGB [3,{px},{px}]: finite={finite} in[0,1]={in_range} mean={mean:.4} min={mn:.4} max={mx:.4}");
+    println!(
+        "RGB [3,{px},{px}]: finite={finite} in[0,1]={in_range} mean={mean:.4} min={mn:.4} max={mx:.4}"
+    );
     assert!(finite && in_range, "VAE output not a valid image");
     println!("\nOK — VAE decoder forward ran clean on real weights.");
 }

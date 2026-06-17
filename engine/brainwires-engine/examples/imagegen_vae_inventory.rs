@@ -28,10 +28,8 @@ fn main() {
         cfg.mid_block_add_attention
     );
 
-    let st = ShardedSafetensors::open_single(format!(
-        "{dir}/diffusion_pytorch_model.safetensors"
-    ))
-    .expect("open VAE safetensors");
+    let st = ShardedSafetensors::open_single(format!("{dir}/diffusion_pytorch_model.safetensors"))
+        .expect("open VAE safetensors");
     let dec = st.names().filter(|n| n.starts_with("decoder")).count();
     println!("loaded {} tensors ({} decoder)", st.names().count(), dec);
 
@@ -73,12 +71,12 @@ fn main() {
             upsamplers += 1;
         }
     }
-    println!(
-        "up_blocks: {nblocks} (channels {rev:?}), {upsamplers} upsamplers"
-    );
+    println!("up_blocks: {nblocks} (channels {rev:?}), {upsamplers} upsamplers");
 
     // Spot-check a real range-read + dequant.
-    let w = st.tensor_f32("decoder.conv_out.weight").expect("read conv_out");
+    let w = st
+        .tensor_f32("decoder.conv_out.weight")
+        .expect("read conv_out");
     println!(
         "conv_out: {} elems dtype {:?}, mean {:.5}",
         w.len(),

@@ -164,7 +164,7 @@ mod native {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use native::{find_manifest, ollama_models_root, FileBlobSource};
+pub use native::{FileBlobSource, find_manifest, ollama_models_root};
 
 // ---------- HttpRangeBlobSource (wasm32-only) ----------
 
@@ -185,7 +185,9 @@ mod wasm {
         /// `base_url` is the model root, e.g.
         /// `https://models.brainwires.dev/z-image-turbo` (no trailing slash).
         pub fn new(base_url: impl Into<String>) -> Self {
-            Self { base_url: base_url.into() }
+            Self {
+                base_url: base_url.into(),
+            }
         }
 
         fn url(&self, name: &str) -> String {
@@ -218,7 +220,10 @@ mod wasm {
                 .dyn_into()
                 .map_err(|e| RullamaError::Image(format!("response cast: {e:?}")))?;
             if !resp.ok() && resp.status() != 206 {
-                return Err(RullamaError::Image(format!("HTTP {} for {url}", resp.status())));
+                return Err(RullamaError::Image(format!(
+                    "HTTP {} for {url}",
+                    resp.status()
+                )));
             }
             let ab = JsFuture::from(
                 resp.array_buffer()

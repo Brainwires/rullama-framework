@@ -144,7 +144,8 @@ pub fn conv2d_chw(
                             if ix < 0 || ix >= in_w as isize {
                                 continue;
                             }
-                            acc += x[xb + iy as usize * in_w + ix as usize] * weight[wb + ky * k + kx];
+                            acc +=
+                                x[xb + iy as usize * in_w + ix as usize] * weight[wb + ky * k + kx];
                         }
                     }
                 }
@@ -217,7 +218,10 @@ mod tests {
         // single token/head, hd=2, angle=π/2 → cos0,sin1: (x1,x2)→(-x2, x1)
         let mut x = vec![1.0f32, 0.0];
         rope_interleaved(&mut x, 1, 1, 2, &[0.0], &[1.0]);
-        assert!((x[0] - 0.0).abs() < 1e-6 && (x[1] - 1.0).abs() < 1e-6, "{x:?}");
+        assert!(
+            (x[0] - 0.0).abs() < 1e-6 && (x[1] - 1.0).abs() < 1e-6,
+            "{x:?}"
+        );
     }
 
     #[test]

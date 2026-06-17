@@ -3297,7 +3297,9 @@ mod tests {
         let x: Vec<f32> = (0..total)
             .map(|i| ((i as i32 % 37 - 18) as f32) * 0.07 + (i as f32 * 0.001))
             .collect();
-        let gamma: Vec<f32> = (0..chans).map(|i| (i as f32 * 0.3).sin() * 0.5 + 1.0).collect();
+        let gamma: Vec<f32> = (0..chans)
+            .map(|i| (i as f32 * 0.3).sin() * 0.5 + 1.0)
+            .collect();
         let beta: Vec<f32> = (0..chans).map(|i| (i as f32 * 0.2).cos() * 0.25).collect();
 
         let cpu = crate::reference::imagegen::group_norm(
@@ -3353,7 +3355,9 @@ mod tests {
         let seq = 11usize;
         let hidden = 53usize;
         let total = seq * hidden;
-        let x: Vec<f32> = (0..total).map(|i| ((i as i32 % 23 - 11) as f32) * 0.05).collect();
+        let x: Vec<f32> = (0..total)
+            .map(|i| ((i as i32 % 23 - 11) as f32) * 0.05)
+            .collect();
         let scale: Vec<f32> = (0..hidden).map(|i| (i as f32 * 0.17).sin() * 0.4).collect();
         let shift: Vec<f32> = (0..hidden).map(|i| (i as f32 * 0.11).cos() * 0.3).collect();
 
@@ -3363,9 +3367,12 @@ mod tests {
         let s_buf = write_storage_f32(device, queue, "s", &scale);
         let sh_buf = write_storage_f32(device, queue, "sh", &shift);
         let (y_buf, y_read) = make_output_pair(device, "y", (total * 4) as u64);
-        let mut enc = device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("adaln") });
-        adaln_modulate_chained(&ctx, &p, &mut enc, &x_buf, &s_buf, &sh_buf, &y_buf, seq, hidden);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("adaln"),
+        });
+        adaln_modulate_chained(
+            &ctx, &p, &mut enc, &x_buf, &s_buf, &sh_buf, &y_buf, seq, hidden,
+        );
         enc.copy_buffer_to_buffer(&y_buf, 0, &y_read, 0, (total * 4) as u64);
         queue.submit(Some(enc.finish()));
         let gpu = pollster::block_on(read_back_f32(device, &y_read)).expect("readback");
@@ -3404,8 +3411,9 @@ mod tests {
         let c_buf = write_storage_f32(device, queue, "c", &cos);
         let s_buf = write_storage_f32(device, queue, "s", &sin);
         let (_scratch, read) = make_output_pair(device, "rb", (total * 4) as u64);
-        let mut enc = device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("rope") });
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("rope"),
+        });
         rope_interleaved_chained(&ctx, &p, &mut enc, &x_buf, &c_buf, &s_buf, seq, heads, hd);
         enc.copy_buffer_to_buffer(&x_buf, 0, &read, 0, (total * 4) as u64);
         queue.submit(Some(enc.finish()));
@@ -3428,19 +3436,27 @@ mod tests {
 
         // 3→5 channels, 7×6 spatial, 3×3 kernel, pad 1 (resnet-style).
         let (in_c, in_h, in_w, out_c, k, pad) = (3usize, 7usize, 6usize, 5usize, 3usize, 1usize);
-        let x: Vec<f32> = (0..in_c * in_h * in_w).map(|i| ((i % 11) as f32 - 5.0) * 0.1).collect();
-        let w: Vec<f32> = (0..out_c * in_c * k * k).map(|i| ((i % 7) as f32 - 3.0) * 0.05).collect();
+        let x: Vec<f32> = (0..in_c * in_h * in_w)
+            .map(|i| ((i % 11) as f32 - 5.0) * 0.1)
+            .collect();
+        let w: Vec<f32> = (0..out_c * in_c * k * k)
+            .map(|i| ((i % 7) as f32 - 3.0) * 0.05)
+            .collect();
         let b: Vec<f32> = (0..out_c).map(|i| i as f32 * 0.1).collect();
 
-        let cpu = crate::reference::imagegen::conv2d_chw(&x, in_c, in_h, in_w, &w, &b, out_c, k, pad);
+        let cpu =
+            crate::reference::imagegen::conv2d_chw(&x, in_c, in_h, in_w, &w, &b, out_c, k, pad);
 
         let x_buf = write_storage_f32(device, queue, "x", &x);
         let w_buf = write_storage_f32(device, queue, "w", &w);
         let b_buf = write_storage_f32(device, queue, "b", &b);
         let (y_buf, y_read) = make_output_pair(device, "y", (cpu.len() * 4) as u64);
-        let mut enc = device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("conv") });
-        conv2d_chw_f32_chained(&ctx, &p, &mut enc, &x_buf, &w_buf, &b_buf, &y_buf, in_c, in_h, in_w, out_c, k, pad);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("conv"),
+        });
+        conv2d_chw_f32_chained(
+            &ctx, &p, &mut enc, &x_buf, &w_buf, &b_buf, &y_buf, in_c, in_h, in_w, out_c, k, pad,
+        );
         enc.copy_buffer_to_buffer(&y_buf, 0, &y_read, 0, (cpu.len() * 4) as u64);
         queue.submit(Some(enc.finish()));
         let gpu = pollster::block_on(read_back_f32(device, &y_read)).expect("readback");
@@ -3466,13 +3482,17 @@ mod tests {
 
         let x_buf = write_storage_f32(device, queue, "x", &x);
         let (y_buf, y_read) = make_output_pair(device, "y", (cpu.len() * 4) as u64);
-        let mut enc = device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("up") });
+        let mut enc =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("up") });
         upsample2x_chw_chained(&ctx, &p, &mut enc, &x_buf, &y_buf, c, h, w);
         enc.copy_buffer_to_buffer(&y_buf, 0, &y_read, 0, (cpu.len() * 4) as u64);
         queue.submit(Some(enc.finish()));
         let gpu = pollster::block_on(read_back_f32(device, &y_read)).expect("readback");
-        let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
+        let md = cpu
+            .iter()
+            .zip(&gpu)
+            .map(|(c, g)| (c - g).abs())
+            .fold(0.0f32, f32::max);
         assert!(md < 1e-6, "upsample2x_chw max_diff = {md}");
     }
 
@@ -3484,9 +3504,13 @@ mod tests {
         let queue = &ctx.queue;
 
         let (seq, dim) = (9usize, 40usize);
-        let x: Vec<f32> = (0..seq * dim).map(|i| ((i % 13) as f32 - 6.0) * 0.1).collect();
+        let x: Vec<f32> = (0..seq * dim)
+            .map(|i| ((i % 13) as f32 - 6.0) * 0.1)
+            .collect();
         let gate: Vec<f32> = (0..dim).map(|i| (i as f32 * 0.2).sin()).collect();
-        let branch: Vec<f32> = (0..seq * dim).map(|i| ((i % 7) as f32 - 3.0) * 0.2).collect();
+        let branch: Vec<f32> = (0..seq * dim)
+            .map(|i| ((i % 7) as f32 - 3.0) * 0.2)
+            .collect();
 
         let mut cpu = x.clone();
         crate::reference::imagegen::gated_residual_add(&mut cpu, seq, dim, &gate, &branch);
@@ -3496,13 +3520,17 @@ mod tests {
         let g_buf = write_storage_f32(device, queue, "g", &gate);
         let br_buf = write_storage_f32(device, queue, "br", &branch);
         let (_s, read) = make_output_pair(device, "rb", (seq * dim * 4) as u64);
-        let mut enc = device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("gra") });
+        let mut enc =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("gra") });
         gated_residual_add_chained(&ctx, &p, &mut enc, &x_buf, &g_buf, &br_buf, seq, dim);
         enc.copy_buffer_to_buffer(&x_buf, 0, &read, 0, (seq * dim * 4) as u64);
         queue.submit(Some(enc.finish()));
         let gpu = pollster::block_on(read_back_f32(device, &read)).expect("readback");
-        let md = cpu.iter().zip(&gpu).map(|(c, g)| (c - g).abs()).fold(0.0f32, f32::max);
+        let md = cpu
+            .iter()
+            .zip(&gpu)
+            .map(|(c, g)| (c - g).abs())
+            .fold(0.0f32, f32::max);
         assert!(md < 1e-4, "gated_residual_add max_diff = {md}");
     }
 

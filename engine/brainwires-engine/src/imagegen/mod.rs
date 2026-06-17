@@ -34,15 +34,15 @@ pub mod timestep;
 pub use config::{Qwen3Config, SchedulerConfig, TransformerConfig, VaeConfig};
 pub use dtype::StDtype;
 pub use manifest::{BlobRef, ImageManifest, MEDIA_JSON, MEDIA_TENSOR};
-pub use safetensors::{read_header, SafetensorsBlob, SafetensorsHeader, TensorEntry};
-pub use scheduler::{calculate_shift, latent_hw, time_shift, FlowMatchScheduler};
+pub use safetensors::{SafetensorsBlob, SafetensorsHeader, TensorEntry, read_header};
+pub use scheduler::{FlowMatchScheduler, calculate_shift, latent_hw, time_shift};
 pub use sharded::ShardIndex;
-pub use streaming::StreamingShards;
 #[cfg(not(target_arch = "wasm32"))]
 pub use sharded::ShardedSafetensors;
-pub use timestep::sinusoidal_timestep_embedding;
 pub use source::BlobSource;
-#[cfg(not(target_arch = "wasm32"))]
-pub use source::{find_manifest, ollama_models_root, FileBlobSource};
 #[cfg(target_arch = "wasm32")]
 pub use source::HttpRangeBlobSource;
+#[cfg(not(target_arch = "wasm32"))]
+pub use source::{FileBlobSource, find_manifest, ollama_models_root};
+pub use streaming::StreamingShards;
+pub use timestep::sinusoidal_timestep_embedding;

@@ -139,8 +139,7 @@ impl SafetensorsBlob {
         if bytes.len() < 8 {
             return Err(RullamaError::Image("safetensors blob < 8 bytes".into()));
         }
-        let header_size =
-            u64::from_le_bytes(bytes[0..8].try_into().expect("8 bytes")) as usize;
+        let header_size = u64::from_le_bytes(bytes[0..8].try_into().expect("8 bytes")) as usize;
         let header_end = 8usize
             .checked_add(header_size)
             .ok_or_else(|| RullamaError::Image("header size overflow".into()))?;
@@ -250,7 +249,13 @@ mod tests {
     use half::bf16;
 
     /// Build a one-tensor safetensors blob in memory.
-    fn make_blob(name: &str, dtype: &str, shape: &[usize], data: &[u8], meta: Option<&str>) -> Vec<u8> {
+    fn make_blob(
+        name: &str,
+        dtype: &str,
+        shape: &[usize],
+        data: &[u8],
+        meta: Option<&str>,
+    ) -> Vec<u8> {
         let mut header = format!(
             "{{\"{name}\":{{\"dtype\":\"{dtype}\",\"shape\":{shape:?},\"data_offsets\":[0,{}]}}",
             data.len()
@@ -291,7 +296,10 @@ mod tests {
         let blob = make_blob("w.packed", "U8", &[8], &data, Some(meta));
         let st = SafetensorsBlob::parse(blob).unwrap();
         assert_eq!(st.quant_type(), Some("int4"));
-        assert_eq!(st.metadata().get("group_size").map(String::as_str), Some("32"));
+        assert_eq!(
+            st.metadata().get("group_size").map(String::as_str),
+            Some("32")
+        );
         // U8 packed weight can't be float-dequantized directly.
         assert!(st.tensor_f32("w.packed").is_err());
     }

@@ -53,7 +53,12 @@ impl<'a> VaeDecoder<'a> {
             .iter()
             .map(|v| v / self.cfg.scaling_factor + self.cfg.shift_factor)
             .collect();
-        let mut x = Chw { c: lc, h: lh, w: lw, d: z };
+        let mut x = Chw {
+            c: lc,
+            h: lh,
+            w: lw,
+            d: z,
+        };
 
         // conv_in (3×3 pad1)
         x = self.conv(&x, "decoder.conv_in", 1)?;
@@ -80,7 +85,15 @@ impl<'a> VaeDecoder<'a> {
 
         // conv_norm_out (GroupNorm) → silu → conv_out (3×3 pad1)
         let (gnw, gnb) = self.norm_pair("decoder.conv_norm_out")?;
-        x.d = group_norm(&x.d, groups, x.c / groups, x.h * x.w, Some(&gnw), Some(&gnb), 1e-6);
+        x.d = group_norm(
+            &x.d,
+            groups,
+            x.c / groups,
+            x.h * x.w,
+            Some(&gnw),
+            Some(&gnb),
+            1e-6,
+        );
         silu_(&mut x.d);
         x = self.conv(&x, "decoder.conv_out", 1)?;
 
@@ -99,13 +112,29 @@ impl<'a> VaeDecoder<'a> {
             c: x.c,
             h: x.h,
             w: x.w,
-            d: group_norm(&x.d, groups, x.c / groups, x.h * x.w, Some(&n1w), Some(&n1b), 1e-6),
+            d: group_norm(
+                &x.d,
+                groups,
+                x.c / groups,
+                x.h * x.w,
+                Some(&n1w),
+                Some(&n1b),
+                1e-6,
+            ),
         };
         silu_(&mut h.d);
         h = self.conv(&h, &format!("{p}.conv1"), 1)?;
 
         let (n2w, n2b) = self.norm_pair(&format!("{p}.norm2"))?;
-        h.d = group_norm(&h.d, groups, h.c / groups, h.h * h.w, Some(&n2w), Some(&n2b), 1e-6);
+        h.d = group_norm(
+            &h.d,
+            groups,
+            h.c / groups,
+            h.h * h.w,
+            Some(&n2w),
+            Some(&n2b),
+            1e-6,
+        );
         silu_(&mut h.d);
         h = self.conv(&h, &format!("{p}.conv2"), 1)?;
 
@@ -113,7 +142,12 @@ impl<'a> VaeDecoder<'a> {
         let res = if self.st.has(&format!("{p}.conv_shortcut.weight")) {
             self.conv(x, &format!("{p}.conv_shortcut"), 0)?
         } else {
-            Chw { c: x.c, h: x.h, w: x.w, d: x.d.clone() }
+            Chw {
+                c: x.c,
+                h: x.h,
+                w: x.w,
+                d: x.d.clone(),
+            }
         };
         for (hv, rv) in h.d.iter_mut().zip(&res.d) {
             *hv += rv;
@@ -173,7 +207,12 @@ impl<'a> VaeDecoder<'a> {
                 y[ch * n + t] += out[t * c + ch];
             }
         }
-        Ok(Chw { c, h: x.h, w: x.w, d: y })
+        Ok(Chw {
+            c,
+            h: x.h,
+            w: x.w,
+            d: y,
+        })
     }
 
     // ---- ops ----
@@ -223,11 +262,23 @@ impl<'a> VaeDecoder<'a> {
                 }
             }
         }
-        Ok(Chw { c: cout, h: hout, w: wout, d: y })
+        Ok(Chw {
+            c: cout,
+            h: hout,
+            w: wout,
+            d: y,
+        })
     }
 
     /// Linear `y[t,o] = Σ_i x[t,i]·W[o,i] + b[o]`, weight `[out,in]`.
-    fn linear(&self, x: &[f32], rows: usize, in_dim: usize, p: &str, out_dim: usize) -> Result<Vec<f32>> {
+    fn linear(
+        &self,
+        x: &[f32],
+        rows: usize,
+        in_dim: usize,
+        p: &str,
+        out_dim: usize,
+    ) -> Result<Vec<f32>> {
         let w = self.st.tensor_f32(&format!("{p}.weight"))?;
         let b = self.st.tensor_f32(&format!("{p}.bias"))?;
         let mut y = vec![0.0f32; rows * out_dim];
@@ -268,5 +319,10 @@ fn upsample2x(x: &Chw) -> Chw {
             }
         }
     }
-    Chw { c: x.c, h: h2, w: w2, d }
+    Chw {
+        c: x.c,
+        h: h2,
+        w: w2,
+        d,
+    }
 }

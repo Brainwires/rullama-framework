@@ -17,7 +17,10 @@
 /// Build the `dim`-length sinusoidal embedding for scalar timestep `t`.
 /// `dim` must be even; output is `[cos(args)… , sin(args)…]`.
 pub fn sinusoidal_timestep_embedding(t: f32, dim: usize) -> Vec<f32> {
-    assert!(dim.is_multiple_of(2), "timestep embed dim must be even, got {dim}");
+    assert!(
+        dim.is_multiple_of(2),
+        "timestep embed dim must be even, got {dim}"
+    );
     let half = dim / 2;
     let ln_max = (10000.0f64).ln();
     let mut out = vec![0.0f32; dim];

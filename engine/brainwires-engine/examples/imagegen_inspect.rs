@@ -12,7 +12,7 @@
 
 use std::collections::BTreeMap;
 
-use rullama::imagegen::{find_manifest, read_header, BlobSource, FileBlobSource, ImageManifest};
+use rullama::imagegen::{BlobSource, FileBlobSource, ImageManifest, find_manifest, read_header};
 
 fn fmt_bytes(n: u64) -> String {
     const U: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
@@ -26,7 +26,9 @@ fn fmt_bytes(n: u64) -> String {
 }
 
 fn main() {
-    let name = std::env::args().nth(1).unwrap_or_else(|| "z-image".to_string());
+    let name = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "z-image".to_string());
 
     let manifest_path = match find_manifest(&name) {
         Ok(p) => p,
@@ -76,9 +78,7 @@ fn main() {
             .component(comp)
             .next()
             .map(|(_, b)| b)
-            .and_then(|b| {
-                pollster::block_on(src.read_prefix(&b.blob_filename(), 1 << 16)).ok()
-            })
+            .and_then(|b| pollster::block_on(src.read_prefix(&b.blob_filename(), 1 << 16)).ok())
             .and_then(|prefix| read_header(&prefix).ok());
         let dtype_note = match sample {
             Some(h) => {
@@ -107,14 +107,21 @@ fn main() {
     // ---- JSON config blobs: print them (the real dims live here) ----
     println!("\njson config blobs:");
     for b in manifest.layers.iter().filter(|b| b.is_json()) {
-        let label = if b.name.is_empty() { "(config)" } else { b.name.as_str() };
+        let label = if b.name.is_empty() {
+            "(config)"
+        } else {
+            b.name.as_str()
+        };
         println!("  ── {label} ({}) ──", fmt_bytes(b.size));
         match pollster::block_on(src.read_blob(&b.blob_filename())) {
             Ok(bytes) => {
                 let text = String::from_utf8_lossy(&bytes);
                 // Pretty-print if it parses as JSON, else raw.
                 match serde_json::from_str::<serde_json::Value>(&text) {
-                    Ok(v) => println!("{}", serde_json::to_string_pretty(&v).unwrap_or(text.into())),
+                    Ok(v) => println!(
+                        "{}",
+                        serde_json::to_string_pretty(&v).unwrap_or(text.into())
+                    ),
                     Err(_) => println!("{text}"),
                 }
             }

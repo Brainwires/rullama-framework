@@ -34,7 +34,9 @@ impl ShardIndex {
         let raw: RawIndex = serde_json::from_slice(bytes)
             .map_err(|e| RullamaError::Image(format!("shard index JSON: {e}")))?;
         if raw.weight_map.is_empty() {
-            return Err(RullamaError::Image("shard index has empty weight_map".into()));
+            return Err(RullamaError::Image(
+                "shard index has empty weight_map".into(),
+            ));
         }
         let total_size = raw
             .metadata
@@ -71,7 +73,7 @@ impl ShardIndex {
 mod native {
     use super::*;
     use crate::imagegen::dtype::StDtype;
-    use crate::imagegen::safetensors::{read_header, SafetensorsHeader};
+    use crate::imagegen::safetensors::{SafetensorsHeader, read_header};
     use std::fs::File;
     use std::os::unix::fs::FileExt;
     use std::path::Path;
@@ -155,11 +157,9 @@ mod native {
                 .shards
                 .get(shard)
                 .ok_or_else(|| RullamaError::Image(format!("shard {shard:?} not opened")))?;
-            let entry = sf
-                .header
-                .tensors
-                .get(name)
-                .ok_or_else(|| RullamaError::Image(format!("tensor {name:?} not in shard header")))?;
+            let entry = sf.header.tensors.get(name).ok_or_else(|| {
+                RullamaError::Image(format!("tensor {name:?} not in shard header"))
+            })?;
             let range = sf
                 .header
                 .tensor_range(name)
@@ -207,7 +207,11 @@ mod native {
         let header_size = u64::from_le_bytes(len8) as usize;
         let mut prefix = vec![0u8; 8 + header_size];
         file.read_exact_at(&mut prefix, 0).map_err(|e| {
-            RullamaError::Image(format!("read header {} bytes {}: {e}", header_size, path.display()))
+            RullamaError::Image(format!(
+                "read header {} bytes {}: {e}",
+                header_size,
+                path.display()
+            ))
         })?;
         let header = read_header(&prefix)?;
         Ok(ShardFile { file, header })

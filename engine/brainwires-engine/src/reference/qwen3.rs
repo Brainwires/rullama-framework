@@ -56,7 +56,13 @@ impl<'a> Qwen3Encoder<'a> {
         for li in 0..cfg.num_hidden_layers as usize {
             let p = format!("model.layers.{li}");
             // attention sub-block
-            let normed = rmsnorm(&x, seq, h, &self.w(&format!("{p}.input_layernorm.weight"))?, eps);
+            let normed = rmsnorm(
+                &x,
+                seq,
+                h,
+                &self.w(&format!("{p}.input_layernorm.weight"))?,
+                eps,
+            );
             let attn = self.attention(&normed, seq, &p, nq, nkv, hd)?;
             for i in 0..seq * h {
                 x[i] += attn[i];
@@ -99,9 +105,27 @@ impl<'a> Qwen3Encoder<'a> {
         let kvd = nkv * hd;
 
         // projections: weight [out, in], y = x · Wᵀ
-        let mut q = linear(x, seq, h, &self.w(&format!("{p}.self_attn.q_proj.weight"))?, qd);
-        let mut k = linear(x, seq, h, &self.w(&format!("{p}.self_attn.k_proj.weight"))?, kvd);
-        let v = linear(x, seq, h, &self.w(&format!("{p}.self_attn.v_proj.weight"))?, kvd);
+        let mut q = linear(
+            x,
+            seq,
+            h,
+            &self.w(&format!("{p}.self_attn.q_proj.weight"))?,
+            qd,
+        );
+        let mut k = linear(
+            x,
+            seq,
+            h,
+            &self.w(&format!("{p}.self_attn.k_proj.weight"))?,
+            kvd,
+        );
+        let v = linear(
+            x,
+            seq,
+            h,
+            &self.w(&format!("{p}.self_attn.v_proj.weight"))?,
+            kvd,
+        );
 
         // per-head QK RMSNorm (over head_dim) with hardcoded 1e-6, then RoPE.
         let qn = self.w(&format!("{p}.self_attn.q_norm.weight"))?;
@@ -148,21 +172,45 @@ impl<'a> Qwen3Encoder<'a> {
         }
 
         // o_proj: [h, qd]
-        Ok(linear(&ctx, seq, qd, &self.w(&format!("{p}.self_attn.o_proj.weight"))?, h))
+        Ok(linear(
+            &ctx,
+            seq,
+            qd,
+            &self.w(&format!("{p}.self_attn.o_proj.weight"))?,
+            h,
+        ))
     }
 
     fn mlp(&self, x: &[f32], seq: usize, p: &str) -> Result<Vec<f32>> {
         let h = self.cfg.hidden_size as usize;
         let inter = self.cfg.intermediate_size as usize;
-        let gate = linear(x, seq, h, &self.w(&format!("{p}.mlp.gate_proj.weight"))?, inter);
-        let up = linear(x, seq, h, &self.w(&format!("{p}.mlp.up_proj.weight"))?, inter);
+        let gate = linear(
+            x,
+            seq,
+            h,
+            &self.w(&format!("{p}.mlp.gate_proj.weight"))?,
+            inter,
+        );
+        let up = linear(
+            x,
+            seq,
+            h,
+            &self.w(&format!("{p}.mlp.up_proj.weight"))?,
+            inter,
+        );
         let mut hmid = vec![0.0f32; seq * inter];
         for i in 0..seq * inter {
             let g = gate[i];
             let silu = g / (1.0 + (-g).exp());
             hmid[i] = silu * up[i];
         }
-        Ok(linear(&hmid, seq, inter, &self.w(&format!("{p}.mlp.down_proj.weight"))?, h))
+        Ok(linear(
+            &hmid,
+            seq,
+            inter,
+            &self.w(&format!("{p}.mlp.down_proj.weight"))?,
+            h,
+        ))
     }
 }
 

@@ -44,7 +44,9 @@ impl<S: BlobSource> StreamingShards<S> {
             // read the 8-byte length, then exactly the header bytes.
             let len8 = src.read_range(shard, 0, 8).await?;
             let header_size = u64::from_le_bytes(
-                len8.as_slice().try_into().map_err(|_| RullamaError::Image("short header len".into()))?,
+                len8.as_slice()
+                    .try_into()
+                    .map_err(|_| RullamaError::Image("short header len".into()))?,
             );
             let prefix = src.read_prefix(shard, 8 + header_size as usize).await?;
             let hdr = read_header(&prefix)?;
@@ -86,6 +88,12 @@ impl<S: BlobSource> StreamingShards<S> {
         self.index.get(name).map(|l| l.shape.as_slice())
     }
 
+    /// Shape or an `Image` error — the ergonomic form for forward passes.
+    pub fn shape_of(&self, name: &str) -> Result<&[usize]> {
+        self.shape(name)
+            .ok_or_else(|| RullamaError::Image(format!("tensor {name:?} not in index")))
+    }
+
     pub fn dtype(&self, name: &str) -> Option<StDtype> {
         self.index.get(name).map(|l| l.dtype)
     }
@@ -96,7 +104,9 @@ impl<S: BlobSource> StreamingShards<S> {
             .index
             .get(name)
             .ok_or_else(|| RullamaError::Image(format!("tensor {name:?} not in index")))?;
-        self.src.read_range(&l.shard, l.start, l.end - l.start).await
+        self.src
+            .read_range(&l.shard, l.start, l.end - l.start)
+            .await
     }
 
     /// Stream + dequantize a float tensor to f32.
@@ -133,7 +143,10 @@ mod tests {
         .unwrap();
         assert!(ss.has("decoder.conv_in.weight"));
         // conv_in: [512, 16, 3, 3]
-        assert_eq!(ss.shape("decoder.conv_in.weight").unwrap(), &[512, 16, 3, 3]);
+        assert_eq!(
+            ss.shape("decoder.conv_in.weight").unwrap(),
+            &[512, 16, 3, 3]
+        );
         let w = pollster::block_on(ss.tensor_f32("decoder.conv_out.weight")).unwrap();
         assert_eq!(w.len(), 3 * 128 * 3 * 3);
         assert!(w.iter().all(|v| v.is_finite()));

@@ -14,7 +14,7 @@
 
 use crate::error::Result;
 use crate::imagegen::config::{Qwen3Config, TransformerConfig, VaeConfig};
-use crate::imagegen::scheduler::{calculate_shift, FlowMatchScheduler};
+use crate::imagegen::scheduler::{FlowMatchScheduler, calculate_shift};
 use crate::imagegen::sharded::ShardedSafetensors;
 use crate::reference::dit::DitForward;
 use crate::reference::qwen3::Qwen3Encoder;

@@ -11,11 +11,13 @@
 //! tiny — this validates the pipeline, not speed. (GPU path is future work.)
 
 use rullama::imagegen::{Qwen3Config, ShardedSafetensors, TransformerConfig, VaeConfig};
-use rullama::reference::pipeline::{generate, Components};
+use rullama::reference::pipeline::{Components, generate};
 
 fn main() {
     let mut a = std::env::args().skip(1);
-    let root = a.next().unwrap_or_else(|| "weights/Z-Image-Turbo".to_string());
+    let root = a
+        .next()
+        .unwrap_or_else(|| "weights/Z-Image-Turbo".to_string());
     let lh: usize = a.next().and_then(|s| s.parse().ok()).unwrap_or(8);
     let lw: usize = a.next().and_then(|s| s.parse().ok()).unwrap_or(8);
     let steps: usize = a.next().and_then(|s| s.parse().ok()).unwrap_or(2);
@@ -28,14 +30,27 @@ fn main() {
     let vae_cfg = VaeConfig::parse(&rd(format!("{root}/vae/config.json"))).unwrap();
 
     println!("loading weights (text_encoder + transformer + vae)...");
-    let enc_st = ShardedSafetensors::open_dir(format!("{root}/text_encoder"), "model.safetensors.index.json").unwrap();
-    let dit_st = ShardedSafetensors::open_dir(format!("{root}/transformer"), "diffusion_pytorch_model.safetensors.index.json").unwrap();
-    let vae_st = ShardedSafetensors::open_single(format!("{root}/vae/diffusion_pytorch_model.safetensors")).unwrap();
+    let enc_st = ShardedSafetensors::open_dir(
+        format!("{root}/text_encoder"),
+        "model.safetensors.index.json",
+    )
+    .unwrap();
+    let dit_st = ShardedSafetensors::open_dir(
+        format!("{root}/transformer"),
+        "diffusion_pytorch_model.safetensors.index.json",
+    )
+    .unwrap();
+    let vae_st =
+        ShardedSafetensors::open_single(format!("{root}/vae/diffusion_pytorch_model.safetensors"))
+            .unwrap();
 
     let comps = Components {
-        enc_st: &enc_st, enc_cfg: &enc_cfg,
-        dit_st: &dit_st, dit_cfg: &dit_cfg,
-        vae_st: &vae_st, vae_cfg: &vae_cfg,
+        enc_st: &enc_st,
+        enc_cfg: &enc_cfg,
+        dit_st: &dit_st,
+        dit_cfg: &dit_cfg,
+        vae_st: &vae_st,
+        vae_cfg: &vae_cfg,
     };
 
     // Real caption tokens via the Qwen2 tokenizer (tokenizer.json). Prompt from
@@ -48,7 +63,11 @@ fn main() {
     let tokens: Vec<u32> = enc.get_ids().to_vec();
     println!("prompt {prompt:?} → {} tokens", tokens.len());
     let down = vae_cfg.downscale() as usize;
-    println!("generating {}×{} image, {steps} steps, seed {seed}...", lw * down, lh * down);
+    println!(
+        "generating {}×{} image, {steps} steps, seed {seed}...",
+        lw * down,
+        lh * down
+    );
 
     let t0 = std::time::Instant::now();
     let prog = |stage: &str, i: usize, n: usize| println!("  [{stage}] {}/{n}", i + 1);
@@ -66,7 +85,11 @@ fn main() {
     for y in 0..h {
         for x in 0..w {
             for ch in 0..3 {
-                buf.push((rgb[ch * h * w + y * w + x] * 255.0).round().clamp(0.0, 255.0) as u8);
+                buf.push(
+                    (rgb[ch * h * w + y * w + x] * 255.0)
+                        .round()
+                        .clamp(0.0, 255.0) as u8,
+                );
             }
         }
     }
