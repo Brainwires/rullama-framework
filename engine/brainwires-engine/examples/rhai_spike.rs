@@ -76,8 +76,14 @@ fn main() -> ExitCode {
     for (i, task) in TASKS.iter().enumerate() {
         model.reset_native();
         let messages = vec![
-            ChatMessage { role: ChatRole::System, content: RHAI_SYSTEM.to_string() },
-            ChatMessage { role: ChatRole::User, content: (*task).to_string() },
+            ChatMessage {
+                role: ChatRole::System,
+                content: RHAI_SYSTEM.to_string(),
+            },
+            ChatMessage {
+                role: ChatRole::User,
+                content: (*task).to_string(),
+            },
         ];
         let prompt = model.render_chat_native(&messages, true);
         let ids = model.encode_tokens(&prompt);
@@ -91,7 +97,12 @@ fn main() -> ExitCode {
             if model.is_eos_native(next) {
                 break;
             }
-            out.push_str(&model.token_str_native(next).unwrap_or_default().replace('\u{2581}', " "));
+            out.push_str(
+                &model
+                    .token_str_native(next)
+                    .unwrap_or_default()
+                    .replace('\u{2581}', " "),
+            );
             let t = next;
             next = pollster::block_on(model.step_native(t)).expect("gen");
         }
