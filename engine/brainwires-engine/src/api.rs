@@ -588,10 +588,12 @@ impl Model {
         } else {
             max_context
         };
-        // Mobile loader → f16 KV: halves the KV preallocation so the phone can
-        // double `max_context` for the same RAM. (Native/desktop loads go
-        // through `from_reader`/`load_streaming` and stay f32.)
-        Self::from_reader_with_modes(reader, true, true, cap, true).await
+        // f16 KV is GATED OFF on mobile pending on-device debugging: validated
+        // bit-for-bit vs f32 on desktop, but the f16 attention kernel appears to
+        // fault on iOS Safari WebGPU during the system-prompt warm (the first f16
+        // execution). Flip back to `true` once the iOS GPU issue is resolved. The
+        // f16 code path (kernels, pack pass, snapshot v2) stays intact.
+        Self::from_reader_with_modes(reader, true, true, cap, false).await
     }
 
     /// Text-only streaming load. Skips the vision and audio towers even if the
@@ -605,8 +607,8 @@ impl Model {
         max_context: u32,
     ) -> Result<Self> {
         let reader = GgufReader::new_streaming(fetcher).await?;
-        // Mobile loader → f16 KV (see `load_streaming_with_max_context`).
-        Self::from_reader_with_modes(reader, false, false, max_context, true).await
+        // f16 KV gated off on mobile (see `load_streaming_with_max_context`).
+        Self::from_reader_with_modes(reader, false, false, max_context, false).await
     }
 
     /// Encode text → token IDs (Ollama-matching BPE).
