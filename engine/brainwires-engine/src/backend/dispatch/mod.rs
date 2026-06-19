@@ -129,6 +129,15 @@ struct XEntParams {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
+struct PackF16RowParams {
+    dst_word_off: u32,
+    n_pairs: u32,
+    _p0: u32,
+    _p1: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct GegluParams {
     n: u32,
     _p0: u32,
@@ -2486,6 +2495,7 @@ pub fn scale_chained(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn attention_chained(
     ctx: &WgpuCtx,
     p: &Pipelines,
@@ -2500,6 +2510,7 @@ pub fn attention_chained(
     pos: usize,
     history_len: usize,
     window: usize,
+    kv_f16: bool,
 ) {
     let params = AttnParams {
         head_dim: head_dim as u32,
@@ -2511,14 +2522,52 @@ pub fn attention_chained(
         window: window as u32,
         _p: 0,
     };
+    // Distinct pipeline + cache label for the f16-KV variant so the two never
+    // collide in the bind cache. The Rust binding list is positional/type-erased
+    // (read-only storage layout doesn't encode f32-vs-u32), so only the pipeline
+    // ref differs.
+    let (pipeline, label) = if kv_f16 {
+        (&p.attention_f16kv, "attn_chain_f16")
+    } else {
+        (&p.attention, "attn_chain")
+    };
     cached_dispatch(
         ctx,
         enc,
-        &p.attention,
-        "attn_chain",
+        pipeline,
+        label,
         &[q, k_hist, v_hist, out],
         &params,
         (n_heads as u32, 1, 1),
+    );
+}
+
+/// Convert one f32 KV row (`n_kv_heads*head_dim` f32 values in `src`) to packed
+/// f16 and write it into the f16 KV cache `dst` at u32 word offset
+/// `dst_word_off`. f16-KV write path only.
+pub fn pack_f16_row_chained(
+    ctx: &WgpuCtx,
+    p: &Pipelines,
+    enc: &mut wgpu::CommandEncoder,
+    src: &wgpu::Buffer,
+    dst: &wgpu::Buffer,
+    dst_word_off: u32,
+    n_pairs: u32,
+) {
+    let params = PackF16RowParams {
+        dst_word_off,
+        n_pairs,
+        _p0: 0,
+        _p1: 0,
+    };
+    cached_dispatch(
+        ctx,
+        enc,
+        &p.pack_f16_row,
+        "pack_f16_row",
+        &[src, dst],
+        &params,
+        (n_pairs.div_ceil(64), 1, 1),
     );
 }
 

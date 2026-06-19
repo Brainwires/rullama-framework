@@ -257,6 +257,7 @@ impl Model {
             true,
             true,
             crate::reference::forward_chained::MAX_CONTEXT,
+            false, // desktop/native: keep the f32 KV parity oracle
         )
         .await
     }
@@ -272,6 +273,7 @@ impl Model {
         with_vision: bool,
         with_audio: bool,
         max_context: u32,
+        kv_f16: bool,
     ) -> Result<Self> {
         let cfg = Gemma4Config::from_gguf(&reader)?;
         let tokenizer = BpeTokenizer::from_gguf(&reader)?;
@@ -314,7 +316,8 @@ impl Model {
         };
 
         let mut forward =
-            Forward::new_with_max_context(cfg, ctx, pipes, weights, wcache, max_context).await?;
+            Forward::new_with_max_context(cfg, ctx, pipes, weights, wcache, max_context, kv_f16)
+                .await?;
         // Sparse-MoE checkpoints (gemma4:26b-a4b) carry ~16 GB of experts —
         // far past any GPU's resident budget. Auto-enable weight streaming so
         // they actually load + run anywhere (incl. the browser): per-layer
@@ -585,7 +588,10 @@ impl Model {
         } else {
             max_context
         };
-        Self::from_reader_with_modes(reader, true, true, cap).await
+        // Mobile loader → f16 KV: halves the KV preallocation so the phone can
+        // double `max_context` for the same RAM. (Native/desktop loads go
+        // through `from_reader`/`load_streaming` and stay f32.)
+        Self::from_reader_with_modes(reader, true, true, cap, true).await
     }
 
     /// Text-only streaming load. Skips the vision and audio towers even if the
@@ -599,7 +605,8 @@ impl Model {
         max_context: u32,
     ) -> Result<Self> {
         let reader = GgufReader::new_streaming(fetcher).await?;
-        Self::from_reader_with_modes(reader, false, false, max_context).await
+        // Mobile loader → f16 KV (see `load_streaming_with_max_context`).
+        Self::from_reader_with_modes(reader, false, false, max_context, true).await
     }
 
     /// Encode text → token IDs (Ollama-matching BPE).

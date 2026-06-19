@@ -4,6 +4,8 @@
 //! that creates the pipeline, uploads inputs, dispatches, and reads back results.
 
 pub const ATTENTION: &str = include_str!("wgsl/attention.wgsl");
+pub const ATTENTION_F16KV: &str = include_str!("wgsl/attention_f16kv.wgsl");
+pub const PACK_F16_ROW: &str = include_str!("wgsl/pack_f16_row.wgsl");
 pub const AVG_POOL2D: &str = include_str!("wgsl/avg_pool2d.wgsl");
 pub const CLAMP: &str = include_str!("wgsl/clamp.wgsl");
 pub const ADAIN: &str = include_str!("wgsl/adain.wgsl");

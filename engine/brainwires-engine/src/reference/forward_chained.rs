@@ -29,10 +29,10 @@ use crate::backend::dispatch::{
     lora_outer_add_chained, make_dummy_storage, matmul_q4_k_backward_input_chained,
     matmul_q4_k_backward_input_tile_chained, matmul_q6_k_backward_input_chained,
     matmul_q6_k_backward_input_tile_chained, matmul_quant_chained, moe_combine_chained,
-    moe_expert_matmul_chained, moe_geglu_halves_chained, moe_router_chained, residual_add_chained,
-    rmsnorm_backward_chained, rmsnorm_chained, rmsnorm_per_row_backward_chained,
-    rmsnorm_per_row_chained, rope_neox_backward_chained, rope_neox_chained, scale_chained,
-    softcap_chained,
+    moe_expert_matmul_chained, moe_geglu_halves_chained, moe_router_chained, pack_f16_row_chained,
+    residual_add_chained, rmsnorm_backward_chained, rmsnorm_chained,
+    rmsnorm_per_row_backward_chained, rmsnorm_per_row_chained, rope_neox_backward_chained,
+    rope_neox_chained, scale_chained, softcap_chained,
 };
 
 /// Activation capture buffers for one transformer layer. Used by the
@@ -249,6 +249,14 @@ pub struct Forward {
     /// surface a clean "context length exceeded" error.
     max_context: u32,
 
+    /// **f16 KV cache.** When true the K/V cache buffers are HALF-size and
+    /// store two f16 values packed per `u32` (`pack2x16float`), and the
+    /// forward attention reads the `attention_f16kv` variant. Halves the KV
+    /// preallocation so mobile can double `max_context` for the same RAM.
+    /// Inference-only — never set on the training/backward path (the f32
+    /// attention backward kernels assume f32 KV). Off by default (f32).
+    kv_f16: bool,
+
     /// Cooperative cancel flag for in-flight forward + backward layer
     /// walks. The training cancel button flips this; the per-layer
     /// loops in `run_forward_from_hidden` and `backward_step` check it
@@ -333,7 +341,7 @@ impl Forward {
         weights: Weights,
         wcache: Arc<WeightCache>,
     ) -> Result<Self> {
-        Self::new_with_max_context(cfg, ctx, pipes, weights, wcache, MAX_CONTEXT).await
+        Self::new_with_max_context(cfg, ctx, pipes, weights, wcache, MAX_CONTEXT, false).await
     }
 
     /// Variant of [`new`] that lets the caller cap the KV-cache pre-allocation
@@ -345,6 +353,10 @@ impl Forward {
     /// that's enough to push the WebContent process over Jetsam during the
     /// first inference step. Mobile callers pass a smaller value (e.g. 512)
     /// and get a working model that just can't grow past that turn length.
+    ///
+    /// `kv_f16` halves the KV preallocation by packing K/V as f16 (two per
+    /// `u32`); inference-only, never set on the training path. See the `kv_f16`
+    /// field.
     pub async fn new_with_max_context(
         cfg: Gemma4Config,
         ctx: WgpuCtx,
@@ -352,12 +364,26 @@ impl Forward {
         weights: Weights,
         wcache: Arc<WeightCache>,
         max_context: u32,
+        kv_f16: bool,
     ) -> Result<Self> {
         if max_context == 0 || max_context > MAX_CONTEXT {
             return Err(crate::error::RullamaError::Inference(format!(
                 "max_context={max_context} out of range (1..={MAX_CONTEXT})"
             )));
         }
+        // f16 KV packs two halves per u32, so every per-token row of
+        // n_kv_heads*head_dim elements must be even — guaranteed by an even
+        // head_dim. Fail loud rather than silently corrupt the cache on some
+        // future odd-head_dim variant.
+        if kv_f16 && (!cfg.head_dim_global.is_multiple_of(2) || !cfg.head_dim_swa.is_multiple_of(2))
+        {
+            return Err(crate::error::RullamaError::Inference(format!(
+                "kv_f16 requires even head_dim (global={}, swa={})",
+                cfg.head_dim_global, cfg.head_dim_swa
+            )));
+        }
+        // KV element width: 2 bytes (packed f16) or 4 bytes (f32).
+        let kv_elem_bytes: usize = if kv_f16 { 2 } else { 4 };
         let device = &ctx.device;
 
         let alloc_storage = |label: &str, n: usize| -> wgpu::Buffer {
@@ -474,7 +500,7 @@ impl Forward {
             if donor_map[i].is_none() {
                 let n_kv = cfg.n_kv_heads(i as u32) as usize;
                 let hd = cfg.head_dim(i as u32) as usize;
-                let bytes = (max_context as usize * n_kv * hd * 4) as u64;
+                let bytes = (max_context as usize * n_kv * hd * kv_elem_bytes) as u64;
                 kv_k_opt[i] = Some(Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some(&format!("fwd.kv_k.{i}")),
                     size: bytes,
@@ -554,6 +580,7 @@ impl Forward {
             layer_scalars,
             dummy,
             max_context,
+            kv_f16,
             cancel_flag: Arc::new(AtomicBool::new(false)),
             forward_destroy_per_layer: false,
             moe_stream_experts: false,
@@ -1261,7 +1288,8 @@ impl Forward {
             if self.donor_map[i].is_none() {
                 let n_kv = self.cfg.n_kv_heads(i as u32) as usize;
                 let hd = self.cfg.head_dim(i as u32) as usize;
-                let bytes = (new_max_context as usize * n_kv * hd * 4) as u64;
+                let kv_elem_bytes = if self.kv_f16 { 2 } else { 4 };
+                let bytes = (new_max_context as usize * n_kv * hd * kv_elem_bytes) as u64;
                 kv_k_opt[i] = Some(Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some(&format!("fwd.kv_k.{i}")),
                     size: bytes,
@@ -1316,6 +1344,11 @@ impl Forward {
                 h = h.wrapping_mul(0x01000193);
             }
         }
+        // Fold in the KV element width — an f16 snapshot can't be byte-restored
+        // into an f32 cache (or vice versa). Defense-in-depth alongside the
+        // explicit kv_f16 byte check in load_kv.
+        h ^= self.kv_f16 as u32;
+        h = h.wrapping_mul(0x01000193);
         h
     }
 
@@ -1324,9 +1357,10 @@ impl Forward {
     ///
     /// ```text
     ///   [0..4]    magic = "RLKV"
-    ///   [4]       version = 1
+    ///   [4]       version = 2
     ///   [5]       n_owned_layers (u8) — non-donor layer count
-    ///   [6..8]    reserved
+    ///   [6]       kv_f16 (u8) — 1 = packed-f16 KV (2 bytes/elem), 0 = f32
+    ///   [7]       reserved
     ///   [8..12]   position (u32) — Forward.pos at snapshot time
     ///   [12..16]  layout_hash (u32)
     ///   per owned layer (12 bytes each):
@@ -1335,7 +1369,7 @@ impl Forward {
     ///     n_kv_heads (u16)
     ///     head_dim   (u16)
     ///   raw payload, same order as headers:
-    ///     K bytes [kv_len * n_kv_heads * head_dim * 4]
+    ///     K bytes [kv_len * n_kv_heads * head_dim * elem_bytes]
     ///     V bytes [same]
     /// ```
     ///
@@ -1364,7 +1398,8 @@ impl Forward {
             }
             let nkv = self.cfg.n_kv_heads(i as u32);
             let hd = self.cfg.head_dim(i as u32);
-            let bytes = (kv_len as u64) * (nkv as u64) * (hd as u64) * 4;
+            let kv_elem_bytes = if self.kv_f16 { 2 } else { 4 };
+            let bytes = (kv_len as u64) * (nkv as u64) * (hd as u64) * kv_elem_bytes;
             sections.push(Section {
                 layer_idx: i as u32,
                 kv_len,
@@ -1377,9 +1412,9 @@ impl Forward {
 
         let mut header = Vec::<u8>::with_capacity(16 + 12 * sections.len());
         header.extend_from_slice(b"RLKV");
-        header.push(1u8);
+        header.push(2u8); // version 2: adds the kv_f16 element-width byte below
         header.push(sections.len() as u8);
-        header.extend_from_slice(&[0u8, 0u8]);
+        header.extend_from_slice(&[self.kv_f16 as u8, 0u8]); // [kv_f16, reserved]
         header.extend_from_slice(&self.pos.to_le_bytes());
         header.extend_from_slice(&self.kv_layout_hash().to_le_bytes());
         for s in &sections {
@@ -1441,12 +1476,23 @@ impl Forward {
             return Err(RullamaError::Inference("kv snapshot: bad magic".into()));
         }
         let version = bytes[4];
-        if version != 1 {
+        if version != 2 {
+            // Version 1 (f32-only, no element-width byte) is rejected → cold
+            // re-prefill. Treated as "no snapshot," not a user-facing failure.
             return Err(RullamaError::Inference(format!(
                 "kv snapshot: unknown version {version}"
             )));
         }
         let n_owned = bytes[5] as usize;
+        // Element width must match this model's KV cache — an f16 snapshot can't
+        // be byte-restored into an f32 cache, or vice versa.
+        let snap_kv_f16 = bytes[6] != 0;
+        if snap_kv_f16 != self.kv_f16 {
+            return Err(RullamaError::Inference(format!(
+                "kv snapshot: element-width mismatch (snapshot f16={snap_kv_f16}, model f16={}) → re-prefill",
+                self.kv_f16
+            )));
+        }
         let position = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
         let layout_hash = u32::from_le_bytes(bytes[12..16].try_into().unwrap());
         let expected_hash = self.kv_layout_hash();
@@ -1506,7 +1552,8 @@ impl Forward {
                     self.max_context
                 )));
             }
-            let layer_bytes = (kv_len as u64) * (nkv as u64) * (hd as u64) * 4;
+            let kv_elem_bytes = if self.kv_f16 { 2 } else { 4 };
+            let layer_bytes = (kv_len as u64) * (nkv as u64) * (hd as u64) * kv_elem_bytes;
             sections.push(Section {
                 layer_idx,
                 kv_len,
@@ -3057,22 +3104,48 @@ impl Forward {
             );
 
             // Append rotated K + normed V into this layer's KV cache at offset = kv_lens[i].
-            let row_bytes = (n_kv_heads * head_dim * 4) as u64;
-            let dst_offset = self.kv_lens[i as usize] as u64 * row_bytes;
-            enc.copy_buffer_to_buffer(
-                &self.k_norm,
-                0,
-                &self.kv_k[i as usize],
-                dst_offset,
-                row_bytes,
-            );
-            enc.copy_buffer_to_buffer(
-                &self.v_norm,
-                0,
-                &self.kv_v[i as usize],
-                dst_offset,
-                row_bytes,
-            );
+            if self.kv_f16 {
+                // f16 KV: pack the f32 row (n_kv_heads*head_dim elems) into two
+                // halves per u32 and write at the per-token WORD offset. The f32
+                // producers (k_norm/v_norm) are untouched — only the store packs.
+                let n_pairs = (n_kv_heads * head_dim / 2) as u32;
+                let dst_word_off = self.kv_lens[i as usize] * n_pairs;
+                pack_f16_row_chained(
+                    &self.ctx,
+                    &self.pipes,
+                    enc,
+                    &self.k_norm,
+                    &self.kv_k[i as usize],
+                    dst_word_off,
+                    n_pairs,
+                );
+                pack_f16_row_chained(
+                    &self.ctx,
+                    &self.pipes,
+                    enc,
+                    &self.v_norm,
+                    &self.kv_v[i as usize],
+                    dst_word_off,
+                    n_pairs,
+                );
+            } else {
+                let row_bytes = (n_kv_heads * head_dim * 4) as u64;
+                let dst_offset = self.kv_lens[i as usize] as u64 * row_bytes;
+                enc.copy_buffer_to_buffer(
+                    &self.k_norm,
+                    0,
+                    &self.kv_k[i as usize],
+                    dst_offset,
+                    row_bytes,
+                );
+                enc.copy_buffer_to_buffer(
+                    &self.v_norm,
+                    0,
+                    &self.kv_v[i as usize],
+                    dst_offset,
+                    row_bytes,
+                );
+            }
             self.kv_lens[i as usize] = self.kv_lens[i as usize].saturating_add(1);
         }
 
@@ -3100,6 +3173,7 @@ impl Forward {
             pos as usize,
             history_len,
             window,
+            self.kv_f16,
         );
 
         // ---- CAPTURE: attn_out (input to o_proj) ----
@@ -4231,6 +4305,14 @@ impl Forward {
         backward_layer_floor: u32,
         skip_ce: bool,
     ) -> Result<f32> {
+        // f16 KV is inference-only: the backward kernels (attention_backward_*,
+        // attention_probs) bind the KV cache as f32. Training never sets the
+        // flag (it's only enabled on the mobile inference loaders); assert that
+        // contract here so any future mix fails fast in debug.
+        debug_assert!(
+            !self.kv_f16,
+            "backward path requires f32 KV (kv_f16 must be false on training)"
+        );
         // Clear any stale cancel flag from a previous step; the layer
         // walk below checks it after each `backward_layer` submit.
         self.reset_cancel();

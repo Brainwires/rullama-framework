@@ -34,6 +34,11 @@ pub struct Pipelines {
     pub geglu: wgpu::ComputePipeline,
     pub rope_neox: wgpu::ComputePipeline,
     pub attention: wgpu::ComputePipeline,
+    /// f16-KV inference variant of `attention` (reads packed-f16 KV via
+    /// `unpack2x16float`). Built unconditionally — core WGSL, no SHADER_F16.
+    pub attention_f16kv: wgpu::ComputePipeline,
+    /// Per-token f32→packed-f16 KV write conversion (f16 KV path only).
+    pub pack_f16_row: wgpu::ComputePipeline,
     pub residual_add: wgpu::ComputePipeline,
     pub scale: wgpu::ComputePipeline,
     pub rmsnorm_per_row: wgpu::ComputePipeline,
@@ -388,6 +393,8 @@ impl Pipelines {
             geglu: build(device, "geglu", kernels::GEGLU),
             rope_neox: build(device, "rope_neox", kernels::ROPE_NEOX),
             attention: build(device, "attention", kernels::ATTENTION),
+            attention_f16kv: build(device, "attention_f16kv", kernels::ATTENTION_F16KV),
+            pack_f16_row: build(device, "pack_f16_row", kernels::PACK_F16_ROW),
             residual_add: build(device, "residual_add", kernels::RESIDUAL_ADD),
             scale: build(device, "scale", kernels::SCALE),
             rmsnorm_per_row: build(device, "rmsnorm_per_row", kernels::RMSNORM_PER_ROW),
