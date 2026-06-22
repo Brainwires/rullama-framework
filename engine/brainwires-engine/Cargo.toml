@@ -12,9 +12,8 @@ readme           = "../../README.md"
 keywords         = ["gemma", "webgpu", "wasm", "inference", "llm"]
 categories       = ["wasm", "graphics", "science"]
 # Inherits `publish = true` from `[workspace.package]`. The wasm32-only
-# `rsqlite-wasm` git dep is kept as-is — crates.io's upload step accepts
-# git+rev entries; downstream resolution behavior is being verified via
-# `cargo publish --dry-run` before any real publish.
+# `rsqlite-wasm` dependency now resolves from crates.io (>=0.1.1), so the
+# earlier git+rev publish concern no longer applies.
 publish.workspace = true
 
 [lib]
