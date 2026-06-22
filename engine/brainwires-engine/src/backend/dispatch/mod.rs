@@ -2462,37 +2462,28 @@ pub fn scale_chained(
     n: usize,
     s: f32,
 ) {
-    let total_groups = (n as u32).div_ceil(64);
-    // wgpu hard caps dispatch_workgroups at 65535 per dimension. For
-    // very large buffers (lm_head / embed_tokens LoRA B = vocab × rank
-    // ≈ 4.2M f32s → 65_536 workgroups, JUST over the cap), chunk the
-    // dispatch across multiple submissions and use `offset` in the
-    // shader to keep linear indexing correct.
+    // wgpu hard caps dispatch_workgroups at 65535 per dimension. For very large
+    // buffers (> 65_535 × 64 ≈ 4.19M elems — e.g. the ISTFTNet generator's
+    // audio-resolution resblock average, or lm_head / embed_tokens LoRA B) spill
+    // the workgroup count into the y dimension via `wg_grid`; the shader
+    // reconstructs the linear index as `gid.y * nwg.x * 64 + gid.x`.
     //
-    // The bind-group cache key is identical across iterations (same
-    // pipeline, same `x` buffer), so all loop iterations after the
-    // first are cache hits — only the per-call uniform write differs.
-    const MAX_GROUPS_PER_DISPATCH: u32 = 65535;
-    let mut groups_done: u32 = 0;
-    while groups_done < total_groups {
-        let groups_this = (total_groups - groups_done).min(MAX_GROUPS_PER_DISPATCH);
-        let params = ScaleParams {
-            n: n as u32,
-            s,
-            offset: groups_done * 64,
-            _p1: 0,
-        };
-        cached_dispatch(
-            ctx,
-            enc,
-            &p.scale,
-            "scale_chain",
-            &[x],
-            &params,
-            (groups_this, 1, 1),
-        );
-        groups_done += groups_this;
-    }
+    // The previous implementation instead chunked across multiple dispatches with
+    // a per-call `offset` uniform. That is BROKEN whenever the chunks land in one
+    // command encoder / one submit: every chunk shares the same bind-cache key
+    // (same pipeline + buffer) and therefore the same cached uniform buffer, and
+    // `queue.write_buffer` stages all writes before the GPU runs — so every chunk
+    // reads the LAST chunk's offset and only that chunk's range gets scaled. The
+    // rest keeps its unscaled value (e.g. the generator's ÷num_kernels left 2/3 of
+    // long audio at 3× amplitude → garbled speech). A single `wg_grid` dispatch
+    // with offset 0 avoids the shared-uniform hazard entirely.
+    let params = ScaleParams {
+        n: n as u32,
+        s,
+        offset: 0,
+        _p1: 0,
+    };
+    cached_dispatch(ctx, enc, &p.scale, "scale_chain", &[x], &params, wg_grid(n));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3274,6 +3265,35 @@ mod tests {
             .map(|(c, g)| (c - g).abs())
             .fold(0.0f32, f32::max);
         assert!(md < 1e-3, "istft max_diff = {md}");
+    }
+
+    /// Regression: `scale_chained` must scale EVERY element even past the
+    /// 65535-workgroup (4_194_240-element) per-dimension cap. The old offset-chunked
+    /// implementation shared one cached uniform across chunks in a single submit, so
+    /// only the last chunk's range was scaled — leaving the rest unscaled (e.g. the
+    /// ISTFTNet generator's ÷num_kernels left long audio at 3× amplitude → garbled).
+    #[test]
+    fn scale_chained_spills_past_wg_cap() {
+        let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
+        let p = Pipelines::new(&ctx.device);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+        // > 65_535 * 64 = 4_194_240 forces the 2-D workgroup spill.
+        let n = 5_000_000usize;
+        let x = vec![2.0f32; n];
+        let xb = make_storage_rw(device, "x", n);
+        queue.write_buffer(&xb, 0, bytemuck::cast_slice(&x));
+        let (_, yr) = make_output_pair(device, "y", (n * 4) as u64);
+        let mut enc =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("sc") });
+        scale_chained(&ctx, &p, &mut enc, &xb, n, 0.5);
+        enc.copy_buffer_to_buffer(&xb, 0, &yr, 0, (n * 4) as u64);
+        queue.submit(Some(enc.finish()));
+        let gpu = pollster::block_on(read_back_f32(device, &yr)).expect("rb");
+        // Every element must be exactly 2.0 * 0.5 = 1.0 — including the low range that
+        // the buggy implementation skipped.
+        let bad = gpu.iter().filter(|&&v| (v - 1.0).abs() > 1e-6).count();
+        assert_eq!(bad, 0, "{bad}/{n} elements not scaled (first={})", gpu[0]);
     }
 
     #[test]
