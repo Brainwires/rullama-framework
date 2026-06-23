@@ -35,6 +35,8 @@
 )]
 
 pub mod api;
+/// Cooperative cancellation for the async TTS synths (`ttsRequestCancel`).
+pub mod cancel;
 /// JS-facing DiffusionGemma surface — `DiffusionGemma` block-diffusion engine.
 pub mod diffusion;
 /// JS-facing embedding surface — `EmbeddingModel` over EmbeddingGemma.

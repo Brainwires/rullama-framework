@@ -548,12 +548,20 @@ impl KokoroModel {
         ref_s: &[f32],
         progress: Option<&dyn Fn(f32, &str)>,
     ) -> Vec<f32> {
-        let report = |frac: f32, stage: &str| {
+        crate::cancel::clear();
+        // Report a stage AND poll for cancellation. Returns true when the caller
+        // should abort (the synth then resolves with an empty buffer). The synth
+        // yields to the worker event loop at each GPU readback, so a cancel posted
+        // mid-synth is seen at the next stage boundary.
+        let report = |frac: f32, stage: &str| -> bool {
             if let Some(pr) = progress {
                 pr(frac, stage);
             }
+            crate::cancel::requested()
         };
-        report(0.05, "analyzing text");
+        if report(0.05, "analyzing text (G2P + PL-BERT)") {
+            return Vec::new();
+        }
         let mut g = GpuTts::new(self, ctx, p, wc);
         let sd = self.cfg.style_dim;
         let (timbre, prosodic) = (&ref_s[..sd], &ref_s[sd..2 * sd]);
@@ -566,7 +574,9 @@ impl KokoroModel {
         let d = self.duration_encode(&be, ids.len(), prosodic);
         let (_logits, dur) = self.predict_duration(&d, ids.len());
         let (en, f) = self.expand_by_dur_cm(&d, ids.len(), cat, &dur);
-        report(0.25, "predicting prosody");
+        if report(0.25, "predicting durations & prosody") {
+            return Vec::new();
+        }
 
         // f0_n: shared BiLSTM (CPU) → adain stacks (GPU) → readback F0/N
         let mut x_rm = vec![0.0f32; f * cat];
@@ -648,11 +658,16 @@ impl KokoroModel {
         let (nb, nl) = run_branch(&mut g, "N");
         let n = g.read(&nb, nl).await;
         g.scratch.clear();
-        report(0.50, "encoding speech");
+        if report(0.50, "encoding phonemes") {
+            return Vec::new();
+        }
 
         // text_encoder: conv stack (GPU) + BiLSTM (CPU)
         let t_en = self.text_encoder_gpu(ctx, p, ids).await;
-        report(0.70, "generating audio");
+        // Last chance to bail before the expensive decoder + ISTFTNet vocoder pass.
+        if report(0.70, "vocoding waveform (ISTFTNet)") {
+            return Vec::new();
+        }
 
         // source (CPU) → har buffer
         let (har, frames) = self.generator_source(&f0);

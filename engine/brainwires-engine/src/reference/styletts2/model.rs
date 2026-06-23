@@ -222,13 +222,17 @@ impl StyleTtsModel {
         diffuse: Option<DiffusionConfig>,
         progress: Option<&dyn Fn(f32, &str)>,
     ) -> Vec<f32> {
+        crate::cancel::clear();
         let ac = StyleTtsAcoustic::new(&self.w);
         let (t_en, bert_out, t) = ac.acoustic_prep(ids, progress);
+        if crate::cancel::requested() {
+            return Vec::new();
+        }
         // style diffusion (natural prosody) on the GPU, between PLBERT and the predictor
         let eff_s = match diffuse {
             Some(cfg) => {
                 if let Some(pp) = progress {
-                    pp(0.16, "imagining delivery (GPU)");
+                    pp(0.16, "imagining delivery (style diffusion)");
                 }
                 // sampler params match the converter/oracle (ADPM2 + Karras, sigma_data=0.2)
                 let (noise_init, noises) =
@@ -251,9 +255,16 @@ impl StyleTtsModel {
             }
             None => voice.to_vec(),
         };
+        if crate::cancel::requested() {
+            return Vec::new();
+        }
         let (asr, f0, n, r, f) = ac.acoustic_rest(&t_en, &bert_out, t, &eff_s, progress);
         if let Some(pp) = progress {
-            pp(0.36, "generating audio (GPU)");
+            pp(0.36, "vocoding waveform (GPU decoder)");
+        }
+        // Last chance to bail before the expensive GPU decoder pass.
+        if crate::cancel::requested() {
+            return Vec::new();
         }
         let out = StyleTtsGpu::new(&self.w, &self.w16, ctx, p, wc)
             .decode(&asr, f, &f0, &n, &r)
