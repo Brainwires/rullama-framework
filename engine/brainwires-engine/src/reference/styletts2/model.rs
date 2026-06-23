@@ -269,7 +269,8 @@ impl StyleTtsModel {
         let out = StyleTtsGpu::new(&self.w, &self.w16, ctx, p, wc)
             .decode(&asr, f, &f0, &n, &r)
             .await;
-        if let Some(pp) = progress {
+        // Empty ⇒ cancelled mid-decode; don't report "done".
+        if let (false, Some(pp)) = (out.is_empty(), progress) {
             pp(1.0, "done");
         }
         out

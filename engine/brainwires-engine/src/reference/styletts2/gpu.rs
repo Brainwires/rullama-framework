@@ -630,7 +630,7 @@ impl<'a> StyleTtsGpu<'a> {
         har: &wgpu::Buffer,
         har_len: usize,
         style: &[f32],
-    ) -> (wgpu::Buffer, usize) {
+    ) -> Option<(wgpu::Buffer, usize)> {
         const RATES: [usize; 4] = [10, 5, 3, 2];
         const KERNELS: [usize; 4] = [20, 10, 6, 4];
         const RK: [usize; 3] = [3, 7, 11];
@@ -739,7 +739,11 @@ impl<'a> StyleTtsGpu<'a> {
             self.submit(enc);
             // Yield between upsample stages — this is the heaviest, longest GPU burst of the synth
             // (the end-of-gen vocoder) and the one that was tripping the iPhone springboard/jetsam.
+            // The yield also lets a queued `cancel` land, so Stop works mid-vocoder.
             self.wasm_yield().await;
+            if crate::cancel::requested() {
+                return None;
+            }
             cur = acc;
             cin = cout;
             tcur = tup;
@@ -770,7 +774,7 @@ impl<'a> StyleTtsGpu<'a> {
         );
         self.submit(enc);
         self.wasm_yield().await;
-        (post, tcur)
+        Some((post, tcur))
     }
 
     async fn read(&self, buf: &wgpu::Buffer, n: usize) -> Vec<f32> {
@@ -1408,7 +1412,10 @@ impl<'a> StyleTtsGpu<'a> {
         let lb = self.t("generator.m_source.l_linear.bias")[0];
         let har = source_signal(f0, 300, 9, &lw, lb);
         let har_buf = self.up(&har);
-        let (post, tpost) = self.generator(x, tcur, &har_buf, har.len(), style).await;
+        // `None` ⇒ Stop was clicked mid-vocoder → resolve empty (treated as cancelled).
+        let Some((post, tpost)) = self.generator(x, tcur, &har_buf, har.len(), style).await else {
+            return Vec::new();
+        };
         if dbg {
             self.dbg("post", &post, tpost).await;
         }

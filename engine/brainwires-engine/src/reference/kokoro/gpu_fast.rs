@@ -318,16 +318,21 @@ impl<'a> GpuTts<'a> {
     }
 
     /// GPU generator (buffer-chained). `x` buffer [512, xt_len], `har` buffer [22, har_len].
-    /// Returns the waveform buffer + length. One encoder; caller submits + reads back.
-    fn generator(
+    /// Returns the waveform buffer + length, or `None` if cancelled mid-flight.
+    ///
+    /// Owns its encoder and submits once per upsample stage, yielding the event loop
+    /// and polling cancellation between stages so a Stop click lands *during* the
+    /// vocoder (the longest part for long audio), not only before it. The per-stage
+    /// submit is also the project's "small command buffer" rule for big sequences.
+    async fn generator(
         &mut self,
-        enc: &mut wgpu::CommandEncoder,
         x: wgpu::Buffer,
         xt_len: usize,
         har: &wgpu::Buffer,
         har_len: usize,
         style: &[f32],
-    ) -> (wgpu::Buffer, usize) {
+        progress: Option<&dyn Fn(f32, &str)>,
+    ) -> Option<(wgpu::Buffer, usize)> {
         let rates = self.m.cfg.upsample_rates.clone();
         let rkernels = self.m.cfg.resblock_kernel_sizes.clone();
         let rdil = self.m.cfg.resblock_dilation_sizes.clone();
@@ -336,6 +341,11 @@ impl<'a> GpuTts<'a> {
         let mut cur = x;
         let mut cin = self.m.cfg.upsample_initial_channel;
         let mut tcur = xt_len;
+        let mut enc = self
+            .ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("gen") });
+        let enc = &mut enc;
 
         for i in 0..rates.len() {
             leaky_relu_chained(self.ctx, self.p, enc, &cur, cin * tcur, 0.1);
@@ -463,8 +473,26 @@ impl<'a> GpuTts<'a> {
             cur = acc;
             cin = cout;
             tcur = tup;
+
+            // One submit per upsample stage → yield so a queued `cancel` is
+            // processed → report sub-progress → bail if Stop was clicked.
+            self.flush(enc);
+            self.wasm_yield().await;
+            if let Some(pr) = progress {
+                let frac = 0.70 + 0.22 * ((i + 1) as f32 / rates.len() as f32);
+                pr(
+                    frac,
+                    &format!("vocoding waveform (upsample {}/{})", i + 1, rates.len()),
+                );
+            }
+            if crate::cancel::requested() {
+                return None;
+            }
         }
 
+        if let Some(pr) = progress {
+            pr(0.96, "finishing (iSTFT)");
+        }
         leaky_relu_chained(self.ctx, self.p, enc, &cur, cin * tcur, 0.01);
         let cpw = self.w("k.decoder.generator.conv_post.weight");
         let cpb = self.w("k.decoder.generator.conv_post.bias");
@@ -497,7 +525,48 @@ impl<'a> GpuTts<'a> {
         istft_chained(
             self.ctx, self.p, enc, &spec, &phase, &audio, nbins, tpost, nfft, hop,
         );
-        (audio, out_len)
+        self.ctx.queue.submit(Some(
+            std::mem::replace(
+                enc,
+                self.ctx
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("gen") }),
+            )
+            .finish(),
+        ));
+        Some((audio, out_len))
+    }
+
+    /// Submit the current encoder and swap in a fresh one (kept-alive scratch
+    /// buffers survive). Used to break the vocoder into one submit per upsample
+    /// stage so cancellation can land between them.
+    fn flush(&self, enc: &mut wgpu::CommandEncoder) {
+        let done = std::mem::replace(
+            enc,
+            self.ctx
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("gen") }),
+        );
+        self.ctx.queue.submit(Some(done.finish()));
+    }
+
+    /// 0 ms JS event-loop yield (wasm32 only). Releasing the event loop for one
+    /// macrotask lets the worker process a queued `cancel` message mid-vocoder (and
+    /// lets completed GPU work drain) — `setTimeout(0)` is a MACROtask, so unlike a
+    /// microtask yield it actually dispatches the pending message. No-op on native.
+    async fn wasm_yield(&self) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            use wasm_bindgen::JsCast;
+            if let Ok(scope) = js_sys::global().dyn_into::<web_sys::DedicatedWorkerGlobalScope>() {
+                let promise = js_sys::Promise::new(&mut |resolve, _reject| {
+                    let resolve_fn: js_sys::Function = resolve.into();
+                    let _ =
+                        scope.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve_fn, 0);
+                });
+                let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+            }
+        }
     }
 
     async fn read(&self, buf: &wgpu::Buffer, n: usize) -> Vec<f32> {
@@ -793,8 +862,15 @@ impl KokoroModel {
             xc = dim_out;
         }
         let har_b = g.up(&har);
-        let (audio_b, alen) = g.generator(&mut enc, x, tcur, &har_b, frames, timbre);
+        // Submit the decoder work so the generator's own per-stage encoders see it,
+        // then run the generator (mid-cancellable: one submit + yield + poll per
+        // upsample stage). `None` ⇒ Stop was clicked → resolve empty.
         ctx.queue.submit(Some(enc.finish()));
+        let Some((audio_b, alen)) = g.generator(x, tcur, &har_b, frames, timbre, progress).await
+        else {
+            g.scratch.clear();
+            return Vec::new();
+        };
         let audio = g.read(&audio_b, alen).await;
         g.scratch.clear();
         audio
