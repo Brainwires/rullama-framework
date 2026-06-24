@@ -433,11 +433,34 @@ impl<'a, S: BlobSource> DitGpu<'a, S> {
         use crate::imagegen::dtype::StDtype;
         let dev = &self.ctx.device;
         let wname = format!("{p}.weight");
+        let wdt = self.st.dtype(&wname);
         // bf16 weight bytes for the kernel (array<u32>, 2 bf16/word, pad to even).
-        let mut wb: Vec<u8> = if self.st.dtype(&wname) == Some(StDtype::Bf16) {
+        let mut wb: Vec<u8> = if wdt == Some(StDtype::Bf16) {
             self.st.tensor_bytes(&wname).await?
         } else {
-            let wf = self.st.tensor_f32(&wname).await?;
+            let mut wf = self.st.tensor_f32(&wname).await?;
+            // Scaled fp8 (the ComfyUI/Z-Image `fp8_e4m3_scaled` build): the stored
+            // fp8 weight dequantizes to f32, then is multiplied by a per-output-
+            // row F32 `weight_scale` (`[out, 1]`). bf16/f32 weights carry no scale.
+            // This is the publisher's documented reconstruction, not our own quant.
+            if wdt == Some(StDtype::F8E4M3) {
+                let sname = format!("{p}.weight_scale");
+                if self.st.has(&sname) {
+                    let sc = self.st.tensor_f32(&sname).await?;
+                    if sc.len() != out_dim || wf.len() != out_dim * in_dim {
+                        return Err(RullamaError::Image(format!(
+                            "{sname}: scale {} / weight {} mismatch (out={out_dim} in={in_dim})",
+                            sc.len(),
+                            wf.len()
+                        )));
+                    }
+                    for (o, &s) in sc.iter().enumerate() {
+                        for v in &mut wf[o * in_dim..(o + 1) * in_dim] {
+                            *v *= s;
+                        }
+                    }
+                }
+            }
             let mut b = Vec::with_capacity(wf.len() * 2);
             for &v in &wf {
                 b.extend_from_slice(&half::bf16::from_f32(v).to_bits().to_le_bytes());

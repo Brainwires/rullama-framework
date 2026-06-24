@@ -53,14 +53,21 @@ impl<S: BlobSource> ImageBundle<S> {
         let enc_idx = ShardIndex::parse(&enc_src.read_blob("model.safetensors.index.json").await?)?;
         let enc_ss = StreamingShards::open_index(enc_src, &enc_idx).await?;
 
-        // transformer / DiT (sharded)
+        // transformer / DiT. Sharded (bf16 original) when a shard index is
+        // present, else a single file (the fp8 build, one ~6 GB safetensors).
         let dit_cfg = TransformerConfig::parse(&dit_src.read_blob("config.json").await?)?;
-        let dit_idx = ShardIndex::parse(
-            &dit_src
-                .read_blob("diffusion_pytorch_model.safetensors.index.json")
-                .await?,
-        )?;
-        let dit_ss = StreamingShards::open_index(dit_src, &dit_idx).await?;
+        let dit_ss = match dit_src
+            .read_blob("diffusion_pytorch_model.safetensors.index.json")
+            .await
+        {
+            Ok(bytes) => {
+                let dit_idx = ShardIndex::parse(&bytes)?;
+                StreamingShards::open_index(dit_src, &dit_idx).await?
+            }
+            Err(_) => {
+                StreamingShards::open_single(dit_src, "diffusion_pytorch_model.safetensors").await?
+            }
+        };
 
         // VAE (single file)
         let vae_cfg = VaeConfig::parse(&vae_src.read_blob("config.json").await?)?;
@@ -263,7 +270,7 @@ mod tests {
 #[cfg(target_arch = "wasm32")]
 mod wasm {
     use super::*;
-    use crate::imagegen::source::{HttpRangeBlobSource, OpfsBlobSource};
+    use crate::imagegen::source::{BlobSource, HttpRangeBlobSource, OpfsBlobSource};
     use wasm_bindgen::prelude::*;
 
     /// JS-facing Z-Image-Turbo engine. Streams its weights from a CDN base URL
@@ -272,7 +279,9 @@ mod wasm {
     /// PWA's image worker.
     #[wasm_bindgen]
     pub struct ImageModel {
-        bundle: ImageBundle<HttpRangeBlobSource>,
+        // Boxed source so one struct type spans the CDN (`loadFromUrl`) and the
+        // OPFS (`loadFromOpfs`) loaders.
+        bundle: ImageBundle<Box<dyn BlobSource>>,
         last_step: std::cell::Cell<u32>,
         total_steps: std::cell::Cell<u32>,
     }
@@ -285,9 +294,9 @@ mod wasm {
         #[wasm_bindgen(js_name = loadFromUrl)]
         pub async fn load_from_url(base_url: String) -> std::result::Result<ImageModel, JsError> {
             let base = base_url.trim_end_matches('/').to_string();
-            let enc = HttpRangeBlobSource::new(format!("{base}/text_encoder"));
-            let dit = HttpRangeBlobSource::new(format!("{base}/transformer"));
-            let vae = HttpRangeBlobSource::new(format!("{base}/vae"));
+            let enc: Box<dyn BlobSource> = Box::new(HttpRangeBlobSource::new(format!("{base}/text_encoder")));
+            let dit: Box<dyn BlobSource> = Box::new(HttpRangeBlobSource::new(format!("{base}/transformer")));
+            let vae: Box<dyn BlobSource> = Box::new(HttpRangeBlobSource::new(format!("{base}/vae")));
             let bundle = ImageBundle::open(enc, dit, vae)
                 .await
                 .map_err(|e| JsError::new(&format!("{e:?}")))?;
@@ -310,9 +319,9 @@ mod wasm {
             dit_read_fn: js_sys::Function,
             vae_read_fn: js_sys::Function,
         ) -> std::result::Result<ImageModel, JsError> {
-            let enc = OpfsBlobSource::new(enc_read_fn);
-            let dit = OpfsBlobSource::new(dit_read_fn);
-            let vae = OpfsBlobSource::new(vae_read_fn);
+            let enc: Box<dyn BlobSource> = Box::new(OpfsBlobSource::new(enc_read_fn));
+            let dit: Box<dyn BlobSource> = Box::new(OpfsBlobSource::new(dit_read_fn));
+            let vae: Box<dyn BlobSource> = Box::new(OpfsBlobSource::new(vae_read_fn));
             let bundle = ImageBundle::open(enc, dit, vae)
                 .await
                 .map_err(|e| JsError::new(&format!("{e:?}")))?;

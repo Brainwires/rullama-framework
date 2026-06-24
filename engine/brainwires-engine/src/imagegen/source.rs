@@ -43,6 +43,22 @@ pub trait BlobSource {
     }
 }
 
+/// Forward `BlobSource` through a boxed trait object, so a single concrete type
+/// (`ImageBundle<Box<dyn BlobSource>>`) can hold either a CDN, OPFS, or file
+/// source — the wasm `ImageModel` needs one struct type across its loaders.
+#[async_trait(?Send)]
+impl BlobSource for Box<dyn BlobSource> {
+    async fn read_blob(&self, blob_filename: &str) -> Result<Vec<u8>> {
+        (**self).read_blob(blob_filename).await
+    }
+    async fn read_prefix(&self, blob_filename: &str, max: usize) -> Result<Vec<u8>> {
+        (**self).read_prefix(blob_filename, max).await
+    }
+    async fn read_range(&self, blob_filename: &str, offset: u64, len: u64) -> Result<Vec<u8>> {
+        (**self).read_range(blob_filename, offset, len).await
+    }
+}
+
 // ---------- FileBlobSource (native-only) ----------
 
 #[cfg(not(target_arch = "wasm32"))]
