@@ -15,11 +15,13 @@ struct Params {
 @group(0) @binding(2) var<storage, read_write> y: array<f32>;
 
 @compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn main(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
     let h2 = params.h * 2u;
     let w2 = params.w * 2u;
     let total = params.c * h2 * w2;
-    let o = gid.x;
+    // 2D workgroup grid (wg_grid): reconstruct the linear index so VAE stages at
+    // ≥256px (>65535×64 elements) don't overflow the 1-D dispatch cap.
+    let o = gid.y * nwg.x * 64u + gid.x;
     if (o >= total) { return; }
 
     let ox = o % w2;

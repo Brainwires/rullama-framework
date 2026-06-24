@@ -1506,7 +1506,8 @@ pub fn silu_chained(
     });
     cp.set_pipeline(&p.silu);
     cp.set_bind_group(0, &bg, &[]);
-    cp.dispatch_workgroups((n as u32).div_ceil(64), 1, 1);
+    let (gx, gy, gz) = wg_grid(n);
+    cp.dispatch_workgroups(gx, gy, gz);
 }
 
 /// GLU split: y[t, d] = x[t, d] * sigmoid(x[t, inner + d]).
@@ -2225,7 +2226,6 @@ pub fn upsample2x_chw_chained(
         w: w as u32,
         _p: 0,
     };
-    let total = (c * 2 * h * 2 * w) as u32;
     cached_dispatch(
         ctx,
         enc,
@@ -2233,7 +2233,7 @@ pub fn upsample2x_chw_chained(
         "upsample2x_chw",
         &[x, y],
         &params,
-        (total.div_ceil(64), 1, 1),
+        wg_grid(c * 2 * h * 2 * w),
     );
 }
 
@@ -2281,7 +2281,6 @@ pub fn conv2d_chw_f32_chained(
         k: k as u32,
         pad: pad as u32,
     };
-    let total = (out_c * out_h * out_w) as u32;
     cached_dispatch(
         ctx,
         enc,
@@ -2289,7 +2288,7 @@ pub fn conv2d_chw_f32_chained(
         "conv2d_chw",
         &[x, weight, bias, y],
         &params,
-        (total.div_ceil(64), 1, 1),
+        wg_grid(out_c * out_h * out_w),
     );
 }
 

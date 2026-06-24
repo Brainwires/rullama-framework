@@ -28,9 +28,11 @@ struct Params {
 @group(0) @binding(4) var<storage, read_write> y:      array<f32>;
 
 @compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn main(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
     let total: u32 = params.out_C * params.out_H * params.out_W;
-    let o: u32 = gid.x;
+    // 2D workgroup grid (wg_grid): reconstruct the linear index so VAE convs at
+    // ≥256px (>65535×64 elements) don't overflow the 1-D dispatch cap.
+    let o: u32 = gid.y * nwg.x * 64u + gid.x;
     if (o >= total) { return; }
 
     // output channel-first: o = (co * out_H + oy) * out_W + ox

@@ -12,8 +12,10 @@ struct Params {
 @group(0) @binding(1) var<storage, read_write> x:      array<f32>;
 
 @compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
+fn main(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+    // 2D workgroup grid (wg_grid) so large VAE activations (≥256px) don't
+    // overflow the single-dimension 65535 dispatch cap.
+    let i = gid.y * nwg.x * 64u + gid.x;
     if (i >= params.n) { return; }
     let v = x[i];
     x[i] = v / (1.0 + exp(-v));
