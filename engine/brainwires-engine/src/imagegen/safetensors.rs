@@ -29,8 +29,10 @@ use crate::imagegen::dtype::StDtype;
 pub struct TensorEntry {
     pub dtype: StDtype,
     pub shape: Vec<usize>,
-    /// `[start, end)` byte range within the data region.
-    pub data_offsets: (usize, usize),
+    /// `[start, end)` byte range within the data region. `u64` (not `usize`)
+    /// because multi-GB shards carry offsets past `u32::MAX`, which would
+    /// overflow `usize` on wasm32 during header deserialization.
+    pub data_offsets: (u64, u64),
 }
 
 impl TensorEntry {
@@ -56,11 +58,11 @@ pub struct SafetensorsHeader {
 
 impl SafetensorsHeader {
     /// Absolute `[start, end)` byte range of a tensor within the blob/file.
-    pub fn tensor_range(&self, name: &str) -> Option<(usize, usize)> {
+    pub fn tensor_range(&self, name: &str) -> Option<(u64, u64)> {
         self.tensors.get(name).map(|e| {
             (
-                self.data_start + e.data_offsets.0,
-                self.data_start + e.data_offsets.1,
+                self.data_start as u64 + e.data_offsets.0,
+                self.data_start as u64 + e.data_offsets.1,
             )
         })
     }
@@ -130,7 +132,7 @@ struct RawEntry {
     dtype: String,
     #[serde(default)]
     shape: Vec<usize>,
-    data_offsets: [usize; 2],
+    data_offsets: [u64; 2],
 }
 
 impl SafetensorsBlob {
@@ -173,7 +175,7 @@ impl SafetensorsBlob {
             let e: RawEntry = serde_json::from_value(val)
                 .map_err(|err| RullamaError::Image(format!("tensor {name:?}: {err}")))?;
             let (start, end) = (e.data_offsets[0], e.data_offsets[1]);
-            if start > end || end > data_len {
+            if start > end || end > data_len as u64 {
                 return Err(RullamaError::Image(format!(
                     "tensor {name:?} offsets [{start},{end}) out of data region ({data_len})"
                 )));
@@ -185,7 +187,7 @@ impl SafetensorsBlob {
                 data_offsets: (start, end),
             };
             // Byte length must match dtype * elem_count.
-            let expect = entry.elem_count() * dtype.elem_size();
+            let expect = (entry.elem_count() * dtype.elem_size()) as u64;
             if end - start != expect {
                 return Err(RullamaError::Image(format!(
                     "tensor {name:?}: byte span {} != {expect} ({:?} × {} elems)",
@@ -230,7 +232,7 @@ impl SafetensorsBlob {
             .get(name)
             .ok_or_else(|| RullamaError::Image(format!("tensor {name:?} not in blob")))?;
         let (s, end) = e.data_offsets;
-        Ok(&self.bytes[self.data_start + s..self.data_start + end])
+        Ok(&self.bytes[self.data_start + s as usize..self.data_start + end as usize])
     }
 
     /// Dequantize a *float* tensor to f32. Errors for integer/packed-quant

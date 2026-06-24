@@ -148,7 +148,7 @@ mod native {
             self.index.weight_map.contains_key(name)
         }
 
-        fn locate(&self, name: &str) -> Result<(&ShardFile, (usize, usize), StDtype, &[usize])> {
+        fn locate(&self, name: &str) -> Result<(&ShardFile, (u64, u64), StDtype, &[usize])> {
             let shard = self
                 .index
                 .shard_of(name)
@@ -182,10 +182,10 @@ mod native {
         /// Raw little-endian bytes of a tensor (positioned read from its shard).
         pub fn tensor_bytes(&self, name: &str) -> Result<Vec<u8>> {
             let (sf, (start, end), _, _) = self.locate(name)?;
-            let len = end - start;
+            let len = (end - start) as usize;
             let mut buf = vec![0u8; len];
             sf.file
-                .read_exact_at(&mut buf, start as u64)
+                .read_exact_at(&mut buf, start)
                 .map_err(|e| RullamaError::Image(format!("read tensor {name:?}: {e}")))?;
             Ok(buf)
         }

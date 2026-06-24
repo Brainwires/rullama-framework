@@ -56,8 +56,8 @@ impl<S: BlobSource> StreamingShards<S> {
                     name,
                     Loc {
                         shard: shard.clone(),
-                        start: data_start + e.data_offsets.0 as u64,
-                        end: data_start + e.data_offsets.1 as u64,
+                        start: data_start + e.data_offsets.0,
+                        end: data_start + e.data_offsets.1,
                         dtype: e.dtype,
                         shape: e.shape,
                     },
