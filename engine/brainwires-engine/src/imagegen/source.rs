@@ -247,10 +247,70 @@ mod wasm {
             self.fetch(name, Some((offset, len))).await
         }
     }
+
+    /// Browser blob source backed by **OPFS-cached** component files — the image
+    /// analogue of `gguf::OpfsFetcher`. The model is downloaded once to OPFS;
+    /// this reads per-tensor ranges from the local files (no network during
+    /// generation), keeping wasm memory bounded by the existing per-call paging.
+    ///
+    /// JS owns the `FileSystemSyncAccessHandle`s (one per file in the component
+    /// dir) and exposes a single callback `read_fn(name, offset, len) ->
+    /// Uint8Array | Promise<Uint8Array>` that dispatches by file name:
+    /// - `len < 0` ⇒ read from `offset` to EOF (whole file / remainder),
+    /// - `len == 0` ⇒ empty,
+    /// - `len > 0` ⇒ exactly `len` bytes at `offset` (clamped to EOF).
+    pub struct OpfsBlobSource {
+        read_fn: js_sys::Function,
+    }
+
+    impl OpfsBlobSource {
+        pub fn new(read_fn: js_sys::Function) -> Self {
+            Self { read_fn }
+        }
+
+        async fn call(&self, name: &str, offset: f64, len: f64) -> Result<Vec<u8>> {
+            use wasm_bindgen::{JsCast, JsValue};
+            use wasm_bindgen_futures::JsFuture;
+            let result = self
+                .read_fn
+                .call3(
+                    &JsValue::NULL,
+                    &JsValue::from_str(name),
+                    &JsValue::from_f64(offset),
+                    &JsValue::from_f64(len),
+                )
+                .map_err(|e| RullamaError::Image(format!("OPFS read_fn {name}: {e:?}")))?;
+            // sync Uint8Array or a Promise — probe + await if thenable.
+            let value = if let Ok(promise) = result.clone().dyn_into::<js_sys::Promise>() {
+                JsFuture::from(promise).await.map_err(|e| {
+                    RullamaError::Image(format!("OPFS read_fn {name} rejected: {e:?}"))
+                })?
+            } else {
+                result
+            };
+            Ok(js_sys::Uint8Array::new(&value).to_vec())
+        }
+    }
+
+    #[async_trait(?Send)]
+    impl BlobSource for OpfsBlobSource {
+        async fn read_blob(&self, name: &str) -> Result<Vec<u8>> {
+            self.call(name, 0.0, -1.0).await
+        }
+        async fn read_prefix(&self, name: &str, max: usize) -> Result<Vec<u8>> {
+            self.call(name, 0.0, max as f64).await
+        }
+        async fn read_range(&self, name: &str, offset: u64, len: u64) -> Result<Vec<u8>> {
+            if len == 0 {
+                return Ok(Vec::new());
+            }
+            self.call(name, offset as f64, len as f64).await
+        }
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use wasm::HttpRangeBlobSource;
+pub use wasm::{HttpRangeBlobSource, OpfsBlobSource};
 
 /// `fetch()` via Window or WorkerGlobalScope (mirrors gguf::fetcher::global_fetch).
 #[cfg(target_arch = "wasm32")]

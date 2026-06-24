@@ -263,7 +263,7 @@ mod tests {
 #[cfg(target_arch = "wasm32")]
 mod wasm {
     use super::*;
-    use crate::imagegen::source::HttpRangeBlobSource;
+    use crate::imagegen::source::{HttpRangeBlobSource, OpfsBlobSource};
     use wasm_bindgen::prelude::*;
 
     /// JS-facing Z-Image-Turbo engine. Streams its weights from a CDN base URL
@@ -288,6 +288,31 @@ mod wasm {
             let enc = HttpRangeBlobSource::new(format!("{base}/text_encoder"));
             let dit = HttpRangeBlobSource::new(format!("{base}/transformer"));
             let vae = HttpRangeBlobSource::new(format!("{base}/vae"));
+            let bundle = ImageBundle::open(enc, dit, vae)
+                .await
+                .map_err(|e| JsError::new(&format!("{e:?}")))?;
+            Ok(ImageModel {
+                bundle,
+                last_step: std::cell::Cell::new(0),
+                total_steps: std::cell::Cell::new(0),
+            })
+        }
+
+        /// Load all three components from **OPFS-cached** files (the model must
+        /// already be downloaded). Each `*ReadFn` is a JS callback
+        /// `(name, offset, len) -> Uint8Array | Promise<Uint8Array>` reading the
+        /// corresponding component's local files (see [`OpfsBlobSource`]). This
+        /// is the production path: weights stream from local disk per tensor, so
+        /// generation does no network I/O and wasm memory stays bounded.
+        #[wasm_bindgen(js_name = loadFromOpfs)]
+        pub async fn load_from_opfs(
+            enc_read_fn: js_sys::Function,
+            dit_read_fn: js_sys::Function,
+            vae_read_fn: js_sys::Function,
+        ) -> std::result::Result<ImageModel, JsError> {
+            let enc = OpfsBlobSource::new(enc_read_fn);
+            let dit = OpfsBlobSource::new(dit_read_fn);
+            let vae = OpfsBlobSource::new(vae_read_fn);
             let bundle = ImageBundle::open(enc, dit, vae)
                 .await
                 .map_err(|e| JsError::new(&format!("{e:?}")))?;
