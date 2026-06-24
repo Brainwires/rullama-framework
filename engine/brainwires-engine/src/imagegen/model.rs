@@ -88,8 +88,12 @@ impl<S: BlobSource> ImageBundle<S> {
 
     /// Generate an RGB image `[3, lh·8, lw·8]` (values in [0,1]) from caption +
     /// negative token ids. `cfg_scale == 1.0` skips the negative pass. `lh`/`lw`
-    /// are the latent dims (image px / VAE 8×). `on_step(stage, i, n)` reports
-    /// progress (`"encode"`/`"denoise"`/`"decode"`).
+    /// are the latent dims (image px / VAE 8×).
+    ///
+    /// `report(label, done, total)` (optional) is called frequently — per
+    /// encoder/DiT layer and per VAE stage — with a human-readable phase label
+    /// and an in-phase progress fraction, so the UI shows constant movement
+    /// during the (network-bound, multi-minute) run rather than a silent hang.
     #[allow(clippy::too_many_arguments)]
     pub async fn generate(
         &self,
@@ -100,21 +104,25 @@ impl<S: BlobSource> ImageBundle<S> {
         lw: usize,
         steps: usize,
         seed: u64,
-        mut on_step: Option<&mut dyn FnMut(&str, usize, usize)>,
+        report: Option<&dyn Fn(&str, usize, usize)>,
     ) -> Result<Vec<f32>> {
-        let mut report = |stage: &str, i: usize, n: usize| {
-            if let Some(cb) = on_step.as_deref_mut() {
-                cb(stage, i, n);
-            }
-        };
+        let noop = |_: &str, _: usize, _: usize| {};
+        let report: &dyn Fn(&str, usize, usize) = report.unwrap_or(&noop);
 
         // 1. encode caption (+ negative for CFG)
-        report("encode", 0, 1);
         let enc = Qwen3Gpu::new(&self.ctx, &self.pipes, &self.enc_ss, &self.enc_cfg);
-        let cap = enc.forward(tokens).await?;
+        let cap = enc
+            .forward(tokens, Some(&|i, n| report("Encoding prompt", i, n)))
+            .await?;
         let use_cfg = (cfg_scale - 1.0).abs() > 1e-3 && !neg_tokens.is_empty();
         let ncap = if use_cfg {
-            Some(enc.forward(neg_tokens).await?)
+            Some(
+                enc.forward(
+                    neg_tokens,
+                    Some(&|i, n| report("Encoding negative prompt", i, n)),
+                )
+                .await?,
+            )
         } else {
             None
         };
@@ -131,14 +139,31 @@ impl<S: BlobSource> ImageBundle<S> {
         // 4. denoise loop
         let dit = DitGpu::new(&self.ctx, &self.pipes, &self.dit_ss, &self.dit_cfg);
         for s in 0..steps {
-            report("denoise", s, steps);
             let sigma = sched.sigma(s);
+            let lbl = format!("Denoising · step {}/{}", s + 1, steps);
             let v_pos = dit
-                .forward(&latent, lh, lw, sigma, &cap, tokens.len())
+                .forward(
+                    &latent,
+                    lh,
+                    lw,
+                    sigma,
+                    &cap,
+                    tokens.len(),
+                    Some(&|i, n| report(&lbl, i, n)),
+                )
                 .await?;
             let v = if let Some(ncap) = &ncap {
+                let nlbl = format!("Denoising · step {}/{} (guidance)", s + 1, steps);
                 let v_neg = dit
-                    .forward(&latent, lh, lw, sigma, ncap, neg_tokens.len())
+                    .forward(
+                        &latent,
+                        lh,
+                        lw,
+                        sigma,
+                        ncap,
+                        neg_tokens.len(),
+                        Some(&|i, n| report(&nlbl, i, n)),
+                    )
                     .await?;
                 cfg_combine(&v_pos, &v_neg, cfg_scale)
             } else {
@@ -148,9 +173,8 @@ impl<S: BlobSource> ImageBundle<S> {
         }
 
         // 5. decode
-        report("decode", 0, 1);
         VaeGpu::new(&self.ctx, &self.pipes, &self.vae_ss, &self.vae_cfg)
-            .decode(&latent, lh, lw)
+            .decode_reporting(&latent, lh, lw, Some(&|i, n| report("Decoding image", i, n)))
             .await
     }
 }
@@ -294,8 +318,13 @@ mod wasm {
 
         /// Generate an image. `tokens`/`neg_tokens` are caption / negative token
         /// ids (JS-tokenized). `cfg_scale <= 0` ⇒ the model default; `steps == 0`
-        /// ⇒ the default. `lh`/`lw` are latent dims (image px ÷ 8). Returns RGBA8
-        /// bytes `[lh·8 · lw·8 · 4]` for `putImageData`.
+        /// ⇒ the default. `lh`/`lw` are latent dims (image px ÷ 8).
+        ///
+        /// `on_progress` (optional) is invoked frequently — per encoder/DiT
+        /// layer and per VAE stage — as `on_progress(label, done, total)` so the
+        /// worker can post live progress to the UI during the (network-bound,
+        /// multi-minute) run. Returns RGBA8 bytes `[lh·8 · lw·8 · 4]` for
+        /// `putImageData`.
         #[wasm_bindgen(js_name = generate)]
         #[allow(clippy::too_many_arguments)]
         pub async fn generate(
@@ -307,6 +336,7 @@ mod wasm {
             lw: u32,
             steps: u32,
             seed: f64,
+            on_progress: Option<js_sys::Function>,
         ) -> std::result::Result<Vec<u8>, JsError> {
             let steps = if steps == 0 {
                 DEFAULT_STEPS
@@ -322,6 +352,21 @@ mod wasm {
             self.total_steps.set(steps as u32);
             self.last_step.set(0);
 
+            // Bridge the Rust reporter → the JS callback. Called synchronously
+            // from deep in the async forward; the worker callback just
+            // `postMessage`s, and delivery happens at the next `await` yield
+            // (every layer does a network fetch), so the UI updates live.
+            let reporter = move |label: &str, done: usize, total: usize| {
+                if let Some(f) = &on_progress {
+                    let _ = f.call3(
+                        &JsValue::NULL,
+                        &JsValue::from_str(label),
+                        &JsValue::from_f64(done as f64),
+                        &JsValue::from_f64(total as f64),
+                    );
+                }
+            };
+
             let rgb = self
                 .bundle
                 .generate(
@@ -332,7 +377,7 @@ mod wasm {
                     lw,
                     steps,
                     seed as u64,
-                    None,
+                    Some(&reporter),
                 )
                 .await
                 .map_err(|e| JsError::new(&format!("{e:?}")))?;

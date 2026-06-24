@@ -21,6 +21,14 @@
 //! `Range`, the Qwen3 encoder (IM1), the DiT denoiser (IM2), the VAE decoder
 //! (IM3), the sampling loop (IM4), and the `ImageModel` wasm surface (IM5).
 
+/// Fine-grained progress sink the streaming forwards invoke as they advance
+/// (per encoder/DiT layer, per VAE stage). Generation is network-bound — each
+/// DiT step re-streams ~10 GB of weights — so without this the UI would sit
+/// silent for minutes per step; the forwards call `report(done, total)` after
+/// each unit of work so the UI shows constant movement. `(done, total)` is a
+/// 0-based progress fraction within the current phase.
+pub type Reporter<'a> = &'a (dyn Fn(usize, usize) + 'a);
+
 pub mod config;
 pub mod dit_forward;
 pub mod dtype;

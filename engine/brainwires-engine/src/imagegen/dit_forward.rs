@@ -52,6 +52,7 @@ impl<'a, S: BlobSource> DitGpu<'a, S> {
 
     /// Predict velocity for one latent `[in_ch, lh, lw]` at timestep `t`, given
     /// caption features `cap [cap_len, cap_feat_dim]`. Returns `[in_ch, lh, lw]`.
+    #[allow(clippy::too_many_arguments)]
     pub async fn forward(
         &self,
         latent: &[f32],
@@ -60,8 +61,13 @@ impl<'a, S: BlobSource> DitGpu<'a, S> {
         t: f32,
         cap: &[f32],
         cap_len: usize,
+        report: Option<crate::imagegen::Reporter<'_>>,
     ) -> Result<Vec<f32>> {
         let cfg = self.cfg;
+        // Total reported units: refiners (image + caption) + main layers + the
+        // final layer, so the bar fills smoothly across the whole forward.
+        let block_total = 2 * cfg.n_refiner_layers as usize + cfg.n_layers as usize + 1;
+        let mut block_done = 0usize;
         let dim = cfg.dim as usize;
         let cin = cfg.in_channels as usize;
         let p = cfg.patch_size() as usize;
@@ -113,6 +119,10 @@ impl<'a, S: BlobSource> DitGpu<'a, S> {
 
         // ---- noise refiners (image, modulated) ----
         for i in 0..cfg.n_refiner_layers as usize {
+            if let Some(r) = report {
+                r(block_done, block_total);
+            }
+            block_done += 1;
             x = self
                 .block(
                     &x,
@@ -127,6 +137,10 @@ impl<'a, S: BlobSource> DitGpu<'a, S> {
         }
         // ---- context refiners (caption, no modulation) ----
         for i in 0..cfg.n_refiner_layers as usize {
+            if let Some(r) = report {
+                r(block_done, block_total);
+            }
+            block_done += 1;
             cap_emb = self
                 .block(
                     &cap_emb,
@@ -146,6 +160,10 @@ impl<'a, S: BlobSource> DitGpu<'a, S> {
         unified[..img_len * dim].copy_from_slice(&x);
         unified[img_len * dim..].copy_from_slice(&cap_emb);
         for i in 0..cfg.n_layers as usize {
+            if let Some(r) = report {
+                r(block_done, block_total);
+            }
+            block_done += 1;
             unified = self
                 .block(
                     &unified,
@@ -160,6 +178,9 @@ impl<'a, S: BlobSource> DitGpu<'a, S> {
         }
 
         // ---- take image tokens, final layer, unpatchify ----
+        if let Some(r) = report {
+            r(block_done, block_total);
+        }
         let img_out = unified[..img_len * dim].to_vec();
         let out_patches = self.final_layer(&img_out, img_len, &temb).await?; // [img_len, patch_in]
         Ok(unpatchify(&out_patches, cin, lh, lw, p))

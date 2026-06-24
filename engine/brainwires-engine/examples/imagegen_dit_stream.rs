@@ -56,7 +56,7 @@ fn main() {
     println!("Async-streaming GPU DiT forward...");
     let t1 = std::time::Instant::now();
     let gpu = pollster::block_on(
-        DitGpu::new(&ctx, &pipes, &ss, &cfg).forward(&latent, lh, lw, t, &cap, cap_len),
+        DitGpu::new(&ctx, &pipes, &ss, &cfg).forward(&latent, lh, lw, t, &cap, cap_len, None),
     )
     .expect("gpu");
     let gpu_dt = t1.elapsed();

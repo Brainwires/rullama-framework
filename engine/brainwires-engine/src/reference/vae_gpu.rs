@@ -57,9 +57,43 @@ impl<'a, S: BlobSource> VaeGpu<'a, S> {
 
     /// Decode latent `[latent_ch, lh, lw]` → RGB `[3, lh·8, lw·8]` in `[0,1]`.
     pub async fn decode(&self, latent: &[f32], lh: usize, lw: usize) -> Result<Vec<f32>> {
+        self.decode_reporting(latent, lh, lw, None).await
+    }
+
+    /// Like [`decode`](Self::decode) but reports per-stage progress (optional)
+    /// so the UI can show movement during the VAE decode.
+    pub async fn decode_reporting(
+        &self,
+        latent: &[f32],
+        lh: usize,
+        lw: usize,
+        report: Option<crate::imagegen::Reporter<'_>>,
+    ) -> Result<Vec<f32>> {
         let lc = self.cfg.latent_channels as usize;
         let groups = self.cfg.norm_num_groups as usize;
         let dev = &self.ctx.device;
+
+        // Stage count: conv_in + mid(3) + Σ up-block (resnets + maybe upsample)
+        // + norm_out + conv_out. A running counter drives the progress bar.
+        let n_up = self.cfg.block_out_channels.len();
+        let resnets = self.cfg.layers_per_block as usize + 1;
+        let mut stage_total = 1 + 3 + 2; // conv_in, mid×3, norm_out + conv_out
+        for bi in 0..n_up {
+            stage_total += resnets;
+            if self.st.has(&format!("decoder.up_blocks.{bi}.upsamplers.0.conv.weight")) {
+                stage_total += 1;
+            }
+        }
+        let mut stage = 0usize;
+        macro_rules! tick {
+            () => {{
+                if let Some(r) = report {
+                    r(stage, stage_total);
+                }
+                stage += 1;
+                let _ = stage; // last increment is intentionally unread
+            }};
+        }
 
         // pre-scale on CPU, upload as the initial activation
         let z: Vec<f32> = latent
@@ -74,37 +108,43 @@ impl<'a, S: BlobSource> VaeGpu<'a, S> {
         };
 
         // conv_in (3×3 pad1)
+        tick!();
         x = self.conv(&x, "decoder.conv_in", 1).await?;
         // mid block: resnet0 → attn → resnet1
+        tick!();
         x = self
             .resnet(&x, "decoder.mid_block.resnets.0", groups)
             .await?;
+        tick!();
         x = self
             .attn_cpu(&x, "decoder.mid_block.attentions.0", groups)
             .await?;
+        tick!();
         x = self
             .resnet(&x, "decoder.mid_block.resnets.1", groups)
             .await?;
 
         // up blocks
-        let n_up = self.cfg.block_out_channels.len();
-        let resnets = self.cfg.layers_per_block as usize + 1;
         for bi in 0..n_up {
             let bp = format!("decoder.up_blocks.{bi}");
             for ri in 0..resnets {
+                tick!();
                 x = self
                     .resnet(&x, &format!("{bp}.resnets.{ri}"), groups)
                     .await?;
             }
             if self.st.has(&format!("{bp}.upsamplers.0.conv.weight")) {
+                tick!();
                 x = self.upsample(&x);
                 x = self.conv(&x, &format!("{bp}.upsamplers.0.conv"), 1).await?;
             }
         }
 
         // conv_norm_out (GroupNorm) → silu → conv_out
+        tick!();
         x = self.groupnorm(&x, "decoder.conv_norm_out", groups).await?;
         self.silu(&x);
+        tick!();
         x = self.conv(&x, "decoder.conv_out", 1).await?;
 
         // readback, [-1,1]→[0,1] clip

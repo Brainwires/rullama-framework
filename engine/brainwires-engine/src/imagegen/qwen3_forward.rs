@@ -48,7 +48,13 @@ impl<'a, S: BlobSource> Qwen3Gpu<'a, S> {
     }
 
     /// Encode token ids → final hidden state, row-major `[seq * hidden]`.
-    pub async fn forward(&self, tokens: &[u32]) -> Result<Vec<f32>> {
+    /// `report(done, total)` (optional) is called per transformer layer so the
+    /// UI shows progress during the streamed forward.
+    pub async fn forward(
+        &self,
+        tokens: &[u32],
+        report: Option<crate::imagegen::Reporter<'_>>,
+    ) -> Result<Vec<f32>> {
         let cfg = self.cfg;
         let h = cfg.hidden_size as usize;
         let seq = tokens.len();
@@ -78,7 +84,11 @@ impl<'a, S: BlobSource> Qwen3Gpu<'a, S> {
         }
 
         // ---- transformer layers ----
-        for li in 0..cfg.num_hidden_layers as usize {
+        let n_layers = cfg.num_hidden_layers as usize;
+        for li in 0..n_layers {
+            if let Some(r) = report {
+                r(li, n_layers);
+            }
             let p = format!("model.layers.{li}");
             let normed = rmsnorm(
                 &x,

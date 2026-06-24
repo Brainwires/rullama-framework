@@ -75,7 +75,7 @@ fn main() {
     );
 
     let t0 = std::time::Instant::now();
-    let mut prog = |stage: &str, i: usize, n: usize| println!("  [{stage}] {}/{n}", i + 1);
+    let prog = |stage: &str, i: usize, n: usize| println!("  [{stage}] {}/{n}", i + 1);
     let rgb = pollster::block_on(bundle.generate(
         &tokens,
         &neg_tokens,
@@ -84,7 +84,7 @@ fn main() {
         lw,
         steps,
         seed,
-        Some(&mut prog),
+        Some(&prog),
     ))
     .expect("generate");
     println!("done in {:.1?}", t0.elapsed());
