@@ -147,26 +147,30 @@ impl<S: BlobSource> ImageBundle<S> {
         let dit = DitGpu::new(&self.ctx, &self.pipes, &self.dit_ss, &self.dit_cfg);
         for s in 0..steps {
             let sigma = sched.sigma(s);
+            // The transformer's timestep input is (1 - sigma), NOT sigma — flow
+            // matching feeds the model t∈[0,1] increasing toward clean while
+            // sigma decreases 1→0 (Ollama zimage.go: `timestep = 1.0 - tCurr`).
+            let t = 1.0 - sigma;
             let lbl = format!("Denoising · step {}/{}", s + 1, steps);
             let v_pos = dit
                 .forward(
                     &latent,
                     lh,
                     lw,
-                    sigma,
+                    t,
                     &cap,
                     tokens.len(),
                     Some(&|i, n| report(&lbl, i, n)),
                 )
                 .await?;
-            let v = if let Some(ncap) = &ncap {
+            let mut v = if let Some(ncap) = &ncap {
                 let nlbl = format!("Denoising · step {}/{} (guidance)", s + 1, steps);
                 let v_neg = dit
                     .forward(
                         &latent,
                         lh,
                         lw,
-                        sigma,
+                        t,
                         ncap,
                         neg_tokens.len(),
                         Some(&|i, n| report(&nlbl, i, n)),
@@ -176,7 +180,39 @@ impl<S: BlobSource> ImageBundle<S> {
             } else {
                 v_pos
             };
+            // The DiT predicts the NEGATIVE flow-match velocity; negate it so the
+            // Euler step `x += (σ_next−σ)·v` integrates toward clean (Ollama
+            // negates the unpatchified output: `noisePred = -output`).
+            for x in &mut v {
+                *x = -*x;
+            }
+            // Debug trajectory (DG_IMG_DEBUG=1): a working flow-match drives the
+            // latent std from ~1 (noise) toward the VAE latent scale; if std
+            // stays ~1 the velocity isn't denoising.
+            #[cfg(not(target_arch = "wasm32"))]
+            if std::env::var("DG_IMG_DEBUG").is_ok() {
+                let stat = |a: &[f32]| {
+                    let m = a.iter().sum::<f32>() / a.len() as f32;
+                    let sd =
+                        (a.iter().map(|x| (x - m) * (x - m)).sum::<f32>() / a.len() as f32).sqrt();
+                    (m, sd)
+                };
+                let (lm, ls) = stat(&latent);
+                let (vm, vs) = stat(&v);
+                eprintln!(
+                    "[img-dbg] step {s}: sigma={sigma:.4} latent(mean={lm:.4} std={ls:.4}) vel(mean={vm:.4} std={vs:.4})"
+                );
+            }
             sched.step_in_place(&mut latent, &v, s);
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        if std::env::var("DG_IMG_DEBUG").is_ok() {
+            let m = latent.iter().sum::<f32>() / latent.len() as f32;
+            let sd = (latent.iter().map(|x| (x - m) * (x - m)).sum::<f32>()
+                / latent.len() as f32)
+                .sqrt();
+            eprintln!("[img-dbg] final latent: mean={m:.4} std={sd:.4}");
         }
 
         // 5. decode

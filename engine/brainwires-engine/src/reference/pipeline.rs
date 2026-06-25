@@ -69,7 +69,11 @@ pub fn generate(
     for s in 0..steps {
         report("denoise", s, steps);
         let sigma = sched.sigma(s);
-        let v = dit.forward(&latent, lh, lw, sigma, &cap, cap_len)?;
+        // timestep = 1 - sigma; DiT predicts the NEGATIVE velocity (see zimage.go).
+        let mut v = dit.forward(&latent, lh, lw, 1.0 - sigma, &cap, cap_len)?;
+        for x in &mut v {
+            *x = -*x;
+        }
         sched.step_in_place(&mut latent, &v, s);
     }
 
@@ -115,9 +119,14 @@ pub fn generate_cfg(
     for s in 0..steps {
         report("denoise", s, steps);
         let sigma = sched.sigma(s);
-        let v_pos = dit.forward(&latent, lh, lw, sigma, &cap, tokens.len())?;
-        let v_neg = dit.forward(&latent, lh, lw, sigma, &ncap, neg_tokens.len())?;
-        let v = cfg_combine(&v_pos, &v_neg, cfg_scale);
+        // timestep = 1 - sigma; DiT predicts the NEGATIVE velocity (see zimage.go).
+        let t = 1.0 - sigma;
+        let v_pos = dit.forward(&latent, lh, lw, t, &cap, tokens.len())?;
+        let v_neg = dit.forward(&latent, lh, lw, t, &ncap, neg_tokens.len())?;
+        let mut v = cfg_combine(&v_pos, &v_neg, cfg_scale);
+        for x in &mut v {
+            *x = -*x;
+        }
         sched.step_in_place(&mut latent, &v, s);
     }
     report("decode", 0, 1);
