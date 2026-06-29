@@ -321,7 +321,7 @@ do_install() {
 
     # 1. Build + install to ~/.cargo/bin/
     echo "Installing binary via cargo install..."
-    (cd "$FRAMEWORK_DIR" && cargo install --path extras/claude-brain --force 2>&1 | tail -5)
+    (cd "$FRAMEWORK_DIR" && cargo install --path integrations/claude-brain --force 2>&1 | tail -5)
     if [ ! -f "$BINARY_PATH" ]; then
         red "Install failed — binary not found at $BINARY_PATH"
         exit 1
