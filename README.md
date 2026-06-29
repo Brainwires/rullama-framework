@@ -136,10 +136,13 @@ The Brainwires Framework is a workspace of 32 framework crates plus 18 extras (i
   Rust → WASM + WebGPU inference path, moving in from the old `rullama` crate) and
   the agent **harness** (the `brainwires-*` crates here). They stay separate,
   joined by the `Provider` seam; the engine is a first-party WebGPU provider.
-- The **rullama app** consumes the platform in-browser via the engine's wasm
-  bundle and natively via an OpenAI-compatible `/v1/chat/completions` endpoint
-  (existing `openai_chat` provider, base-URL swap). It supersedes the old
-  `brainwires-studio` and the Candle `extras/brainwires-chat-pwa` (both retire).
+- The **rullama product family** (the PWA, `rullama-native` — a shipping paid
+  .NET/Avalonia desktop+mobile app, and `rullama-cli`) consumes the platform
+  three ways: in-browser via the engine's wasm bundle, natively via an
+  OpenAI-compatible `/v1/chat/completions` endpoint (existing `openai_chat`
+  provider, base-URL swap), and in-process via a C-ABI shim (rullama-native). The
+  PWA supersedes the old `brainwires-studio` and the Candle
+  `extras/brainwires-chat-pwa` (both retire).
 - **brainclaw** is extracting to its own product repo, and **brainwires-cli** is
   extracting *and being renamed `rullama-cli`* (it joins the rullama product
   family — app + CLI). Both depend on published `brainwires` crates.

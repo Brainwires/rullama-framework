@@ -34,12 +34,18 @@ following* asset (the engine, off "rullama") rather than the larger one.
 > **brainwires** = the OSS platform.
 
 ```
-rullama  (consumer product family · rullama.com)        brainwires  (the OSS platform repo)
-  ├─ rullama      — the PWA / native apps        ──▶       ├─ engine  — brainwires-engine (browser/local WebGPU inference)
-  └─ rullama-cli  — the agentic CLI              ──▶       └─ harness — agents, tools, memory, providers, RAG, MCP, A2A
-
-brainclaw  ──▶ brainwires   (own product repo — multi-channel assistant)
+rullama  (consumer product family · rullama.com)
+  ├─ rullama         — the PWA (web)
+  ├─ rullama-native  — desktop + mobile (.NET / Avalonia; closed-source, paid)  ──┐
+  └─ rullama-cli     — the agentic CLI                                            │
+                                                                    all consume   ▼
+brainclaw  ──▶ brainwires   (own repo)        brainwires  (the OSS platform repo)
+                                                ├─ engine  — brainwires-engine (browser/local WebGPU inference)
+                                                └─ harness — agents, tools, memory, providers, RAG, MCP, A2A
 ```
+
+The platform (engine + harness) is **open source**; **rullama-native** is the
+**paid, closed-source** product. The PWA and CLI brands are rullama's too.
 
 All dependency arrows point down — the graph is acyclic. "rullama" appears only
 at the top, "brainwires" only below it; no name echoes across layers.
@@ -49,7 +55,8 @@ at the top, "brainwires" only below it; no name echoes across layers.
 | Repo | Brand | Holds | Notes |
 |---|---|---|---|
 | **rullama** (this repo today) | rullama | the PWA (`web/`) + the serve/proxy parts of `rullama-devserver` | The downloadable app + future native apps. Gets `rullama.com`. Supersedes the old `brainwires-studio` and the Candle `brainwires-chat-pwa` (both retire). |
-| **rullama-cli** | rullama | the agentic CLI (~90K LOC, today `extras/brainwires-cli`) | `filter-repo` out + rename to `rullama-cli`; depends on `brainwires` from crates.io. The second rullama-branded product. |
+| **rullama-native** | rullama | .NET/Avalonia desktop + mobile heads + a `rust-core` C-ABI shim | **Already exists** in its own repo (Stage 1 + 2 done: chat, multimodal, tools, voice, LoRA, RAG, voice-clone, ROME). Closed-source / paid. Consumes the engine directly via C-ABI; tracks the `brainwires-engine` rename. |
+| **rullama-cli** | rullama | the agentic CLI (~90K LOC, today `extras/brainwires-cli`) | `filter-repo` out + rename to `rullama-cli`; depends on `brainwires` from crates.io. A rullama-branded product. |
 | **brainwires** (today `brainwires-framework`) | brainwires | engine crates (moved in, renamed off "rullama") + the 32 harness crates + slimmed extras | The OSS platform. Bigger GitHub following stays put. |
 | **brainclaw** | brainwires (sub-product) | the 18-crate assistant workspace | `filter-repo` out; depends on `brainwires` from crates.io. |
 
@@ -102,6 +109,13 @@ The harness's seam already exists — `brainwires-core::provider::Provider`
    `/v1/chat/completions`** endpoint (engine `serve` bin in brainwires), consumed
    via the existing `openai_chat` provider with a base-URL swap. No new provider
    crate needed.
+4. **rullama-native ↔ engine, in-process C-ABI:** the desktop/mobile app links
+   the engine crates directly through a **C-ABI shim** (`rust-core` cdylib /
+   staticlib) via P/Invoke — no HTTP, no wasm. The engine `Model` is `!Send`, so
+   each handle owns one OS thread and calls are marshalled to it. This path
+   currently **bypasses the harness** (tool-calling / RAG / voice live in the
+   native app); it pins the published engine crates (today `rullama` /
+   `rullama-finetune` v0.5 → `brainwires-engine*` after the rename).
 
 Stable contract = the `Provider` trait + the OpenAI wire format + the
 tool-call/message protocol. Engine internals may change per patch release.
