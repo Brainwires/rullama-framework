@@ -127,19 +127,22 @@ The Brainwires Framework is a workspace of 32 framework crates plus 18 extras (i
 
 **Allowed dependency arrows:** `crates/ → crates/` and `extras/ → crates/`.
 
-### Inference engines (engine ↔ harness boundary)
+### Brands, repos, and the engine/harness boundary
 
-This framework is the **umbrella harness**: it owns *turns* (agents, tools,
-memory, RAG, and multi-provider routing via the `Provider` trait). Inference
-*engines* are consumed, not built here:
+**brainwires is the open-source platform**; **[rullama](../rullama) is the app**
+(`rullama.com`) that runs on it. Two names, one downward dependency:
 
-- **[rullama](../rullama)** is the canonical **browser/local engine** (Rust →
-  WASM + WebGPU, Gemma 4). The harness consumes it in-browser via a JS
-  `RullamaProvider` over rullama's wasm `Model`, and natively via rullama's
-  OpenAI-compatible `/v1/chat/completions` endpoint (a base-URL swap on the
-  existing `openai_chat` provider — no new provider crate needed).
-- **rullama's React PWA is the canonical UI.** `extras/brainwires-chat-pwa`
-  (Candle-based local inference) is **deprecated** in its favour.
+- The platform holds both the inference **engine** (`brainwires-engine` — the
+  Rust → WASM + WebGPU inference path, moving in from the old `rullama` crate) and
+  the agent **harness** (the `brainwires-*` crates here). They stay separate,
+  joined by the `Provider` seam; the engine is a first-party WebGPU provider.
+- The **rullama app** consumes the platform in-browser via the engine's wasm
+  bundle and natively via an OpenAI-compatible `/v1/chat/completions` endpoint
+  (existing `openai_chat` provider, base-URL swap). It supersedes the old
+  `brainwires-studio` and the Candle `extras/brainwires-chat-pwa` (both retire).
+- **brainclaw** is extracting to its own product repo, and **brainwires-cli** is
+  extracting *and being renamed `rullama-cli`* (it joins the rullama product
+  family — app + CLI). Both depend on published `brainwires` crates.
 
 See the canonical reference:
 [`docs/ARCHITECTURE-engine-harness.md`](docs/ARCHITECTURE-engine-harness.md).

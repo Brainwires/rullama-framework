@@ -1,199 +1,132 @@
-# Architecture: Engine + Harness (rullama × brainwires-framework)
+# Architecture: brands, repos, and the engine/harness boundary
 
-- **Status:** Accepted
+- **Status:** Accepted (supersedes the 2026-06-29 v1, which had rullama as the engine name)
 - **Date:** 2026-06-29
-- **Scope:** the relationship between two Brainwires projects —
-  **rullama** (browser/local inference engine) and **brainwires-framework**
-  (agent harness). This is the canonical reference; each repo carries a short
-  pointer back here.
+- **Scope:** how the Brainwires projects split into repos and brands —
+  **rullama** (the app), **brainwires** (the OSS platform: engine + harness), and
+  the product extractions (**brainclaw**, **brainwires-cli**). Canonical reference;
+  each repo carries a short pointer back here.
 
 ## Context
 
-Two large projects grew overlapping concerns:
+Three forces shaped this:
 
-- **rullama** — a browser-resident **inference engine**: Rust → WASM + WebGPU,
-  Gemma 4 family, hand-written WGSL kernels. It runs the forward pass on the
-  local GPU and recently grew **cloud passthrough** (Ollama Cloud + OpenAI via a
-  same-origin proxy with an AES-GCM key vault). It ships a mature React/TS PWA
-  (`web/`) with chat, RAG/Knowledge, fine-tune, voice/TTS, and image-gen.
-- **brainwires-framework** — a 32-crate Rust **agent harness**: a unified
-  `Provider` trait over ~12 backends, agent orchestration
-  (`brainwires-inference`), tool runtime, tiered memory, RAG, MCP client/server,
-  A2A, and a WebRTC "home daemon". Its older `extras/brainwires-chat-pwa` does
-  in-browser inference via **Candle** (a buggy WebGPU path) and bridges to
-  agents over WebRTC.
+1. **The demo outgrew the demo.** rullama's PWA (~115K LOC TS) and several
+   `brainwires-framework` extras (brainwires-cli ~90K LOC, brainclaw ~42K LOC, an
+   18-crate workspace) are full products living inside repos meant to showcase a
+   library. They need their own homes.
+2. **Brand assets point a specific way.** `rullama.com` is the strong *consumer*
+   domain; the **brainwires** GitHub project has the larger *developer* following.
+   So the consumer-facing app should be **rullama**, and the open-source platform
+   developers build on should be **brainwires**.
+3. **Fewer names to carry.** Collapsing the engine and harness under one brand
+   (**brainwires**) leaves just two names to remember: the app (**rullama**) and
+   the platform (**brainwires**).
 
-The problem: both independently reinvented chat UI, RAG, tool-calling, and
-provider routing; there are **two chat PWAs**; `brainwires-chat-pwa` runs a worse
-local engine (Candle) than rullama while rullama's PWA reinvents harness concerns
-the framework already owns. Nothing imports rullama from the framework today, so
-the seam is undefined.
-
-This document fixes that seam.
+This reverses an earlier draft that kept "rullama" as the engine. The domain +
+following facts make the opposite assignment correct: rename the *smaller-
+following* asset (the engine, off "rullama") rather than the larger one.
 
 ## Decision
 
-> **The engine handles tokens; the harness handles turns.**
+> The engine handles **tokens**; the harness handles **turns**; the products sit
+> **on top**. Two brands: **rullama** = the consumer product family (app + CLI),
+> **brainwires** = the OSS platform.
 
-(The guiding split observed across Ollama, LM Studio, the Vercel AI SDK,
-LangChain, and WebLLM — the harness owns multi-provider routing; the engine
-never does.)
+```
+rullama  (consumer product family · rullama.com)        brainwires  (the OSS platform repo)
+  ├─ rullama      — the PWA / native apps        ──▶       ├─ engine  — brainwires-engine (browser/local WebGPU inference)
+  └─ rullama-cli  — the agentic CLI              ──▶       └─ harness — agents, tools, memory, providers, RAG, MCP, A2A
 
-1. **brainwires-framework is the umbrella** (product / app layer). **rullama is
-   one engine it consumes**, alongside cloud providers — a focused, reusable
-   inference library, not a product in its own right.
-2. **Two integration contracts, both supported:**
-   - a **WASM provider adapter** for the in-browser path, and
-   - an **OpenAI-compatible HTTP endpoint** for native / server / CLI consumers.
-3. **One canonical UI:** rullama's React PWA. The home-daemon / A2A / MCP bridge
-   is ported into it; the Candle-based `brainwires-chat-pwa` is **deprecated**.
-4. **Multi-repo:** rullama and brainwires-framework stay independent repos coupled
-   only by the documented contract (mirrors LM Studio's engine / SDK / app split).
-
-## 1. The boundary — tokens vs turns
-
-Every major concern is assigned to exactly one side. Cross-checked against both
-codebases (file references are current entry points).
-
-| Concern | Owner | Where it lives today |
-|---|---|---|
-| Model load / GGUF streaming | **Engine** | rullama `gguf/fetcher.rs` (`TensorFetcher`), `api::Model::load*` |
-| Forward pass + WGSL kernels | **Engine** | rullama `reference/forward_chained.rs`, `kernels/wgsl/` |
-| Sampling | **Engine** | rullama `sampling.rs`, `Model::setSampling` |
-| KV cache + snapshot/restore | **Engine** | rullama `Model::{saveKvState,restoreKvState,truncateKv,reset}` |
-| Tokenizer + chat template | **Engine** | rullama `tokenizer/`, `template/`, `Model::{encode,renderChat}` |
-| LoRA train / apply | **Engine** | `rullama-finetune` (`TrainingSession`), `Model::loadAdapter` |
-| Vision / audio encode | **Engine** | rullama `multimodal/`, `Model::{encodeImage,encodeAudio}` |
-| Diffusion (DiffusionGemma) | **Engine** | rullama `diffusion.rs` (`DiffusionGemma`) |
-| Multi-provider routing | **Harness** | `brainwires-provider` (`Provider` trait, registry, factory) |
-| Agent loops / orchestration | **Harness** | `brainwires-inference` (ChatAgent/TaskAgent/CycleOrchestrator) |
-| Tool runtime + builtins | **Harness** | `brainwires-tool-runtime`, `brainwires-tool-builtins` |
-| Memory tiers + consolidation | **Harness** | `brainwires-memory`, `brainwires-stores` |
-| RAG indexing + hybrid search | **Harness** | `brainwires-rag`, `brainwires-knowledge` |
-| MCP client/server, A2A | **Harness** | `brainwires-mcp-*`, `brainwires-a2a`, `brainwires-network` |
-| Permissions / sandbox | **Harness** | `brainwires-permission`, `brainwires-sandbox` |
-
-**Cloud passthrough is a harness concern.** Today it lives in rullama
-(`web/src/lib/cloud/*`, `crates/rullama-devserver/src/cloud.rs` →
-`/api/cloud/{provider}/chat`). Conceptually it duplicates `brainwires-provider`'s
-`openai_chat` / `ollama` providers. It is a **candidate to migrate** to the
-harness provider layer (Phase 4 below) — not now. rullama keeps only the minimum
-needed to stand alone as a self-contained engine demo.
-
-## 2. The integration contract (both paths)
-
-The harness's seam already exists — `brainwires-core::provider::Provider`:
-
-```rust
-pub trait Provider: Send + Sync {
-    fn name(&self) -> &str;
-    fn max_output_tokens(&self) -> Option<u32> { None }
-    async fn chat(&self, messages: &[Message], options: &ChatOptions) -> Result<ChatResponse>;
-    fn stream_chat<'a>(&'a self, messages: &'a [Message], options: &'a ChatOptions)
-        -> BoxStream<'a, Result<StreamChunk>>;
-}
+brainclaw  ──▶ brainwires   (own product repo — multi-channel assistant)
 ```
 
-with `Message` / `ChatResponse` / `StreamChunk` from `brainwires-core::message`,
-the `ChatOptions` builder (`temperature`, `max_tokens`, `system`, `top_p`,
-`model`, `cancel_with`, …), and `ModelListing::list_models()` for catalogs.
+All dependency arrows point down — the graph is acyclic. "rullama" appears only
+at the top, "brainwires" only below it; no name echoes across layers.
 
-### Path A — WASM provider adapter (in-browser)
+### Repo end-state
 
-rullama's `Model` is a `wasm-bindgen` JS class **bound to the browser GPU and not
-`Send + Sync`** — so it is *not* implemented as a native Rust `Provider`. Instead
-the adapter is **JS-side**, in the canonical PWA: a `RullamaProvider` object that
-satisfies the same conceptual interface (`chat` / `stream_chat` / `list_models`)
-by driving the WASM `Model`.
+| Repo | Brand | Holds | Notes |
+|---|---|---|---|
+| **rullama** (this repo today) | rullama | the PWA (`web/`) + the serve/proxy parts of `rullama-devserver` | The downloadable app + future native apps. Gets `rullama.com`. Supersedes the old `brainwires-studio` and the Candle `brainwires-chat-pwa` (both retire). |
+| **rullama-cli** | rullama | the agentic CLI (~90K LOC, today `extras/brainwires-cli`) | `filter-repo` out + rename to `rullama-cli`; depends on `brainwires` from crates.io. The second rullama-branded product. |
+| **brainwires** (today `brainwires-framework`) | brainwires | engine crates (moved in, renamed off "rullama") + the 32 harness crates + slimmed extras | The OSS platform. Bigger GitHub following stays put. |
+| **brainclaw** | brainwires (sub-product) | the 18-crate assistant workspace | `filter-repo` out; depends on `brainwires` from crates.io. |
 
-Method mapping (engine API is per-token, not a single `generate`):
+### What moves where
 
-| Harness concept | rullama JS `Model` calls |
+- **Engine** — `crates/rullama` + `crates/rullama-finetune` **move into the
+  brainwires repo** and are renamed (working name **`brainwires-engine`** /
+  `brainwires-engine-finetune`). Keep them in an **isolated sub-workspace / wasm32
+  target** so the framework's native tokio build doesn't pull in `wgpu`, and the
+  engine's wasm build doesn't pull in the harness. Engine and harness stay
+  *architecturally separate* — joined only by the `Provider` seam (below).
+- **App** — this repo keeps `web/` and the PWA-serving parts of the devserver
+  (Vite proxy, `/api/blob`, `/api/models`). It is rebranded **rullama (the app)**.
+- **devserver splits by concern:** PWA serve/proxy → stays with the app;
+  the OpenAI-compatible `/v1` engine endpoint → belongs with the engine in
+  brainwires (a small `serve` bin); the `/api/cloud/*` proxy → folds into the
+  harness provider layer.
+- **Extras slim down.** Keep only genuine framework material — `agent-chat`
+  (reference), `brainwires-web-search-agent` (example), the five small MCP-server
+  wrappers (brain/memory/rag/scheduler/issues), demos (audio-demo, voice-assistant),
+  `brainwires-docs`, and the published SDK libs (autonomy, proxy, wasm, billing) —
+  tidied into `examples/`, `servers/`, `integrations/`, `sdks/`. **brainclaw**
+  leaves for its own repo, and **brainwires-cli** leaves *and is renamed
+  `rullama-cli`* (it joins the rullama product family).
+
+## The boundary — tokens vs turns
+
+Unchanged in substance; the engine is now branded `brainwires-engine`.
+
+| Concern | Owner |
 |---|---|
-| build prompt from `messages` + `system` | `renderChat(messages)` → token ids via `encode` |
-| sampling config from `ChatOptions` | `setSampling({temperature, topP, topK, seed, …})` |
-| streaming generation | loop `step(prevToken)` → next id; emit `tokenStr(id)` as a `StreamChunk` until `isEos(id)` |
-| stop / cancel | `reset()` / stop flag in the worker (the existing `cancelRef` path) |
-| adapters (LoRA) | `loadAdapter(bytes)` / `clearAdapter()` |
-| multimodal | `encodeImage` / `encodeAudio` soft-token splice |
-| model catalog | `/api/models` (existing) → `AvailableModel[]` |
+| Model load/streaming, forward pass + WGSL kernels, sampling, KV cache, tokenizer/template, LoRA, vision/audio, diffusion | **Engine** (`brainwires-engine`) |
+| Multi-provider routing, agent loops, tool runtime, memory tiers, RAG, MCP, A2A, permissions/sandbox | **Harness** (`brainwires-*` crates) |
+| Chat UI, conversation store, message/tool rendering, settings, voice/image surfaces | **App** (rullama) |
 
-This **replaces Candle** as the framework's browser engine.
+## Integration contracts
 
-### Path B — OpenAI-compatible HTTP endpoint (native / server / CLI)
+The harness's seam already exists — `brainwires-core::provider::Provider`
+(`async chat(...) -> ChatResponse`, `stream_chat(...) -> BoxStream<StreamChunk>`,
+`ChatOptions`, `ModelListing::list_models()`).
 
-rullama exposes `POST /v1/chat/completions` (+ `/v1/embeddings`) from a native
-Rust host that owns an `api::Model` (the engine runs natively too — see the
-`crates/rullama/examples/`). Implementation lands as a **new router module in
-`crates/rullama-devserver`** (or a dedicated `rullama-serve` bin), reusing the
-SSE plumbing already in `cloud.rs`. The request/response/SSE shape maps onto the
-same `renderChat → setSampling → step*` loop as Path A.
+1. **Harness ↔ engine (inside brainwires):** the engine becomes a first-party
+   **WebGPU provider** — a `Provider` impl wrapping `brainwires-engine`. (Browser
+   path is JS-side, since the engine `Model` is browser-bound and not `Send+Sync`;
+   native path hosts an engine `Model` behind `/v1`.)
+2. **App ↔ platform, in-browser:** the rullama app imports the engine's **wasm
+   bundle** (built from brainwires, à la `pkg/*.js`) and drives it through a
+   JS provider — `renderChat → setSampling → step* → isEos`.
+3. **App / any consumer ↔ platform, native:** an **OpenAI-compatible
+   `/v1/chat/completions`** endpoint (engine `serve` bin in brainwires), consumed
+   via the existing `openai_chat` provider with a base-URL swap. No new provider
+   crate needed.
 
-**The harness needs no new native provider code for this path.**
-`brainwires-provider` already ships `openai_chat` (and `ollama`) providers —
-point one at rullama's base URL (à la Ollama / LM Studio / WebLLM):
+Stable contract = the `Provider` trait + the OpenAI wire format + the
+tool-call/message protocol. Engine internals may change per patch release.
 
-```rust
-// existing provider, new base URL — that's the whole integration
-let rullama = OpenAiChatProvider::new(api_key_unused).with_base_url("http://localhost:PORT/v1");
-```
-
-### Stability promise
-
-Public contract = the `Provider` trait + the OpenAI wire format + the
-tool-call/message protocol. rullama's stable surface is `api` / `error` /
-`sampling` / `lora` only; everything `#[doc(hidden)]` may change per patch
-release (see rullama `CLAUDE.md`).
-
-## 3. PWA convergence
-
-**Canonical UI = rullama's `web/`.** It already has the clean seam to build on:
-`web/src/hooks/useChatEngine.ts` forks `cloudTurn` vs the local AR loop, and
-`web/src/lib/cloud/*` is self-contained. The refactor target (future task) is to
-**generalize that fork into a pluggable provider** so local-WASM, cloud, and
-harness-routed providers are peers behind one interface.
-
-Carried over from rullama as-is: chat/RAG/voice/fine-tune/image UI, message &
-tool-call rendering, conversation store, job queue, cross-tab sync.
-
-**Ported in from `brainwires-chat-pwa`:**
-- home-daemon WebRTC bridge — `web/src/home-*.js` + the Rust `home/` daemon
-  (signaling, pairing, A2A JSON-RPC over DataChannel);
-- MCP client + tool loop — `mcp-client.js`, `mcp-tool-loop.js`;
-- any multi-cloud-provider adapters not already in rullama.
-
-**Deprecated:** `extras/brainwires-chat-pwa` and its Candle dependency / WebGPU
-gibberish bug.
-
-## 4. Repository topology & packaging
-
-- **Multi-repo, umbrella consumes engine.** rullama stays an independent
-  engine repo; brainwires-framework is the product umbrella.
-- **rullama publishing surface:** the `pkg/rullama.js` WASM bundle (built via
-  `rullama-finetune` with `--out-name rullama`, exposing `Model` +
-  `EmbeddingModel` + `DiffusionGemma` + `TrainingSession`) for the browser, and
-  the native OpenAI endpoint for server/CLI.
-- **Compatibility:** lightweight "recent" matrix in this doc, not lockstep
-  versioning — the contract (trait + wire format) is the only coupling.
-
-## 5. Migration phases (described, not executed)
+## Migration phases (described, not executed)
 
 Each step is independently shippable.
 
-1. **Contract first** — add `/v1/chat/completions` to `rullama-devserver`; point
-   the framework's existing `openai_chat` provider at it; prove one round-trip.
-2. **Engine swap** — point a framework consumer (CLI or the surviving PWA path)
-   at rullama instead of Candle.
-3. **PWA convergence** — port home-daemon / A2A / MCP into rullama's `web/`;
-   retire `brainwires-chat-pwa`.
-4. **Cloud/provider migration** — move cloud routing from rullama's PWA/devserver
-   into the harness provider layer; rullama keeps a minimal demo path.
-5. **Cleanup** — dedupe RAG / tool / memory logic so the harness is the single
-   source of truth.
+1. **Move + rename the engine** — `crates/rullama{,-finetune}` → brainwires repo as
+   `brainwires-engine{,-finetune}`, in an isolated wasm32 sub-workspace.
+2. **Rebrand this repo to the rullama app** — keep `web/` + devserver serve/proxy;
+   point it at the brainwires wasm bundle + `/v1`. Retire `brainwires-studio` and
+   the Candle `brainwires-chat-pwa`.
+3. **Extract brainclaw** → own repo (`git filter-repo`, depends on published
+   `brainwires`).
+4. **Extract brainwires-cli → own repo, renamed `rullama-cli`** (same pattern;
+   joins the rullama product family).
+5. **Slim brainwires extras** into `examples/ servers/ integrations/ sdks/`.
+6. **Cross-repo dev loop** — publish/link the engine wasm bundle (npm) and use
+   cargo path/patch overrides so app↔platform dev stays a one-command loop.
 
 ## Verification (when phases begin)
 
-Build the browser `RullamaProvider` and run one chat round-trip through the
-harness against rullama — both in-browser (WASM `Model`) and via
-`curl http://localhost:PORT/v1/chat/completions` — and confirm parity with
-rullama's direct PWA output on a fixed prompt set.
+Build the WebGPU provider and run one chat round-trip through the harness against
+the engine — in-browser (wasm bundle) and via `curl .../v1/chat/completions` —
+confirming parity with the engine's direct output on a fixed prompt set. After the
+moves, `brainwires` builds native without `wgpu`, and the engine sub-workspace
+builds for wasm32 without the harness.
