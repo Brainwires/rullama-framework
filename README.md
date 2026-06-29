@@ -127,6 +127,23 @@ The Brainwires Framework is a workspace of 32 framework crates plus 18 extras (i
 
 **Allowed dependency arrows:** `crates/ → crates/` and `extras/ → crates/`.
 
+### Inference engines (engine ↔ harness boundary)
+
+This framework is the **umbrella harness**: it owns *turns* (agents, tools,
+memory, RAG, and multi-provider routing via the `Provider` trait). Inference
+*engines* are consumed, not built here:
+
+- **[rullama](../rullama)** is the canonical **browser/local engine** (Rust →
+  WASM + WebGPU, Gemma 4). The harness consumes it in-browser via a JS
+  `RullamaProvider` over rullama's wasm `Model`, and natively via rullama's
+  OpenAI-compatible `/v1/chat/completions` endpoint (a base-URL swap on the
+  existing `openai_chat` provider — no new provider crate needed).
+- **rullama's React PWA is the canonical UI.** `extras/brainwires-chat-pwa`
+  (Candle-based local inference) is **deprecated** in its favour.
+
+See the canonical reference:
+[`docs/ARCHITECTURE-engine-harness.md`](docs/ARCHITECTURE-engine-harness.md).
+
 **Forbidden:** `crates/ → extras/` (the framework cannot depend on its consumers) and `extras/ → extras/` (extras are siblings of equal standing, not a hierarchy). If an `extras/` library starts being depended on by another `extras/` entry, that's a signal it belongs in `crates/`.
 
 Enforcement: `cargo xtask lint-deps` walks every `Cargo.toml` and rejects forbidden arrows. See [`docs/adr/ADR-0004-framework-extras-boundary.md`](docs/adr/ADR-0004-framework-extras-boundary.md) for the rationale.
