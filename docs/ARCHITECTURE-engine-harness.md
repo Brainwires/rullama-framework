@@ -63,8 +63,8 @@ at the top, "brainwires" only below it; no name echoes across layers.
 ### What moves where
 
 - **Engine** — `crates/rullama` + `crates/rullama-finetune` **move into the
-  brainwires repo** and are renamed (working name **`brainwires-engine`** /
-  `brainwires-engine-finetune`). Keep them in an **isolated sub-workspace / wasm32
+  brainwires repo** and are renamed **`brainwires-engine`** (the engine) /
+  **`brainwires-lora`** (the local LoRA trainer). Keep them in an **isolated sub-workspace / wasm32
   target** so the framework's native tokio build doesn't pull in `wgpu`, and the
   engine's wasm build doesn't pull in the harness. Engine and harness stay
   *architecturally separate* — joined only by the `Provider` seam (below).
@@ -125,7 +125,7 @@ tool-call/message protocol. Engine internals may change per patch release.
 Each step is independently shippable.
 
 1. **Move + rename the engine** — `crates/rullama{,-finetune}` → brainwires repo as
-   `brainwires-engine{,-finetune}`, in an isolated wasm32 sub-workspace.
+   `brainwires-engine` + `brainwires-lora`, in an isolated wasm32 sub-workspace.
 2. **Rebrand this repo to the rullama app** — keep `web/` + devserver serve/proxy;
    point it at the brainwires wasm bundle + `/v1`. Retire `brainwires-studio` and
    the Candle `brainwires-chat-pwa`.
