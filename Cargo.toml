@@ -27,6 +27,7 @@ members = [
     "crates/brainwires-finetune",
     "crates/brainwires-test-fixtures",
     "crates/brainwires-test-harness",
+    "crates/brainwires-datasets",
     "extras/brainwires-autonomy",
     "extras/brainwires-chat-pwa/home",
     "extras/brainwires-wasm",
@@ -119,6 +120,7 @@ brainwires-provider-speech = { path = "crates/brainwires-provider-speech", versi
 brainwires-call-policy = { path = "crates/brainwires-call-policy", version = "0.11.0", default-features = false }
 brainwires-hardware = { path = "crates/brainwires-hardware", version = "0.11.0" }
 brainwires-finetune = { path = "crates/brainwires-finetune", version = "0.11.0" }
+brainwires-datasets = { path = "crates/brainwires-datasets", version = "0.11.0", default-features = false }
 # `brainwires-finetune-local` and `brainwires-training` were moved out of this
 # framework into the `rullama` workspace (LoRA/QLoRA/DoRA + future
 # training-from-scratch live there now). See CHANGELOG [Unreleased].

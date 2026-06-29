@@ -3,7 +3,7 @@ use reqwest::Client;
 use serde_json::json;
 use tracing::{debug, warn};
 
-use crate::datasets::DataFormat;
+use brainwires_datasets::DataFormat;
 
 use super::{CloudFineTuneConfig, FineTuneProvider};
 use crate::error::TrainingError;

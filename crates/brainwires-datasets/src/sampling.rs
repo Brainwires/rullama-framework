@@ -143,7 +143,7 @@ pub fn preference_sample_n(pairs: &[PreferencePair], n: usize, seed: u64) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datasets::types::TrainingMessage;
+    use crate::types::TrainingMessage;
 
     fn sample_examples(n: usize) -> Vec<TrainingExample> {
         (0..n)
@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn test_preference_train_eval_split() {
-        use crate::datasets::types::PreferencePair;
+        use crate::types::PreferencePair;
         let pairs: Vec<PreferencePair> = (0..100)
             .map(|i| {
                 PreferencePair::new(
@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn test_preference_sample_n() {
-        use crate::datasets::types::PreferencePair;
+        use crate::types::PreferencePair;
         let pairs: Vec<PreferencePair> = (0..50)
             .map(|i| {
                 PreferencePair::new(

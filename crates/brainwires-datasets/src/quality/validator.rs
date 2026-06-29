@@ -421,7 +421,7 @@ impl DataValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datasets::types::TrainingMessage;
+    use crate::types::TrainingMessage;
 
     #[test]
     fn test_valid_example() {

@@ -243,7 +243,7 @@ pub mod voice_assistant {
 /// Training data pipelines — JSONL, format conversion, tokenization, dedup.
 #[cfg(feature = "datasets")]
 pub mod datasets {
-    pub use brainwires_finetune::datasets::*;
+    pub use brainwires_datasets::*;
 }
 
 /// Model training — cloud fine-tuning, local Burn-based LoRA/QLoRA/DoRA.

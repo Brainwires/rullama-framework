@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn test_chatml_preference_roundtrip() {
         use super::PreferenceConverter;
-        use crate::datasets::types::PreferencePair;
+        use crate::types::PreferencePair;
         let format = ChatMlFormat;
         let pair = PreferencePair::new(
             vec![TrainingMessage::user("Q")],
