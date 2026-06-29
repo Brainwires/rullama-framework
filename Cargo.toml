@@ -27,7 +27,6 @@ members = [
     "crates/brainwires-finetune",
     "crates/brainwires-datasets",
     "extras/brainwires-autonomy",
-    "extras/brainwires-chat-pwa/home",
     "extras/brainwires-wasm",
     "crates/brainwires-knowledge",
     "crates/brainwires-prompting",
@@ -44,7 +43,6 @@ members = [
     "extras/brainwires-issues",
     "extras/reload-daemon",
     "extras/agent-chat",
-    "extras/brainwires-cli",
     "extras/audio-demo-ffi",
     "extras/brainwires-chat-native/bridge",
     "extras/voice-assistant",
@@ -71,7 +69,6 @@ exclude = [
     "deprecated/brainwires-agent-network",
     "deprecated/brainwires-agents",
     "deprecated/brainwires-datasets",
-    "extras/brainclaw",
     "future",
 ]
 resolver = "2"
