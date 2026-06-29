@@ -359,7 +359,7 @@ debug = "line-tables-only"
 #   - lto = false → no whole-program optimization
 #   - codegen-units = 256 → parallel codegen across all CPU cores
 # Net effect: ~5× faster cargo/wasm-pack rebuilds; runtime is slower
-# (matmuls won't auto-vectorize), but the chat-pwa is currently
+# (matmuls won't auto-vectorize), but the wasm path is currently
 # bound by GPU work + GPU→CPU readback, not Rust hot loops, so the
 # user-visible perf hit on the WGPU path is small. Crank back to
 # `opt-level = 3 + lto = "fat"` once we ship to production.
