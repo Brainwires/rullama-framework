@@ -275,7 +275,7 @@ pub fn exact_dedup_preferences(pairs: &[PreferencePair]) -> (Vec<PreferencePair>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datasets::types::TrainingMessage;
+    use crate::types::TrainingMessage;
 
     #[test]
     fn test_exact_dedup() {
@@ -352,7 +352,7 @@ mod tests {
 
     #[test]
     fn test_exact_dedup_preferences() {
-        use crate::datasets::types::PreferencePair;
+        use crate::types::PreferencePair;
         let pairs = vec![
             PreferencePair::new(
                 vec![TrainingMessage::user("Q")],

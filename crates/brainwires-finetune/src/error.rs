@@ -5,7 +5,7 @@ use thiserror::Error;
 pub enum TrainingError {
     /// Dataset-related error.
     #[error("Dataset error: {0}")]
-    Dataset(#[from] crate::datasets::DatasetError),
+    Dataset(#[from] brainwires_datasets::DatasetError),
 
     /// API request error.
     #[error("API error: {message} (status: {status_code})")]

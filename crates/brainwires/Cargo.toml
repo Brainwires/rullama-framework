@@ -58,6 +58,7 @@ brainwires-hardware = { workspace = true, optional = true }
 
 # Datasets & Fine-tuning
 brainwires-finetune = { workspace = true, optional = true }
+brainwires-datasets = { workspace = true, optional = true }
 # brainwires-finetune-local moved to the `rullama` workspace (rullama-finetune).
 
 
@@ -158,7 +159,7 @@ usb = ["dep:brainwires-hardware", "brainwires-hardware/usb"]
 vad = ["dep:brainwires-hardware", "brainwires-hardware/vad"]
 wake-word = ["dep:brainwires-hardware", "brainwires-hardware/wake-word"]
 voice-assistant = ["dep:brainwires-hardware", "brainwires-hardware/voice-assistant"]
-datasets = ["training", "brainwires-finetune/datasets-full"]
+datasets = ["dep:brainwires-datasets", "brainwires-datasets/datasets-full"]
 training = ["dep:brainwires-finetune"]
 training-cloud = ["training", "brainwires-finetune/cloud"]
 # `training-local` and `training-full` removed when local PEFT moved to rullama;

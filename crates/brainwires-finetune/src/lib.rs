@@ -15,8 +15,8 @@ pub mod error;
 /// Training job types and status.
 pub mod types;
 
-/// Dataset pipelines (absorbed from brainwires-datasets).
-pub mod datasets;
+// Dataset pipelines live in the sibling `brainwires-datasets` crate (extracted
+// in 0.11). Cloud providers reference it as `brainwires_datasets::`.
 
 /// Cloud fine-tuning providers.
 #[cfg(feature = "cloud")]

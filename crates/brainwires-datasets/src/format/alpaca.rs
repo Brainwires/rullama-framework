@@ -211,7 +211,7 @@ mod tests {
     #[test]
     fn test_alpaca_preference_roundtrip() {
         use super::PreferenceConverter;
-        use crate::datasets::types::PreferencePair;
+        use crate::types::PreferencePair;
         let format = AlpacaFormat;
         let pair = PreferencePair::new(
             vec![TrainingMessage::user("What is 2+2?")],

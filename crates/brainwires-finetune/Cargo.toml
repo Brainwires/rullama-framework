@@ -25,20 +25,16 @@ tracing.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 
-# ── Datasets deps (absorbed from brainwires-datasets) ─────────────────────
-sha2 = { workspace = true, optional = true }
-rand = { workspace = true, optional = true }
-tiktoken-rs = { workspace = true, optional = true }
+# Dataset pipelines (JSONL, formats, tokenizers, dedup) were extracted into the
+# sibling `brainwires-datasets` crate in 0.11. Cloud providers use its
+# `DataFormat` (always available); the heavier tokenizer/dedup pipelines sit
+# behind that crate's own features, re-exposed via `datasets-full` below.
+brainwires-datasets = { workspace = true }
 
 # Cloud feature
 reqwest = { version = "0.12", features = ["json", "stream", "multipart"], optional = true }
 tokio = { workspace = true, optional = true }
 brainwires-provider = { workspace = true, optional = true }
-
-# Local-fine-tune deps (burn / safetensors) are gone — moved with the
-# code to `rullama-finetune` (sibling workspace). `tokenizers` survives
-# because the `datasets-hf-tokenizer` feature still uses it.
-tokenizers = { workspace = true, optional = true }
 
 # Bedrock feature
 aws-sigv4 = { workspace = true, optional = true }
@@ -57,12 +53,9 @@ cloud = ["dep:reqwest", "dep:tokio", "dep:brainwires-provider"]
 # training.
 bedrock = ["cloud", "dep:aws-sigv4", "dep:aws-credential-types", "dep:aws-smithy-runtime-api", "dep:http"]
 vertex = ["cloud", "dep:gcp_auth"]
-full = ["cloud", "bedrock", "vertex", "datasets-full"]
-# Datasets sub-features
-datasets-hf-tokenizer = ["dep:tokenizers"]
-datasets-tiktoken = ["dep:tiktoken-rs"]
-datasets-dedup = ["dep:sha2", "dep:rand"]
-datasets-full = ["datasets-hf-tokenizer", "datasets-tiktoken", "datasets-dedup"]
+full = ["cloud", "bedrock", "vertex"]
+# Dataset pipeline features (hf-tokenizer / tiktoken / dedup) moved to the
+# brainwires-datasets crate; depend on it directly to enable them.
 
 [dev-dependencies]
 serde_json.workspace = true

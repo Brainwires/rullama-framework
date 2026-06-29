@@ -101,7 +101,7 @@ pub fn write_jsonl_preferences(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datasets::types::TrainingMessage;
+    use crate::types::TrainingMessage;
     use std::io::Cursor;
 
     #[test]
@@ -135,7 +135,7 @@ mod tests {
 
         // Read back
         let cursor = Cursor::new(&buf);
-        let mut reader = crate::datasets::jsonl::reader::JsonlReader::new(cursor);
+        let mut reader = crate::jsonl::reader::JsonlReader::new(cursor);
         let read_back = reader.read_all().unwrap();
         assert_eq!(read_back.len(), 2);
         assert_eq!(read_back[0].messages.len(), 2);
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn test_write_and_read_preferences() {
-        use crate::datasets::types::TrainingMessage;
+        use crate::types::TrainingMessage;
         let pairs = vec![PreferencePair::new(
             vec![TrainingMessage::user("Q")],
             vec![TrainingMessage::assistant("Good")],
@@ -161,7 +161,7 @@ mod tests {
         }
 
         let cursor = Cursor::new(&buf);
-        let mut reader = crate::datasets::jsonl::reader::JsonlReader::new(cursor);
+        let mut reader = crate::jsonl::reader::JsonlReader::new(cursor);
         let read_back = reader.read_all_preferences().unwrap();
         assert_eq!(read_back.len(), 1);
         assert_eq!(read_back[0].prompt[0].content, "Q");

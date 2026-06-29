@@ -248,7 +248,7 @@ fn build_histogram(token_counts: &[usize]) -> Vec<HistogramBucket> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datasets::types::TrainingMessage;
+    use crate::types::TrainingMessage;
 
     fn sample_examples() -> Vec<TrainingExample> {
         vec![
@@ -302,7 +302,7 @@ mod tests {
 
     #[test]
     fn test_compute_preference_stats() {
-        use crate::datasets::types::PreferencePair;
+        use crate::types::PreferencePair;
         let pairs = vec![
             PreferencePair::new(
                 vec![TrainingMessage::user("Question one here")],

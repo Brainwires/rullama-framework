@@ -1,0 +1,38 @@
+[package]
+name = "brainwires-datasets"
+description = "Training data pipelines for the Brainwires Agent Framework: JSONL I/O, tokenization, dedup, format conversion (Alpaca / ChatML / OpenAI / ShareGPT / Together), and quality stats. Shared by cloud (`brainwires-finetune`) and local (`brainwires-lora`, in the rullama workspace) fine-tuning."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+documentation = "https://docs.rs/brainwires-datasets"
+keywords = ["dataset", "fine-tuning", "jsonl", "tokenizer", "llm-training"]
+categories = ["artificial-intelligence"]
+
+[dependencies]
+# Always available
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+# Feature-gated pipeline deps (names kept stable across the extraction).
+sha2 = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+tiktoken-rs = { workspace = true, optional = true }
+tokenizers = { workspace = true, optional = true }
+
+[features]
+default = []
+datasets-hf-tokenizer = ["dep:tokenizers"]
+datasets-tiktoken = ["dep:tiktoken-rs"]
+datasets-dedup = ["dep:sha2", "dep:rand"]
+datasets-full = ["datasets-hf-tokenizer", "datasets-tiktoken", "datasets-dedup"]
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true
