@@ -1,0 +1,89 @@
+[package]
+name             = "rullama"
+version          = "0.5.0"
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+authors.workspace      = true
+description      = "Browser-resident Gemma 4 inference: pure Rust → WebAssembly + WebGPU. Loads Ollama's on-disk GGUF blobs and runs the forward pass on the local GPU via hand-written WGSL."
+readme           = "../../README.md"
+keywords         = ["gemma", "webgpu", "wasm", "inference", "llm"]
+categories       = ["wasm", "graphics", "science"]
+# Inherits `publish = true` from `[workspace.package]`. The wasm32-only
+# `rsqlite-wasm` dependency now resolves from crates.io (>=0.1.1), so the
+# earlier git+rev publish concern no longer applies.
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wgpu = { workspace = true }
+bytemuck = { workspace = true }
+half = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+futures-channel = { workspace = true }
+futures-util = { workspace = true }
+async-trait = { workspace = true }
+# Inference-time LoRA adapter parsing. The training-side adapter writer
+# lives in `rullama-finetune`; format is the same on both sides.
+safetensors = "0.4"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pollster = { workspace = true }
+env_logger = { workspace = true }
+
+# Native-only, for examples (real-prompt image gen tokenization). Examples
+# build native, so this never affects the wasm lib bundle.
+[dev-dependencies]
+tokenizers = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+js-sys = { workspace = true }
+web-sys = { workspace = true, features = [
+    "Navigator",
+    "Window",
+    "WorkerGlobalScope",
+    # `DedicatedWorkerGlobalScope` enables the typed
+    # `set_timeout_with_callback_and_timeout_and_arguments_0` used by
+    # the head→backward yield in `forward_chained.rs`. The previous
+    # `js_sys::Reflect::get(global, "setTimeout")` path was silently
+    # not awaiting on iOS Safari (the `bwd.post_yield` beacon never
+    # fired on real device) — switching to the typed Worker scope
+    # gives a guaranteed Promise-resolving yield.
+    "DedicatedWorkerGlobalScope",
+    "WorkerNavigator",
+    "Gpu",
+    "GpuAdapter",
+    "GpuDevice",
+    "Headers",
+    "Request",
+    "RequestInit",
+    "Response",
+] }
+console_error_panic_hook = { workspace = true }
+console_log = { workspace = true }
+# Dogfood Brainwires' own SQLite-in-Rust port. wasm-pack inlines its
+# #[wasm_bindgen] exports (WasmDatabase) into pkg/rullama.js alongside
+# our Model bindings, so the PWA's inference worker can persist chat
+# history without a second wasm package.
+rsqlite-wasm = { workspace = true }
+
+[features]
+default = []
+# Reserved: was used to feature-gate the CPU reference forward; that path is now
+# always built since the GPU forward shares KvState/Weights with it. The flag is
+# kept (no-op) so existing `cargo test --features cpu-reference` invocations
+# keep working without a script bump.
+cpu-reference = []
+
+[lints]
+workspace = true
