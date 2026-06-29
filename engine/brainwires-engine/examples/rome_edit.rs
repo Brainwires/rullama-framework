@@ -11,7 +11,7 @@
 //! Usage:
 //!
 //! ```text
-//! cargo run -p rullama --release --example rome_edit -- \
+//! cargo run -p brainwires-engine --release --example rome_edit -- \
 //!     ~/.ollama/models/blobs/sha256-<digest>             \
 //!     5                                                  \
 //!     "France"                                           \
@@ -30,7 +30,7 @@
 //!     before encoding; required for the edit to fire when loaded by the chat UI
 //!
 //! After this completes:
-//!   `cargo run -p rullama-finetune --release --example eval_adapter -- \
+//!   `cargo run -p brainwires-lora --release --example eval_adapter -- \
 //!     <gguf> <adapter-path> "<prompt>"`
 //! to see whether the edit fires.
 
@@ -39,7 +39,7 @@ use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 
-use rullama::api::{ChatMessage, ChatRole, Model, RomeIterativeHparams};
+use brainwires_engine::api::{ChatMessage, ChatRole, Model, RomeIterativeHparams};
 
 type BoxError = Box<dyn Error + Send + Sync>;
 
@@ -209,7 +209,7 @@ async fn run() -> Result<(), BoxError> {
     eprintln!();
     eprintln!("Now verify the edit fires:");
     eprintln!("  RULLAMA_EVAL_APPLY_CHAT_TEMPLATE=1 \\");
-    eprintln!("  cargo run -p rullama-finetune --release --example eval_adapter -- \\");
+    eprintln!("  cargo run -p brainwires-lora --release --example eval_adapter -- \\");
     eprintln!("    {} {} \\", gguf_path.display(), out_path);
     eprintln!("    {prompt:?}");
 

@@ -9,10 +9,10 @@ use std::fs;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use rullama::backend::{Pipelines, WeightCache, WgpuCtx};
-use rullama::gguf::GgufReader;
-use rullama::model::config::Gemma4Config;
-use rullama::reference::{KvState, Weights, forward_token, forward_token_gpu};
+use brainwires_engine::backend::{Pipelines, WeightCache, WgpuCtx};
+use brainwires_engine::gguf::GgufReader;
+use brainwires_engine::model::config::Gemma4Config;
+use brainwires_engine::reference::{KvState, Weights, forward_token, forward_token_gpu};
 
 fn main() -> ExitCode {
     let path = match env::args().nth(1) {

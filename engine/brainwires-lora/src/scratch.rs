@@ -40,8 +40,8 @@
 
 use std::sync::Arc;
 
-use rullama::backend::WgpuCtx;
-use rullama::model::config::Gemma4Config;
+use brainwires_engine::backend::WgpuCtx;
+use brainwires_engine::model::config::Gemma4Config;
 use wgpu::{Buffer, BufferDescriptor, BufferUsages};
 
 /// Per-layer activation buffer set. One per layer; addressed by layer index.
@@ -258,7 +258,7 @@ impl TrainingScratch {
                 usage,
                 mapped_at_creation: false,
             });
-            rullama::backend::gpu_mem::record_alloc(label, size);
+            brainwires_engine::backend::gpu_mem::record_alloc(label, size);
             b
         };
 

@@ -1,4 +1,4 @@
-//! Train rullama-finetune on a JSONL dataset.
+//! Train brainwires-lora on a JSONL dataset.
 //!
 //! Surface: `train_jsonl <gguf> <jsonl>`. Reads `(prompt, completion)`
 //! examples, tokenizes via the model's BPE, and runs LoRA SGD over
@@ -13,9 +13,9 @@
 //! Usage:
 //!
 //! ```text
-//! cargo run -p rullama-finetune --example train_jsonl --release -- \
+//! cargo run -p brainwires-lora --example train_jsonl --release -- \
 //!     /path/to/gemma4-e2b.gguf \
-//!     crates/rullama-finetune/examples/data/echo.jsonl
+//!     crates/brainwires-lora/examples/data/echo.jsonl
 //! ```
 //!
 //! Env knobs (all optional):
@@ -69,10 +69,10 @@ use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 
-use rullama::api::{ChatMessage, ChatRole, Model};
-use rullama_finetune::TrainingSession;
-use rullama_finetune::dataset_loader::TrainingDataset;
-use rullama_finetune::shared::config::{LoraConfig, LossMode, LrScheduler, TrainingHyperparams};
+use brainwires_engine::api::{ChatMessage, ChatRole, Model};
+use brainwires_lora::TrainingSession;
+use brainwires_lora::dataset_loader::TrainingDataset;
+use brainwires_lora::shared::config::{LoraConfig, LossMode, LrScheduler, TrainingHyperparams};
 
 type BoxError = Box<dyn Error + Send + Sync>;
 
@@ -395,7 +395,7 @@ async fn run() -> Result<(), BoxError> {
     if let Some(path) = &resume_path
         && path.exists()
     {
-        let n = rullama_finetune::load_adapter_into_state(session.lora_state_mut(), path)
+        let n = brainwires_lora::load_adapter_into_state(session.lora_state_mut(), path)
             .map_err(|e| -> BoxError { format!("resume from {}: {e:?}", path.display()).into() })?;
         eprintln!(
             "[resume] seeded {n} LoRA tensors from {} (Adam restarts)",

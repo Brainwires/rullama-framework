@@ -2,7 +2,7 @@
 //! denoise a masked canvas from a text prompt via the entropy-bound sampler,
 //! print the decoded text. The whole forward runs on the GPU.
 //!
-//!   cargo run -p rullama --release --example diffusion_generate -- \
+//!   cargo run -p brainwires-engine --release --example diffusion_generate -- \
 //!       <model.gguf> "Your prompt" [--canvas=N] [--steps=N] [--seed=N]
 //!
 //! NB: each denoise step is a full canvas forward (~tens of seconds on a weak
@@ -12,9 +12,9 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Instant;
 
-use rullama::diffusion::DiffusionGemma;
-use rullama::gguf::{FileFetcher, TensorFetcher};
-use rullama::reference::diffusion::sampler::{EbParams, StepInfo};
+use brainwires_engine::diffusion::DiffusionGemma;
+use brainwires_engine::gguf::{FileFetcher, TensorFetcher};
+use brainwires_engine::reference::diffusion::sampler::{EbParams, StepInfo};
 
 fn main() -> ExitCode {
     let mut positional = Vec::new();

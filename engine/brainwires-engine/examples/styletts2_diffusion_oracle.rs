@@ -5,14 +5,14 @@
 //! replayed noise into the Rust `StyleDiffusion` denoiser/sampler, and diffs against the
 //! reference net output (single eval) and the final s_pred (full ADPM2 sample).
 //!
-//!   cargo run -p rullama --release --example styletts2_diffusion_oracle
+//!   cargo run -p brainwires-engine --release --example styletts2_diffusion_oracle
 
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-use rullama::reference::kokoro::ops::max_abs_diff;
-use rullama::reference::styletts2::diffusion::StyleDiffusion;
+use brainwires_engine::reference::kokoro::ops::max_abs_diff;
+use brainwires_engine::reference::styletts2::diffusion::StyleDiffusion;
 
 fn dir() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap()).join(".cache/styletts2/fixtures/diffusion")
@@ -81,8 +81,8 @@ fn main() {
     println!("✅ StyleTTS2 style-diffusion matches PyTorch (denoiser + ADPM2 sampler)");
 
     // ---- GPU diffusion sampler (f16 weights) vs PyTorch s_pred ----
-    use rullama::backend::{Pipelines, WgpuCtx};
-    use rullama::reference::styletts2::gpu::StyleTtsGpu;
+    use brainwires_engine::backend::{Pipelines, WgpuCtx};
+    use brainwires_engine::reference::styletts2::gpu::StyleTtsGpu;
     // re-insert the io tensors so the weight map `w` is complete for the GPU path
     w.insert("bert_dur".into(), bert_dur.clone());
     let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");

@@ -9,22 +9,22 @@
 //! match, not the delta).
 //!
 //! Build:
-//!   cargo run -p rullama --release --example kv_f16_parity -- <gguf> [user_msg] [--max=N]
+//!   cargo run -p brainwires-engine --release --example kv_f16_parity -- <gguf> [user_msg] [--max=N]
 
 use std::env;
 use std::fs;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use rullama::api::{ChatMessage, ChatRole};
-use rullama::backend::{Pipelines, WeightCache, WgpuCtx};
-use rullama::gguf::GgufReader;
-use rullama::model::config::Gemma4Config;
-use rullama::reference::Weights;
-use rullama::reference::forward_chained::Forward;
-use rullama::sampling::{Sampler, SamplingOptions};
-use rullama::template::gemma4_small;
-use rullama::tokenizer::BpeTokenizer;
+use brainwires_engine::api::{ChatMessage, ChatRole};
+use brainwires_engine::backend::{Pipelines, WeightCache, WgpuCtx};
+use brainwires_engine::gguf::GgufReader;
+use brainwires_engine::model::config::Gemma4Config;
+use brainwires_engine::reference::Weights;
+use brainwires_engine::reference::forward_chained::Forward;
+use brainwires_engine::sampling::{Sampler, SamplingOptions};
+use brainwires_engine::template::gemma4_small;
+use brainwires_engine::tokenizer::BpeTokenizer;
 
 /// Indices of the `k` largest logits, descending.
 fn top_k(logits: &[f32], k: usize) -> Vec<u32> {

@@ -17,11 +17,11 @@
 
 use std::sync::Arc;
 
-use rullama::api::Model;
-use rullama::backend::dispatch::{
+use brainwires_engine::api::Model;
+use brainwires_engine::backend::dispatch::{
     AdamConfig, adam_step_chained, scale_chained, sum_of_squares_chained,
 };
-use rullama::reference::forward_chained::{
+use brainwires_engine::reference::forward_chained::{
     BackwardScratchView, GlobalLoraGrads, GlobalLoraSlots, LayerCaptureBuffers, LayerLoraGrads,
     LayerLoraSlots, LoraGradPair, LoraSlot,
 };
@@ -134,7 +134,7 @@ pub const GLOBAL_TARGETS: &[&str] = &[LM_HEAD, EMBED_TOKENS];
 /// parameter is unused — surface a clear error if a caller passes a
 /// non-zero layer (catches misuse from the per-layer allocation loop).
 fn lora_projection_dims(
-    cfg: &rullama::model::config::Gemma4Config,
+    cfg: &brainwires_engine::model::config::Gemma4Config,
     layer: u32,
     proj: &str,
 ) -> Result<(u32, u32), TrainingError> {
@@ -180,8 +180,8 @@ fn lora_projection_dims(
 /// `lora_cfg.target_modules`. Shared by [`TrainingSession::new`] and
 /// the probe path so they allocate identical shapes.
 fn build_lora_state(
-    ctx: Arc<rullama::backend::WgpuCtx>,
-    cfg: &rullama::model::config::Gemma4Config,
+    ctx: Arc<brainwires_engine::backend::WgpuCtx>,
+    cfg: &brainwires_engine::model::config::Gemma4Config,
     lora_cfg: &LoraConfig,
     seed_base: u64,
 ) -> Result<LoraState, TrainingError> {
@@ -257,7 +257,7 @@ fn build_lora_state(
 /// activation captures sized for `max_seq_len`. Used by the probe so
 /// the UI can show "this would need X MB" before committing the Model.
 pub fn estimate_training_bytes(
-    cfg: &rullama::model::config::Gemma4Config,
+    cfg: &brainwires_engine::model::config::Gemma4Config,
     lora_cfg: &LoraConfig,
     hp: &TrainingHyperparams,
 ) -> u64 {
@@ -343,7 +343,7 @@ fn reject_qat_base(model: &Model) -> Result<(), TrainingError> {
     if let Ok(dt) = model.forward().wcache().dtype("blk.0.attn_q.weight")
         && matches!(
             dt,
-            rullama::gguf::GgmlDtype::Q4_0 | rullama::gguf::GgmlDtype::Q8_0
+            brainwires_engine::gguf::GgmlDtype::Q4_0 | brainwires_engine::gguf::GgmlDtype::Q8_0
         )
     {
         return Err(TrainingError::Backend(
@@ -1178,7 +1178,7 @@ impl TrainingSession {
                 "[mem] step start ({} pos, {} active): {}",
                 input_ids.len(),
                 n_active,
-                rullama::backend::gpu_mem::breakdown_str()
+                brainwires_engine::backend::gpu_mem::breakdown_str()
             );
         }
 
@@ -1288,7 +1288,7 @@ impl TrainingSession {
             eprintln!(
                 "[mem] after forward sweep ({} pos): {}",
                 input_ids.len(),
-                rullama::backend::gpu_mem::breakdown_str()
+                brainwires_engine::backend::gpu_mem::breakdown_str()
             );
         }
 
@@ -1771,7 +1771,7 @@ fn stats(v: &[f32]) -> (f32, usize) {
     (max_abs, nans)
 }
 
-async fn read_buf_f32(ctx: &rullama::backend::WgpuCtx, buf: &wgpu::Buffer, n: usize) -> Vec<f32> {
+async fn read_buf_f32(ctx: &brainwires_engine::backend::WgpuCtx, buf: &wgpu::Buffer, n: usize) -> Vec<f32> {
     let bytes = (n * 4) as u64;
     let read_buf = ctx.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("grad.read"),
@@ -1833,7 +1833,7 @@ fn grad_view(l: &crate::lora::LoraLayer) -> LoraGradPair<'_> {
 mod tests {
     use super::*;
     use crate::lora::{LoraKey, LoraState};
-    use rullama::backend::WgpuCtx;
+    use brainwires_engine::backend::WgpuCtx;
     use std::sync::Arc;
 
     /// Build a small `LoraState`, write some known values into one

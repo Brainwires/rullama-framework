@@ -4,18 +4,18 @@
 //! or native no-ops), so running the same prompt with the flag off vs on isolates the change —
 //! and exercises the destroy-after-submit path on native to rule out a GPU use-after-free.
 //!
-//!   cargo run --release -p rullama --example outproj_stream_parity -- <gguf> ["prompt"]
+//!   cargo run --release -p brainwires-engine --example outproj_stream_parity -- <gguf> ["prompt"]
 
 use std::env;
 use std::fs;
 use std::sync::Arc;
 
-use rullama::backend::{Pipelines, WeightCache, WgpuCtx};
-use rullama::gguf::GgufReader;
-use rullama::model::config::Gemma4Config;
-use rullama::reference::Weights;
-use rullama::reference::forward_chained::Forward;
-use rullama::tokenizer::BpeTokenizer;
+use brainwires_engine::backend::{Pipelines, WeightCache, WgpuCtx};
+use brainwires_engine::gguf::GgufReader;
+use brainwires_engine::model::config::Gemma4Config;
+use brainwires_engine::reference::Weights;
+use brainwires_engine::reference::forward_chained::Forward;
+use brainwires_engine::tokenizer::BpeTokenizer;
 
 fn run_prompt(fwd: &mut Forward, ids: &[u32]) -> Vec<Vec<f32>> {
     fwd.reset();

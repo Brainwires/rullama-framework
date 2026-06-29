@@ -682,7 +682,7 @@ impl Model {
 
     /// Reset KV state so the next call starts from an empty conversation.
     /// Mutable handle on the underlying text `Forward`. Exposed for the
-    /// training crate (`rullama-finetune::TrainingSession`) so it can
+    /// training crate (`brainwires-lora::TrainingSession`) so it can
     /// drive `step_capture` and `backward_step` on the same model the
     /// inference path uses.
     pub fn forward_mut(&mut self) -> &mut Forward {
@@ -2156,7 +2156,7 @@ impl Model {
         };
 
         // Step D: serialize as safetensors with the same tensor-name
-        // + metadata conventions `rullama_finetune::TrainingSession::
+        // + metadata conventions `brainwires_lora::TrainingSession::
         // save_adapter_to_bytes` uses. The existing
         // `lora::InferenceAdapter::from_safetensors_bytes` parses it
         // identically.

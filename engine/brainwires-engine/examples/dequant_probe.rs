@@ -10,7 +10,7 @@ use std::env;
 use std::fs;
 use std::process::ExitCode;
 
-use rullama::gguf::{GgufReader, dequant_tensor_to_f32};
+use brainwires_engine::gguf::{GgufReader, dequant_tensor_to_f32};
 
 fn main() -> ExitCode {
     let path = match env::args().nth(1) {

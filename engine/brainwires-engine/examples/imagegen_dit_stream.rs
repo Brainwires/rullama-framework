@@ -4,14 +4,14 @@
 //! against `reference::dit::DitForward`.
 //!
 //! Usage:
-//!   cargo run -p rullama --release --example imagegen_dit_stream -- \
+//!   cargo run -p brainwires-engine --release --example imagegen_dit_stream -- \
 //!       weights/Z-Image-Turbo/transformer 4 4 3
 
-use rullama::backend::{Pipelines, WgpuCtx};
-use rullama::imagegen::{
+use brainwires_engine::backend::{Pipelines, WgpuCtx};
+use brainwires_engine::imagegen::{
     DitGpu, FileBlobSource, ShardedSafetensors, StreamingShards, TransformerConfig,
 };
-use rullama::reference::dit::DitForward;
+use brainwires_engine::reference::dit::DitForward;
 
 fn main() {
     let mut a = std::env::args().skip(1);

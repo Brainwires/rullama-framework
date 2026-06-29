@@ -16,9 +16,9 @@ use std::fs;
 use std::process::{Command, ExitCode};
 use std::time::Instant;
 
-use rullama::api::{ChatMessage, ChatRole, Model};
-use rullama::sampling::SamplingOptions;
-use rullama::template::gemma4_small;
+use brainwires_engine::api::{ChatMessage, ChatRole, Model};
+use brainwires_engine::sampling::SamplingOptions;
+use brainwires_engine::template::gemma4_small;
 
 const N_PREDICT: usize = 16;
 

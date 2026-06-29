@@ -11,9 +11,9 @@ use std::env;
 use std::fs;
 use std::sync::Arc;
 
-use rullama::gguf::GgufReader;
-use rullama::reference::kokoro::KokoroModel;
-use rullama::reference::kokoro::ops::max_abs_diff;
+use brainwires_engine::gguf::GgufReader;
+use brainwires_engine::reference::kokoro::KokoroModel;
+use brainwires_engine::reference::kokoro::ops::max_abs_diff;
 
 // Fixture input (from scripts/kokoro_dump_fixtures.py meta.json): "Hello, how are you today?"
 const INPUT_IDS: [i64; 25] = [
@@ -115,8 +115,8 @@ fn main() {
     diff("text_encoder_ten", &t_en, &ten_ref);
 
     // ---- Stage 6-GPU: same TextEncoder via WGSL kernels (conv1d/transpose/LN/leaky + CPU BiLSTM) ----
-    let ctx = pollster::block_on(rullama::backend::WgpuCtx::new()).expect("wgpu");
-    let pipes = rullama::backend::Pipelines::new(&ctx.device);
+    let ctx = pollster::block_on(brainwires_engine::backend::WgpuCtx::new()).expect("wgpu");
+    let pipes = brainwires_engine::backend::Pipelines::new(&ctx.device);
     let t_en_gpu = pollster::block_on(model.text_encoder_gpu(&ctx, &pipes, &INPUT_IDS));
     diff("text_encoder_GPU", &t_en_gpu, &ten_ref);
 
@@ -331,7 +331,7 @@ fn main() {
             "[timing] synthesize_gpu (slice, full)  {:>7.1} ms",
             t.elapsed().as_secs_f32() * 1e3
         );
-        let mut wc = rullama::reference::kokoro::gpu_fast::WeightCache::new();
+        let mut wc = brainwires_engine::reference::kokoro::gpu_fast::WeightCache::new();
         let t = Instant::now();
         let fast1 = pollster::block_on(
             model.synthesize_gpu_fast(&ctx, &pipes, &mut wc, &INPUT_IDS, &ref_s),

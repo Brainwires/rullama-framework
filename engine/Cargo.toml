@@ -1,0 +1,75 @@
+# Isolated engine sub-workspace.
+#
+# Deliberately EXCLUDED from the brainwires root workspace (see the root
+# Cargo.toml `exclude` list). The harness builds native (tokio/axum); the
+# engine builds for `wasm32-unknown-unknown` + native wgpu. Keeping them in
+# separate workspaces means `cargo build --workspace` at the repo root never
+# pulls in `wgpu`, and the engine's wasm build never pulls in the harness.
+# This sub-workspace owns its own Cargo.lock.
+#
+# The engine handles tokens; the harness handles turns. See
+# ../docs/ARCHITECTURE-engine-harness.md.
+[workspace]
+resolver = "3"
+members = [
+    "brainwires-engine",
+    "brainwires-lora",
+]
+
+[workspace.package]
+edition      = "2024"
+rust-version = "1.91"
+license      = "MIT OR Apache-2.0"
+repository   = "https://github.com/Brainwires/brainwires-framework"
+homepage     = "https://github.com/Brainwires/brainwires-framework"
+authors      = ["Brainwires <brainwires.net@gmail.com>"]
+publish      = true
+
+[workspace.dependencies]
+# --- shared by brainwires-engine (the wgpu inference engine) ---
+wgpu = "29.0.3"
+bytemuck = { version = "1.25", features = ["derive"] }
+half = { version = "2.7", features = ["bytemuck"] }
+thiserror = "2.0.18"
+log = "0.4.29"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+futures-channel = { version = "0.3.32", default-features = false, features = ["alloc"] }
+futures-util = { version = "0.3.32", default-features = false, features = ["alloc"] }
+async-trait = "0.1.89"
+
+# native-only (cfg-gated in member crates)
+pollster = "0.4.0"
+env_logger = "0.11.10"
+
+# wasm-only (cfg-gated in member crates)
+wasm-bindgen = "0.2.121"
+wasm-bindgen-futures = "0.4.71"
+serde-wasm-bindgen = "0.6.5"
+js-sys = "0.3.98"
+web-sys = "0.3.98"
+console_error_panic_hook = "0.1.7"
+console_log = "1.0.0"
+rsqlite-wasm = "0.1.1"
+
+# --- shared by brainwires-lora (native + wasm LoRA trainer) ---
+tracing = "0.1"
+tokenizers = "0.22"
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "debuginfo"
+
+[profile.dev]
+opt-level = 1
+
+# Workspace-wide lint config. Carried over from the engine's prior home.
+[workspace.lints.clippy]
+# Many of our Arc<T> are `Arc<GgufReader>` / `Arc<WeightCache>` containing trait
+# objects that aren't Send+Sync because their TensorFetcher impls (OPFS,
+# HttpRange) are intentionally single-threaded. Rc isn't a drop-in because some
+# call sites later hand the Arc into wgpu APIs that take `Arc<T>` by convention.
+arc_with_non_send_sync = "allow"

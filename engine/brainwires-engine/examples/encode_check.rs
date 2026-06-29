@@ -5,8 +5,8 @@ use std::env;
 use std::fs;
 use std::process::ExitCode;
 
-use rullama::gguf::GgufReader;
-use rullama::tokenizer::BpeTokenizer;
+use brainwires_engine::gguf::GgufReader;
+use brainwires_engine::tokenizer::BpeTokenizer;
 
 fn main() -> ExitCode {
     let path = match env::args().nth(1) {

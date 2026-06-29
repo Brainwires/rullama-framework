@@ -5,7 +5,7 @@ use std::env;
 use std::fs;
 use std::process::ExitCode;
 
-use rullama::gguf::GgufReader;
+use brainwires_engine::gguf::GgufReader;
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);

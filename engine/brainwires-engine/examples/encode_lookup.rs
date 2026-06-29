@@ -1,6 +1,6 @@
 //! Quick: tokenize a string with our (Ollama-matching) BPE and print the IDs.
-use rullama::gguf::GgufReader;
-use rullama::tokenizer::BpeTokenizer;
+use brainwires_engine::gguf::GgufReader;
+use brainwires_engine::tokenizer::BpeTokenizer;
 use std::env;
 use std::fs;
 

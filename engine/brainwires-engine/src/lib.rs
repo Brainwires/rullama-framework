@@ -16,7 +16,7 @@
 //! Every other module (`backend`, `gguf`, `kernels`, `model`, `multimodal`,
 //! `reference`, `template`, `tokenizer`) is `#[doc(hidden)]` and is
 //! considered **implementation detail**. They are reachable so that the
-//! sibling workspace crates (`rullama-finetune`, `rullama-ios-bench`) can
+//! sibling workspace crates (`brainwires-lora`, `rullama-ios-bench`) can
 //! link against the wgpu kernel set, the GGUF parser, and the parity
 //! oracles — but their layout, names, and signatures may change in any
 //! patch release without notice. External callers that pin against them

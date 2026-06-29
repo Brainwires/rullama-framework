@@ -5,7 +5,7 @@
 //! runs end-to-end on real weights through the async streaming loader.
 //!
 //! Usage:
-//!   cargo run -p rullama --release --example imagegen_generate_gpu -- \
+//!   cargo run -p brainwires-engine --release --example imagegen_generate_gpu -- \
 //!       weights/Z-Image-Turbo  8 8 4 0 /tmp/zimage_gpu.ppm
 //!   args: <model_dir> <latent_h> <latent_w> <steps> <seed> <out.ppm>
 //!   env:  IMG_PROMPT (caption), IMG_NEG (negative prompt), IMG_CFG (scale)
@@ -13,7 +13,7 @@
 //! NOTE: re-streams the DiT per forward (I/O-bound) — keep latent + steps small;
 //! this validates the composed pipeline, not throughput.
 
-use rullama::imagegen::{FileBlobSource, ImageBundle, VaeConfig, rgb_chw_to_rgba8};
+use brainwires_engine::imagegen::{FileBlobSource, ImageBundle, VaeConfig, rgb_chw_to_rgba8};
 
 fn main() {
     let mut a = std::env::args().skip(1);

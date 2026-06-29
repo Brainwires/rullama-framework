@@ -4,14 +4,14 @@
 //! final → unpatchify) end-to-end on ground-truth weights.
 //!
 //! Usage:
-//!   cargo run -p rullama --release --example imagegen_dit_forward -- \
+//!   cargo run -p brainwires-engine --release --example imagegen_dit_forward -- \
 //!       weights/Z-Image-Turbo/transformer  4 4 3   # latent 4×4, cap_len 3
 //!
 //! Small latent + short caption keep the naive CPU forward tractable; this
 //! validates the math, not speed.
 
-use rullama::imagegen::{ShardedSafetensors, TransformerConfig};
-use rullama::reference::dit::DitForward;
+use brainwires_engine::imagegen::{ShardedSafetensors, TransformerConfig};
+use brainwires_engine::reference::dit::DitForward;
 
 fn main() {
     let mut args = std::env::args().skip(1);

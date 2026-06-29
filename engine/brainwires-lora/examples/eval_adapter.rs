@@ -4,7 +4,7 @@
 //! Usage:
 //!
 //! ```text
-//! cargo run -p rullama-finetune --release --example eval_adapter -- \
+//! cargo run -p brainwires-lora --release --example eval_adapter -- \
 //!     ~/.ollama/models/blobs/sha256-<digest>          \
 //!     /tmp/my_adapter.safetensors                     \
 //!     "What is the capital of Peru?"                  \
@@ -28,10 +28,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use rullama::api::{ChatMessage, ChatRole, Model};
-use rullama::reference::forward_chained::{GlobalLoraSlots, LayerLoraSlots, LoraSlot};
-use rullama_finetune::load_adapter_into_state;
-use rullama_finetune::lora::{LoraKey, LoraLayer, LoraState};
+use brainwires_engine::api::{ChatMessage, ChatRole, Model};
+use brainwires_engine::reference::forward_chained::{GlobalLoraSlots, LayerLoraSlots, LoraSlot};
+use brainwires_lora::load_adapter_into_state;
+use brainwires_lora::lora::{LoraKey, LoraLayer, LoraState};
 use safetensors::SafeTensors;
 use safetensors::tensor::Metadata;
 
@@ -345,7 +345,7 @@ fn apply_repetition_penalty(logits: &mut [f32], history: &[u32], penalty: f32) {
 /// `load_adapter_into_state` will reject the tensors as size-mismatched.
 fn allocate_lora_slots(
     state: &mut LoraState,
-    cfg: &rullama::model::config::Gemma4Config,
+    cfg: &brainwires_engine::model::config::Gemma4Config,
     rank: u32,
     alpha: f32,
     target_modules: &[String],
@@ -354,7 +354,7 @@ fn allocate_lora_slots(
     let vocab = cfg.vocab_size;
     // `lm_head` and `embed_tokens` are global (model-wide, keyed at
     // layer=0) — match the convention used by the training-side
-    // allocator in `rullama-finetune::session::build_lora_state`.
+    // allocator in `brainwires-lora::session::build_lora_state`.
     const GLOBAL_TARGETS: &[&str] = &["lm_head", "embed_tokens"];
     for layer in 0..cfg.n_layers {
         let head_dim = cfg.head_dim(layer);

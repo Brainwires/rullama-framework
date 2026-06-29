@@ -3,7 +3,7 @@
 //! bigger than RAM, so this streams it via `FileFetcher` — per-tensor reads,
 //! never a whole-file load.
 //!
-//!   cargo run -p rullama --release --example moe_parity -- \
+//!   cargo run -p brainwires-engine --release --example moe_parity -- \
 //!       ~/.ollama/models/blobs/sha256-<digest> "Question: ..." 4
 //!
 //! Pass criteria (v0 smoke): no NaN/Inf, plausible greedy continuation.
@@ -15,12 +15,12 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Instant;
 
-use rullama::api::{ChatMessage, ChatRole};
-use rullama::gguf::{FileFetcher, GgufReader};
-use rullama::model::config::Gemma4Config;
-use rullama::reference::{KvState, Weights, forward_token};
-use rullama::template::gemma4_small;
-use rullama::tokenizer::BpeTokenizer;
+use brainwires_engine::api::{ChatMessage, ChatRole};
+use brainwires_engine::gguf::{FileFetcher, GgufReader};
+use brainwires_engine::model::config::Gemma4Config;
+use brainwires_engine::reference::{KvState, Weights, forward_token};
+use brainwires_engine::template::gemma4_small;
+use brainwires_engine::tokenizer::BpeTokenizer;
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);

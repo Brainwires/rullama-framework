@@ -1,14 +1,14 @@
 //! StyleTTS2 full zero-shot synthesis CPU-oracle parity (the complete acoustic graph +
 //! hifigan decoder), against scripts/styletts2_dump_synth_fixtures.py.
 //!
-//!   cargo run -p rullama --release --example styletts2_synth_oracle
+//!   cargo run -p brainwires-engine --release --example styletts2_synth_oracle
 
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-use rullama::reference::kokoro::ops::max_abs_diff;
-use rullama::reference::styletts2::StyleTtsAcoustic;
+use brainwires_engine::reference::kokoro::ops::max_abs_diff;
+use brainwires_engine::reference::styletts2::StyleTtsAcoustic;
 
 fn corr(a: &[f32], b: &[f32]) -> f32 {
     let n = a.len().min(b.len());
@@ -123,8 +123,8 @@ fn main() {
 
     // ---- full GPU synth: CPU acoustic graph + GPU hifigan decoder ----
     {
-        use rullama::backend::{Pipelines, WgpuCtx};
-        use rullama::reference::styletts2::gpu::StyleTtsGpu;
+        use brainwires_engine::backend::{Pipelines, WgpuCtx};
+        use brainwires_engine::reference::styletts2::gpu::StyleTtsGpu;
         let (asr_g, f0_g, n_g, r_g, fg) = ac.acoustic_features(&tokens, &ref_s, None, None);
         let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
         let pipes = Pipelines::new(&ctx.device);

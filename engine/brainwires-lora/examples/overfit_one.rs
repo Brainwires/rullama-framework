@@ -12,7 +12,7 @@
 //! Usage:
 //!
 //! ```text
-//! cargo run -p rullama-finetune --example overfit_one --release -- \
+//! cargo run -p brainwires-lora --example overfit_one --release -- \
 //!     /path/to/gemma4-e2b.gguf
 //! ```
 //!
@@ -25,9 +25,9 @@ use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 
-use rullama::api::Model;
-use rullama_finetune::TrainingSession;
-use rullama_finetune::shared::config::{LoraConfig, TrainingHyperparams};
+use brainwires_engine::api::Model;
+use brainwires_lora::TrainingSession;
+use brainwires_lora::shared::config::{LoraConfig, TrainingHyperparams};
 
 type BoxError = Box<dyn Error + Send + Sync>;
 

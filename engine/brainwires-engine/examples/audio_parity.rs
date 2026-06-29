@@ -35,9 +35,9 @@ use std::fs;
 use std::process::{Command, ExitCode};
 use std::time::Instant;
 
-use rullama::api::{ChatMessage, ChatRole, Model};
-use rullama::sampling::SamplingOptions;
-use rullama::template::gemma4_small;
+use brainwires_engine::api::{ChatMessage, ChatRole, Model};
+use brainwires_engine::sampling::SamplingOptions;
+use brainwires_engine::template::gemma4_small;
 
 const N_PREDICT: usize = 24;
 
@@ -60,7 +60,7 @@ fn main() -> ExitCode {
     let (pcm, wav_path): (Vec<f32>, String) = match wav_path_arg {
         Some(input) if is_wav_path(&input) => {
             let bytes = fs::read(&input).expect("read wav");
-            let pcm = rullama::api::Model::decode_wav_native(&bytes).expect("decode wav");
+            let pcm = brainwires_engine::api::Model::decode_wav_native(&bytes).expect("decode wav");
             println!(
                 "loaded {input}: {} samples ({:.2} s @ 16 kHz)",
                 pcm.len(),
@@ -82,7 +82,7 @@ fn main() -> ExitCode {
                 }
             }
             let bytes = fs::read(&normalised).expect("read transcoded wav");
-            let pcm = rullama::api::Model::decode_wav_native(&bytes).expect("decode wav");
+            let pcm = brainwires_engine::api::Model::decode_wav_native(&bytes).expect("decode wav");
             println!(
                 "transcoded {input}: {} samples ({:.2} s @ 16 kHz)",
                 pcm.len(),

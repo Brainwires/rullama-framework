@@ -5,23 +5,23 @@
 //! model can't be GPU-resident on a 16 GB machine, so this is the
 //! real-weights validation gate for the encode_layer MoE branch.
 //!
-//!   cargo run -p rullama --release --example moe_layer_parity -- \
+//!   cargo run -p brainwires-engine --release --example moe_layer_parity -- \
 //!       ~/.ollama/models/blobs/sha256-<digest> [layer]
 
 use std::env;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use rullama::backend::dispatch::{
+use brainwires_engine::backend::dispatch::{
     make_dummy_storage, moe_combine_chained, moe_expert_matmul_chained, moe_geglu_halves_chained,
     moe_router_chained, rmsnorm_chained,
 };
-use rullama::backend::{BindGroupCache, Pipelines, WeightCache, WgpuCtx};
-use rullama::gguf::{FileFetcher, GgufReader};
-use rullama::model::config::Gemma4Config;
-use rullama::reference::Weights;
-use rullama::reference::moe::{moe_experts, route};
-use rullama::reference::ops::rmsnorm;
+use brainwires_engine::backend::{BindGroupCache, Pipelines, WeightCache, WgpuCtx};
+use brainwires_engine::gguf::{FileFetcher, GgufReader};
+use brainwires_engine::model::config::Gemma4Config;
+use brainwires_engine::reference::Weights;
+use brainwires_engine::reference::moe::{moe_experts, route};
+use brainwires_engine::reference::ops::rmsnorm;
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);

@@ -12,9 +12,9 @@
 use std::env;
 use std::fs;
 
-use rullama::api::Model;
-use rullama_finetune::TrainingSession;
-use rullama_finetune::shared::config::{LoraConfig, TrainingHyperparams};
+use brainwires_engine::api::Model;
+use brainwires_lora::TrainingSession;
+use brainwires_lora::shared::config::{LoraConfig, TrainingHyperparams};
 
 const PROMPT: &str = "The quick brown fox";
 const TARGET: &str = " jumps";

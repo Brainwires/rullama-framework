@@ -1,14 +1,14 @@
 //! StyleTTS2 hifigan Decoder CPU-oracle parity (isolation), built up stage by stage
 //! against `scripts/styletts2_dump_decoder_fixtures.py` fixtures.
 //!
-//!   cargo run -p rullama --release --example styletts2_decoder_oracle
+//!   cargo run -p brainwires-engine --release --example styletts2_decoder_oracle
 
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-use rullama::reference::kokoro::ops::max_abs_diff;
-use rullama::reference::styletts2::decoder::{StyleTtsDecoder, source_signal};
+use brainwires_engine::reference::kokoro::ops::max_abs_diff;
+use brainwires_engine::reference::styletts2::decoder::{StyleTtsDecoder, source_signal};
 
 fn corr(a: &[f32], b: &[f32]) -> f32 {
     let (ma, mb) = (
@@ -95,8 +95,8 @@ fn main() {
     println!("✅ StyleTTS2 hifigan decoder (CPU) matches PyTorch end-to-end");
 
     // ---- GPU hifigan decoder parity (same synthetic inputs → 24 kHz waveform) ----
-    use rullama::backend::{Pipelines, WgpuCtx};
-    use rullama::reference::styletts2::gpu::StyleTtsGpu;
+    use brainwires_engine::backend::{Pipelines, WgpuCtx};
+    use brainwires_engine::reference::styletts2::gpu::StyleTtsGpu;
     let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
     let pipes = Pipelines::new(&ctx.device);
     let mut wc = HashMap::new();

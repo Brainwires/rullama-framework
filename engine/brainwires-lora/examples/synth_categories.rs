@@ -7,7 +7,7 @@
 //! Gemma 4 e2b without round-tripping through the PWA.
 //!
 //! Usage:
-//!   cargo run -p rullama-finetune --release --example synth_categories \
+//!   cargo run -p brainwires-lora --release --example synth_categories \
 //!       <gguf-path> ["<user behavior>"]
 //!
 //! The user-behavior arg defaults to the verified garlic test. Output
@@ -22,8 +22,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use rullama::api::{ChatMessage, ChatRole, Model};
-use rullama::sampling::SamplingOptions;
+use brainwires_engine::api::{ChatMessage, ChatRole, Model};
+use brainwires_engine::sampling::SamplingOptions;
 
 type BoxError = Box<dyn Error + Send + Sync>;
 

@@ -1,6 +1,6 @@
 //! Inference-time LoRA adapter state.
 //!
-//! Lean cousin of `rullama-finetune::lora::LoraState` — holds just the
+//! Lean cousin of `brainwires-lora::lora::LoraState` — holds just the
 //! frozen `A`, `B`, and a per-LoRA `z` scratch buffer. No gradient
 //! buffers, no Adam moments; those live with the trainable adapter on
 //! the finetune side. The on-disk safetensors format is shared, so a
@@ -120,7 +120,7 @@ impl InferenceAdapter {
         // Allocate shape-matched slots for every (layer, projection).
         // `lm_head` and `embed_tokens` are "global" — allocated once at
         // layer=0 by convention; matches the training-side keying in
-        // `rullama-finetune::session::build_lora_state`.
+        // `brainwires-lora::session::build_lora_state`.
         let mut layers: BTreeMap<LoraKey, InferenceLoraLayer> = BTreeMap::new();
         let d_model = cfg.d_model;
         let vocab = cfg.vocab_size;

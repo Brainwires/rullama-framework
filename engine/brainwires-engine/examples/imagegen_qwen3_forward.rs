@@ -4,14 +4,14 @@
 //! RoPE → SwiGLU → final norm) on ground-truth weights.
 //!
 //! Usage:
-//!   cargo run -p rullama --release --example imagegen_qwen3_forward -- \
+//!   cargo run -p brainwires-engine --release --example imagegen_qwen3_forward -- \
 //!       weights/Z-Image-Turbo/text_encoder  1 2 3 4 5
 //!
 //! (Token ids after the dir are optional; default a short synthetic sequence.
 //!  Real tokenization is a separate piece — this validates the forward math.)
 
-use rullama::imagegen::{Qwen3Config, ShardedSafetensors};
-use rullama::reference::qwen3::Qwen3Encoder;
+use brainwires_engine::imagegen::{Qwen3Config, ShardedSafetensors};
+use brainwires_engine::reference::qwen3::Qwen3Encoder;
 
 fn main() {
     let mut args = std::env::args().skip(1);

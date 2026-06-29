@@ -3,15 +3,15 @@
 //! Writes a PPM. Proves the whole pipeline runs on real weights.
 //!
 //! Usage:
-//!   cargo run -p rullama --release --example imagegen_generate -- \
+//!   cargo run -p brainwires-engine --release --example imagegen_generate -- \
 //!       weights/Z-Image-Turbo  8 8 2 0 /tmp/zimage.ppm
 //!   args: <model_dir> <latent_h> <latent_w> <steps> <seed> <out.ppm>
 //!
 //! NOTE: the naive CPU DiT re-dequantizes 24GB/step, so keep latent + steps
 //! tiny — this validates the pipeline, not speed. (GPU path is future work.)
 
-use rullama::imagegen::{Qwen3Config, ShardedSafetensors, TransformerConfig, VaeConfig};
-use rullama::reference::pipeline::{Components, generate};
+use brainwires_engine::imagegen::{Qwen3Config, ShardedSafetensors, TransformerConfig, VaeConfig};
+use brainwires_engine::reference::pipeline::{Components, generate};
 
 fn main() {
     let mut a = std::env::args().skip(1);

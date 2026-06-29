@@ -18,12 +18,12 @@ use std::fs;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use rullama::backend::{Pipelines, WeightCache, WgpuCtx};
-use rullama::gguf::GgufReader;
-use rullama::model::config::Gemma4Config;
-use rullama::reference::Weights;
-use rullama::reference::forward_chained::Forward;
-use rullama::tokenizer::BpeTokenizer;
+use brainwires_engine::backend::{Pipelines, WeightCache, WgpuCtx};
+use brainwires_engine::gguf::GgufReader;
+use brainwires_engine::model::config::Gemma4Config;
+use brainwires_engine::reference::Weights;
+use brainwires_engine::reference::forward_chained::Forward;
+use brainwires_engine::tokenizer::BpeTokenizer;
 
 fn max_abs_diff(a: &[f32], b: &[f32]) -> f32 {
     a.iter()

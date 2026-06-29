@@ -42,7 +42,7 @@ use crate::backend::dispatch::{
 ///
 /// Each buffer must be a STORAGE | COPY_DST | COPY_SRC `wgpu::Buffer`
 /// large enough to hold the named tensor at the layer's per-position
-/// shape (see `crates/rullama-finetune/src/scratch.rs`).
+/// shape (see `crates/brainwires-lora/src/scratch.rs`).
 pub struct LayerCaptureBuffers<'a> {
     /// `self.hidden` snapshot at the start of the layer ([d_model]).
     pub hidden_in: &'a wgpu::Buffer,
@@ -1043,7 +1043,7 @@ impl Forward {
         &self.wcache
     }
     /// Borrow the GPU context (`WgpuCtx` is internally `Arc`-backed and
-    /// cheap to clone). Used by `rullama-finetune` to allocate LoRA and
+    /// cheap to clone). Used by `brainwires-lora` to allocate LoRA and
     /// scratch buffers on the same device + queue as the model.
     pub fn ctx(&self) -> &WgpuCtx {
         &self.ctx
@@ -4024,7 +4024,7 @@ pub struct GlobalLoraGrads<'a> {
 
 /// All scratch buffers the backward orchestration writes into. Sized
 /// at construction time and reused across steps. Allocated by
-/// `rullama-finetune::TrainingScratch`.
+/// `brainwires-lora::TrainingScratch`.
 #[allow(clippy::struct_field_names)]
 pub struct BackwardScratchView<'a> {
     /// `[vocab]` — softmax(logits) - one_hot(target).

@@ -3,12 +3,12 @@
 //! unchanged) matches reference::dit, and reports the speedup.
 //!
 //! Usage:
-//!   cargo run -p rullama --release --example imagegen_dit_gpu -- \
+//!   cargo run -p brainwires-engine --release --example imagegen_dit_gpu -- \
 //!       weights/Z-Image-Turbo/transformer 4 4 3
 
-use rullama::backend::{Pipelines, WgpuCtx};
-use rullama::imagegen::{ShardedSafetensors, TransformerConfig};
-use rullama::reference::dit::DitForward;
+use brainwires_engine::backend::{Pipelines, WgpuCtx};
+use brainwires_engine::imagegen::{ShardedSafetensors, TransformerConfig};
+use brainwires_engine::reference::dit::DitForward;
 
 fn main() {
     let mut a = std::env::args().skip(1);

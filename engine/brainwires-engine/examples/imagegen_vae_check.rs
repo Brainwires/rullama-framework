@@ -3,12 +3,12 @@
 //! turns smooth latents into smooth color regions; a broken one yields static.
 //! This separates "VAE is wrong" from "the diffusion produces a noisy latent".
 //!
-//!   cargo run -p rullama --release --example imagegen_vae_check -- \
+//!   cargo run -p brainwires-engine --release --example imagegen_vae_check -- \
 //!       weights/Z-Image-Turbo/vae 32 /tmp/vae_check.ppm
 
-use rullama::backend::{Pipelines, WgpuCtx};
-use rullama::imagegen::{FileBlobSource, StreamingShards, VaeConfig};
-use rullama::reference::vae_gpu::VaeGpu;
+use brainwires_engine::backend::{Pipelines, WgpuCtx};
+use brainwires_engine::imagegen::{FileBlobSource, StreamingShards, VaeConfig};
+use brainwires_engine::reference::vae_gpu::VaeGpu;
 
 fn main() {
     let mut a = std::env::args().skip(1);

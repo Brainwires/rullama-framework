@@ -3,8 +3,8 @@
 //! blobs (which carry the real architecture dims we need for IM1/IM2).
 //!
 //! Usage:
-//!   cargo run -p rullama --example imagegen_inspect -- z-image
-//!   cargo run -p rullama --example imagegen_inspect -- z-image:latest
+//!   cargo run -p brainwires-engine --example imagegen_inspect -- z-image
+//!   cargo run -p brainwires-engine --example imagegen_inspect -- z-image:latest
 //!
 //! Works against any locally-present Ollama image model (created via
 //! `ollama create z-image` from the HF weights). Run it the moment the model
@@ -12,7 +12,7 @@
 
 use std::collections::BTreeMap;
 
-use rullama::imagegen::{BlobSource, FileBlobSource, ImageManifest, find_manifest, read_header};
+use brainwires_engine::imagegen::{BlobSource, FileBlobSource, ImageManifest, find_manifest, read_header};
 
 fn fmt_bytes(n: u64) -> String {
     const U: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];

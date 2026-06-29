@@ -11,11 +11,11 @@
 //! in-browser generated image.
 //!
 //! Usage:
-//!   cargo run -p rullama --release --example imagegen_fp8_smoke -- \
+//!   cargo run -p brainwires-engine --release --example imagegen_fp8_smoke -- \
 //!       weights/Z-Image-Turbo-fp8 4 4 3
 
-use rullama::backend::{Pipelines, WgpuCtx};
-use rullama::imagegen::{DitGpu, FileBlobSource, StreamingShards, TransformerConfig};
+use brainwires_engine::backend::{Pipelines, WgpuCtx};
+use brainwires_engine::imagegen::{DitGpu, FileBlobSource, StreamingShards, TransformerConfig};
 
 fn main() {
     let mut a = std::env::args().skip(1);

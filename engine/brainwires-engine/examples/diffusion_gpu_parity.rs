@@ -3,7 +3,7 @@
 //! (`diffusion_forward`) on the SAME prompt + canvas. Both stream the real
 //! 16.8 GB blob via `FileFetcher` — never a whole-file load.
 //!
-//!   cargo run -p rullama --release --example diffusion_gpu_parity -- \
+//!   cargo run -p brainwires-engine --release --example diffusion_gpu_parity -- \
 //!       <model.gguf> <prompt.i32> <canvas.i32> [--canvas=N] [--layers=N]
 //!
 //! `--canvas=N` truncates the canvas to the first N tokens for fast iteration
@@ -16,12 +16,12 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Instant;
 
-use rullama::backend::{BindGroupCache, Pipelines, WeightCache, WgpuCtx};
-use rullama::gguf::{FileFetcher, GgufReader};
-use rullama::reference::Weights;
-use rullama::reference::diffusion::DiffusionConfig;
-use rullama::reference::diffusion::forward::diffusion_forward;
-use rullama::reference::diffusion::gpu::diffusion_forward_gpu;
+use brainwires_engine::backend::{BindGroupCache, Pipelines, WeightCache, WgpuCtx};
+use brainwires_engine::gguf::{FileFetcher, GgufReader};
+use brainwires_engine::reference::Weights;
+use brainwires_engine::reference::diffusion::DiffusionConfig;
+use brainwires_engine::reference::diffusion::forward::diffusion_forward;
+use brainwires_engine::reference::diffusion::gpu::diffusion_forward_gpu;
 
 fn read_i32(path: &str) -> Vec<u32> {
     std::fs::read(path)

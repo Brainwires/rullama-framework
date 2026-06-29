@@ -6,10 +6,10 @@
 //!   SwiGLU) · final_layer (adaLN + unpatch linear)
 //!
 //! Usage:
-//!   cargo run -p rullama --example imagegen_dit_inventory -- \
+//!   cargo run -p brainwires-engine --example imagegen_dit_inventory -- \
 //!       weights/Z-Image-Turbo/transformer
 
-use rullama::imagegen::{ShardedSafetensors, TransformerConfig};
+use brainwires_engine::imagegen::{ShardedSafetensors, TransformerConfig};
 
 fn main() {
     let dir = std::env::args()

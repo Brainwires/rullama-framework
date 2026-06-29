@@ -11,7 +11,7 @@ use std::fs;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use rullama::api::Model;
+use brainwires_engine::api::Model;
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);

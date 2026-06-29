@@ -1,6 +1,6 @@
 //! Header-only dtype census of a GGUF (streams the directory, never the data).
 //!
-//!   cargo run -p rullama --release --example dtype_census -- <gguf>
+//!   cargo run -p brainwires-engine --release --example dtype_census -- <gguf>
 //!
 //! Prints, per logical tensor role, the dtype + a histogram so the GPU forward
 //! knows which matmul paths it must support.
@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use rullama::gguf::{FileFetcher, GgufReader};
+use brainwires_engine::gguf::{FileFetcher, GgufReader};
 
 fn main() -> ExitCode {
     let Some(path) = std::env::args().nth(1) else {

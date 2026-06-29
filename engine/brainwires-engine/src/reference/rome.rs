@@ -7,7 +7,7 @@
 //!
 //!   • `RomeCapture` — per-layer single-position activation buffers
 //!     sized to hold what `Forward::step_capture` writes. Differs
-//!     from `rullama_finetune::scratch::LayerActivations` only in
+//!     from `brainwires_lora::scratch::LayerActivations` only in
 //!     that ROME doesn't need the sequence-dimensional storage that
 //!     training uses for the PerPosition backward sweep.
 //!
@@ -424,9 +424,9 @@ impl RomeIterativeState {
 /// Owned GPU buffers for the backward path's per-step scratch. View
 /// suitable for `Forward::backward_step` is produced by
 /// [`RomeBackwardScratch::view`]. This is the rullama-side mirror of
-/// `rullama_finetune::scratch::TrainingScratch`'s scratch fields — we
+/// `brainwires_lora::scratch::TrainingScratch`'s scratch fields — we
 /// duplicate the allocation here rather than depend on
-/// `rullama-finetune` (cycle: rullama-finetune already depends on
+/// `brainwires-lora` (cycle: brainwires-lora already depends on
 /// rullama).
 pub struct RomeBackwardScratch {
     d_logits: wgpu::Buffer,

@@ -1,13 +1,13 @@
 //! Load the shipped f16 GGUF and run the full cloning pipeline natively — proves the
 //! distributed artifact round-trips through the exact loader the wasm engine uses.
 //!
-//!   cargo run -p rullama --release --example styletts2_gguf_clone
+//!   cargo run -p brainwires-engine --release --example styletts2_gguf_clone
 
 use std::fs;
 use std::path::PathBuf;
 
-use rullama::gguf::GgufReader;
-use rullama::reference::styletts2::StyleTtsModel;
+use brainwires_engine::gguf::GgufReader;
+use brainwires_engine::reference::styletts2::StyleTtsModel;
 
 /// Read a 16-bit PCM mono WAV at its native rate (no resample — cloning needs 24 kHz,
 /// unlike multimodal::decode_wav which downsamples to the 16 kHz audio-tower rate).
@@ -84,7 +84,7 @@ fn main() {
     let full = model.synthesize(
         &tokens,
         &voice,
-        Some(rullama::reference::styletts2::acoustic::DiffusionConfig::default()),
+        Some(brainwires_engine::reference::styletts2::acoustic::DiffusionConfig::default()),
         None,
     );
     let out = home.join(".cache/styletts2/fixtures/synth/gguf_clone.wav");

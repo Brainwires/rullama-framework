@@ -5,10 +5,10 @@
 //!   conv_in → mid_block(resnet, attn, resnet) → up_blocks×4 → norm_out → conv_out
 //!
 //! Usage:
-//!   cargo run -p rullama --example imagegen_vae_inventory -- \
+//!   cargo run -p brainwires-engine --example imagegen_vae_inventory -- \
 //!       weights/Z-Image-Turbo/vae
 
-use rullama::imagegen::{ShardedSafetensors, VaeConfig};
+use brainwires_engine::imagegen::{ShardedSafetensors, VaeConfig};
 
 fn main() {
     let dir = std::env::args()

@@ -3,7 +3,7 @@
 //!   cargo run --release --example kokoro_g2p -- \
 //!       ~/.cache/kokoro/us_gold.json ~/.cache/kokoro/g2p_corpus.json
 
-use rullama::reference::kokoro::g2p::{Lexicon, g2p};
+use brainwires_engine::reference::kokoro::g2p::{Lexicon, g2p};
 use std::fs;
 
 fn main() {

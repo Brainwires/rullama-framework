@@ -6,14 +6,14 @@
 //! 128-d style vectors against the PyTorch reference. This is the cloning encoder's
 //! GPU-vs-CPU-style parity gate (here CPU-oracle vs PyTorch).
 //!
-//!   cargo run -p rullama --release --example styletts2_style_oracle
+//!   cargo run -p brainwires-engine --release --example styletts2_style_oracle
 
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-use rullama::reference::kokoro::ops::max_abs_diff;
-use rullama::reference::styletts2::{MelFrontend, StyleEncoder};
+use brainwires_engine::reference::kokoro::ops::max_abs_diff;
+use brainwires_engine::reference::styletts2::{MelFrontend, StyleEncoder};
 
 fn fixtures_dir() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap()).join(".cache/styletts2/fixtures/bin")
@@ -92,8 +92,8 @@ fn main() {
     println!("✅ StyleTTS2 style encoder + mel frontend match PyTorch (end-to-end)");
 
     // ---- GPU StyleEncoder parity (both encoders) vs PyTorch ----
-    use rullama::backend::{Pipelines, WgpuCtx};
-    use rullama::reference::styletts2::gpu::StyleTtsGpu;
+    use brainwires_engine::backend::{Pipelines, WgpuCtx};
+    use brainwires_engine::reference::styletts2::gpu::StyleTtsGpu;
     let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
     let pipes = Pipelines::new(&ctx.device);
     let mut gwc = HashMap::new();

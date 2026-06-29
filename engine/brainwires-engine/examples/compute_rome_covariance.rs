@@ -13,7 +13,7 @@
 //! Usage:
 //!
 //! ```text
-//! cargo run -p rullama --release --example compute_rome_covariance -- \
+//! cargo run -p brainwires-engine --release --example compute_rome_covariance -- \
 //!     ~/.ollama/models/blobs/sha256-<digest>             \
 //!     <layer>                                            \
 //!     <corpus.txt>                                       \
@@ -47,7 +47,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use rullama::api::Model;
+use brainwires_engine::api::Model;
 
 type BoxError = Box<dyn Error + Send + Sync>;
 
@@ -154,7 +154,7 @@ async fn run() -> Result<(), BoxError> {
             chunk.len(),
             seq_len
         );
-        let capture = rullama::reference::rome::RomeCapture::new(&ctx_arc, &cfg, seq_len);
+        let capture = brainwires_engine::reference::rome::RomeCapture::new(&ctx_arc, &cfg, seq_len);
         let captures = capture.as_captures();
         model.forward_mut().reset();
         for &tok in chunk {

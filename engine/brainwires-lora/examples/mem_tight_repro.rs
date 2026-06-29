@@ -9,7 +9,7 @@
 //! the iOS memory ceiling (i.e. is a config/logic bug, not jetsam).
 //!
 //! Usage:
-//!   cargo run -p rullama-finetune --example mem_tight_repro --release -- \
+//!   cargo run -p brainwires-lora --example mem_tight_repro --release -- \
 //!       /path/to/gemma4-e2b.gguf
 //! Env: RULLAMA_TRACE_MEM=1 to dump the GPU-allocation ledger.
 
@@ -18,9 +18,9 @@ use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 
-use rullama::api::Model;
-use rullama_finetune::TrainingSession;
-use rullama_finetune::shared::config::{LoraConfig, LossMode, TrainingHyperparams};
+use brainwires_engine::api::Model;
+use brainwires_lora::TrainingSession;
+use brainwires_lora::shared::config::{LoraConfig, LossMode, TrainingHyperparams};
 
 type BoxError = Box<dyn Error + Send + Sync>;
 

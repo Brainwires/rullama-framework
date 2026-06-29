@@ -18,7 +18,7 @@
 
 use std::time::Instant;
 
-use rullama::backend::{Pipelines, WgpuCtx, dispatch};
+use brainwires_engine::backend::{Pipelines, WgpuCtx, dispatch};
 
 fn run_shape(
     label: &str,

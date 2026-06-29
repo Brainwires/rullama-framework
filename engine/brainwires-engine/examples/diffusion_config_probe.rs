@@ -1,12 +1,12 @@
 //! C0 probe: parse a DiffusionGemma GGUF's config (works on a header-only
 //! Range-fetched slice — no full download needed).
 //!
-//!   cargo run -p rullama --release --example diffusion_config_probe -- <gguf-or-header>
+//!   cargo run -p brainwires-engine --release --example diffusion_config_probe -- <gguf-or-header>
 
 use std::process::ExitCode;
 
-use rullama::gguf::GgufReader;
-use rullama::reference::diffusion::DiffusionConfig;
+use brainwires_engine::gguf::GgufReader;
+use brainwires_engine::reference::diffusion::DiffusionConfig;
 
 fn main() -> ExitCode {
     let Some(path) = std::env::args().nth(1) else {

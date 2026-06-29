@@ -284,7 +284,7 @@ mod tests {
     /// Streaming load must be byte-for-byte identical to the bulk load — it only changes *how*
     /// the bytes reach the dequantizer (per-tensor range read vs one resident `Vec`), not the
     /// math. Gated on `ST2_GGUF` so it's a no-op without the 518 MB local fixture.
-    ///   ST2_GGUF=~/.cache/styletts2/styletts2-libritts-f32.gguf cargo test -p rullama st2_streaming
+    ///   ST2_GGUF=~/.cache/styletts2/styletts2-libritts-f32.gguf cargo test -p brainwires-engine st2_streaming
     #[test]
     fn st2_streaming_load_is_bit_identical() {
         let Ok(path) = std::env::var("ST2_GGUF") else {

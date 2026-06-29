@@ -9,7 +9,7 @@
 //! Usage:
 //!
 //! ```text
-//! cargo run -p rullama --release --example rome_v_star -- \
+//! cargo run -p brainwires-engine --release --example rome_v_star -- \
 //!     ~/.ollama/models/blobs/sha256-<digest>  \
 //!     5                                       \
 //!     "What's the capital of France?"         \
@@ -27,7 +27,7 @@ use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 
-use rullama::api::Model;
+use brainwires_engine::api::Model;
 
 type BoxError = Box<dyn Error + Send + Sync>;
 

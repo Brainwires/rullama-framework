@@ -12,7 +12,7 @@
 //! `Model` back to JS so chat can resume against the same loaded
 //! weights without a multi-gigabyte reload.
 
-use rullama::api::Model;
+use brainwires_engine::api::Model;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
@@ -48,17 +48,17 @@ struct ProbeReport {
 /// buffer breakdown as `tot=N w=N s=N kv=N lora=N o=N` (MiB). Free
 /// function so the test harness / worker can call it any time (incl.
 /// re-entrantly from a training progress callback) without touching a
-/// borrowed `TrainingSession`. See `rullama::backend::gpu_mem`.
+/// borrowed `TrainingSession`. See `brainwires_engine::backend::gpu_mem`.
 #[wasm_bindgen(js_name = gpuMemBreakdown)]
 pub fn gpu_mem_breakdown_js() -> String {
-    rullama::backend::gpu_mem::breakdown_str()
+    brainwires_engine::backend::gpu_mem::breakdown_str()
 }
 
 /// Just the total tracked GPU MiB (cheap; for folding into per-layer
 /// beacons to capture the on-device memory trajectory).
 #[wasm_bindgen(js_name = gpuMemTotalMib)]
 pub fn gpu_mem_total_mib_js() -> f64 {
-    rullama::backend::gpu_mem::snapshot_mib().0 as f64
+    brainwires_engine::backend::gpu_mem::snapshot_mib().0 as f64
 }
 
 #[wasm_bindgen(js_name = probeTrainingFit)]

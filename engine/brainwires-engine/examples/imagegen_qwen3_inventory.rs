@@ -4,12 +4,12 @@
 //! ground truth before we wire the encoder forward (IM1).
 //!
 //! Usage:
-//!   cargo run -p rullama --example imagegen_qwen3_inventory -- \
+//!   cargo run -p brainwires-engine --example imagegen_qwen3_inventory -- \
 //!       weights/Z-Image-Turbo/text_encoder
 //!
 //! (Default path is weights/Z-Image-Turbo/text_encoder.)
 
-use rullama::imagegen::{Qwen3Config, ShardedSafetensors};
+use brainwires_engine::imagegen::{Qwen3Config, ShardedSafetensors};
 
 fn main() {
     let dir = std::env::args()

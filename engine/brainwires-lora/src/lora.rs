@@ -14,7 +14,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use rullama::backend::WgpuCtx;
+use brainwires_engine::backend::WgpuCtx;
 use wgpu::{Buffer, BufferDescriptor, BufferUsages};
 
 use crate::shared::error::TrainingError;

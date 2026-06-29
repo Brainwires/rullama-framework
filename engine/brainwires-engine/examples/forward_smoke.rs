@@ -14,9 +14,9 @@ use std::fs;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use rullama::gguf::GgufReader;
-use rullama::model::config::Gemma4Config;
-use rullama::reference::{KvState, Weights, forward_token};
+use brainwires_engine::gguf::GgufReader;
+use brainwires_engine::model::config::Gemma4Config;
+use brainwires_engine::reference::{KvState, Weights, forward_token};
 
 fn main() -> ExitCode {
     let path = match env::args().nth(1) {

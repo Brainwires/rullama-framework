@@ -11,9 +11,9 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Instant;
 
-use rullama::api::{ChatMessage, ChatRole, Model};
-use rullama::gguf::{FileFetcher, TensorFetcher};
-use rullama::sampling::SamplingOptions;
+use brainwires_engine::api::{ChatMessage, ChatRole, Model};
+use brainwires_engine::gguf::{FileFetcher, TensorFetcher};
+use brainwires_engine::sampling::SamplingOptions;
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);

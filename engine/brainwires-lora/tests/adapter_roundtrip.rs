@@ -2,16 +2,16 @@
 //! (f32) and within f16 quantisation tolerance (mixed_precision path).
 //!
 //! Promoted from `session.rs`'s in-module tests so the gate runs from
-//! `cargo test -p rullama-finetune` against the published API without
+//! `cargo test -p brainwires-lora` against the published API without
 //! requiring a GGUF blob. The full pipeline gate ("save adapter from a
 //! real training run, reload into a fresh Model, assert logits match")
 //! lives in `examples/eval_adapter.rs` because it needs a model.
 
 use std::sync::Arc;
 
-use rullama::backend::WgpuCtx;
-use rullama_finetune::load_adapter_into_state;
-use rullama_finetune::lora::{LoraKey, LoraState};
+use brainwires_engine::backend::WgpuCtx;
+use brainwires_lora::load_adapter_into_state;
+use brainwires_lora::lora::{LoraKey, LoraState};
 use safetensors::tensor::{Dtype, TensorView};
 
 const A_VALS: [f32; 16] = [

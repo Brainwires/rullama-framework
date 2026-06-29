@@ -12,8 +12,8 @@ use std::env;
 use std::fs;
 use std::process::ExitCode;
 
-use rullama::gguf::{GgufReader, GgufValue};
-use rullama::model::config::Gemma4Config;
+use brainwires_engine::gguf::{GgufReader, GgufValue};
+use brainwires_engine::model::config::Gemma4Config;
 
 fn main() -> ExitCode {
     let path = match env::args().nth(1) {
@@ -130,7 +130,7 @@ fn main() -> ExitCode {
             let swa = c
                 .layer_kinds
                 .iter()
-                .filter(|k| matches!(k, rullama::model::config::LayerKind::SlidingWindow))
+                .filter(|k| matches!(k, brainwires_engine::model::config::LayerKind::SlidingWindow))
                 .count();
             let glb = c.layer_kinds.len() - swa;
             println!("  layers: {} SWA + {} global", swa, glb);
@@ -138,8 +138,8 @@ fn main() -> ExitCode {
             print!("  per-layer: ");
             for i in 0..c.n_layers.min(12) {
                 let k = match c.kind(i) {
-                    rullama::model::config::LayerKind::SlidingWindow => "S",
-                    rullama::model::config::LayerKind::Global => "G",
+                    brainwires_engine::model::config::LayerKind::SlidingWindow => "S",
+                    brainwires_engine::model::config::LayerKind::Global => "G",
                 };
                 print!("{}{} ", k, c.ffn(i));
             }

@@ -1,27 +1,27 @@
 [package]
-name        = "rullama-finetune"
-version     = "0.5.0"
-description = "Local LoRA fine-tuning for the rullama Rust runtime, built on rullama's wgpu kernels. Compiles for native and wasm32; browser harness lives in web."
+name        = "brainwires-lora"
+version     = "0.6.0"
+description = "Local LoRA fine-tuning for the brainwires engine, built on brainwires-engine's wgpu kernels. Compiles for native and wasm32; browser harness lives in web."
 edition.workspace      = true
 rust-version.workspace = true
 license.workspace      = true
 repository.workspace   = true
 homepage.workspace     = true
 authors.workspace      = true
-readme      = "../../README.md"
+readme      = "../README.md"
 keywords    = ["lora", "fine-tuning", "wgpu", "gemma"]
 categories  = ["science"]
 # Inherits `publish = true` from the workspace. In practice this crate
-# cannot reach crates.io until `rullama` is published first — its path
-# dep on `rullama` needs a resolvable crates.io version too.
+# cannot reach crates.io until `brainwires-engine` is published first — its
+# path dep on `brainwires-engine` needs a resolvable crates.io version too.
 publish.workspace = true
 
 [lib]
-name = "rullama_finetune"
+name = "brainwires_lora"
 path = "src/lib.rs"
 # `cdylib` lets wasm-pack build this crate as the wasm-bindgen entry
 # point — the PWA bundle picks up both the inference-side Model
-# exports (from rullama) and the TrainingSession exports here.
+# exports (from brainwires-engine) and the TrainingSession exports here.
 # `rlib` keeps the crate usable as a regular Rust dependency from
 # native examples + integration tests.
 crate-type = ["cdylib", "rlib"]
@@ -31,9 +31,9 @@ crate-type = ["cdylib", "rlib"]
 # stay native-only — they're tools for the CLI surface, not the trainer.
 [dependencies]
 # `version` is required (alongside `path`) so this dep resolves on
-# crates.io after the next `rullama` publish; locally cargo prefers the
-# path entry.
-rullama = { path = "../rullama", version = "0.5" }
+# crates.io after the next `brainwires-engine` publish; locally cargo prefers
+# the path entry.
+brainwires-engine = { path = "../brainwires-engine", version = "0.6" }
 wgpu = { workspace = true }
 bytemuck = { workspace = true }
 serde = { workspace = true }

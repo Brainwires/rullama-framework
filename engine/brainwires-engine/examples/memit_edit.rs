@@ -13,7 +13,7 @@
 //! Usage:
 //!
 //! ```text
-//! cargo run -p rullama --release --example memit_edit -- \
+//! cargo run -p brainwires-engine --release --example memit_edit -- \
 //!     ~/.ollama/models/blobs/sha256-<digest>             \
 //!     <edits.jsonl>
 //! ```
@@ -34,7 +34,7 @@ use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 
-use rullama::api::{ChatMessage, ChatRole, MemitEdit, MemitHparams, Model, RomeIterativeHparams};
+use brainwires_engine::api::{ChatMessage, ChatRole, MemitEdit, MemitHparams, Model, RomeIterativeHparams};
 
 type BoxError = Box<dyn Error + Send + Sync>;
 
@@ -190,7 +190,7 @@ async fn run() -> Result<(), BoxError> {
     eprintln!();
     eprintln!("Now verify the edits fire:");
     eprintln!("  RULLAMA_EVAL_APPLY_CHAT_TEMPLATE=1 \\");
-    eprintln!("  cargo run -p rullama-finetune --release --example eval_adapter -- \\");
+    eprintln!("  cargo run -p brainwires-lora --release --example eval_adapter -- \\");
     eprintln!("    {} {} \\", gguf_path.display(), out_path);
     for e in &raw_edits {
         eprintln!("    {:?}", e.prompt);

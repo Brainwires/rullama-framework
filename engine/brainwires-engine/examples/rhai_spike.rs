@@ -3,14 +3,14 @@
 //! model wrote Lua (`then…end`, `..`, `and`). This adds explicit Rhai syntax
 //! rules + few-shot examples and re-measures. Throwaway.
 //!
-//! Run: cargo run -p rullama --release --example rhai_spike -- <gguf> [--max=N]
+//! Run: cargo run -p brainwires-engine --release --example rhai_spike -- <gguf> [--max=N]
 
 use std::env;
 use std::fs;
 use std::process::ExitCode;
 
-use rullama::api::{ChatMessage, ChatRole, Model};
-use rullama::sampling::SamplingOptions;
+use brainwires_engine::api::{ChatMessage, ChatRole, Model};
+use brainwires_engine::sampling::SamplingOptions;
 
 const RHAI_SYSTEM: &str = "\
 You orchestrate tools by writing a script in Rhai (a Rust-like scripting language). \

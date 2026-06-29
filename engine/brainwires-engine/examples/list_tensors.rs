@@ -9,7 +9,7 @@
 //!   cargo run --release --example list_tensors -- <gguf> a.blk.0
 //!   cargo run --release --example list_tensors -- <gguf> "" --summary
 
-use rullama::gguf::GgufReader;
+use brainwires_engine::gguf::GgufReader;
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;

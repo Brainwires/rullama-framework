@@ -4,13 +4,13 @@
 //! conv_out → [0,1]) on ground-truth weights.
 //!
 //! Usage:
-//!   cargo run -p rullama --release --example imagegen_vae_decode -- \
+//!   cargo run -p brainwires-engine --release --example imagegen_vae_decode -- \
 //!       weights/Z-Image-Turbo/vae  3   # latent 3×3 → 24×24 RGB
 //!
 //! A small latent keeps the naive CPU conv tractable; correctness, not speed.
 
-use rullama::imagegen::{ShardedSafetensors, VaeConfig};
-use rullama::reference::vae::VaeDecoder;
+use brainwires_engine::imagegen::{ShardedSafetensors, VaeConfig};
+use brainwires_engine::reference::vae::VaeDecoder;
 
 fn main() {
     let mut args = std::env::args().skip(1);

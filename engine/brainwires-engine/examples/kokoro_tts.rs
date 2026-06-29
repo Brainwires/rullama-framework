@@ -5,10 +5,10 @@
 //!       ~/.cache/kokoro/kokoro-82m-f32.gguf ~/.cache/kokoro/us_gold.json \
 //!       "Hello from rullama." af_heart out.wav [~/.cache/kokoro/us_silver.json]
 
-use rullama::backend::{Pipelines, WgpuCtx};
-use rullama::gguf::GgufReader;
-use rullama::reference::kokoro::KokoroModel;
-use rullama::reference::kokoro::g2p::Lexicon;
+use brainwires_engine::backend::{Pipelines, WgpuCtx};
+use brainwires_engine::gguf::GgufReader;
+use brainwires_engine::reference::kokoro::KokoroModel;
+use brainwires_engine::reference::kokoro::g2p::Lexicon;
 use std::fs;
 use std::sync::Arc;
 

@@ -12,14 +12,14 @@
 //! why the f32 variant is the desktop default), NOT a kernel bug.
 //!
 //! Usage:
-//!   cargo run -p rullama --release --example styletts2_f16_parity -- \
+//!   cargo run -p brainwires-engine --release --example styletts2_f16_parity -- \
 //!       ~/.cache/styletts2/styletts2-libritts-f32.gguf \
 //!       ~/.cache/styletts2/styletts2-libritts-f16.gguf
 
-use rullama::backend::{Pipelines, WgpuCtx};
-use rullama::gguf::GgufReader;
-use rullama::reference::styletts2::StyleTtsModel;
-use rullama::reference::styletts2::gpu::GpuWeightCache;
+use brainwires_engine::backend::{Pipelines, WgpuCtx};
+use brainwires_engine::gguf::GgufReader;
+use brainwires_engine::reference::styletts2::StyleTtsModel;
+use brainwires_engine::reference::styletts2::gpu::GpuWeightCache;
 
 fn corr(a: &[f32], b: &[f32]) -> f32 {
     let n = a.len().min(b.len());

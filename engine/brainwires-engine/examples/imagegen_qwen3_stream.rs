@@ -3,14 +3,14 @@
 //! — the loader the browser uses — and diffs against `reference::qwen3`.
 //!
 //! Usage:
-//!   cargo run -p rullama --release --example imagegen_qwen3_stream -- \
+//!   cargo run -p brainwires-engine --release --example imagegen_qwen3_stream -- \
 //!       weights/Z-Image-Turbo/text_encoder  151644 9707 11 1879 13 151645
 
-use rullama::backend::{Pipelines, WgpuCtx};
-use rullama::imagegen::{
+use brainwires_engine::backend::{Pipelines, WgpuCtx};
+use brainwires_engine::imagegen::{
     FileBlobSource, Qwen3Config, Qwen3Gpu, ShardedSafetensors, StreamingShards,
 };
-use rullama::reference::qwen3::Qwen3Encoder;
+use brainwires_engine::reference::qwen3::Qwen3Encoder;
 
 fn main() {
     let mut args = std::env::args().skip(1);

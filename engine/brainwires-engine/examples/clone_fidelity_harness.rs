@@ -14,15 +14,15 @@
 //!   FLOOR    — af_heart-output vs a different Kokoro speaker's output
 //! A clone is "good" when its similarity approaches CEILING and sits well above FLOOR.
 //!
-//!   cargo run -p rullama --release --example clone_fidelity_harness -- \
+//!   cargo run -p brainwires-engine --release --example clone_fidelity_harness -- \
 //!       ~/.cache/kokoro/kokoro-82m-f32.gguf ~/.cache/styletts2/styletts2-libritts-f32.gguf \
 //!       ~/.cache/kokoro/us_gold.json [~/.cache/kokoro/us_silver.json] [different_voice=am_michael]
 
-use rullama::backend::{Pipelines, WgpuCtx};
-use rullama::gguf::GgufReader;
-use rullama::reference::kokoro::KokoroModel;
-use rullama::reference::kokoro::g2p::{Lexicon, g2p};
-use rullama::reference::styletts2::StyleTtsModel;
+use brainwires_engine::backend::{Pipelines, WgpuCtx};
+use brainwires_engine::gguf::GgufReader;
+use brainwires_engine::reference::kokoro::KokoroModel;
+use brainwires_engine::reference::kokoro::g2p::{Lexicon, g2p};
+use brainwires_engine::reference::styletts2::StyleTtsModel;
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
@@ -155,7 +155,7 @@ fn main() {
     let st = StyleTtsModel::load(&GgufReader::new(fs::read(&st_gguf).unwrap()).unwrap()).unwrap();
     let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
     let pipes = Pipelines::new(&ctx.device);
-    let mut wc = rullama::reference::styletts2::gpu::GpuWeightCache::new();
+    let mut wc = brainwires_engine::reference::styletts2::gpu::GpuWeightCache::new();
 
     // StyleTTS2 phoneme vocab (BOS=0 prefix; drop OOV)
     let vocab_txt = fs::read_to_string(format!(

@@ -5,7 +5,7 @@
 //! target (`llama.cpp` / Ollama `/api/embed` on the same GGUF).
 //!
 //! Usage:
-//!   cargo run -p rullama --release --example embed_parity -- \
+//!   cargo run -p brainwires-engine --release --example embed_parity -- \
 //!       ~/.ollama/models/blobs/sha256-<digest> "hello world"
 //!
 //! Ground-truth "hello world" embedding from Ollama (embeddinggemma):
@@ -17,9 +17,9 @@ use std::fs;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use rullama::gguf::GgufReader;
-use rullama::reference::embed::EmbedModel;
-use rullama::tokenizer::SpmTokenizer;
+use brainwires_engine::gguf::GgufReader;
+use brainwires_engine::reference::embed::EmbedModel;
+use brainwires_engine::tokenizer::SpmTokenizer;
 
 // Reference vector for "hello world" (Ollama embeddinggemma). Used to print a
 // cosine when the test string is exactly "hello world".
@@ -101,9 +101,9 @@ fn main() -> ExitCode {
     if env::var("RULLAMA_EMBED_GPU").is_ok() {
         let gpu = pollster::block_on(async {
             use std::sync::Arc;
-            let ctx = rullama::backend::WgpuCtx::new().await?;
-            let pipes = rullama::backend::Pipelines::new(&ctx.device);
-            let wcache = rullama::backend::WeightCache::new(
+            let ctx = brainwires_engine::backend::WgpuCtx::new().await?;
+            let pipes = brainwires_engine::backend::Pipelines::new(&ctx.device);
+            let wcache = brainwires_engine::backend::WeightCache::new(
                 model.weights.reader_arc(),
                 ctx.device.clone(),
                 ctx.queue.clone(),

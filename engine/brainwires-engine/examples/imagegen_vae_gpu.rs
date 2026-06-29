@@ -3,13 +3,13 @@
 //! via readback) against reference::vae, and reports the GPU speedup.
 //!
 //! Usage:
-//!   cargo run -p rullama --release --example imagegen_vae_gpu -- \
+//!   cargo run -p brainwires-engine --release --example imagegen_vae_gpu -- \
 //!       weights/Z-Image-Turbo/vae 4
 
-use rullama::backend::{Pipelines, WgpuCtx};
-use rullama::imagegen::{FileBlobSource, ShardedSafetensors, StreamingShards, VaeConfig};
-use rullama::reference::vae::VaeDecoder;
-use rullama::reference::vae_gpu::VaeGpu;
+use brainwires_engine::backend::{Pipelines, WgpuCtx};
+use brainwires_engine::imagegen::{FileBlobSource, ShardedSafetensors, StreamingShards, VaeConfig};
+use brainwires_engine::reference::vae::VaeDecoder;
+use brainwires_engine::reference::vae_gpu::VaeGpu;
 
 fn main() {
     let mut a = std::env::args().skip(1);

@@ -4,11 +4,11 @@
 //!
 //!   cargo run --release --example kokoro_voice_train -- ~/.cache/kokoro/kokoro-82m-f32.gguf [iters]
 
-use rullama::backend::{Pipelines, WgpuCtx};
-use rullama::gguf::GgufReader;
-use rullama::reference::kokoro::KokoroModel;
-use rullama::reference::kokoro::gpu_fast::WeightCache;
-use rullama::reference::kokoro::voice_train::voice_signature;
+use brainwires_engine::backend::{Pipelines, WgpuCtx};
+use brainwires_engine::gguf::GgufReader;
+use brainwires_engine::reference::kokoro::KokoroModel;
+use brainwires_engine::reference::kokoro::gpu_fast::WeightCache;
+use brainwires_engine::reference::kokoro::voice_train::voice_signature;
 use std::fs;
 use std::sync::Arc;
 

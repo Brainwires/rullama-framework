@@ -6,7 +6,7 @@
 //! the MeBP per-block lazy-load pattern (already used for the dense iPhone
 //! training path) applied to inference + MoE experts.
 //!
-//!   cargo run -p rullama --release --example moe_stream_smoke -- \
+//!   cargo run -p brainwires-engine --release --example moe_stream_smoke -- \
 //!       ~/.ollama/models/blobs/sha256-<digest> "Question…" --max=2
 //!
 //! Trade: re-fetches + re-dequantizes every layer's weights per token (slow),
@@ -18,15 +18,15 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Instant;
 
-use rullama::api::{ChatMessage, ChatRole};
-use rullama::backend::{Pipelines, WeightCache, WgpuCtx};
-use rullama::gguf::{FileFetcher, GgufReader};
-use rullama::model::config::Gemma4Config;
-use rullama::reference::Weights;
-use rullama::reference::forward_chained::Forward;
-use rullama::sampling::{Sampler, SamplingOptions};
-use rullama::template::gemma4_small;
-use rullama::tokenizer::BpeTokenizer;
+use brainwires_engine::api::{ChatMessage, ChatRole};
+use brainwires_engine::backend::{Pipelines, WeightCache, WgpuCtx};
+use brainwires_engine::gguf::{FileFetcher, GgufReader};
+use brainwires_engine::model::config::Gemma4Config;
+use brainwires_engine::reference::Weights;
+use brainwires_engine::reference::forward_chained::Forward;
+use brainwires_engine::sampling::{Sampler, SamplingOptions};
+use brainwires_engine::template::gemma4_small;
+use brainwires_engine::tokenizer::BpeTokenizer;
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);

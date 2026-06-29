@@ -2,7 +2,7 @@
 //! llama.cpp PR-24423 `llama-diffusion-gemma-eval` oracle dump (raw f32
 //! `[canvas_len, vocab]`) for the SAME prompt + canvas ids.
 //!
-//!   cargo run -p rullama --release --example diffusion_parity -- \
+//!   cargo run -p brainwires-engine --release --example diffusion_parity -- \
 //!       <model.gguf> <prompt_ids.i32> <canvas_ids.i32> <oracle_out.bin>
 //!
 //! id files are raw little-endian int32 (the same files fed to the oracle).
@@ -12,10 +12,10 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use rullama::gguf::{FileFetcher, GgufReader};
-use rullama::reference::Weights;
-use rullama::reference::diffusion::DiffusionConfig;
-use rullama::reference::diffusion::forward::diffusion_forward;
+use brainwires_engine::gguf::{FileFetcher, GgufReader};
+use brainwires_engine::reference::Weights;
+use brainwires_engine::reference::diffusion::DiffusionConfig;
+use brainwires_engine::reference::diffusion::forward::diffusion_forward;
 
 fn read_i32(path: &str) -> Vec<u32> {
     let bytes = std::fs::read(path).expect("read i32 file");
@@ -63,7 +63,7 @@ fn main() -> ExitCode {
     let t = std::time::Instant::now();
     let mine = if let Some(pl) = &prev {
         eprintln!("self-conditioning ENABLED ({} floats)", pl.len());
-        rullama::reference::diffusion::forward::diffusion_forward_sc(
+        brainwires_engine::reference::diffusion::forward::diffusion_forward_sc(
             &cfg,
             &weights,
             &prompt,

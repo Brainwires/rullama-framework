@@ -19,10 +19,10 @@
 use std::env;
 use std::fs;
 
-use rullama::api::Model;
-use rullama_finetune::TrainingSession;
-use rullama_finetune::lora::LoraState;
-use rullama_finetune::shared::config::{LoraConfig, TrainingHyperparams};
+use brainwires_engine::api::Model;
+use brainwires_lora::TrainingSession;
+use brainwires_lora::lora::LoraState;
+use brainwires_lora::shared::config::{LoraConfig, TrainingHyperparams};
 
 const PROMPT: &str = "The quick brown fox";
 const TARGET: &str = " jumps";
@@ -96,7 +96,7 @@ struct GradPair {
 async fn run_one_step(
     gguf: &[u8],
     gradient_checkpointing: bool,
-) -> Vec<(rullama_finetune::lora::LoraKey, GradPair)> {
+) -> Vec<(brainwires_lora::lora::LoraKey, GradPair)> {
     let model = Model::load_native(gguf.to_vec()).await.expect("load model");
     let input_tokens = model.encode_tokens(PROMPT);
     let target_tokens = model.encode_tokens(TARGET);
@@ -135,7 +135,7 @@ async fn run_one_step(
     read_lora_grads(session.lora_state()).await
 }
 
-async fn read_lora_grads(state: &LoraState) -> Vec<(rullama_finetune::lora::LoraKey, GradPair)> {
+async fn read_lora_grads(state: &LoraState) -> Vec<(brainwires_lora::lora::LoraKey, GradPair)> {
     let ctx = state.ctx();
     let mut out = Vec::new();
     for (key, layer) in state.iter() {
@@ -146,7 +146,7 @@ async fn read_lora_grads(state: &LoraState) -> Vec<(rullama_finetune::lora::Lora
     out
 }
 
-async fn read_buf_f32(ctx: &rullama::backend::WgpuCtx, buf: &wgpu::Buffer, n: usize) -> Vec<f32> {
+async fn read_buf_f32(ctx: &brainwires_engine::backend::WgpuCtx, buf: &wgpu::Buffer, n: usize) -> Vec<f32> {
     let bytes = (n * 4) as u64;
     let read_buf = ctx.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("checkpoint_parity.read"),
