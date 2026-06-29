@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "@std/assert";
-import type { Tool } from "@brainwires/core";
-import { defaultToolInputSchema } from "@brainwires/core";
+import type { Tool } from "@rullama/core";
+import { defaultToolInputSchema } from "@rullama/core";
 import {
   allowedTools,
   filterTools,

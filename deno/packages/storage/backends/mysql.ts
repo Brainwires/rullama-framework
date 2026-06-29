@@ -1,7 +1,7 @@
 /**
  * MySQL / MariaDB backend for StorageBackend.
  *
- * Port of the Rust `brainwires-storage/src/databases/mysql/mod.rs`.
+ * Port of the Rust `rullama-storage/src/databases/mysql/mod.rs`.
  *
  * Uses `npm:mysql2/promise` for async MySQL connections. Vector columns are
  * stored as JSON arrays and similarity search is performed client-side.
@@ -18,7 +18,7 @@ import type {
   ScoredRecord,
 } from "../types.ts";
 
-const DEFAULT_URL = "mysql://localhost:3306/brainwires";
+const DEFAULT_URL = "mysql://localhost:3306/rullama";
 
 // ---------------------------------------------------------------------------
 // MySQL SQL helpers (exported for testing)

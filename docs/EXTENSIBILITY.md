@@ -6,7 +6,7 @@ This guide covers extension points in the Brainwires framework for researchers a
 
 The framework is trait-based: implement a trait, pass it to the component, done.
 
-### Core Traits (brainwires-core)
+### Core Traits (rullama-core)
 
 | Trait | Required Methods | Purpose |
 |-------|-----------------|---------|
@@ -17,7 +17,7 @@ The framework is trait-based: implement a trait, pass it to the component, done.
 | `LifecycleHook` | `name`, `on_event` (+`priority`, `filter` defaults) | Framework event interception |
 | `StagingBackend` | `stage`, `commit`, `rollback`, `pending_count` | Two-phase file write commits |
 
-### RAG Traits (brainwires-knowledge, feature `rag`)
+### RAG Traits (rullama-knowledge, feature `rag`)
 
 | Trait | Required Methods | Purpose |
 |-------|-----------------|---------|
@@ -26,7 +26,7 @@ The framework is trait-based: implement a trait, pass it to the component, done.
 | `VectorDatabase` | 10 methods (initialize, store, search, etc.) | Full RAG vector DB |
 | `RelationsProvider` | `extract_definitions`, `extract_references`, `supports_language`, `precision_level` | Code symbol extraction |
 
-### Agent Traits (brainwires-agent)
+### Agent Traits (rullama-agent)
 
 | Trait | Required Methods | Purpose |
 |-------|-----------------|---------|
@@ -35,14 +35,14 @@ The framework is trait-based: implement a trait, pass it to the component, done.
 | `CompensableOperation` | `execute`, `compensate`, `description` (+`operation_type` default) | Saga step with rollback |
 | `EvaluationCase` | `name`, `category`, `run` | Eval scenario |
 
-### Tool Traits (brainwires-tool-runtime)
+### Tool Traits (rullama-tool-runtime)
 
 | Trait | Required Methods | Purpose |
 |-------|-----------------|---------|
 | `ToolExecutor` | `execute`, `available_tools` | Custom tool execution backend |
 | `ToolPreHook` | `before_execute` | Pre-execution tool gate |
 
-### MDAP Traits (brainwires-mdap)
+### MDAP Traits (rullama-mdap)
 
 | Trait | Required Methods | Purpose |
 |-------|-----------------|---------|
@@ -51,7 +51,7 @@ The framework is trait-based: implement a trait, pass it to the component, done.
 | `RedFlagValidator` | `validate` | Response quality check |
 | `ResultComposer` | `compose` | Subtask output composition |
 
-### Fine-tune Traits (brainwires-finetune)
+### Fine-tune Traits (rullama-finetune)
 
 | Trait | Required Methods | Purpose |
 |-------|-----------------|---------|
@@ -62,14 +62,14 @@ The framework is trait-based: implement a trait, pass it to the component, done.
 
 | Trait | Crate | Purpose |
 |-------|-------|---------|
-| `TextToSpeech` | brainwires-hardware | TTS synthesis backend |
-| `SpeechToText` | brainwires-hardware | STT transcription backend |
-| `LanguageExecutor` | brainwires-tool-builtins (interpreters) | Sandboxed code execution |
-| `Dataset` | brainwires-finetune | Training data container |
-| `FormatConverter` | brainwires-finetune | Training data format conversion |
-| `Tokenizer` | brainwires-finetune | Token encoding/counting |
-| `ApprovalPolicy` | brainwires-autonomy | Autonomous operation approval |
-| `GitForge` | brainwires-autonomy | Git forge API (GitHub, GitLab) |
+| `TextToSpeech` | rullama-hardware | TTS synthesis backend |
+| `SpeechToText` | rullama-hardware | STT transcription backend |
+| `LanguageExecutor` | rullama-tool-builtins (interpreters) | Sandboxed code execution |
+| `Dataset` | rullama-finetune | Training data container |
+| `FormatConverter` | rullama-finetune | Training data format conversion |
+| `Tokenizer` | rullama-finetune | Token encoding/counting |
+| `ApprovalPolicy` | rullama-autonomy | Autonomous operation approval |
+| `GitForge` | rullama-autonomy | Git forge API (GitHub, GitLab) |
 
 ---
 
@@ -77,10 +77,10 @@ The framework is trait-based: implement a trait, pass it to the component, done.
 
 ### "I want to add a custom AI provider"
 
-Implement `Provider` from `brainwires::core`:
+Implement `Provider` from `rullama::core`:
 
 ```rust
-use brainwires::prelude::*;
+use rullama::prelude::*;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 
@@ -123,14 +123,14 @@ impl Provider for MyProvider {
 }
 ```
 
-See `crates/brainwires/examples/custom_provider.rs` for a complete runnable example.
+See `crates/rullama/examples/custom_provider.rs` for a complete runnable example.
 
 ### "I want custom embeddings"
 
-Implement `EmbeddingProvider` from `brainwires::core`:
+Implement `EmbeddingProvider` from `rullama::core`:
 
 ```rust
-use brainwires::prelude::*;
+use rullama::prelude::*;
 
 struct MyEmbedding { dim: usize }
 
@@ -145,14 +145,14 @@ impl EmbeddingProvider for MyEmbedding {
 }
 ```
 
-See `crates/brainwires/examples/custom_embedding.rs` for a complete example.
+See `crates/rullama/examples/custom_embedding.rs` for a complete example.
 
 ### "I want custom RAG chunking"
 
-Implement `Chunker` from `brainwires::cognition::rag::indexer`:
+Implement `Chunker` from `rullama::cognition::rag::indexer`:
 
 ```rust
-use brainwires::cognition::rag::indexer::{Chunker, CodeChunk, FileInfo, ChunkStrategy, CodeChunker};
+use rullama::cognition::rag::indexer::{Chunker, CodeChunk, FileInfo, ChunkStrategy, CodeChunker};
 use std::sync::Arc;
 
 struct SemanticChunker;
@@ -171,10 +171,10 @@ let chunker = CodeChunker::new(strategy);
 
 ### "I want custom search scoring"
 
-Implement `SearchScorer` from `brainwires::cognition::rag::bm25_search`:
+Implement `SearchScorer` from `rullama::cognition::rag::bm25_search`:
 
 ```rust
-use brainwires::cognition::rag::bm25_search::{SearchScorer, BM25Result};
+use rullama::cognition::rag::bm25_search::{SearchScorer, BM25Result};
 use std::sync::Arc;
 
 struct CrossEncoderReranker;
@@ -196,15 +196,15 @@ impl SearchScorer for CrossEncoderReranker {
 //     .with_scorer(Arc::new(CrossEncoderReranker));
 ```
 
-See `crates/brainwires/examples/rag_custom_pipeline.rs` for a complete example.
+See `crates/rullama/examples/rag_custom_pipeline.rs` for a complete example.
 
 ### "I want a custom agent loop"
 
-Implement `AgentRuntime` from `brainwires::agents`:
+Implement `AgentRuntime` from `rullama::agents`:
 
 ```rust
-use brainwires::agents::{AgentRuntime, AgentExecutionResult, run_agent_loop};
-use brainwires::agents::{CommunicationHub, FileLockManager, LockType};
+use rullama::agents::{AgentRuntime, AgentExecutionResult, run_agent_loop};
+use rullama::agents::{CommunicationHub, FileLockManager, LockType};
 
 // AgentRuntime requires 11 methods:
 //   agent_id, max_iterations, call_provider, extract_tool_uses,
@@ -215,19 +215,19 @@ use brainwires::agents::{CommunicationHub, FileLockManager, LockType};
 // let result = run_agent_loop(my_runtime, &hub, &lock_manager).await?;
 ```
 
-See `crates/brainwires/examples/agent_quickstart.rs` for infrastructure setup.
+See `crates/rullama/examples/agent_quickstart.rs` for infrastructure setup.
 
 ---
 
 ## Feature Flags
 
-The facade crate (`brainwires`) gates each subsystem behind a feature flag.
+The facade crate (`rullama`) gates each subsystem behind a feature flag.
 
 ### Researcher bundle
 
 ```toml
 [dependencies]
-brainwires = { version = "0.11", features = ["researcher"] }
+rullama = { version = "0.11", features = ["researcher"] }
 ```
 
 This enables: `providers`, `agents`, `storage`, `rag`, `training`, `datasets`.
@@ -236,31 +236,31 @@ This enables: `providers`, `agents`, `storage`, `rag`, `training`, `datasets`.
 
 | Feature | Enables | Transitive Dependencies |
 |---------|---------|------------------------|
-| `tools` | `brainwires-tool-runtime` + `brainwires-tool-builtins` | — |
-| `agents` | `brainwires-agent` | — |
-| `inference` | `brainwires-inference` | brainwires-agent, brainwires-call-policy |
-| `storage` | `brainwires-storage` (with native) | lancedb, arrow, fastembed |
-| `memory` | `brainwires-stores` | — |
-| `tiered` | `brainwires-memory` | brainwires-stores |
-| `mcp` | `brainwires-mcp-client` | rmcp |
-| `mcp-server-framework` | `brainwires-mcp-server` | — |
-| `mdap` | `brainwires-mdap` | — |
-| `prompting` | `brainwires-prompting` | linfa-clustering, ndarray |
-| `permissions` | `brainwires-permission` | — |
-| `rag` | `brainwires-rag` + `brainwires-storage` | lancedb, tantivy, tree-sitter |
-| `providers` | `brainwires-provider` | reqwest |
-| `seal` | `brainwires-seal` | — |
-| `eval` | `brainwires-eval` | — |
-| `agent-network` | `brainwires-network` | — |
-| `skills` | `brainwires-skills` | — |
-| `audio` | `brainwires-hardware/audio` | — |
-| `gpio` | `brainwires-hardware/gpio` | — |
-| `bluetooth` | `brainwires-hardware/bluetooth` | — |
-| `network-hardware` | `brainwires-hardware/network` | — |
-| `datasets` | `brainwires-finetune/datasets-full` | — |
-| `training` | `brainwires-finetune` | cloud-only since v0.11 |
-| `autonomy` | `brainwires-autonomy` | — |
-| `brain` | `brainwires-knowledge/knowledge` | — |
+| `tools` | `rullama-tool-runtime` + `rullama-tool-builtins` | — |
+| `agents` | `rullama-agent` | — |
+| `inference` | `rullama-inference` | rullama-agent, rullama-call-policy |
+| `storage` | `rullama-storage` (with native) | lancedb, arrow, fastembed |
+| `memory` | `rullama-stores` | — |
+| `tiered` | `rullama-memory` | rullama-stores |
+| `mcp` | `rullama-mcp-client` | rmcp |
+| `mcp-server-framework` | `rullama-mcp-server` | — |
+| `mdap` | `rullama-mdap` | — |
+| `prompting` | `rullama-prompting` | linfa-clustering, ndarray |
+| `permissions` | `rullama-permission` | — |
+| `rag` | `rullama-rag` + `rullama-storage` | lancedb, tantivy, tree-sitter |
+| `providers` | `rullama-provider` | reqwest |
+| `seal` | `rullama-seal` | — |
+| `eval` | `rullama-eval` | — |
+| `agent-network` | `rullama-network` | — |
+| `skills` | `rullama-skills` | — |
+| `audio` | `rullama-hardware/audio` | — |
+| `gpio` | `rullama-hardware/gpio` | — |
+| `bluetooth` | `rullama-hardware/bluetooth` | — |
+| `network-hardware` | `rullama-hardware/network` | — |
+| `datasets` | `rullama-finetune/datasets-full` | — |
+| `training` | `rullama-finetune` | cloud-only since v0.11 |
+| `autonomy` | `rullama-autonomy` | — |
+| `brain` | `rullama-knowledge/knowledge` | — |
 
 ### Compound features
 
@@ -283,42 +283,42 @@ This enables: `providers`, `agents`, `storage`, `rag`, `training`, `datasets`.
 ### Crate dependency graph (simplified)
 
 ```
-brainwires (facade)
-  ├── brainwires-core (always)       ← core traits, types, errors
-  ├── brainwires-tool-runtime        ← ToolExecutor, ToolRegistry, validation, smart router
-  ├── brainwires-tool-builtins       ← Built-in tool implementations
-  ├── brainwires-agent               ← AgentRuntime, CommunicationHub, MDAP, SEAL
-  ├── brainwires-provider            ← Anthropic, OpenAI, Google, Ollama, Bedrock, Vertex AI
-  ├── brainwires-provider-speech     ← TTS / STT providers
-  ├── brainwires-knowledge           ← BKS / PKS, BrainClient, entity graph
-  ├── brainwires-rag                 ← Codebase indexing + hybrid retrieval
-  ├── brainwires-prompting           ← Adaptive prompting
-  ├── brainwires-network             ← IPC, remote, mesh, LAN discovery
-  ├── brainwires-mcp-client          ← MCP client
-  ├── brainwires-mcp-server          ← MCP server framework
-  ├── brainwires-storage             ← StorageBackend trait, embeddings, BM25, LanceDB
-  ├── brainwires-stores              ← Schema + CRUD: sessions, tasks, plans, conversations, …
-  ├── brainwires-memory              ← TieredMemory orchestration + dream consolidation
-  └── brainwires-finetune            ← Cloud fine-tune APIs + dataset pipelines
+rullama (facade)
+  ├── rullama-core (always)       ← core traits, types, errors
+  ├── rullama-tool-runtime        ← ToolExecutor, ToolRegistry, validation, smart router
+  ├── rullama-tool-builtins       ← Built-in tool implementations
+  ├── rullama-agent               ← AgentRuntime, CommunicationHub, MDAP, SEAL
+  ├── rullama-provider            ← Anthropic, OpenAI, Google, Ollama, Bedrock, Vertex AI
+  ├── rullama-provider-speech     ← TTS / STT providers
+  ├── rullama-knowledge           ← BKS / PKS, BrainClient, entity graph
+  ├── rullama-rag                 ← Codebase indexing + hybrid retrieval
+  ├── rullama-prompting           ← Adaptive prompting
+  ├── rullama-network             ← IPC, remote, mesh, LAN discovery
+  ├── rullama-mcp-client          ← MCP client
+  ├── rullama-mcp-server          ← MCP server framework
+  ├── rullama-storage             ← StorageBackend trait, embeddings, BM25, LanceDB
+  ├── rullama-stores              ← Schema + CRUD: sessions, tasks, plans, conversations, …
+  ├── rullama-memory              ← TieredMemory orchestration + dream consolidation
+  └── rullama-finetune            ← Cloud fine-tune APIs + dataset pipelines
                                      ← (local PEFT moved to rullama-finetune)
 ```
 
 ### Where to define new traits
 
-- **Pure types/traits with no heavy deps** → `brainwires-core`
-- **Tool framework** → `brainwires-tool-runtime` (the `ToolExecutor` trait + dispatch)
-- **Concrete tool implementations** → `brainwires-tool-builtins`
-- **Agent coordination** → `brainwires-agent`
-- **RAG pipeline components** → `brainwires-rag`
-- **A new persisted store** → `brainwires-stores` (schema + CRUD)
-- **Memory orchestration** → `brainwires-memory` (engines over the schema stores)
+- **Pure types/traits with no heavy deps** → `rullama-core`
+- **Tool framework** → `rullama-tool-runtime` (the `ToolExecutor` trait + dispatch)
+- **Concrete tool implementations** → `rullama-tool-builtins`
+- **Agent coordination** → `rullama-agent`
+- **RAG pipeline components** → `rullama-rag`
+- **A new persisted store** → `rullama-stores` (schema + CRUD)
+- **Memory orchestration** → `rullama-memory` (engines over the schema stores)
 
 ### Error handling
 
-Use `FrameworkError` from `brainwires::core` for domain-specific errors:
+Use `FrameworkError` from `rullama::core` for domain-specific errors:
 
 ```rust
-use brainwires::prelude::*;
+use rullama::prelude::*;
 
 // Domain-specific constructors:
 FrameworkError::provider_auth("my-provider", "Invalid API key")
@@ -335,11 +335,11 @@ FrameworkError::Provider("Something went wrong".to_string())
 
 ```bash
 # Build with just the features you need
-cargo build -p brainwires --features providers
+cargo build -p rullama --features providers
 
 # Run examples
-cargo run -p brainwires --example custom_provider --features providers
-cargo run -p brainwires --example custom_embedding
-cargo run -p brainwires --example agent_quickstart --features agents
-cargo run -p brainwires --example rag_custom_pipeline --features rag
+cargo run -p rullama --example custom_provider --features providers
+cargo run -p rullama --example custom_embedding
+cargo run -p rullama --example agent_quickstart --features agents
+cargo run -p rullama --example rag_custom_pipeline --features rag
 ```

@@ -1,15 +1,15 @@
-# @brainwires/permissions
+# @rullama/permissions
 
 Capability-based permission system for the Brainwires Agent Framework. Controls
 what agents can do across filesystem, tools, network, git, and spawning — with
 policy-based enforcement, audit logging, trust tracking, and anomaly detection.
 
-Equivalent to the Rust `brainwires-permissions` crate.
+Equivalent to the Rust `rullama-permissions` crate.
 
 ## Install
 
 ```sh
-deno add @brainwires/permissions
+deno add @rullama/permissions
 ```
 
 ## Quick Example
@@ -23,7 +23,7 @@ import {
   PolicyActions,
   PolicyEngine,
   policyRequestForTool,
-} from "@brainwires/permission";
+} from "@rullama/permission";
 
 // Use a preset capability profile
 const profile = parseCapabilityProfile("standard_dev");

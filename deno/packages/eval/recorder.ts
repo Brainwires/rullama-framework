@@ -6,7 +6,7 @@
  * call {@link ToolSequenceRecorder.diffAgainst} at the end of a trial to
  * verify behavioural correctness.
  *
- * Equivalent to Rust's `brainwires_agents::eval::recorder` module.
+ * Equivalent to Rust's `rullama_agents::eval::recorder` module.
  */
 
 // ─── Tool call record ──────────────────────────────────────────────────────

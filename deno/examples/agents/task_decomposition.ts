@@ -13,7 +13,7 @@ import {
   type MdapSubtask,
   MODEL_COSTS,
   type ModelCosts,
-} from "@brainwires/agent";
+} from "@rullama/agent";
 
 async function main() {
   console.log("=== Task Decomposition & MDAP Cost Estimation ===\n");

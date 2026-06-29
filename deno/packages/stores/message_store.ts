@@ -1,12 +1,12 @@
 /**
  * Message Store -- persists conversation messages with semantic search.
  *
- * Equivalent to Rust's `stores/message_store.rs` in brainwires-storage.
+ * Equivalent to Rust's `stores/message_store.rs` in rullama-storage.
  * @module
  */
 
-import type { EmbeddingProvider } from "@brainwires/core";
-import type { StorageBackend } from "@brainwires/storage";
+import type { EmbeddingProvider } from "@rullama/core";
+import type { StorageBackend } from "@rullama/storage";
 import {
   type FieldDef,
   FieldTypes,
@@ -20,7 +20,7 @@ import {
   type Record,
   recordGet,
   requiredField,
-} from "@brainwires/storage";
+} from "@rullama/storage";
 
 const TABLE_NAME = "messages";
 

@@ -1,7 +1,7 @@
 import { assertEquals, assertExists } from "@std/assert";
 import { ToolRegistry } from "./registry.ts";
-import type { Tool } from "@brainwires/core";
-import { objectSchema } from "@brainwires/core";
+import type { Tool } from "@rullama/core";
+import { objectSchema } from "@rullama/core";
 
 function makeTool(name: string, defer = false): Tool {
   return {

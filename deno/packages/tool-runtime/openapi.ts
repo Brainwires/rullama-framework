@@ -4,13 +4,13 @@
  * Parses OpenAPI specifications and generates Tool definitions that can
  * be registered in a ToolRegistry and executed by agents.
  *
- * Equivalent to Rust's `brainwires_tool_system::openapi` module.
+ * Equivalent to Rust's `rullama_tool_system::openapi` module.
  */
 
 // deno-lint-ignore-file no-explicit-any
 
-import type { Tool } from "@brainwires/core";
-import { ToolResult } from "@brainwires/core";
+import type { Tool } from "@rullama/core";
+import { ToolResult } from "@rullama/core";
 
 // -- Public types -------------------------------------------------------------
 

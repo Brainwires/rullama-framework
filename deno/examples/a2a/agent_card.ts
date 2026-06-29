@@ -10,7 +10,7 @@ import type {
   AgentSkill,
   HttpAuthSecurityScheme,
   SecurityScheme,
-} from "@brainwires/a2a";
+} from "@rullama/a2a";
 
 async function main(): Promise<void> {
   // -----------------------------------------------------------------------

@@ -1,5 +1,5 @@
 [package]
-name = "brainwires-ios-bench"
+name = "rullama-ios-bench"
 version = "0.1.0"
 edition = "2024"
 publish = false
@@ -12,7 +12,7 @@ publish = false
 crate-type = ["staticlib"]
 
 [dependencies]
-brainwires-engine = { path = "../../brainwires-engine" }
+rullama-engine = { path = "../../rullama-engine" }
 pollster = "0.4.0"
 wgpu = "29.0.3"
 bytemuck = { version = "1.25", features = ["derive"] }

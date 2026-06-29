@@ -38,7 +38,7 @@ done
   - Root `README.md` — crate descriptions, feature tables, architecture diagrams
   - Each changed crate's `README.md` — API tables, code examples, feature flags
   - `crates/README.md` — dependency tree and crate descriptions
-  - `crates/brainwires/README.md` (facade) — feature table, crate count, prelude types
+  - `crates/rullama/README.md` (facade) — feature table, crate count, prelude types
   - `extras/` server READMEs — cross-references to library crates
 - [ ] `cargo xtask` passes (fmt, check, clippy, test, doc)
 - [ ] **No unfinished code** — run `cargo xtask check-stubs` to scan for runtime-panic stubs and unfinished markers:
@@ -65,7 +65,7 @@ Bumps **every** crate to the new version. This:
 - Resets any per-crate version overrides back to `version.workspace = true` (cleans up after previous patch releases)
 - Updates `[workspace.package].version` in root `Cargo.toml`
 - Updates all `version = "..."` on internal crate deps in `[workspace.dependencies]`
-- Updates member `Cargo.toml` files with direct path deps (e.g. brainwires-wasm)
+- Updates member `Cargo.toml` files with direct path deps (e.g. rullama-wasm)
 - Updates hardcoded version strings in `*.rs` source files
 - Updates `*.md` files (skips CHANGELOG)
 - Stamps `CHANGELOG.md`: `## [Unreleased]` → `## [X.Y.Z] - YYYY-MM-DD`
@@ -77,7 +77,7 @@ Bumps **every** crate to the new version. This:
 cargo xtask bump-version 0.4.1
 
 # Or specify crates manually
-cargo xtask bump-version 0.4.1 --crates brainwires-core,brainwires-storage
+cargo xtask bump-version 0.4.1 --crates rullama-core,rullama-storage
 ```
 
 Only bumps **affected crates** + their transitive dependents. This:
@@ -93,11 +93,11 @@ Only bumps **affected crates** + their transitive dependents. This:
 **Cascade example:**
 
 ```
-$ cargo xtask bump-version 0.4.1 --crates brainwires-core
+$ cargo xtask bump-version 0.4.1 --crates rullama-core
 
 Patch bump to 0.4.1:
-  Direct:  brainwires-core
-  Cascade: brainwires-agent, brainwires-autonomy, brainwires-mcp-client, ...
+  Direct:  rullama-core
+  Cascade: rullama-agent, rullama-autonomy, rullama-mcp-client, ...
   Total:   14 crate(s)
 ```
 
@@ -141,25 +141,25 @@ Source of truth: `scripts/publish.sh`. Reproduced here for reference.
 
 | Layer | Crates |
 |-------|--------|
-| 0 — Contracts | `brainwires-core` |
-| 1a — Infrastructure (deps: core) | `brainwires-telemetry`, `brainwires-storage`, `brainwires-eval` |
-| 1b — Infrastructure (deps on 1a) | `brainwires-provider`, `brainwires-provider-speech`, `brainwires-hardware`, `brainwires-stores`, `brainwires-memory`, `brainwires-sandbox`, `brainwires-sandbox-proxy`, `brainwires-call-policy` |
-| 2 — Protocols (deps: core only) | `brainwires-mcp-client`, `brainwires-mcp-server`, `brainwires-a2a` |
-| 3 — Intelligence (storage-backed) | `brainwires-knowledge`, `brainwires-rag`, `brainwires-prompting` |
-| 4a — Tool runtime | `brainwires-tool-runtime`, `brainwires-permission` |
-| 4b — Reasoning (deps: tool-runtime) | `brainwires-reasoning` |
-| 4c — Tool builtins (deps: tool-runtime + optional rag) | `brainwires-tool-builtins` |
-| 5 — Agency | `brainwires-agent`, `brainwires-network`, `brainwires-skills`, `brainwires-mdap`, `brainwires-seal`, `brainwires-inference` |
-| 6 — Fine-tune | `brainwires-finetune` |
-| 7 — Facade | `brainwires` |
+| 0 — Contracts | `rullama-core` |
+| 1a — Infrastructure (deps: core) | `rullama-telemetry`, `rullama-storage`, `rullama-eval` |
+| 1b — Infrastructure (deps on 1a) | `rullama-provider`, `rullama-provider-speech`, `rullama-hardware`, `rullama-stores`, `rullama-memory`, `rullama-sandbox`, `rullama-sandbox-proxy`, `rullama-call-policy` |
+| 2 — Protocols (deps: core only) | `rullama-mcp-client`, `rullama-mcp-server`, `rullama-a2a` |
+| 3 — Intelligence (storage-backed) | `rullama-knowledge`, `rullama-rag`, `rullama-prompting` |
+| 4a — Tool runtime | `rullama-tool-runtime`, `rullama-permission` |
+| 4b — Reasoning (deps: tool-runtime) | `rullama-reasoning` |
+| 4c — Tool builtins (deps: tool-runtime + optional rag) | `rullama-tool-builtins` |
+| 5 — Agency | `rullama-agent`, `rullama-network`, `rullama-skills`, `rullama-mdap`, `rullama-seal`, `rullama-inference` |
+| 6 — Fine-tune | `rullama-finetune` |
+| 7 — Facade | `rullama` |
 
-**Excluded from publish** (`publish = false` in their `Cargo.toml`): `brainwires-sandbox-proxy`, plus all `extras/*` crates (`brainwires-autonomy`, `brainwires-wasm`, etc.). The 0.11 cycle removed `brainwires-llama` (orphan rullama snapshot, never on crates.io) and `brainwires-finetune-local` / `brainwires-training` (moved to the sibling `rullama` workspace).
+**Excluded from publish** (`publish = false` in their `Cargo.toml`): `rullama-sandbox-proxy`, plus all `extras/*` crates (`rullama-autonomy`, `rullama-wasm`, etc.). The 0.11 cycle removed `rullama-llama` (orphan rullama snapshot, never on crates.io) and `rullama-finetune-local` / `rullama-training` (moved to the sibling `rullama` workspace).
 
 ## 4. Post-publish
 
-- [ ] Verify on crates.io: `cargo search brainwires`
+- [ ] Verify on crates.io: `cargo search rullama`
 - [ ] Tag pushed automatically by publish script (`vX.Y.Z`)
-- [ ] Update CLI workspace version refs if needed (`/home/nightness/dev/brainwires-cli/Cargo.toml`)
+- [ ] Update CLI workspace version refs if needed (`/home/nightness/dev/rullama-cli/Cargo.toml`)
 
 ## 5. Troubleshooting
 

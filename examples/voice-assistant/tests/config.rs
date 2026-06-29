@@ -3,7 +3,7 @@
 //! The handler itself is tightly coupled to real network providers
 //! (`OpenAiChatProvider`, `ChatAgent`, `VoiceAssistantHandler` w/ CPAL), so
 //! a pure prompt-builder unit test is not feasible at this layer — the
-//! prompt assembly happens inside `brainwires-agent::ChatAgent` rather
+//! prompt assembly happens inside `rullama-agent::ChatAgent` rather
 //! than in any pure helper on `LlmHandler`. That behaviour is covered by
 //! the agents crate's own test suite.
 

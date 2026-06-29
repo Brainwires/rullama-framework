@@ -1,0 +1,199 @@
+[package]
+name = "rullama"
+description = "The Brainwires Agent Framework — build any AI application in Rust"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/rullama"
+keywords = ["ai-agents", "llm", "mcp", "multi-agent", "framework"]
+categories = ["development-tools"]
+
+[dependencies]
+# Always available
+rullama-core.workspace = true
+
+# Feature-gated framework crates
+rullama-agent = { workspace = true, optional = true }
+rullama-mdap = { workspace = true, optional = true }
+rullama-skills = { workspace = true, optional = true }
+rullama-seal = { workspace = true, optional = true }
+rullama-eval = { workspace = true, optional = true }
+rullama-inference = { workspace = true, optional = true }
+rullama-tool-runtime = { workspace = true, optional = true }
+rullama-tool-builtins = { workspace = true, optional = true }
+rullama-storage = { workspace = true, optional = true }
+rullama-stores = { workspace = true, default-features = false, optional = true }
+rullama-memory = { workspace = true, optional = true }
+rullama-mcp-client = { workspace = true, optional = true }
+rullama-knowledge = { workspace = true, optional = true }
+rullama-rag = { workspace = true, optional = true }
+rullama-prompting = { workspace = true, optional = true }
+rullama-permission = { workspace = true, optional = true }
+rullama-reasoning = { workspace = true, optional = true }
+
+# Providers
+rullama-provider = { workspace = true, optional = true }
+rullama-provider-speech = { workspace = true, optional = true }
+
+# Agent network (IPC, remote bridge, mesh)
+rullama-network = { workspace = true, optional = true }
+
+# MCP server framework
+rullama-mcp-server = { workspace = true, optional = true }
+
+# A2A protocol
+rullama-a2a = { workspace = true, optional = true }
+
+# Skills system
+# skills extracted to rullama-skills in 0.11 (Phase 11c)
+
+
+# Hardware I/O (audio, GPIO, Bluetooth, network)
+rullama-hardware = { workspace = true, optional = true }
+
+# Datasets & Fine-tuning
+rullama-finetune = { workspace = true, optional = true }
+rullama-datasets = { workspace = true, optional = true }
+# rullama-finetune-local moved to the `rullama` workspace (rullama-finetune).
+
+
+
+# Analytics
+rullama-telemetry = { workspace = true, optional = true }
+
+# MCP server re-exports (optional)
+rmcp = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
+tokio-util = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+async-trait = { workspace = true }
+async-stream = { workspace = true }
+futures = { workspace = true }
+
+[[example]]
+name = "custom_provider"
+required-features = ["providers"]
+
+[[example]]
+name = "custom_embedding"
+
+[[example]]
+name = "agent_quickstart"
+required-features = ["agents"]
+
+[[example]]
+name = "rag_custom_pipeline"
+required-features = ["rag"]
+
+[[example]]
+name = "multi_provider_chat"
+required-features = ["providers", "chat"]
+
+[[example]]
+name = "storage_with_rag"
+required-features = ["memory", "rag"]
+
+[features]
+default = ["tools", "agents", "inference"]
+wasm = ["rullama-core/wasm"]
+tools = [
+    "dep:rullama-tool-runtime",
+    "dep:rullama-tool-builtins",
+    "rullama-tool-runtime/native",
+    "rullama-tool-builtins/native",
+]
+agents = ["dep:rullama-agent"]
+# LLM-driven workhorses (ChatAgent, TaskAgent, planner/judge/validator).
+inference = ["dep:rullama-inference", "agents"]
+storage = ["dep:rullama-storage", "rullama-storage/native"]
+session = ["dep:rullama-stores", "rullama-stores/session"]
+session-sqlite = ["session", "rullama-stores/sqlite"]
+task = ["dep:rullama-stores", "rullama-stores/task", "storage"]
+plan = ["dep:rullama-stores", "rullama-stores/plan", "storage"]
+conversation = ["dep:rullama-stores", "rullama-stores/conversation", "storage"]
+lock = ["dep:rullama-stores", "rullama-stores/lock"]
+image = ["dep:rullama-stores", "rullama-stores/image", "storage"]
+memory = ["dep:rullama-stores", "rullama-stores/memory", "storage"]
+# `tiered` enables the orchestration crate (TieredMemory + multi-factor search).
+tiered = ["memory", "dep:rullama-memory"]
+mcp = ["dep:rullama-mcp-client"]
+mdap = ["dep:rullama-mdap"]
+knowledge = ["dep:rullama-knowledge", "rullama-knowledge/knowledge"]
+prompting = ["dep:rullama-prompting", "rullama-prompting/knowledge", "knowledge"]
+permissions = ["dep:rullama-permission"]
+orchestrator = ["tools", "rullama-tool-runtime/orchestrator", "rullama-tool-builtins/orchestrator"]
+openapi = ["tools", "rullama-tool-runtime/openapi"]
+rag = ["dep:rullama-rag", "dep:rullama-storage", "rullama-storage/lance-backend", "tools", "rullama-tool-builtins/rag", "rullama-tool-runtime/rag"]
+# Tree-sitter language parsers are always-on in `rullama-rag`, so this
+# feature is equivalent to `rag` and kept only for back-compat.
+rag-full-languages = ["rag"]
+interpreters = ["tools", "rullama-tool-builtins/interpreters"]
+providers = ["dep:rullama-provider"]
+chat = ["providers", "inference"]
+reasoning = ["dep:rullama-reasoning"]
+seal = ["dep:rullama-seal"]
+agent-network = ["dep:rullama-network"]
+mcp-server-framework = ["dep:rullama-mcp-server"]
+skills = ["dep:rullama-skills", "rullama-skills/registry"]
+eval = ["dep:rullama-eval"]
+otel = ["agents", "rullama-agent/otel"]
+# proxy feature removed — rullama-proxy is an extras app, not a framework crate
+a2a = ["dep:rullama-a2a", "rullama-a2a/native"]
+mesh = ["agent-network", "rullama-network/mesh"]
+audio = ["dep:rullama-hardware", "rullama-hardware/audio"]
+gpio = ["dep:rullama-hardware", "rullama-hardware/gpio"]
+bluetooth = ["dep:rullama-hardware", "rullama-hardware/bluetooth"]
+lan-tools = ["dep:rullama-network", "rullama-network/lan"]
+camera = ["dep:rullama-hardware", "rullama-hardware/camera"]
+usb = ["dep:rullama-hardware", "rullama-hardware/usb"]
+vad = ["dep:rullama-hardware", "rullama-hardware/vad"]
+wake-word = ["dep:rullama-hardware", "rullama-hardware/wake-word"]
+voice-assistant = ["dep:rullama-hardware", "rullama-hardware/voice-assistant"]
+datasets = ["dep:rullama-datasets", "rullama-datasets/datasets-full"]
+training = ["dep:rullama-finetune"]
+training-cloud = ["training", "rullama-finetune/cloud"]
+# `training-local` and `training-full` removed when local PEFT moved to rullama;
+# depend on `rullama-finetune` directly for LoRA / QLoRA / DoRA.
+# autonomy feature requires rullama-autonomy (publish = false, workspace-only)
+system = ["tools", "rullama-tool-builtins/system"]
+dream = ["tiered", "rullama-memory/dream"]
+telemetry = ["dep:rullama-telemetry", "rullama-telemetry/native", "rullama-provider?/telemetry"]
+bedrock = ["providers", "rullama-provider/bedrock"]
+vertex-ai = ["providers", "rullama-provider/vertex-ai"]
+llama-cpp-2 = ["providers", "rullama-provider/llama-cpp-2"]
+web-speech = ["dep:rullama-provider-speech", "rullama-provider-speech/web-speech"]
+mcp-server = ["dep:rmcp", "dep:schemars", "dep:tokio-util"]
+# Convenience: enables all learning/knowledge subsystems with integration
+learning = ["seal", "knowledge", "permissions", "rullama-seal/knowledge", "rullama-seal/feedback"]
+# Convenience: everything needed for agent workflows
+agent-full = ["agents", "permissions", "prompting", "tools"]
+# Convenience: everything a researcher typically needs
+researcher = ["providers", "agents", "storage", "memory", "rag", "training", "datasets"]
+full = [
+    "tools", "agents", "inference", "storage", "memory", "mcp", "mdap", "knowledge",
+    "prompting", "permissions", "orchestrator", "rag-full-languages", "interpreters",
+    "providers", "chat", "reasoning", "seal", "agent-network",
+    "rullama-seal/knowledge", "rullama-seal/mdap", "rullama-seal/feedback",
+    "llama-cpp-2", "mcp-server", "skills", "eval",
+    "a2a", "mesh", "audio", "gpio", "bluetooth", "lan-tools", "camera", "usb",
+    "vad", "wake-word", "voice-assistant", "mcp-server-framework",
+    "training-cloud", "datasets",
+    "system",
+    "dream",
+    "telemetry",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+

@@ -1,7 +1,7 @@
 /**
  * Training types shared across cloud providers.
  *
- * Equivalent to Rust's `brainwires_training::types` module.
+ * Equivalent to Rust's `rullama_training::types` module.
  */
 
 /** Unique identifier for a training job. */

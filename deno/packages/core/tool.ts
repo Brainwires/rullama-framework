@@ -1,11 +1,11 @@
 // deno-lint-ignore-file no-explicit-any
 
 /** Specifies which contexts can invoke a tool.
- * Equivalent to Rust's `ToolCaller` in brainwires-core. */
+ * Equivalent to Rust's `ToolCaller` in rullama-core. */
 export type ToolCaller = "direct" | "code_execution";
 
 /** A tool that can be used by the AI agent.
- * Equivalent to Rust's `Tool` in brainwires-core. */
+ * Equivalent to Rust's `Tool` in rullama-core. */
 export interface Tool {
   name: string;
   description: string;
@@ -17,7 +17,7 @@ export interface Tool {
 }
 
 /** JSON Schema for tool input.
- * Equivalent to Rust's `ToolInputSchema` in brainwires-core. */
+ * Equivalent to Rust's `ToolInputSchema` in rullama-core. */
 export interface ToolInputSchema {
   type: string;
   properties?: Record<string, any>;
@@ -38,7 +38,7 @@ export function objectSchema(
 }
 
 /** A tool use request from the AI.
- * Equivalent to Rust's `ToolUse` in brainwires-core. */
+ * Equivalent to Rust's `ToolUse` in rullama-core. */
 export interface ToolUse {
   id: string;
   name: string;
@@ -46,7 +46,7 @@ export interface ToolUse {
 }
 
 /** Result of a tool execution.
- * Equivalent to Rust's `ToolResult` in brainwires-core. */
+ * Equivalent to Rust's `ToolResult` in rullama-core. */
 export class ToolResult {
   tool_use_id: string;
   content: string;
@@ -70,14 +70,14 @@ export class ToolResult {
 }
 
 /** Record of a completed idempotent write operation.
- * Equivalent to Rust's `IdempotencyRecord` in brainwires-core. */
+ * Equivalent to Rust's `IdempotencyRecord` in rullama-core. */
 export interface IdempotencyRecord {
   executed_at: number;
   cached_result: string;
 }
 
 /** Shared registry that deduplicates mutating file-system tool calls within a run.
- * Equivalent to Rust's `IdempotencyRegistry` in brainwires-core. */
+ * Equivalent to Rust's `IdempotencyRegistry` in rullama-core. */
 export class IdempotencyRegistry {
   private records: Map<string, IdempotencyRecord> = new Map();
 
@@ -108,7 +108,7 @@ export class IdempotencyRegistry {
 }
 
 /** A single write operation that has been staged but not yet committed.
- * Equivalent to Rust's `StagedWrite` in brainwires-core. */
+ * Equivalent to Rust's `StagedWrite` in rullama-core. */
 export interface StagedWrite {
   key: string;
   target_path: string;
@@ -116,14 +116,14 @@ export interface StagedWrite {
 }
 
 /** Result returned by a successful commit.
- * Equivalent to Rust's `CommitResult` in brainwires-core. */
+ * Equivalent to Rust's `CommitResult` in rullama-core. */
 export interface CommitResult {
   committed: number;
   paths: string[];
 }
 
 /** Interface for staging write operations before committing to the filesystem.
- * Equivalent to Rust's `StagingBackend` trait in brainwires-core. */
+ * Equivalent to Rust's `StagingBackend` trait in rullama-core. */
 export interface StagingBackend {
   stage(write: StagedWrite): boolean;
   commit(): CommitResult;
@@ -132,7 +132,7 @@ export interface StagingBackend {
 }
 
 /** Execution context for a tool.
- * Equivalent to Rust's `ToolContext` in brainwires-core. */
+ * Equivalent to Rust's `ToolContext` in rullama-core. */
 export class ToolContext {
   working_directory: string;
   user_id?: string;
@@ -164,7 +164,7 @@ export class ToolContext {
 }
 
 /** Tool selection mode.
- * Equivalent to Rust's `ToolMode` in brainwires-core. */
+ * Equivalent to Rust's `ToolMode` in rullama-core. */
 export type ToolMode =
   | { type: "full" }
   | { type: "explicit"; tools: string[] }

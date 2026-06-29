@@ -1,5 +1,5 @@
 /**
- * Database backend implementations for @brainwires/storage.
+ * Database backend implementations for @rullama/storage.
  *
  * Re-exports all available backends:
  * - PostgresDatabase (pg + pgvector) -- StorageBackend + VectorDatabase

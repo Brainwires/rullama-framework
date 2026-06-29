@@ -19,11 +19,11 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-# Core brainwires subsystems
-brainwires-knowledge = { workspace = true, features = ["knowledge"] }
-brainwires-memory = { workspace = true, features = ["dream"] }
-brainwires-core = { workspace = true }
-brainwires-storage = { workspace = true }
+# Core rullama subsystems
+rullama-knowledge = { workspace = true, features = ["knowledge"] }
+rullama-memory = { workspace = true, features = ["dream"] }
+rullama-core = { workspace = true }
+rullama-storage = { workspace = true }
 
 # MCP server
 rmcp = { workspace = true, features = ["server", "transport-io", "macros"] }

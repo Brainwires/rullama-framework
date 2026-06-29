@@ -5,7 +5,7 @@
  * summarise with {@link evaluationStatsFromTrials} which reports the success
  * rate together with a Wilson-score 95% confidence interval.
  *
- * Equivalent to Rust's `brainwires_agents::eval::trial` module.
+ * Equivalent to Rust's `rullama_agents::eval::trial` module.
  */
 
 // ─── Trial result ──────────────────────────────────────────────────────────

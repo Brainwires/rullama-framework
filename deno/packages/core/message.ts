@@ -1,7 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
 
 /** Role of the message sender.
- * Equivalent to Rust's `Role` in brainwires-core. */
+ * Equivalent to Rust's `Role` in rullama-core. */
 export type Role = "user" | "assistant" | "system" | "tool";
 
 /** Message content — simple text string or array of content blocks.
@@ -53,7 +53,7 @@ export interface ImageSource {
 }
 
 /** A message in the conversation.
- * Equivalent to Rust's `Message` in brainwires-core. */
+ * Equivalent to Rust's `Message` in rullama-core. */
 export interface MessageData {
   role: Role;
   content: MessageContent;
@@ -62,7 +62,7 @@ export interface MessageData {
 }
 
 /** A message in the conversation with helper methods.
- * Equivalent to Rust's `Message` in brainwires-core. */
+ * Equivalent to Rust's `Message` in rullama-core. */
 export class Message implements MessageData {
   role: Role;
   content: MessageContent;
@@ -145,7 +145,7 @@ export class Message implements MessageData {
 }
 
 /** Usage statistics for a chat completion.
- * Equivalent to Rust's `Usage` in brainwires-core. */
+ * Equivalent to Rust's `Usage` in rullama-core. */
 export interface Usage {
   prompt_tokens: number;
   completion_tokens: number;
@@ -165,7 +165,7 @@ export function createUsage(
 }
 
 /** Response from a chat completion.
- * Equivalent to Rust's `ChatResponse` in brainwires-core. */
+ * Equivalent to Rust's `ChatResponse` in rullama-core. */
 export interface ChatResponse {
   message: Message;
   usage: Usage;
@@ -173,7 +173,7 @@ export interface ChatResponse {
 }
 
 /** Streaming chunk from a chat completion.
- * Equivalent to Rust's `StreamChunk` in brainwires-core. */
+ * Equivalent to Rust's `StreamChunk` in rullama-core. */
 export type StreamChunk =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string }
@@ -191,7 +191,7 @@ export type StreamChunk =
   | { type: "done" };
 
 /** Serialize messages into the STATELESS protocol format for conversation history.
- * Equivalent to Rust's `serialize_messages_to_stateless_history` in brainwires-core. */
+ * Equivalent to Rust's `serialize_messages_to_stateless_history` in rullama-core. */
 export function serializeMessagesToStatelessHistory(
   messages: Message[],
 ): Record<string, any>[] {

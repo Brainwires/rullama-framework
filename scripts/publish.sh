@@ -12,7 +12,7 @@ set -euo pipefail
 # delays between each. If we ever exceed 30, fall back to 1/min after burst.
 # Crates are ordered by dependency DAG (leaves first, facade last).
 # Deprecated stubs are published separately after all workspace crates.
-# Non-published extras (brainwires-autonomy, brainwires-wasm) are excluded.
+# Non-published extras (rullama-autonomy, rullama-wasm) are excluded.
 #
 # Usage:
 #   ./scripts/publish.sh                  # Dry run (preflight + cargo dry-run)
@@ -37,84 +37,84 @@ esac
 
 # 29 publishable workspace crates in strict dependency order (leaves → facade).
 # Within each layer, crates have no mutual dependencies.
-# Excluded (publish = false): brainwires-autonomy, brainwires-wasm, brainwires-sandbox-proxy
-# Excluded (webrtc git-only dep): brainwires-channels (tombstone only)
+# Excluded (publish = false): rullama-autonomy, rullama-wasm, rullama-sandbox-proxy
+# Excluded (webrtc git-only dep): rullama-channels (tombstone only)
 # Retired (deprecated/, picked up by the auto-detect loop below):
-#   brainwires-tools — split into brainwires-tool-runtime + brainwires-tool-builtins.
-#   brainwires-permissions, brainwires-providers, brainwires-mcp,
-#   brainwires-resilience, brainwires-agents — singularized.
-#   brainwires-resilience also got a content-rename to brainwires-call-policy.
-#   brainwires-finetune-local — moved to rullama-finetune in 0.11.
-#   brainwires-training — moved to rullama-training in 0.11.
+#   rullama-tools — split into rullama-tool-runtime + rullama-tool-builtins.
+#   rullama-permissions, rullama-providers, rullama-mcp,
+#   rullama-resilience, rullama-agents — singularized.
+#   rullama-resilience also got a content-rename to rullama-call-policy.
+#   rullama-finetune-local — moved to rullama-finetune in 0.11.
+#   rullama-training — moved to rullama-training in 0.11.
 CRATES=(
     # Layer 0: Contracts
-    brainwires-core
+    rullama-core
 
     # Layer 1a: Infrastructure — zero internal deps (except core)
-    brainwires-telemetry
-    brainwires-storage
-    brainwires-eval               # evaluation harness — no brainwires-* deps at all
+    rullama-telemetry
+    rullama-storage
+    rullama-eval               # evaluation harness — no rullama-* deps at all
 
     # Layer 1b: Infrastructure — deps on 1a
-    brainwires-provider           # optional dep: telemetry (LLM clients only)
-    brainwires-provider-speech    # speech TTS / STT clients
-    brainwires-hardware           # optional dep: providers + provider-speech
-    brainwires-stores             # dep: storage — schema + CRUD for the opinionated minimum store set
-    brainwires-memory             # dep: stores — TieredMemory orchestration + dream consolidation
-    brainwires-sandbox            # container-backed sandbox executor
-    # brainwires-sandbox-proxy is publish = false (excluded; documented above)
-    brainwires-call-policy        # retry / circuit / budget / cache / classify policies on outbound calls
+    rullama-provider           # optional dep: telemetry (LLM clients only)
+    rullama-provider-speech    # speech TTS / STT clients
+    rullama-hardware           # optional dep: providers + provider-speech
+    rullama-stores             # dep: storage — schema + CRUD for the opinionated minimum store set
+    rullama-memory             # dep: stores — TieredMemory orchestration + dream consolidation
+    rullama-sandbox            # container-backed sandbox executor
+    # rullama-sandbox-proxy is publish = false (excluded; documented above)
+    rullama-call-policy        # retry / circuit / budget / cache / classify policies on outbound calls
 
     # Layer 2: Protocols (dep: core only)
-    brainwires-mcp-client
-    brainwires-mcp-server         # depends on mcp-client for shared types
-    brainwires-a2a
+    rullama-mcp-client
+    rullama-mcp-server         # depends on mcp-client for shared types
+    rullama-a2a
 
     # Layer 3: Intelligence (storage-backed)
-    brainwires-knowledge          # BKS/PKS, brain client, entity graph
-    brainwires-rag                # codebase indexing + retrieval (with internal spectral + code_analysis)
-    brainwires-prompting          # adaptive prompting (optional dep: knowledge)
+    rullama-knowledge          # BKS/PKS, brain client, entity graph
+    rullama-rag                # codebase indexing + retrieval (with internal spectral + code_analysis)
+    rullama-prompting          # adaptive prompting (optional dep: knowledge)
 
-    # Layer 4a: Tool runtime — split out of the old `brainwires-tools` in 0.11
-    brainwires-tool-runtime       # ToolExecutor, ToolRegistry, validation, smart_router, +optional rag
-    brainwires-permission
+    # Layer 4a: Tool runtime — split out of the old `rullama-tools` in 0.11
+    rullama-tool-runtime       # ToolExecutor, ToolRegistry, validation, smart_router, +optional rag
+    rullama-permission
 
     # Layer 4b: Reasoning — depends on tool-runtime (ToolCategory in router.rs).
     # Prior releases had reasoning as a Layer 3 re-export facade with no tools
     # dep; the 0.10 restoration moved real scorer modules back in and this
     # order became necessary.
-    brainwires-reasoning
+    rullama-reasoning
 
     # Layer 4c: Tool builtins — concrete bash/git/web/code_exec/email/calendar
     # tools. Depends on tool-runtime + optional rag.
-    brainwires-tool-builtins
+    rullama-tool-builtins
 
-    # Layer 4d: MDAP — extracted from brainwires-agent in 0.11. Zero internal
+    # Layer 4d: MDAP — extracted from rullama-agent in 0.11. Zero internal
     # framework deps beyond core; safe to publish before agent.
-    brainwires-mdap
+    rullama-mdap
 
-    # Layer 4e: Skills — extracted from brainwires-agent in 0.11. Depends on
+    # Layer 4e: Skills — extracted from rullama-agent in 0.11. Depends on
     # core + tool-runtime only.
-    brainwires-skills
+    rullama-skills
 
-    # Layer 4f: SEAL — extracted from brainwires-agent in 0.11. Depends on
+    # Layer 4f: SEAL — extracted from rullama-agent in 0.11. Depends on
     # core + tool-runtime + storage (LanceDB pattern store). Optional deps
     # on knowledge / permission / mdap behind features.
-    brainwires-seal
+    rullama-seal
 
     # Layer 5: Agency
-    brainwires-agent
-    brainwires-network
+    rullama-agent
+    rullama-network
 
-    # Layer 6: Inference — extracted from brainwires-agent in 0.11. Depends on
+    # Layer 6: Inference — extracted from rullama-agent in 0.11. Depends on
     # agent for coordination types (CommunicationHub, FileLockManager, etc.).
-    brainwires-inference
+    rullama-inference
 
     # Layer 6: Fine-tuning
-    brainwires-finetune           # cloud fine-tune APIs + dataset pipelines
+    rullama-finetune           # cloud fine-tune APIs + dataset pipelines
 
     # Facade (must be last)
-    brainwires
+    rullama
 )
 
 # ── Preflight checks ────────────────────────────────────────────────────────

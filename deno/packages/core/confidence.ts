@@ -5,7 +5,7 @@
  * from LLM responses using multiple heuristics, for use in decision-making
  * and SEAL learning loops.
  *
- * Equivalent to Rust's `brainwires_core::confidence`.
+ * Equivalent to Rust's `rullama_core::confidence`.
  */
 
 import type { ChatResponse, ContentBlock } from "./message.ts";

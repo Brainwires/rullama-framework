@@ -1,24 +1,24 @@
-# @brainwires/agents
+# @rullama/agents
 
 Agent orchestration, coordination, and lifecycle management for the Brainwires
 Agent Framework. Provides the core agentic execution loop, task agents,
 inter-agent communication, and distributed coordination patterns.
 
-Equivalent to the Rust `brainwires-agent` crate.
+Equivalent to the Rust `rullama-agent` crate.
 
 ## Install
 
 ```sh
-deno add @brainwires/agents
+deno add @rullama/agents
 ```
 
 ## Quick Example
 
 ```ts
-import { ChatOptions, Message } from "@brainwires/core";
-import { AnthropicChatProvider } from "@brainwires/provider";
-import { BashTool, ToolRegistry } from "@brainwires/tools";
-import { AgentContext, spawnTaskAgent, TaskAgent } from "@brainwires/agent";
+import { ChatOptions, Message } from "@rullama/core";
+import { AnthropicChatProvider } from "@rullama/provider";
+import { BashTool, ToolRegistry } from "@rullama/tools";
+import { AgentContext, spawnTaskAgent, TaskAgent } from "@rullama/agent";
 
 const registry = new ToolRegistry();
 registry.registerTools(BashTool.getTools());

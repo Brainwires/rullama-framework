@@ -1,15 +1,15 @@
-# @brainwires/knowledge
+# @rullama/knowledge
 
 Unified intelligence layer for the Brainwires Agent Framework. Provides
 prompting technique selection, knowledge graph interfaces, and RAG
 (Retrieval-Augmented Generation) client types.
 
-Equivalent to the Rust `brainwires-knowledge` crate.
+Equivalent to the Rust `rullama-knowledge` crate.
 
 ## Install
 
 ```sh
-deno add @brainwires/knowledge
+deno add @rullama/knowledge
 ```
 
 ## Quick Example
@@ -20,7 +20,7 @@ import {
   getTechniqueMetadata,
   getTechniquesByCategory,
   getTechniquesByComplexity,
-} from "@brainwires/knowledge";
+} from "@rullama/knowledge";
 
 // List all 15 prompting techniques
 for (const technique of ALL_TECHNIQUES) {

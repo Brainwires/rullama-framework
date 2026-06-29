@@ -7,7 +7,7 @@ import {
   ExecutionGraph,
   telemetryFromGraph,
   type ToolCallRecord,
-} from "@brainwires/agent";
+} from "@rullama/agent";
 
 async function main() {
   console.log("=== DAG Workflow (ExecutionGraph) ===\n");

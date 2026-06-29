@@ -1,6 +1,6 @@
 # audio-demo-ffi
 
-UniFFI bindings for [brainwires-hardware](../../crates/brainwires-hardware/README.md) (audio feature) — exposes TTS, STT, and hardware audio APIs to C#, Kotlin, Swift, and Python via Mozilla's [UniFFI](https://mozilla.github.io/uniffi-rs/) binding generator.
+UniFFI bindings for [rullama-hardware](../../crates/rullama-hardware/README.md) (audio feature) — exposes TTS, STT, and hardware audio APIs to C#, Kotlin, Swift, and Python via Mozilla's [UniFFI](https://mozilla.github.io/uniffi-rs/) binding generator.
 
 This crate compiles to a `cdylib` shared library (`libaudio_demo_ffi.so` / `.dll` / `.dylib`) that foreign language bindings can call through auto-generated FFI wrappers.
 
@@ -122,12 +122,12 @@ Foreign Language (C#, Kotlin, Swift, Python)
 └──────────────┬───────────────┘
                │
     ┌──────────────────────┐
-    │ brainwires-hardware  │
+    │ rullama-hardware  │
     │ (feature = "audio")  │
     └──────────┬───────────┘
                │
     ┌──────────▼──────────┐
-    │ brainwires-provider│
+    │ rullama-provider│
     │  (HTTP API clients) │
     └─────────────────────┘
 ```

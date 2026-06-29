@@ -5,10 +5,10 @@ use std::sync::Arc;
 use anyhow::Result;
 use tokio::sync::Mutex;
 
-use brainwires_core::Message;
-use brainwires_knowledge::knowledge::brain_client::BrainClient;
-use brainwires_knowledge::knowledge::types::*;
-use brainwires_memory::dream::consolidator::DreamSessionStore;
+use rullama_core::Message;
+use rullama_knowledge::knowledge::brain_client::BrainClient;
+use rullama_knowledge::knowledge::types::*;
+use rullama_memory::dream::consolidator::DreamSessionStore;
 
 /// Adapts BrainClient's thought storage to the DreamSessionStore trait
 /// required by the DreamConsolidator.
@@ -65,7 +65,7 @@ impl DreamSessionStore for BrainSessionAdapter {
     }
 
     async fn load(&self, session_key: &str) -> Result<Option<Vec<Message>>> {
-        use brainwires_storage::{FieldValue, Filter};
+        use rullama_storage::{FieldValue, Filter};
 
         let client = self.client.lock().await;
         let safe_key = crate::sanitize_tag_value(session_key);
@@ -105,7 +105,7 @@ impl DreamSessionStore for BrainSessionAdapter {
     }
 
     async fn save(&self, session_key: &str, messages: &[Message]) -> Result<()> {
-        use brainwires_storage::{FieldValue, Filter};
+        use rullama_storage::{FieldValue, Filter};
 
         let mut client = self.client.lock().await;
 
@@ -113,7 +113,7 @@ impl DreamSessionStore for BrainSessionAdapter {
         let summary_content = messages
             .iter()
             .filter_map(|m| match &m.content {
-                brainwires_core::MessageContent::Text(s) => Some(s.as_str()),
+                rullama_core::MessageContent::Text(s) => Some(s.as_str()),
                 _ => None,
             })
             .collect::<Vec<_>>()

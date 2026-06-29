@@ -3,16 +3,16 @@
 #
 # HOW TO USE:
 # 1. Run this script first to set up test mode
-# 2. Open a NEW claude code session in the brainwires-framework dir
+# 2. Open a NEW claude code session in the rullama-framework dir
 # 3. Ask Claude to read several large files (fills context fast)
-# 4. Watch ~/.brainwires/claude-brain-hooks.log for hook events
+# 4. Watch ~/.rullama/claude-brain-hooks.log for hook events
 # 5. When done, run: ./test-compaction.sh restore
 #
 # The script sets a tiny 20K window at 30% trigger — compaction fires FAST.
 
-SETTINGS="/home/nightness/dev/brainwires-framework/.claude/settings.local.json"
+SETTINGS="/home/nightness/dev/rullama-framework/.claude/settings.local.json"
 BACKUP="$SETTINGS.backup"
-LOG="$HOME/.brainwires/claude-brain-hooks.log"
+LOG="$HOME/.rullama/claude-brain-hooks.log"
 
 case "${1:-setup}" in
   setup)
@@ -24,7 +24,7 @@ case "${1:-setup}" in
     echo "Backed up settings to $BACKUP"
 
     # Clear old log
-    mkdir -p "$HOME/.brainwires"
+    mkdir -p "$HOME/.rullama"
     > "$LOG"
     echo "Cleared hook log at $LOG"
 
@@ -44,7 +44,7 @@ print('Set window=20000, trigger=30%')
     echo "TEST MODE ACTIVE — tiny context window!"
     echo ""
     echo "Now:"
-    echo "  1. Open a NEW claude code session in brainwires-framework/"
+    echo "  1. Open a NEW claude code session in rullama-framework/"
     echo "  2. Ask Claude to read 2-3 large files"
     echo "  3. Watch the log:  tail -f $LOG"
     echo "  4. When done:  ./test-compaction.sh restore"

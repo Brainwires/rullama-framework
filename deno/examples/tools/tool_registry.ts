@@ -3,8 +3,8 @@
 // list tools by category, look up metadata, and search.
 // Run: deno run deno/examples/tool-system/tool_registry.ts
 
-import type { Tool } from "@brainwires/core";
-import { objectSchema } from "@brainwires/core";
+import type { Tool } from "@rullama/core";
+import { objectSchema } from "@rullama/core";
 import {
   BashTool,
   FileOpsTool,
@@ -13,8 +13,8 @@ import {
   ToolRegistry,
   ValidationTool,
   WebTool,
-} from "@brainwires/tools";
-import type { ToolCategory } from "@brainwires/tools";
+} from "@rullama/tools";
+import type { ToolCategory } from "@rullama/tools";
 
 /** Helper: create a custom tool definition with the given name and description. */
 function makeCustomTool(name: string, description: string): Tool {

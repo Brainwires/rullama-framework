@@ -1,21 +1,21 @@
-# @brainwires/mcp
+# @rullama/mcp
 
 Model Context Protocol (MCP) client for the Brainwires Agent Framework. Connect
 to external MCP servers, discover and call tools, read resources, and fetch
 prompts.
 
-Equivalent to the Rust `brainwires-mcp` crate.
+Equivalent to the Rust `rullama-mcp` crate.
 
 ## Install
 
 ```sh
-deno add @brainwires/mcp
+deno add @rullama/mcp
 ```
 
 ## Quick Example
 
 ```ts
-import { McpClient, McpConfigManager } from "@brainwires/mcp-client";
+import { McpClient, McpConfigManager } from "@rullama/mcp-client";
 
 // Create a client and connect to an MCP server
 const client = McpClient.createDefault();

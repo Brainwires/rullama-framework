@@ -126,8 +126,8 @@ export const PROVIDER_REGISTRY: readonly ProviderEntry[] = [
     supports_model_listing: false,
   },
   {
-    provider_type: "brainwires",
-    chat_protocol: "brainwires_relay",
+    provider_type: "rullama",
+    chat_protocol: "rullama_relay",
     default_base_url: "https://brainwires.studio",
     default_model: "gpt-5-mini",
     auth: { type: "bearer_token" },

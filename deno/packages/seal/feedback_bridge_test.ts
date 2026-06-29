@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "@std/assert";
-import { AuditLogger } from "@brainwires/permission";
+import { AuditLogger } from "@rullama/permission";
 import { FeedbackBridge } from "./feedback_bridge.ts";
 import { LearningCoordinator } from "./learning.ts";
 

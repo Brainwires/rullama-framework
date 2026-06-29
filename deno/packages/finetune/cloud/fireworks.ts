@@ -1,7 +1,7 @@
 /**
  * Fireworks AI fine-tuning provider.
  *
- * Equivalent to Rust's `brainwires_training::cloud::fireworks` module.
+ * Equivalent to Rust's `rullama_training::cloud::fireworks` module.
  */
 
 import { TrainingError } from "../error.ts";

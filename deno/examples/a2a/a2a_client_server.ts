@@ -20,14 +20,14 @@ import type {
   Task,
   TaskState,
   TaskStatus,
-} from "@brainwires/a2a";
+} from "@rullama/a2a";
 import {
   A2aClient,
   A2aError,
   createAgentMessage,
   createUserMessage,
-} from "@brainwires/a2a";
-import type { A2aHandler } from "@brainwires/a2a";
+} from "@rullama/a2a";
+import type { A2aHandler } from "@rullama/a2a";
 
 async function main(): Promise<void> {
   console.log("=== A2A Client/Server Example ===\n");

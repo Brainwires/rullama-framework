@@ -11,7 +11,7 @@ import {
   TemplateStore,
   withCategory,
   withTags,
-} from "@brainwires/storage";
+} from "@rullama/storage";
 
 async function main() {
   console.log("=== Plan Templates Example ===\n");

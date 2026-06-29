@@ -25,7 +25,7 @@ import {
   type TransportAddress,
   withCorrelation,
   withTtl,
-} from "@brainwires/network";
+} from "@rullama/network";
 
 async function main(): Promise<void> {
   console.log("=== Network Manager Example ===\n");

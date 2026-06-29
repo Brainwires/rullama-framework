@@ -1,7 +1,7 @@
 /**
  * Google Calendar API v3 client.
  *
- * Equivalent to Rust's `brainwires_tools::calendar::google` module.
+ * Equivalent to Rust's `rullama_tools::calendar::google` module.
  */
 
 import type {

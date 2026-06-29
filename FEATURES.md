@@ -1,4 +1,4 @@
-# Brainwires Framework — Complete Feature List
+# rullama — Complete Feature List
 
 A comprehensive catalog of every feature provided by the framework's 32 crates and 18 extras.
 
@@ -51,7 +51,7 @@ A comprehensive catalog of every feature provided by the framework's 32 crates a
 
 ## Core Types & Traits
 
-**Crate:** `brainwires-core`
+**Crate:** `rullama-core`
 
 Foundation types shared by all framework crates.
 
@@ -78,7 +78,7 @@ Foundation types shared by all framework crates.
 
 ## AI Providers
 
-**Crate:** `brainwires-provider`
+**Crate:** `rullama-provider`
 
 Unified multi-provider AI interface with 18 provider types.
 
@@ -126,13 +126,13 @@ All chat providers honour `ChatOptions::model: Option<String>`. When `Some`, pro
 - **Local LLM** — `llama-cpp-2` integration for local inference (feature: `llama-cpp-2`)
 - **Streaming** — All providers return async streams for real-time output; `StreamChunk::ContextCompacted { summary, tokens_freed }` emitted when Claude auto-summarizes context mid-stream (Claude 4.6+)
 - **Default models** — Updated to GA Claude 4.6 IDs: Anthropic → `claude-sonnet-4-6`, Bedrock → `anthropic.claude-sonnet-4-6-v1:0`, VertexAI → `claude-sonnet-4-6`
-- **HTTP client transport** (`brainwires-mcp-client`, feature `http`) — `HttpTransport` for stateless JSON-RPC-over-HTTP MCP clients
+- **HTTP client transport** (`rullama-mcp-client`, feature `http`) — `HttpTransport` for stateless JSON-RPC-over-HTTP MCP clients
 
 ---
 
 ## Agent Orchestration
 
-**Crates:** `brainwires-agent` (coordination primitives — file/resource locks, communication hub, task manager) + `brainwires-inference` (`ChatAgent`, `TaskAgent`, `ValidatorAgent`, `PlanExecutorAgent`, `TaskOrchestrator` — moved from `brainwires-agent` in Phase 11f when LLM-driven agents split out from pure coordination).
+**Crates:** `rullama-agent` (coordination primitives — file/resource locks, communication hub, task manager) + `rullama-inference` (`ChatAgent`, `TaskAgent`, `ValidatorAgent`, `PlanExecutorAgent`, `TaskOrchestrator` — moved from `rullama-agent` in Phase 11f when LLM-driven agents split out from pure coordination).
 
 Multi-agent infrastructure for autonomous task execution.
 
@@ -215,9 +215,9 @@ Multi-agent infrastructure for autonomous task execution.
 
 ## Tool System
 
-**Crates:** `brainwires-tool-runtime` (registry, executor, dispatch, validation, orchestrator) + `brainwires-tool-builtins` (concrete bash / file_ops / git / web / search / interpreters / email / calendar tools)
+**Crates:** `rullama-tool-runtime` (registry, executor, dispatch, validation, orchestrator) + `rullama-tool-builtins` (concrete bash / file_ops / git / web / search / interpreters / email / calendar tools)
 
-Composable tool implementations for agent use. The 0.11 split moved the runtime primitives into `brainwires-tool-runtime` and the always-available concrete tools into `brainwires-tool-builtins`.
+Composable tool implementations for agent use. The 0.11 split moved the runtime primitives into `rullama-tool-runtime` and the always-available concrete tools into `rullama-tool-builtins`.
 
 ### Built-in Tools (always available)
 
@@ -258,7 +258,7 @@ Composable tool implementations for agent use. The 0.11 split moved the runtime 
 
 ## MCP Protocol
 
-**Crate:** `brainwires-mcp-client` (the old aggregate `brainwires-mcp` was split into `brainwires-mcp-client` + `brainwires-mcp-server` in 0.10)
+**Crate:** `rullama-mcp-client` (the old aggregate `rullama-mcp` was split into `rullama-mcp-client` + `rullama-mcp-server` in 0.10)
 
 MCP client for connecting to external MCP servers.
 
@@ -275,7 +275,7 @@ MCP client for connecting to external MCP servers.
 
 ## MCP Server Framework
 
-**Crate:** `brainwires-mcp-server`
+**Crate:** `rullama-mcp-server`
 
 Build MCP-compliant tool servers with a composable middleware pipeline. Conforms to the MCP 2026 specification.
 
@@ -318,9 +318,9 @@ Build MCP-compliant tool servers with a composable middleware pipeline. Conforms
 
 ## Agent Networking
 
-**Crate:** `brainwires-network`
+**Crate:** `rullama-network`
 
-Agent IPC, remote bridge, 5-layer protocol stack, device allowlists, permission relay, and optional mesh networking. MCP server framework has been extracted to `brainwires-mcp-server`.
+Agent IPC, remote bridge, 5-layer protocol stack, device allowlists, permission relay, and optional mesh networking. MCP server framework has been extracted to `rullama-mcp-server`.
 
 ### Agent Communication
 
@@ -348,7 +348,7 @@ Agent IPC, remote bridge, 5-layer protocol stack, device allowlists, permission 
 
 ## MDAP Voting
 
-**Crate:** `brainwires-agent` (feature `mdap`)
+**Crate:** `rullama-agent` (feature `mdap`)
 
 Multi-Dimensional Adaptive Planning implementing the MAKER paper.
 
@@ -371,21 +371,21 @@ Multi-Dimensional Adaptive Planning implementing the MAKER paper.
 
 Three-layer storage architecture (see ADR-0005):
 
-- **`brainwires-storage`** — substrate: `StorageBackend` trait,
+- **`rullama-storage`** — substrate: `StorageBackend` trait,
   9 backends (LanceDB / nornicdb / sqlite / sled / etc.), embeddings,
   BM25 keyword search, file-context primitives.
-- **`brainwires-stores`** — schema + CRUD for the framework's
+- **`rullama-stores`** — schema + CRUD for the framework's
   opinionated minimum data-store set.
-- **`brainwires-memory`** — orchestration over the tier schema stores
+- **`rullama-memory`** — orchestration over the tier schema stores
   (`TieredMemory` adaptive search) + offline `dream` consolidation.
 
-### Substrate  *(crate: `brainwires-storage`)*
+### Substrate  *(crate: `rullama-storage`)*
 
 - **LanceDatabase** — LanceDB connection and table management
 - **FastEmbedManager** — Text embeddings via FastEmbed ONNX model (all-MiniLM-L6-v2)
 - **CachedEmbeddingProvider** — LRU-cached embedding provider
 
-### Data Stores  *(crate: `brainwires-stores`)*
+### Data Stores  *(crate: `rullama-stores`)*
 
 - **SessionStore** — Pluggable transcript persistence (in-memory + sqlite impls)
 - **ConversationStore** — Conversation catalog metadata (id, title, model, message count)
@@ -405,11 +405,11 @@ Three-layer storage architecture (see ADR-0005):
 Default features: `session`, `task`, `plan`, `conversation`. Opt-in:
 `memory` (tier schemas), `lock`, `image`, `sqlite`.
 
-### Tiered Memory Orchestration  *(crate: `brainwires-memory`)*
+### Tiered Memory Orchestration  *(crate: `rullama-memory`)*
 
 - **TieredMemory** — Multi-factor adaptive search across the four tiers
   (similarity × recency × importance), promotion / demotion based on
-  access patterns. Uses the schema stores from `brainwires-stores`.
+  access patterns. Uses the schema stores from `rullama-stores`.
 - **CanonicalWriteToken** — Capability gate for the `Canonical`
   authority tier
 - **MultiFactorScore** — Combined retrieval score that blends
@@ -430,7 +430,7 @@ Default features: `session`, `task`, `plan`, `conversation`. Opt-in:
 
 ## RAG & Code Search
 
-**Crate:** `brainwires-knowledge` (feature: `rag`)
+**Crate:** `rullama-knowledge` (feature: `rag`)
 
 RAG-based codebase indexing and semantic search.
 
@@ -449,7 +449,7 @@ RAG-based codebase indexing and semantic search.
 
 ## Knowledge & Brain
 
-**Crate:** `brainwires-knowledge` (feature: `knowledge`)
+**Crate:** `rullama-knowledge` (feature: `knowledge`)
 
 Central knowledge crate for persistent thought storage and entity graphs.
 
@@ -468,7 +468,7 @@ Central knowledge crate for persistent thought storage and entity graphs.
 
 ## Adaptive Prompting
 
-**Crate:** `brainwires-knowledge` (feature: `prompting`)
+**Crate:** `rullama-knowledge` (feature: `prompting`)
 
 Implements "Adaptive Selection of Prompting Techniques" (arXiv:2510.18162).
 
@@ -485,7 +485,7 @@ Implements "Adaptive Selection of Prompting Techniques" (arXiv:2510.18162).
 
 ## SEAL (Self-Evolving Agentic Learning)
 
-**Crate:** `brainwires-seal` (extracted from `brainwires-agent` in Phase 11d — import as `brainwires_seal::*`, not `brainwires_agent::seal::*`)
+**Crate:** `rullama-seal` (extracted from `rullama-agent` in Phase 11d — import as `rullama_seal::*`, not `rullama_agent::seal::*`)
 
 Self-evolving agent capabilities without retraining.
 
@@ -501,7 +501,7 @@ Self-evolving agent capabilities without retraining.
 
 ## Permissions & Security
 
-**Crate:** `brainwires-permission`
+**Crate:** `rullama-permission`
 
 Capability-based permission system.
 
@@ -530,7 +530,7 @@ Capability-based permission system.
 - **AuditLogger** — Event logging with querying and statistics
 - **AuditEvent** — Typed events with outcomes and feedback signals
 - **TrustManager** — Trust levels, violation tracking, trust factor management
-- **AnomalyDetector** *(re-exported)* — `AuditLogger::with_anomaly_detection` plugs in `brainwires_telemetry::anomaly::AnomalyDetector` (lives in the telemetry crate; permission consumes it via the `ObservedEvent` impl in `audit.rs`)
+- **AnomalyDetector** *(re-exported)* — `AuditLogger::with_anomaly_detection` plugs in `rullama_telemetry::anomaly::AnomalyDetector` (lives in the telemetry crate; permission consumes it via the `ObservedEvent` impl in `audit.rs`)
 
 ### Approval System
 
@@ -540,7 +540,7 @@ Capability-based permission system.
 
 ## Hardware I/O
 
-**Crate:** `brainwires-hardware`
+**Crate:** `rullama-hardware`
 
 Unified hardware abstraction — audio, GPIO, Bluetooth, network hardware, camera, USB.
 
@@ -679,13 +679,13 @@ End-to-end orchestration: mic capture → wake word → VAD-gated accumulation �
 
 ### Home Automation
 
-Home automation protocols (Matter 1.3, Zigbee 3.0, Z-Wave Plus v2, Thread 1.3.0) and the `matter-tool` CLI moved to the standalone `future/home-automation/brainwires-homeauto` workspace in 0.11 — see `future/home-automation/README.md`.
+Home automation protocols (Matter 1.3, Zigbee 3.0, Z-Wave Plus v2, Thread 1.3.0) and the `matter-tool` CLI moved to the standalone `future/home-automation/rullama-homeauto` workspace in 0.11 — see `future/home-automation/README.md`.
 
 ---
 
 ## Code Interpreters
 
-**Crate:** `brainwires-tool-builtins` (absorbed from `brainwires-code-interpreters` in 0.10)
+**Crate:** `rullama-tool-builtins` (absorbed from `rullama-code-interpreters` in 0.10)
 
 Sandboxed multi-language code execution.
 
@@ -695,7 +695,7 @@ Sandboxed multi-language code execution.
 | **Lua** | `lua` | mlua | Small runtime, good stdlib |
 | **JavaScript** | `javascript` | Boa | ECMAScript compliant |
 
-In-process interpreters cover **Rhai, Lua, and JavaScript** (the `Language` enum in `code_exec.rs` has exactly these three variants). **Python** is supported only via the optional `RemoteSandboxExecutor` (Docker / Podman) — it executes user code inside a container with a Python image. No in-process RustPython interpreter is wired today; if Python is required by your agent, enable the `sandbox` feature on `brainwires-tool-runtime` and ensure a container runtime is available.
+In-process interpreters cover **Rhai, Lua, and JavaScript** (the `Language` enum in `code_exec.rs` has exactly these three variants). **Python** is supported only via the optional `RemoteSandboxExecutor` (Docker / Podman) — it executes user code inside a container with a Python image. No in-process RustPython interpreter is wired today; if Python is required by your agent, enable the `sandbox` feature on `rullama-tool-runtime` and ensure a container runtime is available.
 
 - **Executor** — Unified execution interface with `ExecutionRequest`
 - **WASM support** — Browser-compatible execution (feature: `wasm`)
@@ -705,7 +705,7 @@ In-process interpreters cover **Rhai, Lua, and JavaScript** (the `Language` enum
 
 ## Skills System
 
-**Crate:** `brainwires-agent` (absorbed from `brainwires-skills`)
+**Crate:** `rullama-agent` (absorbed from `rullama-skills`)
 
 Markdown-based agent skill packages.
 
@@ -723,7 +723,7 @@ Markdown-based agent skill packages.
 
 ## Channels
 
-**Crate:** `brainwires-network` (absorbed from `brainwires-channels`)
+**Crate:** `rullama-network` (absorbed from `rullama-channels`)
 
 Universal messaging channel contract for adapter implementations (Discord, Telegram, Slack, etc.).
 
@@ -760,7 +760,7 @@ Full peer-to-peer audio/video/DataChannel support via the Brainwires `webrtc-rs`
 
 ## Datasets & Training Data
 
-**Crate:** `brainwires-finetune` (feature `datasets-full` — absorbed from the deprecated `brainwires-datasets` crate)
+**Crate:** `rullama-finetune` (feature `datasets-full` — absorbed from the deprecated `rullama-datasets` crate)
 
 Training data pipelines for fine-tuning workflows.
 
@@ -804,7 +804,7 @@ Training data pipelines for fine-tuning workflows.
 
 ## Model Training & Fine-Tuning
 
-**Crate:** `brainwires-finetune` (cloud only since v0.11). Local PEFT and
+**Crate:** `rullama-finetune` (cloud only since v0.11). Local PEFT and
 training-from-scratch live in the sibling `rullama` workspace as
 `rullama-finetune` and `rullama-training`.
 
@@ -841,7 +841,7 @@ training-from-scratch live in the sibling `rullama` workspace as
 
 ## Distributed Mesh Networking
 
-**Crate:** `brainwires-network` (feature: `mesh`)
+**Crate:** `rullama-network` (feature: `mesh`)
 
 Connect agents across processes and machines.
 
@@ -856,7 +856,7 @@ Connect agents across processes and machines.
 
 ## Agent-to-Agent (A2A) Protocol
 
-**Crate:** `brainwires-a2a`
+**Crate:** `rullama-a2a`
 
 Implementation of Google's A2A protocol for interoperable agent communication.
 
@@ -876,7 +876,7 @@ Implementation of Google's A2A protocol for interoperable agent communication.
 
 ## Autonomous Operations
 
-**Crate:** `brainwires-autonomy` *(extras/)* — consumer project, not a framework crate. The `crates/` workspace publishes the primitives this depends on (`brainwires-eval` fault analysis, `SelfImprovementController` traits via `brainwires-agent`); the orchestration that ties them into "supervised self-improvement" lives downstream.
+**Crate:** `rullama-autonomy` *(extras/)* — consumer project, not a framework crate. The `crates/` workspace publishes the primitives this depends on (`rullama-eval` fault analysis, `SelfImprovementController` traits via `rullama-agent`); the orchestration that ties them into "supervised self-improvement" lives downstream.
 
 Self-improvement, Git workflows, and human-out-of-loop execution.
 
@@ -891,7 +891,7 @@ Self-improvement, Git workflows, and human-out-of-loop execution.
 
 - **AutonomousFeedbackLoop** — Continuous evaluation and improvement
 - **FeedbackLoopConfig** / **FeedbackLoopReport**
-- **Empirical scoring eval cases** (`brainwires_autonomy::eval`) — validates scoring heuristics produce correct relative orderings via NDCG:
+- **Empirical scoring eval cases** (`rullama_autonomy::eval`) — validates scoring heuristics produce correct relative orderings via NDCG:
   - `EntityImportanceRankingCase` — hub vs. peripheral entity ranking
   - `EntitySingleMentionCase` — ln(1)=0 zero-contribution is compensated by type bonus
   - `EntityTypeBonusCase` — type-bonus ordering matches hardcoded priority table
@@ -943,7 +943,7 @@ Self-improvement, Git workflows, and human-out-of-loop execution.
 
 ## Reasoning & Inference
 
-**Crate:** `brainwires-reasoning` (facade: `brainwires::reasoning` behind the `reasoning` feature)
+**Crate:** `rullama-reasoning` (facade: `rullama::reasoning` behind the `reasoning` feature)
 
 Provider-agnostic inference components for quality and cost optimization.
 
@@ -976,7 +976,7 @@ All components accept `Arc<dyn Provider>` and fall back to pattern-based logic w
 
 ## Evaluation Framework
 
-**Module:** `brainwires-agent::eval` (feature: `eval`)
+**Module:** `rullama-agent::eval` (feature: `eval`)
 
 Monte Carlo evaluation framework for agent quality assurance.
 
@@ -993,7 +993,7 @@ Monte Carlo evaluation framework for agent quality assurance.
 
 ## Telemetry & Analytics
 
-**Crate:** `brainwires-telemetry` (previously `brainwires-analytics` — renamed in the 0.10 consolidation)
+**Crate:** `rullama-telemetry` (previously `rullama-analytics` — renamed in the 0.10 consolidation)
 
 Unified analytics collection, persistence, and querying — zero-friction observability for all framework components. Includes EU AI Act / GDPR compliance tooling.
 
@@ -1034,7 +1034,7 @@ Attach to `ProviderCall` / `AgentRun` events for EU AI Act, GDPR, HIPAA, SOC2 au
 ### Sinks
 
 - **`MemoryAnalyticsSink`** — In-process ring buffer (`DEFAULT_CAPACITY = 1_000`); useful for testing and dashboards. Helpers: `deposit()` (sync), `drain_matching(pred)`, `retain(pred)`.
-- **`SqliteAnalyticsSink`** (feature `sqlite`) — Persists events to a local SQLite database at `<data_dir>/brainwires-telemetry/analytics.db`.
+- **`SqliteAnalyticsSink`** (feature `sqlite`) — Persists events to a local SQLite database at `<data_dir>/rullama-telemetry/analytics.db`.
 
 ### Querying (feature `sqlite`)
 
@@ -1065,7 +1065,7 @@ Configurable PII scrubbing before events reach storage sinks:
 
 ## Proxy Framework
 
-**Crate:** `brainwires-proxy` *(extras/)*
+**Crate:** `rullama-proxy` *(extras/)*
 
 Protocol-agnostic proxy for debugging AI API traffic.
 
@@ -1084,7 +1084,7 @@ Protocol-agnostic proxy for debugging AI API traffic.
 
 ## WASM Bindings
 
-**Crate:** `brainwires-wasm`
+**Crate:** `rullama-wasm`
 
 Browser-compatible WASM bindings via `wasm-bindgen`.
 
@@ -1101,27 +1101,27 @@ Browser-compatible WASM bindings via `wasm-bindgen`.
 
 ### voice-assistant *(extras/)*
 
-Personal voice assistant binary built on `brainwires-hardware`. Mic capture → optional energy wake trigger → VAD-gated speech accumulation → OpenAI Whisper STT → LLM response (OpenAI chat completions) → OpenAI TTS playback. CLI: `--config <path.toml>`, `--list-devices`, `--wake-word <model>`, `--verbose`. TOML config covers STT model, TTS voice/model, silence tuning, wake word path, LLM model, system prompt, device names, and API key (or `OPENAI_API_KEY` env var). Graceful Ctrl-C shutdown.
+Personal voice assistant binary built on `rullama-hardware`. Mic capture → optional energy wake trigger → VAD-gated speech accumulation → OpenAI Whisper STT → LLM response (OpenAI chat completions) → OpenAI TTS playback. CLI: `--config <path.toml>`, `--list-devices`, `--wake-word <model>`, `--verbose`. TOML config covers STT model, TTS voice/model, silence tuning, wake word path, LLM model, system prompt, device names, and API key (or `OPENAI_API_KEY` env var). Graceful Ctrl-C shutdown.
 
-### brainwires-issues *(extras/)*
+### rullama-issues *(extras/)*
 
-Lightweight MCP-native issue tracking server inspired by Linear's agent interface. 10 tools: `create_issue` (title, description, priority, assignee, project, parent_id, labels), `get_issue` (UUID or `#number` display shorthand), `list_issues` (filter by project/status/assignee/label; offset-based pagination with `next_offset`), `update_issue`, `close_issue` (done or cancelled), `delete_issue` (optional comment cascade), `search_issues` (BM25 full-text; in-memory fallback), `add_comment`, `list_comments` (offset pagination), `delete_comment` (existence-checked). 4 prompts: `/create`, `/list`, `/search`, `/triage`. Data model: `Issue` (UUID + auto-incrementing display number, 6 status states, 5 priority levels, labels, assignee, project, parent_id for sub-issues, timestamps), `Comment`. Storage: LanceDB at `<data_dir>/brainwires-issues/lancedb/`; BM25 index at `<data_dir>/brainwires-issues/bm25/`.
+Lightweight MCP-native issue tracking server inspired by Linear's agent interface. 10 tools: `create_issue` (title, description, priority, assignee, project, parent_id, labels), `get_issue` (UUID or `#number` display shorthand), `list_issues` (filter by project/status/assignee/label; offset-based pagination with `next_offset`), `update_issue`, `close_issue` (done or cancelled), `delete_issue` (optional comment cascade), `search_issues` (BM25 full-text; in-memory fallback), `add_comment`, `list_comments` (offset pagination), `delete_comment` (existence-checked). 4 prompts: `/create`, `/list`, `/search`, `/triage`. Data model: `Issue` (UUID + auto-incrementing display number, 6 status states, 5 priority levels, labels, assignee, project, parent_id for sub-issues, timestamps), `Comment`. Storage: LanceDB at `<data_dir>/rullama-issues/lancedb/`; BM25 index at `<data_dir>/rullama-issues/bm25/`.
 
-### brainwires-brain-server *(extras/)*
+### rullama-brain-server *(extras/)*
 
-MCP server binary wrapping `brainwires-knowledge::knowledge` for use with AI assistants (Claude Desktop, etc.). The underlying "brain" subsystem is now part of `brainwires-knowledge`.
+MCP server binary wrapping `rullama-knowledge::knowledge` for use with AI assistants (Claude Desktop, etc.). The underlying "brain" subsystem is now part of `rullama-knowledge`.
 
-### brainwires-rag-server *(extras/)*
+### rullama-rag-server *(extras/)*
 
-MCP server binary wrapping `brainwires-knowledge::rag` (formerly the standalone `brainwires-rag` crate) for semantic code search via MCP protocol.
+MCP server binary wrapping `rullama-knowledge::rag` (formerly the standalone `rullama-rag` crate) for semantic code search via MCP protocol.
 
 ### agent-chat *(extras/)*
 
-Minimal reference implementation of a chat client — small, readable, and purpose-built for learning the framework. Includes CLI commands for config, models, and auth. For a full-featured CLI, see `brainwires-cli` below.
+Minimal reference implementation of a chat client — small, readable, and purpose-built for learning the framework. Includes CLI commands for config, models, and auth. For a full-featured CLI, see `rullama-cli` below.
 
-### brainwires-cli *(extras/)*
+### rullama-cli *(extras/)*
 
-Full-featured AI-powered agentic CLI with multi-agent orchestration (`TaskAgent`, `WorkerAgent`, `OrchestratorAgent`), MCP server mode (expose the CLI as an MCP tool server for hierarchical AI workflows), TUI (fullscreen ratatui interface), infinite context (LanceDB-backed semantic memory), extensive tool integration (file ops, bash, git, web, code search, validation), per-session model switching (`/model`), and support for all cloud providers (Anthropic, OpenAI, Google, Ollama, Groq, Together, Fireworks, Bedrock, Vertex AI). Migrated from a standalone repository; now a root workspace member at `extras/brainwires-cli/`.
+Full-featured AI-powered agentic CLI with multi-agent orchestration (`TaskAgent`, `WorkerAgent`, `OrchestratorAgent`), MCP server mode (expose the CLI as an MCP tool server for hierarchical AI workflows), TUI (fullscreen ratatui interface), infinite context (LanceDB-backed semantic memory), extensive tool integration (file ops, bash, git, web, code search, validation), per-session model switching (`/model`), and support for all cloud providers (Anthropic, OpenAI, Google, Ollama, Groq, Together, Fireworks, Bedrock, Vertex AI). Migrated from a standalone repository; now a root workspace member at `extras/rullama-cli/`.
 
 ### reload-daemon *(extras/)*
 
@@ -1131,31 +1131,31 @@ File-watching daemon for automatic server reloading during development.
 
 Self-hosted personal AI assistant daemon. Multi-provider (Anthropic, OpenAI, Google, Ollama, etc.), per-user agent sessions, TOML config. Bundles the gateway, security middleware, and all channel adapters into a single service. Feature flags: `native-tools` (default), `email` (IMAP/SMTP/Gmail), `calendar` (Google Calendar/CalDAV).
 
-### brainwires-gateway *(extras/brainclaw/)*
+### rullama-gateway *(extras/brainclaw/)*
 
 WebSocket/HTTP hub for routing channel adapters to AI agent sessions. `InboundHandler` trait for custom message processing; built-in `AgentInboundHandler` wires `ChatAgent` sessions per user. WebChat browser UI served at `/chat`. Media pipeline for attachment download, image description, and audio transcription. Admin API (`/admin/*`) with Bearer token auth. Admin browser UI at `/admin/ui` (dark-themed single-file dashboard; Dashboard, Channels, Sessions, Cron Jobs, Identity, Broadcast sections). Webhook endpoint with HMAC-SHA256 verification. Audit logger (structured JSON, ring buffer). In-memory metrics counters. **`/model` slash command** for per-session model switching stored in a `DashMap`; fires `/model list`, `/model <name>`, `/model default`.
 
-### brainwires-discord-channel *(extras/brainclaw/)*
+### rullama-discord-channel *(extras/brainclaw/)*
 
 Discord channel adapter (serenity) implementing the `Channel` trait. Reference implementation for building additional platform adapters. Optional MCP tool server mode (`--mcp`) for programmatic Discord access.
 
-### brainwires-telegram-channel *(extras/brainclaw/)*
+### rullama-telegram-channel *(extras/brainclaw/)*
 
 Telegram channel adapter (teloxide) implementing the `Channel` trait. Bidirectional gateway relay. Optional MCP tool server mode (`--mcp`).
 
-### brainwires-slack-channel *(extras/brainclaw/)*
+### rullama-slack-channel *(extras/brainclaw/)*
 
 Slack channel adapter using Socket Mode (reqwest) — no public URL required. Implements the `Channel` trait. Optional MCP tool server mode (`--mcp`).
 
-### brainwires-mattermost-channel *(extras/brainclaw/)*
+### rullama-mattermost-channel *(extras/brainclaw/)*
 
 Mattermost channel adapter. Connects via Mattermost WebSocket API (`/api/v4/websocket`) for real-time events. Implements the `Channel` trait. Filtering: self-messages, channel allowlist, @mention requirement, team scoping. Optional MCP tool server mode (`--mcp`): `send_message`, `edit_message`, `delete_message`, `get_history`, `add_reaction`. Capabilities: `RICH_TEXT | THREADS | REACTIONS | TYPING_INDICATOR | EDIT_MESSAGES | DELETE_MESSAGES | MENTIONS`.
 
-### brainwires-signal-channel *(extras/brainclaw/)*
+### rullama-signal-channel *(extras/brainclaw/)*
 
 Signal messenger channel adapter via `signal-cli-rest-api`. WebSocket push mode (`/v1/events`) with polling fallback (`GET /v1/receive/{number}`). Filtering: self-messages, sender allowlist (E.164 numbers), group allowlist (base64 IDs), @mention/keyword trigger for groups. Optional MCP tool server mode (`--mcp`): `send_message` (phone or `group.<id>`), `add_reaction` (composite `recipient:author:timestamp` ID). Capabilities: `REACTIONS`.
 
-### brainwires-skill-registry *(extras/brainclaw/)*
+### rullama-skill-registry *(extras/brainclaw/)*
 
 HTTP skill registry server. SQLite with FTS5 full-text search. Endpoints: publish (`POST /api/skills`), search by query + tags, get manifest (latest or versioned), download package. Schema auto-created on first run.
 
@@ -1163,7 +1163,7 @@ HTTP skill registry server. SQLite with FTS5 full-text search. Endpoints: publis
 
 ## Facade Crate & Feature Flags
 
-**Crate:** `brainwires`
+**Crate:** `rullama`
 
 Re-exports all framework crates behind feature flags.
 

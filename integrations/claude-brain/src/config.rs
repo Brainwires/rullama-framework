@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use brainwires_memory::dream::policy::DemotionPolicy;
+use rullama_memory::dream::policy::DemotionPolicy;
 
 /// Top-level configuration for claude-brain.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -32,7 +32,7 @@ impl Default for StorageConfig {
     fn default() -> Self {
         let base = dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("/tmp"))
-            .join(".brainwires");
+            .join(".rullama");
         Self {
             brain_path: base.join("claude-brain").to_string_lossy().into_owned(),
             pks_path: base.join("pks.db").to_string_lossy().into_owned(),
@@ -164,11 +164,11 @@ impl Default for CaptureConfig {
 }
 
 impl ClaudeBrainConfig {
-    /// Load from `~/.brainwires/claude-brain.toml`, falling back to defaults.
+    /// Load from `~/.rullama/claude-brain.toml`, falling back to defaults.
     pub fn load() -> Result<Self> {
         let config_path = dirs::home_dir()
             .context("Cannot determine home directory")?
-            .join(".brainwires")
+            .join(".rullama")
             .join("claude-brain.toml");
 
         if config_path.exists() {

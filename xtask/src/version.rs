@@ -165,7 +165,7 @@ fn workspace_root() -> PathBuf {
 
 /// Update the root Cargo.toml:
 /// - `[workspace.package].version`
-/// - All `version = "..."` on internal brainwires-* deps in `[workspace.dependencies]`
+/// - All `version = "..."` on internal rullama-* deps in `[workspace.dependencies]`
 fn update_workspace_cargo_toml(root: &Path, new_version: &str) -> u32 {
     let cargo_path = root.join("Cargo.toml");
     let content = std::fs::read_to_string(&cargo_path).expect("Failed to read root Cargo.toml");
@@ -188,14 +188,14 @@ fn update_workspace_cargo_toml(root: &Path, new_version: &str) -> u32 {
         }
     }
 
-    // Update [workspace.dependencies].brainwires-* version fields
+    // Update [workspace.dependencies].rullama-* version fields
     if let Some(deps) = doc
         .get_mut("workspace")
         .and_then(|w| w.get_mut("dependencies"))
         && let Some(table) = deps.as_table_like_mut()
     {
         for (key, value) in table.iter_mut() {
-            if !key.starts_with("brainwires") {
+            if !key.starts_with("rullama") {
                 continue;
             }
             // Only update inline tables with a `path` key (internal crates)
@@ -225,8 +225,8 @@ fn update_workspace_cargo_toml(root: &Path, new_version: &str) -> u32 {
     }
 }
 
-/// Scan member Cargo.toml files for direct `path = "..."` deps on brainwires crates
-/// that have a hardcoded `version` field (e.g. brainwires-wasm which can't use workspace
+/// Scan member Cargo.toml files for direct `path = "..."` deps on rullama crates
+/// that have a hardcoded `version` field (e.g. rullama-wasm which can't use workspace
 /// inheritance due to `default-features = false` override limitation).
 fn update_member_cargo_tomls(root: &Path, new_version: &str) -> u32 {
     let mut count = 0u32;
@@ -270,7 +270,7 @@ fn update_member_cargo_tomls(root: &Path, new_version: &str) -> u32 {
             };
 
             for (key, value) in table.iter_mut() {
-                if !key.starts_with("brainwires") {
+                if !key.starts_with("rullama") {
                     continue;
                 }
                 if let Some(tbl) = value.as_inline_table_mut()
@@ -304,7 +304,7 @@ fn update_member_cargo_tomls(root: &Path, new_version: &str) -> u32 {
 }
 
 /// Find and update hardcoded version strings in Rust source files.
-/// Looks for patterns like `"version": "X.Y.Z"` and `"0.2.0"` in brainwires contexts.
+/// Looks for patterns like `"version": "X.Y.Z"` and `"0.2.0"` in rullama contexts.
 fn update_rs_files(root: &Path, new_version: &str) -> u32 {
     let mut count = 0u32;
 
@@ -346,7 +346,7 @@ fn update_rs_files(root: &Path, new_version: &str) -> u32 {
     count
 }
 
-/// Replace version strings in Rust source that match brainwires version patterns.
+/// Replace version strings in Rust source that match rullama version patterns.
 fn replace_version_in_rs(content: &str, new_version: &str) -> String {
     let mut result = content.to_string();
 
@@ -371,7 +371,7 @@ fn replace_version_in_rs(content: &str, new_version: &str) -> String {
                 break;
             };
             let old_ver = &result[value_start..value_start + end];
-            // Only replace if it looks like a brainwires version (0.x.y pattern)
+            // Only replace if it looks like a rullama version (0.x.y pattern)
             if old_ver.starts_with("0.") && old_ver.split('.').count() == 3 {
                 let before = &result[..value_start];
                 let after = &result[value_start + end..];
@@ -383,8 +383,8 @@ fn replace_version_in_rs(content: &str, new_version: &str) -> String {
         }
     }
 
-    // Also handle doc-comment lines that contain markdown-style brainwires version
-    // references (e.g. `//! brainwires = { version = "0.4", ... }`).
+    // Also handle doc-comment lines that contain markdown-style rullama version
+    // references (e.g. `//! rullama = { version = "0.4", ... }`).
     // These use the same patterns as .md files but live inside .rs files.
     let new_mm = {
         let parts: Vec<&str> = new_version.split('.').collect();
@@ -398,12 +398,12 @@ fn replace_version_in_rs(content: &str, new_version: &str) -> String {
     for line in result.lines() {
         let trimmed = line.trim_start();
         if (trimmed.starts_with("///") || trimmed.starts_with("//!"))
-            && trimmed.contains("brainwires")
+            && trimmed.contains("rullama")
         {
             let leading_ws = &line[..line.len() - trimmed.len()];
             let marker = &trimmed[..3];
             let rest = &trimmed[3..];
-            let updated_rest = replace_brainwires_version_in_line(rest, &new_mm);
+            let updated_rest = replace_rullama_version_in_line(rest, &new_mm);
             doc_result.push_str(leading_ws);
             doc_result.push_str(marker);
             doc_result.push_str(&updated_rest);
@@ -422,7 +422,7 @@ fn replace_version_in_rs(content: &str, new_version: &str) -> String {
 
 /// Update version references in Markdown files.
 /// Replaces:
-/// - `brainwires[-*] = { version = "X.Y"` and `brainwires[-*] = "X.Y"` patterns
+/// - `rullama[-*] = { version = "X.Y"` and `rullama[-*] = "X.Y"` patterns
 /// - `"version": "OLD"` and `"cli_version": "OLD"` in code-block examples
 /// - `vOLD_VERSION` bare version tags (e.g. `v0.6.0`)
 fn update_md_files(
@@ -457,7 +457,7 @@ fn update_md_files(
             Err(_) => continue,
         };
 
-        // Existing brainwires dep-style replacements
+        // Existing rullama dep-style replacements
         let mut new_content = replace_version_in_md(&content, new_major_minor);
 
         // Also replace verbatim version strings in code-block examples:
@@ -555,8 +555,8 @@ fn update_json_files(root: &Path, old_version: &str, new_version: &str) -> u32 {
             Err(_) => continue,
         };
 
-        // Only replace version strings that appear after a brainwires crate name,
-        // e.g. "brainwires-cli/0.6.0" or `"version": "0.6.0"` in example configs.
+        // Only replace version strings that appear after a rullama crate name,
+        // e.g. "rullama-cli/0.6.0" or `"version": "0.6.0"` in example configs.
         let new_content = content
             .replace(&format!("/{old_version}\""), &format!("/{new_version}\""))
             .replace(
@@ -725,13 +725,13 @@ fn days_to_ymd(days: u64) -> (u64, u64, u64) {
     (y, m, d)
 }
 
-/// Map a workspace-relative file path to its brainwires crate name.
-/// Assumes paths like "crates/brainwires-core/..." or "extras/brainwires-proxy/..."
+/// Map a workspace-relative file path to its rullama crate name.
+/// Assumes paths like "crates/rullama-core/..." or "extras/rullama-proxy/..."
 fn file_to_crate(path: &str) -> Option<String> {
     let parts: Vec<&str> = path.split('/').collect();
     if parts.len() >= 2 {
         let dir = parts[1];
-        if dir.starts_with("brainwires") {
+        if dir.starts_with("rullama") {
             return Some(dir.to_string());
         }
     }
@@ -778,12 +778,12 @@ fn parse_git_diff_to_crates(stdout: &[u8]) -> Vec<String> {
     sorted
 }
 
-/// Replace `brainwires* = { version = "X.Y"` and `brainwires* = "X.Y"` in markdown.
+/// Replace `rullama* = { version = "X.Y"` and `rullama* = "X.Y"` in markdown.
 fn replace_version_in_md(content: &str, new_major_minor: &str) -> String {
     let mut result = String::with_capacity(content.len());
 
     for line in content.lines() {
-        let new_line = replace_brainwires_version_in_line(line, new_major_minor);
+        let new_line = replace_rullama_version_in_line(line, new_major_minor);
         result.push_str(&new_line);
         result.push('\n');
     }
@@ -796,11 +796,11 @@ fn replace_version_in_md(content: &str, new_major_minor: &str) -> String {
     result
 }
 
-/// Replace version in a single markdown line for brainwires crate references.
-fn replace_brainwires_version_in_line(line: &str, new_mm: &str) -> String {
-    // Pattern 1: brainwires[-*] = { version = "X.Y", ... }
-    // Pattern 2: brainwires[-*] = "X.Y"
-    if !line.contains("brainwires") {
+/// Replace version in a single markdown line for rullama crate references.
+fn replace_rullama_version_in_line(line: &str, new_mm: &str) -> String {
+    // Pattern 1: rullama[-*] = { version = "X.Y", ... }
+    // Pattern 2: rullama[-*] = "X.Y"
+    if !line.contains("rullama") {
         return line.to_string();
     }
 
@@ -815,7 +815,7 @@ fn replace_brainwires_version_in_line(line: &str, new_mm: &str) -> String {
         };
         let abs_pos = search_from + ver_pos;
 
-        if !result[..abs_pos].contains("brainwires") {
+        if !result[..abs_pos].contains("rullama") {
             search_from = abs_pos + version_eq.len();
             continue;
         }
@@ -836,8 +836,8 @@ fn replace_brainwires_version_in_line(line: &str, new_mm: &str) -> String {
         }
     }
 
-    // Pattern 2: brainwires[-*] = "X.Y" (simple form, no inline table)
-    // Match: `brainwires` optionally followed by `-word` segments, then ` = "X.Y"`
+    // Pattern 2: rullama[-*] = "X.Y" (simple form, no inline table)
+    // Match: `rullama` optionally followed by `-word` segments, then ` = "X.Y"`
     // Skip lines already handled by Pattern 1 (contain `version = "`)
     if !result.contains("version = \"") {
         let eq_quote = "= \"";
@@ -848,7 +848,7 @@ fn replace_brainwires_version_in_line(line: &str, new_mm: &str) -> String {
             };
             let abs_eq = search_from + eq_pos;
 
-            // Check that a brainwires identifier immediately precedes ` = "`
+            // Check that a rullama identifier immediately precedes ` = "`
             let before_eq = result[..abs_eq].trim_end();
             if !before_eq.ends_with(|c: char| c.is_ascii_alphanumeric() || c == '-') {
                 search_from = abs_eq + eq_quote.len();
@@ -861,7 +861,7 @@ fn replace_brainwires_version_in_line(line: &str, new_mm: &str) -> String {
                 .map(|i| i + 1)
                 .unwrap_or(0);
             let ident = &before_eq[ident_start..ident_end];
-            if !ident.starts_with("brainwires") {
+            if !ident.starts_with("rullama") {
                 search_from = abs_eq + eq_quote.len();
                 continue;
             }
@@ -923,7 +923,7 @@ fn reset_explicit_versions(root: &Path) -> u32 {
             .unwrap_or("")
             .to_string();
 
-        if !crate_name.starts_with("brainwires") {
+        if !crate_name.starts_with("rullama") {
             continue;
         }
 
@@ -962,8 +962,8 @@ fn reset_explicit_versions(root: &Path) -> u32 {
     count
 }
 
-/// Build a map of crate_name -> [dependency crate names] for internal brainwires crates.
-/// Parses each member Cargo.toml for brainwires-* dependencies.
+/// Build a map of crate_name -> [dependency crate names] for internal rullama crates.
+/// Parses each member Cargo.toml for rullama-* dependencies.
 fn build_dep_graph(root: &Path) -> HashMap<String, Vec<String>> {
     let mut graph: HashMap<String, Vec<String>> = HashMap::new();
 
@@ -1000,7 +1000,7 @@ fn build_dep_graph(root: &Path) -> HashMap<String, Vec<String>> {
             continue;
         };
 
-        if !name.starts_with("brainwires") {
+        if !name.starts_with("rullama") {
             continue;
         }
 
@@ -1010,7 +1010,7 @@ fn build_dep_graph(root: &Path) -> HashMap<String, Vec<String>> {
                 continue;
             };
             for (key, _) in dep_table.iter() {
-                if key.starts_with("brainwires") && key != name {
+                if key.starts_with("rullama") && key != name {
                     deps.push(key.to_string());
                 }
             }
@@ -1042,7 +1042,7 @@ fn is_in_affected_crate(rel_path: &str, affected: &HashSet<String>) -> bool {
     let parts: Vec<&str> = rel_path.split('/').collect();
     if parts.len() >= 2 {
         let dir = parts[1];
-        if dir.starts_with("brainwires") {
+        if dir.starts_with("rullama") {
             return affected.contains(dir);
         }
     }
@@ -1383,59 +1383,59 @@ mod tests {
 
     #[test]
     fn test_md_inline_table() {
-        let input = r#"brainwires = { version = "0.1", features = ["agents"] }"#;
-        let result = replace_brainwires_version_in_line(input, "0.5");
+        let input = r#"rullama = { version = "0.1", features = ["agents"] }"#;
+        let result = replace_rullama_version_in_line(input, "0.5");
         assert_eq!(
             result,
-            r#"brainwires = { version = "0.5", features = ["agents"] }"#
+            r#"rullama = { version = "0.5", features = ["agents"] }"#
         );
     }
 
     #[test]
-    fn test_md_leaves_non_brainwires_alone() {
+    fn test_md_leaves_non_rullama_alone() {
         let input = r#"tokio = { version = "1.43", features = ["full"] }"#;
-        let result = replace_brainwires_version_in_line(input, "0.5");
+        let result = replace_rullama_version_in_line(input, "0.5");
         assert_eq!(result, input);
     }
 
     #[test]
     fn test_md_hyphenated_crate() {
-        let input = r#"brainwires-agent-network = { version = "0.1", features = ["mesh"] }"#;
-        let result = replace_brainwires_version_in_line(input, "0.5");
+        let input = r#"rullama-agent-network = { version = "0.1", features = ["mesh"] }"#;
+        let result = replace_rullama_version_in_line(input, "0.5");
         assert_eq!(
             result,
-            r#"brainwires-agent-network = { version = "0.5", features = ["mesh"] }"#
+            r#"rullama-agent-network = { version = "0.5", features = ["mesh"] }"#
         );
     }
 
     #[test]
     fn test_md_simple_form() {
-        let input = r#"brainwires-storage = "0.3""#;
-        let result = replace_brainwires_version_in_line(input, "0.5");
-        assert_eq!(result, r#"brainwires-storage = "0.5""#);
+        let input = r#"rullama-storage = "0.3""#;
+        let result = replace_rullama_version_in_line(input, "0.5");
+        assert_eq!(result, r#"rullama-storage = "0.5""#);
     }
 
     #[test]
     fn test_md_simple_form_with_comment() {
-        let input = r#"brainwires = "0.2"  # default features: tools + agents"#;
-        let result = replace_brainwires_version_in_line(input, "0.5");
+        let input = r#"rullama = "0.2"  # default features: tools + agents"#;
+        let result = replace_rullama_version_in_line(input, "0.5");
         assert_eq!(
             result,
-            r#"brainwires = "0.5"  # default features: tools + agents"#
+            r#"rullama = "0.5"  # default features: tools + agents"#
         );
     }
 
     #[test]
-    fn test_md_simple_form_leaves_non_brainwires() {
+    fn test_md_simple_form_leaves_non_rullama() {
         let input = r#"tokio = "1.43""#;
-        let result = replace_brainwires_version_in_line(input, "0.5");
+        let result = replace_rullama_version_in_line(input, "0.5");
         assert_eq!(result, input);
     }
 
     #[test]
     fn test_md_simple_form_no_change_when_current() {
-        let input = r#"brainwires = "0.5""#;
-        let result = replace_brainwires_version_in_line(input, "0.5");
+        let input = r#"rullama = "0.5""#;
+        let result = replace_rullama_version_in_line(input, "0.5");
         assert_eq!(result, input);
     }
 
@@ -1502,13 +1502,13 @@ mod tests {
         let args = vec![
             "0.4.1".into(),
             "--crates".into(),
-            "brainwires-core,brainwires-agent".into(),
+            "rullama-core,rullama-agent".into(),
         ];
         let parsed = parse_bump_args(&args).unwrap();
         assert_eq!(parsed.version, "0.4.1");
         assert_eq!(
             parsed.crates,
-            Some(vec!["brainwires-core".into(), "brainwires-agent".into()])
+            Some(vec!["rullama-core".into(), "rullama-agent".into()])
         );
     }
 
@@ -1536,55 +1536,55 @@ mod tests {
     #[test]
     fn test_cascade_single_dep() {
         let mut graph: HashMap<String, Vec<String>> = HashMap::new();
-        graph.insert("brainwires-agent".into(), vec!["brainwires-core".into()]);
-        graph.insert("brainwires-core".into(), vec![]);
+        graph.insert("rullama-agent".into(), vec!["rullama-core".into()]);
+        graph.insert("rullama-core".into(), vec![]);
 
-        let affected = cascade(&["brainwires-core".to_string()], &graph);
-        assert!(affected.contains("brainwires-core"));
-        assert!(affected.contains("brainwires-agent"));
+        let affected = cascade(&["rullama-core".to_string()], &graph);
+        assert!(affected.contains("rullama-core"));
+        assert!(affected.contains("rullama-agent"));
     }
 
     #[test]
     fn test_cascade_transitive() {
         let mut graph: HashMap<String, Vec<String>> = HashMap::new();
-        graph.insert("brainwires".into(), vec!["brainwires-agent".into()]);
-        graph.insert("brainwires-agent".into(), vec!["brainwires-core".into()]);
-        graph.insert("brainwires-core".into(), vec![]);
+        graph.insert("rullama".into(), vec!["rullama-agent".into()]);
+        graph.insert("rullama-agent".into(), vec!["rullama-core".into()]);
+        graph.insert("rullama-core".into(), vec![]);
 
-        let affected = cascade(&["brainwires-core".to_string()], &graph);
-        assert!(affected.contains("brainwires-core"));
-        assert!(affected.contains("brainwires-agent"));
-        assert!(affected.contains("brainwires"));
+        let affected = cascade(&["rullama-core".to_string()], &graph);
+        assert!(affected.contains("rullama-core"));
+        assert!(affected.contains("rullama-agent"));
+        assert!(affected.contains("rullama"));
     }
 
     #[test]
     fn test_cascade_no_deps() {
         let mut graph: HashMap<String, Vec<String>> = HashMap::new();
-        graph.insert("brainwires-core".into(), vec![]);
-        graph.insert("brainwires-skills".into(), vec![]);
+        graph.insert("rullama-core".into(), vec![]);
+        graph.insert("rullama-skills".into(), vec![]);
 
-        let affected = cascade(&["brainwires-skills".to_string()], &graph);
-        assert!(affected.contains("brainwires-skills"));
-        assert!(!affected.contains("brainwires-core"));
+        let affected = cascade(&["rullama-skills".to_string()], &graph);
+        assert!(affected.contains("rullama-skills"));
+        assert!(!affected.contains("rullama-core"));
     }
 
     #[test]
     fn test_reset_explicit_version() {
         let tmpdir = std::env::temp_dir().join("xtask_reset_test");
         let _ = std::fs::remove_dir_all(&tmpdir);
-        std::fs::create_dir_all(tmpdir.join("crates/brainwires-test")).unwrap();
+        std::fs::create_dir_all(tmpdir.join("crates/rullama-test")).unwrap();
 
         // Create a root Cargo.toml (needed so reset skips it)
         std::fs::write(
             tmpdir.join("Cargo.toml"),
-            "[workspace]\nmembers = [\"crates/brainwires-test\"]\n",
+            "[workspace]\nmembers = [\"crates/rullama-test\"]\n",
         )
         .unwrap();
 
         // Create a member with explicit version
         std::fs::write(
-            tmpdir.join("crates/brainwires-test/Cargo.toml"),
-            "[package]\nname = \"brainwires-test\"\nversion = \"0.4.1\"\nedition = \"2024\"\n",
+            tmpdir.join("crates/rullama-test/Cargo.toml"),
+            "[package]\nname = \"rullama-test\"\nversion = \"0.4.1\"\nedition = \"2024\"\n",
         )
         .unwrap();
 
@@ -1592,7 +1592,7 @@ mod tests {
         assert_eq!(count, 1);
 
         let result =
-            std::fs::read_to_string(tmpdir.join("crates/brainwires-test/Cargo.toml")).unwrap();
+            std::fs::read_to_string(tmpdir.join("crates/rullama-test/Cargo.toml")).unwrap();
         assert!(
             result.contains("version.workspace = true")
                 || result.contains("version = { workspace = true }"),
@@ -1609,17 +1609,17 @@ mod tests {
     #[test]
     fn test_is_in_affected_crate() {
         let affected: HashSet<String> =
-            ["brainwires-core".into(), "brainwires-agent".into()].into();
+            ["rullama-core".into(), "rullama-agent".into()].into();
         assert!(is_in_affected_crate(
-            "crates/brainwires-core/src/lib.rs",
+            "crates/rullama-core/src/lib.rs",
             &affected
         ));
         assert!(is_in_affected_crate(
-            "crates/brainwires-agent/src/mod.rs",
+            "crates/rullama-agent/src/mod.rs",
             &affected
         ));
         assert!(!is_in_affected_crate(
-            "crates/brainwires-storage/src/lib.rs",
+            "crates/rullama-storage/src/lib.rs",
             &affected
         ));
         assert!(!is_in_affected_crate("xtask/src/main.rs", &affected));
@@ -1629,16 +1629,16 @@ mod tests {
     #[test]
     fn test_file_to_crate_name() {
         assert_eq!(
-            file_to_crate("crates/brainwires-core/src/lib.rs"),
-            Some("brainwires-core".to_string())
+            file_to_crate("crates/rullama-core/src/lib.rs"),
+            Some("rullama-core".to_string())
         );
         assert_eq!(
-            file_to_crate("crates/brainwires-agent/src/mod.rs"),
-            Some("brainwires-agent".to_string())
+            file_to_crate("crates/rullama-agent/src/mod.rs"),
+            Some("rullama-agent".to_string())
         );
         assert_eq!(
-            file_to_crate("extras/brainwires-proxy/src/main.rs"),
-            Some("brainwires-proxy".to_string())
+            file_to_crate("extras/rullama-proxy/src/main.rs"),
+            Some("rullama-proxy".to_string())
         );
         assert_eq!(file_to_crate("README.md"), None);
         assert_eq!(file_to_crate("xtask/src/main.rs"), None);
@@ -1648,7 +1648,7 @@ mod tests {
     fn test_rs_doc_comment_version() {
         let input = concat!(
             "//! ```toml\n",
-            "//! brainwires = { version = \"0.2\", features = [\"full\"] }\n",
+            "//! rullama = { version = \"0.2\", features = [\"full\"] }\n",
             "//! ```\n",
         );
         let result = replace_version_in_rs(input, "0.5.0");
@@ -1663,12 +1663,12 @@ mod tests {
     }
 
     #[test]
-    fn test_rs_doc_comment_leaves_non_brainwires() {
+    fn test_rs_doc_comment_leaves_non_rullama() {
         let input = "/// tokio = { version = \"1.43\", features = [\"full\"] }\n";
         let result = replace_version_in_rs(input, "0.5.0");
         assert_eq!(
             result, input,
-            "should not modify non-brainwires doc comments"
+            "should not modify non-rullama doc comments"
         );
     }
 }

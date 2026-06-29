@@ -6,7 +6,7 @@
  * cross-system tracing across the provider, A2A, and agent-network layers
  * without forcing a breaking change on existing event types.
  *
- * Equivalent to Rust's `brainwires_core::event` module.
+ * Equivalent to Rust's `rullama_core::event` module.
  */
 
 /** Common interface for structured events that carry correlation metadata. */

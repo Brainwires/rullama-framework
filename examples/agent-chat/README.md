@@ -1,6 +1,6 @@
 # agent-chat
 
-> **This is the minimal reference implementation** — a small, readable example of building a chat client on the Brainwires Framework. For a full-featured CLI tool with multi-agent orchestration, MCP server mode, infinite context, and more, see [`extras/brainwires-cli/`](../brainwires-cli/).
+> **This is the minimal reference implementation** — a small, readable example of building a chat client on the Brainwires Framework. For a full-featured CLI tool with multi-agent orchestration, MCP server mode, infinite context, and more, see [`extras/rullama-cli/`](../rullama-cli/).
 
 A simplified, open-source AI chat client built on the [Brainwires Framework](../../). Supports all cloud providers, built-in tool execution, and both plain (readline) and fullscreen TUI modes.
 
@@ -78,7 +78,7 @@ Tool approval shows a popup with `[Y]es / [N]o / [A]lways` options.
 
 ## Configuration
 
-Config lives in `~/.brainwires/chat/`.
+Config lives in `~/.rullama/chat/`.
 
 ```bash
 # List all settings
@@ -94,7 +94,7 @@ agent-chat config set permission_mode auto   # auto | ask | reject
 
 ## API Keys
 
-Keys are resolved in order: `--api-key` flag > environment variable > `~/.brainwires/chat/api_keys.toml`.
+Keys are resolved in order: `--api-key` flag > environment variable > `~/.rullama/chat/api_keys.toml`.
 
 ```bash
 # Save a key (prompted securely)
@@ -142,8 +142,8 @@ Permission modes control tool approval:
 ```toml
 [features]
 default = []
-bedrock = ["brainwires-provider/bedrock"]    # AWS Bedrock
-vertex-ai = ["brainwires-provider/vertex-ai"] # Google Vertex AI
+bedrock = ["rullama-provider/bedrock"]    # AWS Bedrock
+vertex-ai = ["rullama-provider/vertex-ai"] # Google Vertex AI
 ```
 
 ## License

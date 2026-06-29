@@ -4,10 +4,10 @@
  * Each {@link AgentRole} maps to a specific tool allow-list and a short
  * system-prompt suffix that reinforces the role boundary.
  *
- * Equivalent to Rust's `brainwires_agents::roles` module.
+ * Equivalent to Rust's `rullama_agents::roles` module.
  */
 
-import type { Tool } from "@brainwires/core";
+import type { Tool } from "@rullama/core";
 
 /** Role assigned to a TaskAgent that restricts its available tools. */
 export type AgentRole =

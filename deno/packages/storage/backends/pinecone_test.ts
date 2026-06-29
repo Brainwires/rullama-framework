@@ -12,7 +12,7 @@ import {
   extractFilePathsFromIds,
   parseMatch,
 } from "./pinecone.ts";
-import type { ChunkMetadata } from "@brainwires/core";
+import type { ChunkMetadata } from "@rullama/core";
 
 // ---------------------------------------------------------------------------
 // buildMetadataFilter

@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
-import { ChatOptions } from "@brainwires/core";
+import { ChatOptions } from "@rullama/core";
 import {
   applyJitter,
   backoffFor,

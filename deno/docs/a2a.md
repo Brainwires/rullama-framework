@@ -1,6 +1,6 @@
 # A2A Protocol
 
-The `@brainwires/a2a` package implements Google's Agent-to-Agent (A2A) protocol
+The `@rullama/a2a` package implements Google's Agent-to-Agent (A2A) protocol
 v1.0 for inter-agent communication using JSON-RPC and REST transports (no gRPC).
 
 ## Overview
@@ -19,7 +19,7 @@ An `AgentCard` describes what an agent can do, what protocols it supports, and
 how to authenticate:
 
 ```ts
-import type { AgentCapabilities, AgentCard, AgentSkill } from "@brainwires/a2a";
+import type { AgentCapabilities, AgentCard, AgentSkill } from "@rullama/a2a";
 
 const card: AgentCard = {
   name: "code-reviewer",
@@ -42,8 +42,8 @@ See: `../examples/a2a/agent_card.ts`.
 `A2aClient` connects to remote A2A agents:
 
 ```ts
-import { A2aClient } from "@brainwires/a2a";
-import { createUserMessage } from "@brainwires/a2a";
+import { A2aClient } from "@rullama/a2a";
+import { createUserMessage } from "@rullama/a2a";
 
 const client = new A2aClient({ baseUrl: "https://agent.example.com" });
 
@@ -62,7 +62,7 @@ Tasks progress through states: `submitted` -> `working` -> `completed` (or
 `failed`, `canceled`).
 
 ```ts
-import type { Task, TaskState, TaskStatus } from "@brainwires/a2a";
+import type { Task, TaskState, TaskStatus } from "@rullama/a2a";
 ```
 
 The client supports task operations: `sendMessage`, `getTask`, `listTasks`,
@@ -77,7 +77,7 @@ import {
   isArtifactUpdate,
   isStatusUpdate,
   parseSseStream,
-} from "@brainwires/a2a";
+} from "@rullama/a2a";
 
 // Stream a message send
 const stream = await client.sendMessageStream({
@@ -105,7 +105,7 @@ Configure webhook-based push notifications for task updates:
 import type {
   AuthenticationInfo,
   TaskPushNotificationConfig,
-} from "@brainwires/a2a";
+} from "@rullama/a2a";
 ```
 
 Methods: `setPushNotificationConfig`, `getPushNotificationConfig`,
@@ -124,7 +124,7 @@ All methods are available as constants: `METHOD_MESSAGE_SEND`,
 Implement `A2aHandler` to build your own A2A-compliant agent server:
 
 ```ts
-import type { A2aHandler } from "@brainwires/a2a";
+import type { A2aHandler } from "@rullama/a2a";
 ```
 
 See: `../examples/a2a/a2a_client_server.ts`.

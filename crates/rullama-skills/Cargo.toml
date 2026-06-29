@@ -1,0 +1,82 @@
+[package]
+name = "rullama-skills"
+description = "SKILL.md skills system for the Brainwires Agent Framework — manifest parsing, registry, smart routing, sandboxed execution. Optional ed25519 manifest signing + remote registry client."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/rullama-skills"
+keywords = ["skills", "agent-framework", "llm", "tools", "manifest"]
+categories = ["development-tools"]
+
+[dependencies]
+# Internal — schema (Tool, ToolContext, ToolResult, ToolUse) + tool runtime (ToolExecutor)
+rullama-core = { workspace = true }
+rullama-tool-runtime = { workspace = true }
+
+# Async runtime
+tokio = { version = "1.43", features = ["sync", "fs", "rt", "macros"] }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_yml = { workspace = true }
+serde_json = { workspace = true }
+semver = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Time + ids
+chrono = { workspace = true }
+uuid = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Always-on parser / hashing deps
+regex = { workspace = true }
+sha2 = { workspace = true }
+
+# Optional: signing (ed25519 manifest verification)
+ed25519-dalek = { version = "2", features = ["rand_core"], optional = true }
+rand_core = { version = "0.6", features = ["getrandom"], optional = true }
+# `hex` is used by verification.rs (signature encode/decode). Optional —
+# only pulled when `signing` is on, since verification.rs is gated behind
+# `signing`. (Bug surfaced by rullama-test-harness when it tried to
+# enable `signing` + `skills-signing` together: `hex` was missing entirely.)
+hex = { workspace = true, optional = true }
+
+# Optional: remote registry client
+reqwest = { workspace = true, optional = true }
+
+[features]
+default = []
+# Manifest signing + verification with ed25519 keys
+signing = ["dep:ed25519-dalek", "dep:rand_core", "dep:hex"]
+# Remote skills-registry client (HTTP)
+registry = ["dep:reqwest"]
+# `skills-registry` / `skills-signing` are the externally-visible
+# "skills.X" feature names. They alias to the crate's internal
+# `registry` / `signing` features (which pull in the actual deps), so
+# downstream callers can enable either name without losing dep
+# resolution. (Previously these were empty placeholders; rullama-
+# test-harness surfaced the breakage when it tried to use `skills-signing`
+# alone — verification.rs compiles only with `signing` enabled.)
+skills-registry = ["registry"]
+skills-signing = ["signing"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+tempfile = { workspace = true }
+# Tool adapter tests use `BuiltinToolExecutor` to exercise SKILL.md → Tool routing.
+rullama-tool-builtins = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

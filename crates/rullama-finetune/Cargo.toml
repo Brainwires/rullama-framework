@@ -1,0 +1,74 @@
+[package]
+name = "rullama-finetune"
+description = "Cloud fine-tune APIs (OpenAI, Anthropic, Together, Fireworks, Anyscale, Bedrock, Vertex AI) + dataset pipelines for the Brainwires Agent Framework. Local LoRA/QLoRA/DoRA fine-tuning and training-from-scratch live in the sibling `rullama` workspace (`rullama-finetune`, `rullama-training`)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/rullama-finetune"
+keywords = ["fine-tuning", "llm-training", "lora", "qlora", "model-training"]
+categories = ["artificial-intelligence"]
+
+[dependencies]
+# Always available
+rullama-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+
+# Dataset pipelines (JSONL, formats, tokenizers, dedup) were extracted into the
+# sibling `rullama-datasets` crate in 0.11. Cloud providers use its
+# `DataFormat` (always available); the heavier tokenizer/dedup pipelines sit
+# behind that crate's own features, re-exposed via `datasets-full` below.
+rullama-datasets = { workspace = true }
+
+# Cloud feature
+reqwest = { version = "0.12", features = ["json", "stream", "multipart"], optional = true }
+tokio = { workspace = true, optional = true }
+rullama-provider = { workspace = true, optional = true }
+
+# Bedrock feature
+aws-sigv4 = { workspace = true, optional = true }
+aws-credential-types = { workspace = true, optional = true }
+aws-smithy-runtime-api = { workspace = true, optional = true }
+http = { workspace = true, optional = true }
+
+# Vertex feature
+gcp_auth = { workspace = true, optional = true }
+
+[features]
+default = ["cloud"]
+cloud = ["dep:reqwest", "dep:tokio", "dep:rullama-provider"]
+# Local PEFT (LoRA / QLoRA / DoRA) lives in `rullama-finetune` (sibling
+# workspace) since the 0.11 split. Depend on that crate directly for local
+# training.
+bedrock = ["cloud", "dep:aws-sigv4", "dep:aws-credential-types", "dep:aws-smithy-runtime-api", "dep:http"]
+vertex = ["cloud", "dep:gcp_auth"]
+full = ["cloud", "bedrock", "vertex"]
+# Dataset pipeline features (hf-tokenizer / tiktoken / dedup) moved to the
+# rullama-datasets crate; depend on it directly to enable them.
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[[example]]
+name = "cloud_finetune"
+required-features = ["cloud"]
+
+# `local_training` example lives in the sibling `rullama` workspace
+# (`rullama-finetune`).
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

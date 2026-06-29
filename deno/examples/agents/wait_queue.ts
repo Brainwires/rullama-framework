@@ -8,7 +8,7 @@ import {
   resourceKey,
   WaitQueue,
   type WaitQueueEvent,
-} from "@brainwires/agent";
+} from "@rullama/agent";
 
 async function main() {
   console.log("=== Wait Queue Demo ===\n");

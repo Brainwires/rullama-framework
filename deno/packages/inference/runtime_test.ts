@@ -6,10 +6,10 @@ import {
   Message,
   ToolResult,
   type ToolUse,
-} from "@brainwires/core";
+} from "@rullama/core";
 
-import { CommunicationHub } from "@brainwires/agent";
-import { FileLockManager, type LockType } from "@brainwires/agent";
+import { CommunicationHub } from "@rullama/agent";
+import { FileLockManager, type LockType } from "@rullama/agent";
 import { type AgentRuntime, runAgentLoop } from "./runtime.ts";
 
 // ---------------------------------------------------------------------------

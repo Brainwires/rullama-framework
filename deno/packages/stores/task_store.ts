@@ -1,12 +1,12 @@
 /**
  * Task Store -- persists tasks and agent state via a backend-agnostic storage layer.
  *
- * Equivalent to Rust's `stores/task_store.rs` in brainwires-storage.
+ * Equivalent to Rust's `stores/task_store.rs` in rullama-storage.
  * @module
  */
 
-import type { Task, TaskPriority, TaskStatus } from "@brainwires/core";
-import type { StorageBackend } from "@brainwires/storage";
+import type { Task, TaskPriority, TaskStatus } from "@rullama/core";
+import type { StorageBackend } from "@rullama/storage";
 import {
   type FieldDef,
   FieldTypes,
@@ -19,7 +19,7 @@ import {
   type Record,
   recordGet,
   requiredField,
-} from "@brainwires/storage";
+} from "@rullama/storage";
 
 const TASK_TABLE = "tasks";
 const AGENT_STATE_TABLE = "agent_states";

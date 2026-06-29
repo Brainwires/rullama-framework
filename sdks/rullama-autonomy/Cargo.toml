@@ -1,0 +1,127 @@
+[package]
+name = "rullama-autonomy"
+description = "Autonomous agent operations — self-improvement, Git workflows, and human-out-of-loop execution"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish = false
+readme = "README.md"
+keywords = ["autonomy", "self-improvement", "ai-agents", "evaluation", "autonomous"]
+categories = ["development-tools"]
+
+[dependencies]
+rullama-core.workspace = true
+rullama-agent = { workspace = true, optional = true }
+rullama-mdap = { workspace = true, optional = true }
+rullama-eval = { workspace = true, optional = true }
+rullama-finetune = { workspace = true, optional = true }
+rullama-knowledge = { workspace = true, optional = true }
+rullama-rag = { workspace = true, optional = true }
+rullama-storage = { workspace = true, optional = true }
+rullama-memory = { workspace = true, optional = true }
+rullama-reasoning = { workspace = true, optional = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+futures = { workspace = true, optional = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+dirs = { workspace = true }
+
+# Native-only
+git2 = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+toml = { workspace = true, optional = true }
+regex = { workspace = true, optional = true }
+walkdir = { workspace = true, optional = true }
+
+# Webhook server
+axum = { version = "0.8", optional = true }
+hmac = { version = "0.12", optional = true }
+sha1 = { version = "0.10", optional = true }
+subtle = { workspace = true, optional = true }
+
+# GPIO via rullama-hardware
+rullama-hardware = { workspace = true, optional = true, features = ["gpio"] }
+
+# Analytics
+rullama-telemetry = { workspace = true, optional = true }
+
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
+
+[features]
+default = ["native"]
+native = ["dep:git2", "rullama-core/native"]
+wasm = ["rullama-core/wasm"]
+
+# Self-improvement (extracted from CLI)
+self-improve = ["dep:rullama-agent", "dep:regex", "dep:walkdir"]
+eval-driven = [
+    "self-improve",
+    "dep:rullama-agent",
+    "dep:rullama-eval",
+    "dep:rullama-reasoning",
+    "dep:rullama-knowledge", "rullama-knowledge/knowledge",
+    "dep:rullama-memory",
+    "dep:futures",
+]
+
+# Agent operations
+supervisor = ["dep:rullama-agent"]
+attention = ["dep:rullama-rag"]
+parallel = ["dep:rullama-agent", "dep:rullama-mdap"]
+training = ["dep:rullama-finetune"]
+
+# Git workflow
+git-workflow = ["dep:rullama-agent", "dep:reqwest", "dep:toml"]
+webhook = ["git-workflow", "dep:axum", "dep:hmac", "dep:sha1", "dep:subtle"]
+
+# Environment interaction
+gpio = ["dep:rullama-hardware"]
+
+telemetry = ["dep:rullama-telemetry", "rullama-telemetry/native"]
+
+full = ["self-improve", "eval-driven", "supervisor", "attention", "parallel", "training", "git-workflow", "webhook", "gpio"]
+
+[[example]]
+name = "safety_guard"
+
+[[example]]
+name = "health_monitor"
+
+[[example]]
+name = "session_metrics"
+
+[[example]]
+name = "crash_recovery"
+required-features = ["self-improve"]
+
+[[example]]
+name = "self_improve_strategies"
+required-features = ["self-improve"]
+
+[[example]]
+name = "git_workflow_pipeline"
+required-features = ["git-workflow"]
+
+[[example]]
+name = "cicd_orchestrator"
+required-features = ["webhook"]
+
+[[example]]
+name = "gpio_pins"
+required-features = ["gpio"]

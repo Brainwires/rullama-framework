@@ -15,7 +15,7 @@ import {
   RegexOutputParser,
   requiresSanitization,
   SerializablePlan,
-} from "@brainwires/core";
+} from "@rullama/core";
 
 async function main() {
   console.log("=== Storage, Search, and Output Parsing ===");

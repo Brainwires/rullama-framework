@@ -7,10 +7,10 @@
  * calls have already been executed so that a re-started agent can skip them.
  *
  * {@link FsWorkflowStateStore} persists checkpoints as JSON files under
- * `~/.brainwires/workflow/<task_id>.json` using an atomic write (write to a
+ * `~/.rullama/workflow/<task_id>.json` using an atomic write (write to a
  * temp file, then rename).
  *
- * Equivalent to Rust's `brainwires_core::workflow_state` module.
+ * Equivalent to Rust's `rullama_core::workflow_state` module.
  */
 
 import { dirname, join } from "@std/path";
@@ -139,13 +139,13 @@ export class InMemoryWorkflowStateStore implements WorkflowStateStore {
 
 // ─── Filesystem implementation ─────────────────────────────────────────────
 
-/** Resolve the default checkpoint directory `~/.brainwires/workflow/`. */
+/** Resolve the default checkpoint directory `~/.rullama/workflow/`. */
 export function defaultWorkflowStatePath(): string {
   const home = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE");
   if (!home) {
     throw new Error("cannot determine home directory");
   }
-  return join(home, ".brainwires", "workflow");
+  return join(home, ".rullama", "workflow");
 }
 
 /** Sanitise `task_id` so it's safe as a filename. */
@@ -167,7 +167,7 @@ export class FsWorkflowStateStore implements WorkflowStateStore {
     Deno.mkdirSync(dir, { recursive: true });
   }
 
-  /** Create a store using `~/.brainwires/workflow/`, creating dirs as needed. */
+  /** Create a store using `~/.rullama/workflow/`, creating dirs as needed. */
   static withDefaultPath(): FsWorkflowStateStore {
     return new FsWorkflowStateStore(defaultWorkflowStatePath());
   }

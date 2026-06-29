@@ -1,6 +1,6 @@
 # Tools
 
-The `@brainwires/tools` package provides a tool registry, built-in tool
+The `@rullama/tools` package provides a tool registry, built-in tool
 implementations, smart routing, transactions, and pre-execution hooks.
 
 ## ToolRegistry
@@ -14,7 +14,7 @@ import {
   FileOpsTool,
   GitTool,
   ToolRegistry,
-} from "@brainwires/tools";
+} from "@rullama/tools";
 
 const registry = new ToolRegistry();
 registry.registerTools(BashTool.getTools());
@@ -44,8 +44,8 @@ See: `../examples/tool-system/tool_registry.ts`,
 Define a `Tool` with an input schema and implement execution via `ToolExecutor`:
 
 ```ts
-import { type Tool, type ToolExecutor } from "@brainwires/tools";
-import { objectSchema, ToolResult, type ToolUse } from "@brainwires/core";
+import { type Tool, type ToolExecutor } from "@rullama/tools";
+import { objectSchema, ToolResult, type ToolUse } from "@rullama/core";
 
 const myTool: Tool = {
   name: "weather",
@@ -69,7 +69,7 @@ const executor: ToolExecutor = {
 Automatically generate tools from an OpenAPI spec:
 
 ```ts
-import { executeOpenApiTool, openApiToTools } from "@brainwires/tools";
+import { executeOpenApiTool, openApiToTools } from "@rullama/tools";
 
 const tools = openApiToTools(openApiSpec);
 ```
@@ -80,7 +80,7 @@ Smart routing analyzes the conversation and selects only relevant tools,
 reducing token usage:
 
 ```ts
-import { analyzeQuery, getSmartTools } from "@brainwires/tools";
+import { analyzeQuery, getSmartTools } from "@rullama/tools";
 
 const relevantTools = getSmartTools(messages, allTools);
 ```
@@ -92,7 +92,7 @@ See: `../examples/tool-system/smart_routing.ts`.
 `TransactionManager` provides atomic multi-step tool operations with rollback:
 
 ```ts
-import { TransactionManager } from "@brainwires/tools";
+import { TransactionManager } from "@rullama/tools";
 
 const tx = new TransactionManager();
 // Operations within the transaction can be committed or rolled back
@@ -105,7 +105,7 @@ See: `../examples/tool-system/tool_transactions.ts`.
 Use `ToolPreHook` to gate or modify tool calls before execution:
 
 ```ts
-import { allow, reject, type ToolPreHook } from "@brainwires/tools";
+import { allow, reject, type ToolPreHook } from "@rullama/tools";
 
 const safetyHook: ToolPreHook = {
   beforeExecute: (toolUse) => {

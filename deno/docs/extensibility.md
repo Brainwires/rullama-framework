@@ -8,25 +8,25 @@ to the component, done.
 
 | Interface           | Package                 | Purpose                        |
 | ------------------- | ----------------------- | ------------------------------ |
-| `Provider`          | `@brainwires/core`      | AI chat completion backend     |
-| `EmbeddingProvider` | `@brainwires/core`      | Text embedding generation      |
-| `VectorStore`       | `@brainwires/core`      | Embedding storage and search   |
-| `StorageBackend`    | `@brainwires/storage`   | Record persistence backend     |
-| `VectorDatabase`    | `@brainwires/storage`   | Storage + vector search        |
-| `ToolExecutor`      | `@brainwires/tools`     | Custom tool execution backend  |
-| `ToolPreHook`       | `@brainwires/tools`     | Pre-execution tool gate        |
-| `AgentRuntime`      | `@brainwires/agents`    | Custom agent execution loop    |
-| `LifecycleHook`     | `@brainwires/core`      | Framework event interception   |
-| `OutputParser`      | `@brainwires/core`      | Structured LLM output parsing  |
-| `BrainClient`       | `@brainwires/knowledge` | Knowledge storage interface    |
-| `RagClient`         | `@brainwires/knowledge` | Semantic code search interface |
-| `Middleware`        | `@brainwires/network`   | MCP server request processing  |
-| `Discovery`         | `@brainwires/network`   | Peer discovery protocol        |
-| `A2aHandler`        | `@brainwires/a2a`       | A2A agent server handler       |
+| `Provider`          | `@rullama/core`      | AI chat completion backend     |
+| `EmbeddingProvider` | `@rullama/core`      | Text embedding generation      |
+| `VectorStore`       | `@rullama/core`      | Embedding storage and search   |
+| `StorageBackend`    | `@rullama/storage`   | Record persistence backend     |
+| `VectorDatabase`    | `@rullama/storage`   | Storage + vector search        |
+| `ToolExecutor`      | `@rullama/tools`     | Custom tool execution backend  |
+| `ToolPreHook`       | `@rullama/tools`     | Pre-execution tool gate        |
+| `AgentRuntime`      | `@rullama/agents`    | Custom agent execution loop    |
+| `LifecycleHook`     | `@rullama/core`      | Framework event interception   |
+| `OutputParser`      | `@rullama/core`      | Structured LLM output parsing  |
+| `BrainClient`       | `@rullama/knowledge` | Knowledge storage interface    |
+| `RagClient`         | `@rullama/knowledge` | Semantic code search interface |
+| `Middleware`        | `@rullama/network`   | MCP server request processing  |
+| `Discovery`         | `@rullama/network`   | Peer discovery protocol        |
+| `A2aHandler`        | `@rullama/a2a`       | A2A agent server handler       |
 
 ## Custom Provider
 
-Implement `Provider` from `@brainwires/core`:
+Implement `Provider` from `@rullama/core`:
 
 ```ts
 import type {
@@ -34,8 +34,8 @@ import type {
   Provider,
   StreamChunk,
   Tool,
-} from "@brainwires/core";
-import { ChatOptions, createUsage, Message } from "@brainwires/core";
+} from "@rullama/core";
+import { ChatOptions, createUsage, Message } from "@rullama/core";
 
 class MyProvider implements Provider {
   name(): string {
@@ -73,7 +73,7 @@ etc.
 
 ## Custom Storage Backend
 
-Implement `StorageBackend` from `@brainwires/storage`:
+Implement `StorageBackend` from `@rullama/storage`:
 
 ```ts
 import type {
@@ -81,7 +81,7 @@ import type {
   Filter,
   Record,
   StorageBackend,
-} from "@brainwires/storage";
+} from "@rullama/storage";
 
 class RedisBackend implements StorageBackend {
   async createTable(name: string, fields: FieldDef[]): Promise<void> {/* ... */}
@@ -104,16 +104,16 @@ Pass it to any domain store: `new MessageStore(new RedisBackend())`.
 
 ## Custom Tools
 
-Implement `ToolExecutor` from `@brainwires/tools`:
+Implement `ToolExecutor` from `@rullama/tools`:
 
 ```ts
-import type { ToolExecutor } from "@brainwires/tools";
+import type { ToolExecutor } from "@rullama/tools";
 import {
   objectSchema,
   type Tool,
   ToolResult,
   type ToolUse,
-} from "@brainwires/core";
+} from "@rullama/core";
 
 const databaseTool: Tool = {
   name: "query_db",
@@ -138,8 +138,8 @@ class DatabaseExecutor implements ToolExecutor {
 Implement `AgentRuntime` for full control over the agent loop:
 
 ```ts
-import type { AgentExecutionResult, AgentRuntime } from "@brainwires/agent";
-import { runAgentLoop } from "@brainwires/agent";
+import type { AgentExecutionResult, AgentRuntime } from "@rullama/agent";
+import { runAgentLoop } from "@rullama/agent";
 
 class MyRuntime implements AgentRuntime {
   agentId(): string {
@@ -169,7 +169,7 @@ import {
   middlewareReject,
   type MiddlewareResult,
   RequestContext,
-} from "@brainwires/network";
+} from "@rullama/network";
 
 class MetricsMiddleware implements Middleware {
   async process(ctx: RequestContext): Promise<MiddlewareResult> {
@@ -190,7 +190,7 @@ import type {
   HookResult,
   LifecycleEvent,
   LifecycleHook,
-} from "@brainwires/core";
+} from "@rullama/core";
 
 const loggingHook: LifecycleHook = {
   name: () => "logging",
@@ -208,7 +208,7 @@ const loggingHook: LifecycleHook = {
 Use `FrameworkError` for domain-specific errors:
 
 ```ts
-import { FrameworkError } from "@brainwires/core";
+import { FrameworkError } from "@rullama/core";
 
 throw FrameworkError.providerAuth("my-provider", "Invalid API key");
 throw FrameworkError.storageSchema("my-store", "Missing table");
@@ -216,11 +216,11 @@ throw FrameworkError.storageSchema("my-store", "Missing table");
 
 ## Where to Define Extensions
 
-- **Types and interfaces** -- `@brainwires/core`
-- **Tool implementations** -- `@brainwires/tools`
-- **Agent coordination** -- `@brainwires/agents`
-- **Storage backends** -- `@brainwires/storage`
-- **Network components** -- `@brainwires/network`
+- **Types and interfaces** -- `@rullama/core`
+- **Tool implementations** -- `@rullama/tools`
+- **Agent coordination** -- `@rullama/agents`
+- **Storage backends** -- `@rullama/storage`
+- **Network components** -- `@rullama/network`
 
 ## Further Reading
 

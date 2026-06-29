@@ -1,20 +1,20 @@
 # voice-assistant
 
-Personal voice assistant built on the [Brainwires Framework](https://github.com/Brainwires/brainwires-framework).
+Personal voice assistant built on the [Brainwires Framework](https://github.com/Brainwires/rullama-framework).
 
 ## Overview
 
-`voice-assistant` is a standalone binary that listens on a microphone, transcribes speech with an STT provider, sends it to an LLM, and plays back the response via TTS — all wired through `brainwires-hardware`'s audio pipeline.
+`voice-assistant` is a standalone binary that listens on a microphone, transcribes speech with an STT provider, sends it to an LLM, and plays back the response via TTS — all wired through `rullama-hardware`'s audio pipeline.
 
 ## Features
 
 - Continuous microphone capture via CPAL
 - Speech-to-text via OpenAI Whisper (configurable)
-- LLM response via any `brainwires-provider` backend
+- LLM response via any `rullama-provider` backend
 - Text-to-speech playback via OpenAI TTS (configurable)
 - Optional wake-word detection (Rustpotter or Picovoice Porcupine)
 - TOML config file at `~/.config/voice-assistant/config.toml`
-- Optional SQLite-backed conversation history via `brainwires-session`
+- Optional SQLite-backed conversation history via `rullama-session`
 
 ## Usage
 
@@ -70,7 +70,7 @@ max_record_secs      = 30.0
 # Persona
 system_prompt = "You are a helpful voice assistant. Keep responses concise and conversational."
 
-# Session persistence (brainwires-session)
+# Session persistence (rullama-session)
 session_id = "voice-assistant"
 # session_db = "/home/me/.local/share/voice-assistant/history.sqlite"
 

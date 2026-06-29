@@ -5,7 +5,7 @@
  * collects {@link TrialResult}s, and computes {@link EvaluationStats} for
  * every case.
  *
- * Equivalent to Rust's `brainwires_agents::eval::suite` module.
+ * Equivalent to Rust's `rullama_agents::eval::suite` module.
  */
 
 import type { EvaluationCase } from "./case.ts";

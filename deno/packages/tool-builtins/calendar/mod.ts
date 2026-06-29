@@ -1,7 +1,7 @@
 /**
  * Calendar tools: list, create, update, delete events, and find free time.
  *
- * Equivalent to Rust's `brainwires_tools::calendar` module.
+ * Equivalent to Rust's `rullama_tools::calendar` module.
  */
 
 import {
@@ -9,7 +9,7 @@ import {
   type Tool,
   type ToolContext,
   ToolResult,
-} from "@brainwires/core";
+} from "@rullama/core";
 
 import { CalDavClient } from "./caldav.ts";
 import { GoogleCalendarClient } from "./google.ts";

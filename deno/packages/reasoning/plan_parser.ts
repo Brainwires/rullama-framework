@@ -2,10 +2,10 @@
  * Plan Parser — extract numbered / bulleted steps from plan text and convert
  * them into tasks.
  *
- * Equivalent to Rust's `brainwires_reasoning::plan_parser` module.
+ * Equivalent to Rust's `rullama_reasoning::plan_parser` module.
  */
 
-import { Task, type TaskPriority } from "@brainwires/core";
+import { Task, type TaskPriority } from "@rullama/core";
 
 /** A single parsed step from plan content. */
 export interface ParsedStep {

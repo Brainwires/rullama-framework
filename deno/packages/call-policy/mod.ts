@@ -1,9 +1,9 @@
 /**
- * @module @brainwires/resilience
+ * @module @rullama/resilience
  *
  * Provider-layer resilience middleware for the Brainwires Agent Framework.
  *
- * Wraps any `@brainwires/core` {@link Provider} with composable decorators:
+ * Wraps any `@rullama/core` {@link Provider} with composable decorators:
  *
  * - {@link RetryProvider} — exponential backoff with jitter.
  * - {@link BudgetProvider} — token/USD/round caps with pre-flight rejection.
@@ -18,7 +18,7 @@
  * CircuitBreaker → Retry → Budget → Cache → base Provider
  * ```
  *
- * Equivalent to Rust's `brainwires-resilience` crate. The SQLite cache backend
+ * Equivalent to Rust's `rullama-resilience` crate. The SQLite cache backend
  * from the Rust crate is intentionally omitted here — use any `CacheBackend`
  * implementation (Deno KV, Postgres, etc.) to get persistence.
  */

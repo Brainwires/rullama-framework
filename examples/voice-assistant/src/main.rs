@@ -4,9 +4,9 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use brainwires_agent::personas::StaticPersonaProvider;
-use brainwires_call_policy::{BudgetConfig, BudgetGuard};
-use brainwires_hardware::audio::{
+use rullama_agent::personas::StaticPersonaProvider;
+use rullama_call_policy::{BudgetConfig, BudgetGuard};
+use rullama_hardware::audio::{
     api::{OpenAiStt, OpenAiTts},
     assistant::{VoiceAssistant, VoiceAssistantConfig},
     capture::AudioCapture,
@@ -15,8 +15,8 @@ use brainwires_hardware::audio::{
     playback::AudioPlayback,
     types::{TtsOptions, Voice},
 };
-use brainwires_provider::{OpenAiChatProvider, OpenAiClient};
-use brainwires_stores::{ArcSessionStore, InMemorySessionStore, SessionId, SqliteSessionStore};
+use rullama_provider::{OpenAiChatProvider, OpenAiClient};
+use rullama_stores::{ArcSessionStore, InMemorySessionStore, SessionId, SqliteSessionStore};
 use clap::Parser;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -53,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
     let level = if cli.verbose { "debug" } else { "info" };
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         EnvFilter::new(format!(
-            "voice_assistant={level},brainwires_hardware={level}"
+            "voice_assistant={level},rullama_hardware={level}"
         ))
     });
     tracing_subscriber::fmt().with_env_filter(filter).init();
@@ -90,10 +90,10 @@ async fn main() -> anyhow::Result<()> {
 
     // ── Build components ──────────────────────────────────────────────────────
     // Chat provider wired through the harness. OpenAI-compatible
-    // Chat Completions by default — swap for any `brainwires_core::Provider`
+    // Chat Completions by default — swap for any `rullama_core::Provider`
     // impl to talk to a different backend.
     let openai_client = Arc::new(OpenAiClient::new(api_key.clone(), cfg.llm_model.clone()));
-    let llm_provider: Arc<dyn brainwires_core::Provider> = Arc::new(OpenAiChatProvider::new(
+    let llm_provider: Arc<dyn rullama_core::Provider> = Arc::new(OpenAiChatProvider::new(
         openai_client,
         cfg.llm_model.clone(),
     ));
@@ -121,7 +121,7 @@ async fn main() -> anyhow::Result<()> {
                 language: None,
             },
             speed: None,
-            output_format: brainwires_hardware::audio::types::OutputFormat::Pcm,
+            output_format: rullama_hardware::audio::types::OutputFormat::Pcm,
         })
     } else {
         None
@@ -139,7 +139,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let mut builder = VoiceAssistant::builder(
-        capture.clone() as Arc<dyn brainwires_hardware::audio::capture::AudioCapture>,
+        capture.clone() as Arc<dyn rullama_hardware::audio::capture::AudioCapture>,
         stt,
     )
     .with_playback(playback.clone() as Arc<dyn AudioPlayback>)
@@ -158,7 +158,7 @@ async fn main() -> anyhow::Result<()> {
         .or_else(|| cfg.wake_word_model.clone());
 
     if let Some(model_path) = wake_word_path {
-        use brainwires_hardware::audio::wake_word::EnergyTriggerDetector;
+        use rullama_hardware::audio::wake_word::EnergyTriggerDetector;
         let _ = model_path; // model path unused for energy trigger
         info!("Wake trigger enabled (energy-based).");
         let detector = EnergyTriggerDetector::default();

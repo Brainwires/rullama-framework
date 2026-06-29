@@ -62,26 +62,26 @@ if [[ -n "$BUMP" ]]; then
 fi
 
 # Read the rullama version that's about to be published.
-VERSION=$(awk -F'"' '/^version[[:space:]]*=/ {print $2; exit}' brainwires-engine/Cargo.toml)
+VERSION=$(awk -F'"' '/^version[[:space:]]*=/ {print $2; exit}' rullama-engine/Cargo.toml)
 if [[ -z "$VERSION" ]]; then
-    echo "publish.sh: could not read version from brainwires-engine/Cargo.toml" >&2
+    echo "publish.sh: could not read version from rullama-engine/Cargo.toml" >&2
     exit 1
 fi
 
 if [[ -n "$DRY_RUN" ]]; then
-    echo "==> cargo publish --dry-run -p brainwires-engine (v$VERSION)"
-    cargo publish --dry-run -p brainwires-engine
+    echo "==> cargo publish --dry-run -p rullama-engine (v$VERSION)"
+    cargo publish --dry-run -p rullama-engine
     echo
     echo "==> skipping rullama-finetune dry-run"
     echo "    its \`rullama = { version = \"$VERSION\" }\` constraint can't"
     echo "    resolve from crates.io until rullama is actually published."
-    echo "    Run \`cargo publish -p brainwires-lora --dry-run --no-verify\` if you"
+    echo "    Run \`cargo publish -p rullama-lora --dry-run --no-verify\` if you"
     echo "    just want to package-check finetune without verifying the build."
     exit 0
 fi
 
-echo "==> cargo publish -p brainwires-engine (v$VERSION)"
-cargo publish -p brainwires-engine
+echo "==> cargo publish -p rullama-engine (v$VERSION)"
+cargo publish -p rullama-engine
 
 # Wait for the new rullama version to appear in the registry index before
 # publishing finetune (its `rullama = { version }` dep must resolve from
@@ -103,14 +103,14 @@ for i in $(seq 1 60); do
     if [[ "$i" == "60" ]]; then
         echo "publish.sh: timed out waiting for rullama $VERSION at $INDEX_URL after 5 minutes" >&2
         echo "publish.sh: rullama-finetune was NOT published. Once rullama is live, run:" >&2
-        echo "    cargo publish -p brainwires-lora" >&2
+        echo "    cargo publish -p rullama-lora" >&2
         exit 1
     fi
     sleep 5
 done
 
-echo "==> cargo publish -p brainwires-lora (v$VERSION)"
-cargo publish -p brainwires-lora
+echo "==> cargo publish -p rullama-lora (v$VERSION)"
+cargo publish -p rullama-lora
 
 echo "==> done. Don't forget to push the v$VERSION tag if you haven't:"
 echo "    git push origin v$VERSION"

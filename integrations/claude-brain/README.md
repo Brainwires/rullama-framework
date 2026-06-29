@@ -69,7 +69,7 @@ Only `SessionStart` and `UserPromptSubmit` stdout reaches Claude's context, so a
 
 Use `--project-dir PATH` to scope the install to a single project instead of the global `~/.claude/` config.
 
-Minimal config at `~/.brainwires/claude-brain.toml`:
+Minimal config at `~/.rullama/claude-brain.toml`:
 
 ```toml
 [policy]
@@ -89,7 +89,7 @@ extract_facts = true
 consolidation_threshold = 20
 ```
 
-Storage paths default to `~/.brainwires/` and can be overridden under `[storage]`.
+Storage paths default to `~/.rullama/` and can be overridden under `[storage]`.
 
 ## Testing
 
@@ -99,7 +99,7 @@ cd extras/claude-brain
 ./test-compaction.sh setup    # shrink context window to force compaction for manual testing
 ```
 
-Hook events are logged to `~/.brainwires/claude-brain-hooks.log`.
+Hook events are logged to `~/.rullama/claude-brain-hooks.log`.
 
 ## Deep Dive
 

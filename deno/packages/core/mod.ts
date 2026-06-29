@@ -1,8 +1,8 @@
 /**
- * @module @brainwires/core
+ * @module @rullama/core
  *
  * Foundation types, traits, and error handling for the Brainwires Agent Framework.
- * Equivalent to Rust's `brainwires-core` crate.
+ * Equivalent to Rust's `rullama-core` crate.
  */
 
 // Content source types

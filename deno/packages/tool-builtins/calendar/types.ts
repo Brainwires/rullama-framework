@@ -1,7 +1,7 @@
 /**
  * Shared calendar types used by Google Calendar and CalDAV clients.
  *
- * Equivalent to Rust's `brainwires_tools::calendar::types` module.
+ * Equivalent to Rust's `rullama_tools::calendar::types` module.
  */
 
 /** Attendance response status. */

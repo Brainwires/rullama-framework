@@ -1,0 +1,55 @@
+[package]
+name = "rullama-mcp-client"
+description = "MCP client, transport, and protocol types for the Brainwires Agent Framework"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/rullama-mcp-client"
+keywords = ["mcp", "context-protocol", "ai-tools", "llm", "protocol"]
+categories = ["development-tools"]
+
+[dependencies]
+# Internal crates
+rullama-core.workspace = true
+
+# MCP protocol (native only)
+rmcp = { version = "1.1", features = ["client"], optional = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow.workspace = true
+
+# Async runtime
+tokio = { version = "1.43", features = ["sync"] }
+
+# Filesystem (native only)
+dirs = { workspace = true, optional = true }
+# HTTP transport
+reqwest = { workspace = true, optional = true }
+
+[features]
+default = ["native"]
+native = ["dep:rmcp", "dep:dirs", "tokio/io-util", "tokio/process"]
+http = ["dep:reqwest"]
+wasm = ["rullama-core/wasm"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+serde_json = { workspace = true }
+proptest.workspace = true
+
+[[example]]
+name = "mcp_client"
+required-features = ["native"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

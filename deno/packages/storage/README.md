@@ -1,15 +1,15 @@
-# @brainwires/storage
+# @rullama/storage
 
 Backend-agnostic persistent storage for the Brainwires Agent Framework. Provides
 storage interfaces, an in-memory backend, domain-specific stores, and a tiered
 memory hierarchy.
 
-Equivalent to the Rust `brainwires-storage` crate.
+Equivalent to the Rust `rullama-storage` crate.
 
 ## Install
 
 ```sh
-deno add @brainwires/storage
+deno add @rullama/storage
 ```
 
 ## Quick Example
@@ -21,7 +21,7 @@ import {
   InMemoryStorageBackend,
   MessageStore,
   requiredField,
-} from "@brainwires/storage";
+} from "@rullama/storage";
 
 // Use the in-memory backend directly
 const backend = new InMemoryStorageBackend();

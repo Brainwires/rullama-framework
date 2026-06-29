@@ -1,5 +1,5 @@
 {
-  "name": "@brainwires/a2a",
+  "name": "@rullama/a2a",
   "license": "MIT",
   "version": "0.11.0",
   "exports": "./mod.ts"

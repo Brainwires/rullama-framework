@@ -1,0 +1,97 @@
+[package]
+name = "rullama-stores"
+description = "Opinionated minimum data-store set for the Brainwires Agent Framework — sessions, conversations, tasks, plans, locks, images, and tiered hot/warm/cold memory. All built on the rullama-storage StorageBackend trait."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/rullama-stores"
+keywords = ["sessions", "persistence", "agent-memory", "tiered-memory", "lancedb"]
+categories = ["asynchronous", "database"]
+
+[dependencies]
+# Internal — always present
+rullama-core = { workspace = true }
+
+# Internal — pulled by every backed-by-StorageBackend store (memory/* and the
+# Phase 10b CLI-domain stores). Kept always-on rather than feature-gated to
+# avoid having to re-gate every store individually; the dep itself is light
+# until its `native` feature pulls Lance.
+rullama-storage = { workspace = true, features = ["native"] }
+
+# Async + serde + errors + ids + time — needed by every store
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time"] }
+chrono = { workspace = true }
+uuid = { workspace = true }
+
+# Arrow schema (used by memory/*_schema() helpers under the `memory` feature)
+arrow-schema = { workspace = true, optional = true }
+
+# rusqlite — drives SqliteSessionStore + LockStore (Phase 10b)
+rusqlite = { workspace = true, optional = true }
+
+# sha2 — image_store hashing
+sha2 = { workspace = true, optional = true }
+
+# Filesystem paths — template_store + lock_store default DB locations
+dirs = { workspace = true, optional = true }
+
+# regex — template_store name validation
+regex = { workspace = true, optional = true }
+
+# Process liveness checking — lock_store stale-lock detection (unix only)
+[target.'cfg(unix)'.dependencies]
+libc = { version = "0.2", optional = true }
+
+# Hostname for lock-store ownership records
+[dependencies.gethostname]
+workspace = true
+optional = true
+
+[features]
+default = ["session", "task", "plan", "conversation"]
+
+# Session transcript persistence
+session = []
+sqlite = ["dep:rusqlite"]
+
+# Task / agent-state persistence. Pulls arrow-schema for the
+# `tasks_arrow_schema()` / `agent_states_arrow_schema()` helpers.
+task = ["dep:arrow-schema"]
+
+# Plan + plan-template persistence. Pulls arrow-schema for the
+# `plans_schema()` helper.
+plan = ["dep:dirs", "dep:regex", "dep:arrow-schema"]
+
+# Conversation catalog metadata
+conversation = []
+
+# Coordination locks (rusqlite-backed)
+lock = ["dep:rusqlite", "dep:dirs", "dep:libc", "dep:gethostname"]
+
+# Image storage with metadata
+image = ["dep:sha2"]
+
+# Tier schema stores (MessageStore, SummaryStore, FactStore,
+# MentalModelStore, TierMetadataStore + tier_types). Pulls
+# arrow-schema for the *_schema() helpers. Orchestration
+# (TieredMemory) and the offline `dream` consolidation engine live
+# in the rullama-memory crate, which depends on this feature.
+memory = ["dep:arrow-schema"]
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["full", "test-util"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

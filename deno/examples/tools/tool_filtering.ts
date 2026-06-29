@@ -22,7 +22,7 @@ import {
   sanitizeExternalContent,
   successOutcome,
   wrapWithContentSource,
-} from "@brainwires/tools";
+} from "@rullama/tools";
 
 async function main() {
   console.log("=== Tool Filtering Example ===\n");

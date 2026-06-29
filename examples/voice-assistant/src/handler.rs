@@ -2,32 +2,32 @@
 //!
 //! Replaces the legacy direct-OpenAI loop with the full `ChatAgent` pipeline:
 //!
-//! - `brainwires_core::Provider` for LLM I/O (OpenAI-compatible).
-//! - `brainwires_call_policy::BudgetGuard` for hard token/cost caps.
-//! - `brainwires_stores::SessionStore` for persistence across restarts.
-//! - `brainwires_agent::personas::PersonaProvider` for prompt assembly.
+//! - `rullama_core::Provider` for LLM I/O (OpenAI-compatible).
+//! - `rullama_call_policy::BudgetGuard` for hard token/cost caps.
+//! - `rullama_stores::SessionStore` for persistence across restarts.
+//! - `rullama_agent::personas::PersonaProvider` for prompt assembly.
 //! - `CacheStrategy::SystemAndTools` so the static persona is cached on
 //!   every turn instead of rebuilt from scratch.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use brainwires_agent::personas::{PersonaContext, PersonaProvider, blocks_to_system_text};
-use brainwires_call_policy::BudgetGuard;
-use brainwires_core::ToolContext;
-use brainwires_core::{CacheStrategy, ChatOptions, Provider};
-use brainwires_hardware::audio::{
+use rullama_agent::personas::{PersonaContext, PersonaProvider, blocks_to_system_text};
+use rullama_call_policy::BudgetGuard;
+use rullama_core::ToolContext;
+use rullama_core::{CacheStrategy, ChatOptions, Provider};
+use rullama_hardware::audio::{
     assistant::VoiceAssistantHandler, error::AudioError, types::Transcript,
 };
-use brainwires_inference::ChatAgent;
-use brainwires_stores::{ArcSessionStore, SessionId};
-use brainwires_tool_builtins::BuiltinToolExecutor;
-use brainwires_tool_runtime::{ToolExecutor, ToolRegistry};
+use rullama_inference::ChatAgent;
+use rullama_stores::{ArcSessionStore, SessionId};
+use rullama_tool_builtins::BuiltinToolExecutor;
+use rullama_tool_runtime::{ToolExecutor, ToolRegistry};
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 
 #[cfg(any(feature = "wake-word", feature = "wake-word-dtw"))]
-use brainwires_hardware::audio::wake_word::WakeWordDetection;
+use rullama_hardware::audio::wake_word::WakeWordDetection;
 
 /// Voice handler that routes transcripts through a [`ChatAgent`].
 pub struct LlmHandler {
@@ -155,7 +155,7 @@ impl VoiceAssistantHandler for LlmHandler {
 
 /// Produce a short TTS-friendly message for a harness error.
 fn short_error_for_tts(e: &anyhow::Error) -> String {
-    use brainwires_call_policy::ResilienceError;
+    use rullama_call_policy::ResilienceError;
     if let Some(re) = e.downcast_ref::<ResilienceError>() {
         return match re {
             ResilienceError::BudgetExceeded { kind, .. } => {

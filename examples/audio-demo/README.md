@@ -89,13 +89,13 @@ audio-demo/
 └─────────┬──────────┘
           │
 ┌─────────▼──────────┐
-│  brainwires-hardware  │
-│  + brainwires-     │
+│  rullama-hardware  │
+│  + rullama-     │
 │    providers       │
 └────────────────────┘
 ```
 
-The Rust FFI crate (`audio-demo-ffi`) wraps the async `brainwires-hardware` API behind synchronous UniFFI-exported functions using an internal Tokio runtime. Provider instances are managed via opaque `u64` handles in a static registry.
+The Rust FFI crate (`audio-demo-ffi`) wraps the async `rullama-hardware` API behind synchronous UniFFI-exported functions using an internal Tokio runtime. Provider instances are managed via opaque `u64` handles in a static registry.
 
 ## Building for Other Platforms
 

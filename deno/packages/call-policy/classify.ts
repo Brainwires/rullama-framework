@@ -5,7 +5,7 @@
  * matching the error message against common transient-failure signatures —
  * pragmatic and stable enough for the upstream APIs in use.
  *
- * Equivalent to Rust's `brainwires_resilience::classify` module.
+ * Equivalent to Rust's `rullama_resilience::classify` module.
  */
 
 /** Coarse error classification used by retry and circuit-breaker logic. */

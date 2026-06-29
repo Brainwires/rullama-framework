@@ -1,7 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
 
 /** Events emitted during framework operation.
- * Equivalent to Rust's `LifecycleEvent` in brainwires-core. */
+ * Equivalent to Rust's `LifecycleEvent` in rullama-core. */
 export type LifecycleEvent =
   | { type: "agent_started"; agent_id: string; task_description: string }
   | {
@@ -73,14 +73,14 @@ export function eventToolName(event: LifecycleEvent): string | undefined {
 }
 
 /** Result of a hook invocation.
- * Equivalent to Rust's `HookResult` in brainwires-core. */
+ * Equivalent to Rust's `HookResult` in rullama-core. */
 export type HookResult =
   | { type: "continue" }
   | { type: "cancel"; reason: string }
   | { type: "modified"; data: any };
 
 /** Filter to control which events a hook receives.
- * Equivalent to Rust's `EventFilter` in brainwires-core. */
+ * Equivalent to Rust's `EventFilter` in rullama-core. */
 export interface EventFilter {
   agent_ids: Set<string>;
   event_types: Set<string>;
@@ -116,7 +116,7 @@ export function filterMatches(
 }
 
 /** Interface for lifecycle hooks.
- * Equivalent to Rust's `LifecycleHook` trait in brainwires-core. */
+ * Equivalent to Rust's `LifecycleHook` trait in rullama-core. */
 export interface LifecycleHook {
   readonly name: string;
   priority?(): number;
@@ -125,7 +125,7 @@ export interface LifecycleHook {
 }
 
 /** Registry that manages and dispatches lifecycle hooks.
- * Equivalent to Rust's `HookRegistry` in brainwires-core. */
+ * Equivalent to Rust's `HookRegistry` in rullama-core. */
 export class HookRegistry {
   private hooks: LifecycleHook[] = [];
 

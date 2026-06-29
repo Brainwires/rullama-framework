@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "@std/assert";
-import { createUsage, Message } from "@brainwires/core";
+import { createUsage, Message } from "@rullama/core";
 import { approxInputTokens, BudgetGuard } from "./budget.ts";
 import { ResilienceError } from "./error.ts";
 

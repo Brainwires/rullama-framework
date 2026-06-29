@@ -4,7 +4,7 @@
  * Reads user feedback signals (thumbs-up/down + corrections) from the
  * AuditLogger and converts them into SEAL learning signals.
  *
- * Equivalent to Rust's `brainwires_agents::seal::feedback_bridge` module.
+ * Equivalent to Rust's `rullama_agents::seal::feedback_bridge` module.
  */
 
 import {
@@ -12,7 +12,7 @@ import {
   createAuditQuery,
   type FeedbackPolarity,
   type FeedbackSignal,
-} from "@brainwires/permission";
+} from "@rullama/permission";
 import type { LearningCoordinator, PatternHint } from "./learning.ts";
 
 /** Statistics from processing a batch of feedback signals. */

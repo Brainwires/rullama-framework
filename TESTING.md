@@ -2,34 +2,34 @@
 
 The framework has two layered testing surfaces:
 
-1. **`brainwires-eval`** — the underlying evaluation library. Defines
+1. **`rullama-eval`** — the underlying evaluation library. Defines
    `EvaluationCase`, `EvaluationSuite` (N-trial Monte Carlo + Wilson CI),
    `AdversarialTestCase`, `RegressionSuite`, ranking metrics, and the
    fault-classification used by the autonomous feedback loop. Standalone
-   crate with zero internal `brainwires-*` deps — published to crates.io
+   crate with zero internal `rullama-*` deps — published to crates.io
    so external consumers can adopt the same evaluation primitives.
 
-2. **`brainwires-test-harness`** *(internal, `publish = false`)* — the
-   cross-crate orchestrator that uses `brainwires-eval` to attack the rest
+2. **`rullama-test-harness`** *(internal, `publish = false`)* — the
+   cross-crate orchestrator that uses `rullama-eval` to attack the rest
    of the framework. Three tiers:
    - **Tier A (feature determinism)** — every `FEATURES.md` heading has
      ≥1 deterministic case, registered via a TOML manifest at
-     `crates/brainwires-test-harness/tests/feature_inventory.toml`.
+     `crates/rullama-test-harness/tests/feature_inventory.toml`.
    - **Tier B (security adversarial)** — per-invariant cases registered
      via `inventory::submit!` next to each attack file under
-     `crates/brainwires-test-harness/src/cases/security/`.
+     `crates/rullama-test-harness/src/cases/security/`.
    - **Tier C (golden-path assemblies)** — manually-listed integration
-     scenarios in `crates/brainwires-test-harness/src/assemblies/`.
+     scenarios in `crates/rullama-test-harness/src/assemblies/`.
 
    Driven via `cargo xtask test-harness …`.
 
-3. **`brainwires-test-fixtures`** *(internal, `publish = false`)* —
+3. **`rullama-test-fixtures`** *(internal, `publish = false`)* —
    consolidated mock providers and test helpers used by both the harness
    and per-crate unit tests. Replaces the inline `MockProvider` /
    `FakeProvider` / `ScriptedProvider` impls that used to live duplicated
    in 7+ crates.
 
-The rest of this document covers `brainwires-eval` primitives in detail.
+The rest of this document covers `rullama-eval` primitives in detail.
 Skip to [§ 9 Test Harness](#9-test-harness-cargo-xtask-test-harness) if
 you want to add a feature case, security invariant, or assembly.
 
@@ -52,7 +52,7 @@ you want to add a feature case, security invariant, or assembly.
 
 ```rust
 use async_trait::async_trait;
-use brainwires_agent::eval::{EvaluationCase, TrialResult};
+use rullama_agent::eval::{EvaluationCase, TrialResult};
 
 struct MyAgentCase {
     task: String,
@@ -88,7 +88,7 @@ impl EvaluationCase for MyAgentCase {
 | `StochasticCase::new("name", 0.7)` | Succeeds with probability 0.7; deterministic per `trial_id` |
 
 ```rust
-use brainwires_agent::eval::{AlwaysPassCase, AlwaysFailCase, StochasticCase};
+use rullama_agent::eval::{AlwaysPassCase, AlwaysFailCase, StochasticCase};
 
 let pass  = AlwaysPassCase::new("infra_smoke");
 let fail  = AlwaysFailCase::new("always_fail", "expected failure");
@@ -105,13 +105,13 @@ let flaky = StochasticCase::new("flaky_50pct", 0.5);
 ### Quick start
 
 ```rust
-use brainwires_agent::eval::{EvaluationSuite, AlwaysPassCase};
+use rullama_agent::eval::{EvaluationSuite, AlwaysPassCase};
 use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
     let suite = EvaluationSuite::new(30);   // 30 trials per case
-    let cases: Vec<Arc<dyn brainwires_agent::eval::EvaluationCase>> = vec![
+    let cases: Vec<Arc<dyn rullama_agent::eval::EvaluationCase>> = vec![
         Arc::new(AlwaysPassCase::new("smoke")),
     ];
     let result = suite.run_suite(&cases).await;
@@ -130,7 +130,7 @@ async fn main() {
 ### Parallel execution
 
 ```rust
-use brainwires_agent::eval::{EvaluationSuite, SuiteConfig};
+use rullama_agent::eval::{EvaluationSuite, SuiteConfig};
 
 let suite = EvaluationSuite::with_config(SuiteConfig {
     n_trials: 50,
@@ -192,7 +192,7 @@ println!("p50_duration={}ms  p95_duration={}ms",
 
 ```rust
 // Compute stats from a custom trial slice
-use brainwires_agent::eval::{EvaluationStats, TrialResult};
+use rullama_agent::eval::{EvaluationStats, TrialResult};
 
 let trials = vec![
     TrialResult::success(0, 42),
@@ -208,7 +208,7 @@ if let Some(stats) = EvaluationStats::from_trials(&trials) {
 ### Compute a Wilson CI directly
 
 ```rust
-use brainwires_agent::eval::trial::ConfidenceInterval95;
+use rullama_agent::eval::trial::ConfidenceInterval95;
 
 let ci = ConfidenceInterval95::wilson(70, 100);
 // 70 successes out of 100 trials
@@ -226,7 +226,7 @@ passes the payload to your agent.
 ### All four scenario types
 
 ```rust
-use brainwires_agent::eval::{AdversarialTestCase, AdversarialTestType};
+use rullama_agent::eval::{AdversarialTestCase, AdversarialTestType};
 
 // 1. Prompt injection — agent must reject the payload
 let inj = AdversarialTestCase::prompt_injection(
@@ -264,7 +264,7 @@ let budget = AdversarialTestCase::budget_exhaustion(
 Returns a pre-built set of all four scenario types (9 cases total):
 
 ```rust
-use brainwires_agent::eval::adversarial::standard_adversarial_suite;
+use rullama_agent::eval::adversarial::standard_adversarial_suite;
 
 let cases = standard_adversarial_suite();
 println!("{} adversarial cases", cases.len()); // → 9
@@ -274,7 +274,7 @@ println!("{} adversarial cases", cases.len()); // → 9
 
 ```rust
 use async_trait::async_trait;
-use brainwires_agent::eval::{AdversarialTestCase, EvaluationCase, TrialResult};
+use rullama_agent::eval::{AdversarialTestCase, EvaluationCase, TrialResult};
 use std::sync::Arc;
 
 struct AdversarialRunner {
@@ -315,7 +315,7 @@ Verifies that the sliding-window loop-detection algorithm fires at the right
 iteration when a tool is called repeatedly.
 
 ```rust
-use brainwires_agent::eval::stability_tests::LoopDetectionSimCase;
+use rullama_agent::eval::stability_tests::LoopDetectionSimCase;
 
 // Loop detector should fire: read_file repeats from step 3, window=5, fires at step 7
 let fires = LoopDetectionSimCase::should_detect(
@@ -338,7 +338,7 @@ Verifies that the goal text is re-injected at the expected iterations across
 long runs.
 
 ```rust
-use brainwires_agent::eval::stability_tests::GoalPreservationCase;
+use rullama_agent::eval::stability_tests::GoalPreservationCase;
 
 // 20 iterations, inject goal reminder every 5 → fires at iterations 6, 11, 16
 let case = GoalPreservationCase::new(20, 5);
@@ -350,7 +350,7 @@ Returns the full standard set of stability cases covering loop detection (4
 should-fire + 2 should-not-fire) and goal preservation (4 cases):
 
 ```rust
-use brainwires_agent::eval::{EvaluationSuite, long_horizon_stability_suite};
+use rullama_agent::eval::{EvaluationSuite, long_horizon_stability_suite};
 
 #[tokio::main]
 async fn main() {
@@ -374,7 +374,7 @@ per-category baselines.  Use it to gate CI on eval regressions.
 ### Workflow
 
 ```rust
-use brainwires_agent::eval::{
+use rullama_agent::eval::{
     EvaluationSuite, AlwaysPassCase,
     regression::{RegressionConfig, RegressionSuite},
 };
@@ -412,7 +412,7 @@ if !check.is_ci_passing() {
 ### Custom regression tolerance
 
 ```rust
-use brainwires_agent::eval::regression::{RegressionConfig, RegressionSuite};
+use rullama_agent::eval::regression::{RegressionConfig, RegressionSuite};
 
 let config = RegressionConfig {
     max_regression: 0.10, // allow up to 10% drop before failing CI
@@ -447,7 +447,7 @@ result.improved_categories();        // Vec of categories that improved (regress
 
 ## 7. Eval-Driven Self-Improvement
 
-The `brainwires` CLI includes an **autonomous feedback loop** that closes the
+The `rullama` CLI includes an **autonomous feedback loop** that closes the
 gap between evaluation and code quality automatically:
 
 ```
@@ -493,7 +493,7 @@ for round in 1..=max_feedback_rounds:
 | `Flaky` | CI width > 0.25 (default) and at least one failure | 4 |
 
 ```rust
-use brainwires_agent::eval::{EvaluationSuite, RegressionSuite, SuiteConfig,
+use rullama_agent::eval::{EvaluationSuite, RegressionSuite, SuiteConfig,
                        long_horizon_stability_suite, analyze_suite_for_faults};
 
 let suite  = EvaluationSuite::new(10);
@@ -515,10 +515,10 @@ for fault in &faults {
 
 ```bash
 # Dry-run: show detected faults without running agents
-brainwires eval-improve --dry-run --baselines-path eval-baselines.json
+rullama eval-improve --dry-run --baselines-path eval-baselines.json
 
 # Full run: detect faults → fix → verify → update baselines
-brainwires eval-improve \
+rullama eval-improve \
   --baselines-path eval-baselines.json \
   --max-rounds 3 \
   --n-trials 10 \
@@ -526,14 +526,14 @@ brainwires eval-improve \
   --max-budget 10.0
 
 # Commit updated baselines to git
-brainwires eval-improve --commit-baselines
+rullama eval-improve --commit-baselines
 ```
 
 ### Programmatic usage
 
 ```rust
-use brainwires::self_improve::{AutonomousFeedbackLoop, FeedbackLoopConfig, SelfImprovementConfig};
-use brainwires_agent::eval::long_horizon_stability_suite;
+use rullama::self_improve::{AutonomousFeedbackLoop, FeedbackLoopConfig, SelfImprovementConfig};
+use rullama_agent::eval::long_horizon_stability_suite;
 
 let cases = long_horizon_stability_suite();
 
@@ -581,23 +581,23 @@ Outer loop adds:
 
 ```bash
 # Run all eval-module tests
-cargo test -p brainwires-agent --features eval eval::
+cargo test -p rullama-agent --features eval eval::
 
 # Run CLI self-improvement tests (includes EvalStrategy + FeedbackLoop tests)
 cargo test --lib self_improve
 
 # Run only fault_report tests
-cargo test -p brainwires-agent --features eval fault_report
+cargo test -p rullama-agent --features eval fault_report
 
 # Run stability suite tests
-cargo test -p brainwires-agent --features eval stability_tests
+cargo test -p rullama-agent --features eval stability_tests
 ```
 
 ---
 
 ## 8. Empirical Scoring Eval Cases
 
-The `brainwires-autonomy` crate contains deterministic eval cases that validate
+The `rullama-autonomy` crate contains deterministic eval cases that validate
 the relative ranking quality of every hand-tuned scoring heuristic in the
 framework. Unlike unit tests that only verify structural correctness, these cases
 use NDCG@K to assert that the scoring formulas produce *correct orderings* under
@@ -610,7 +610,7 @@ controlled scenarios.
 | `entity_importance_suite()` | 3 | `RelationshipGraph::calculate_importance` — entity hub vs. peripheral ordering |
 | `multi_factor_suite()` | 2 | `MultiFactorScore::compute`, `TierMetadata::retention_score` |
 | `agent_scoring_suite()` | 2 | `TaskBid::score`, `ResourceBid::score` |
-| `reasoning_eval_suite()` | 1 | `brainwires_reasoning::ComplexityScorer::score_heuristic` — keyword-based complexity ordering (scorer lives in the restored `brainwires-reasoning` crate) |
+| `reasoning_eval_suite()` | 1 | `rullama_reasoning::ComplexityScorer::score_heuristic` — keyword-based complexity ordering (scorer lives in the restored `rullama-reasoning` crate) |
 
 All 8 cases are deterministic (no LLM calls, no I/O) and complete in < 1 ms each.
 
@@ -618,16 +618,16 @@ All 8 cases are deterministic (no LLM calls, no I/O) and complete in < 1 ms each
 
 ```bash
 # Build with the eval-driven feature
-cargo build -p brainwires-autonomy --features eval-driven
+cargo build -p rullama-autonomy --features eval-driven
 
 # Run all 8 empirical scoring cases
-cargo test -p brainwires-autonomy --features eval-driven eval::
+cargo test -p rullama-autonomy --features eval-driven eval::
 ```
 
 ### Plugging into AutonomousFeedbackLoop
 
 ```rust
-use brainwires_autonomy::eval::{
+use rullama_autonomy::eval::{
     entity_importance_suite, multi_factor_suite,
     agent_scoring_suite, reasoning_eval_suite,
 };
@@ -644,7 +644,7 @@ let loop_ = AutonomousFeedbackLoop::new(config, cases, provider);
 
 ### Ranking metrics
 
-All cases use the pure functions from `brainwires_agent::eval`:
+All cases use the pure functions from `rullama_agent::eval`:
 
 | Function | Measures |
 |----------|---------|
@@ -666,11 +666,11 @@ All cases use the pure functions from `brainwires_agent::eval`:
 
 ## 9. Test Harness (`cargo xtask test-harness`)
 
-The test harness builds on `brainwires-eval` to attack the framework's
+The test harness builds on `rullama-eval` to attack the framework's
 own surface — feature determinism, security invariants, and end-to-end
 feature assemblies. It is **manually run** (no CI integration today);
 the maintainer fires it on a weekly cadence to surface regressions and
-hand high-priority faults to `extras/brainwires-autonomy`'s
+hand high-priority faults to `extras/rullama-autonomy`'s
 `AutonomousFeedbackLoop`.
 
 ### Commands
@@ -697,20 +697,20 @@ cargo xtask test-harness deny-grep
 ```
 
 The `run` subcommand shells out to the `run-harness` binary in
-`brainwires-test-harness`. Tier-B cases are picked up automatically via
+`rullama-test-harness`. Tier-B cases are picked up automatically via
 `inventory::submit!`, so adding a new case file is all you need.
 
 ### Adding a Tier-A feature case
 
 1. Edit the manifest at
-   `crates/brainwires-test-harness/tests/feature_inventory.toml` and
+   `crates/rullama-test-harness/tests/feature_inventory.toml` and
    fill in `required_cases` on the relevant `[[feature]]` block:
 
    ```toml
    [[feature]]
    section = "MDAP Voting"
    feature_id = "mdap_voting"
-   required_cases = ["brainwires_test_harness::cases::mdap::k_of_n_quorum"]
+   required_cases = ["rullama_test_harness::cases::mdap::k_of_n_quorum"]
    trials = 5
    wilson_min_pass = 0.95
    ```
@@ -720,18 +720,18 @@ The `run` subcommand shells out to the `run-harness` binary in
    `inventory::submit!` with a `TierACase` entry:
 
    ```rust
-   // crates/brainwires-test-harness/src/cases/mdap.rs
+   // crates/rullama-test-harness/src/cases/mdap.rs
    inventory::submit! {
        crate::registry::TierACase {
-           path: "brainwires_test_harness::cases::mdap::k_of_n_quorum",
-           crate_name: "brainwires-mdap",
+           path: "rullama_test_harness::cases::mdap::k_of_n_quorum",
+           crate_name: "rullama-mdap",
            description: "k-out-of-n quorum voting",
            factory: || Box::new(KOfNQuorumCase),
        }
    }
    struct KOfNQuorumCase;
    #[async_trait::async_trait]
-   impl brainwires_eval::EvaluationCase for KOfNQuorumCase { /* … */ }
+   impl rullama_eval::EvaluationCase for KOfNQuorumCase { /* … */ }
    ```
 
 3. Declare the module from `src/cases/mod.rs`:
@@ -752,7 +752,7 @@ The `run` subcommand shells out to the `run-harness` binary in
    inventory::submit! {
        crate::registry::SecurityCase {
            id: "sec.sandbox.mount_whitelist",
-           crate_name: "brainwires-sandbox",
+           crate_name: "rullama-sandbox",
            invariant: "validate_mount rejects sources outside allowed roots",
            factory: || Box::new(MountWhitelistCase),
        }
@@ -782,11 +782,11 @@ tool.
   targets is planned (Step 8 of the build-out) but not yet present.
 - **No sandbox-proxy dynamic cases**. The proxy is a binary-only crate;
   HTTP-probe infrastructure is a deferred refactor.
-- **No `brainwires-hardware` runtime cases**. The "API keys never
+- **No `rullama-hardware` runtime cases**. The "API keys never
   logged" invariant is covered statically by `deny-grep` rule
   `no_api_key_in_log`.
 
-### Feeding faults to `brainwires-autonomy`
+### Feeding faults to `rullama-autonomy`
 
 `cargo xtask test-harness run --tier=all --json` emits a single-line
 JSON report. The autonomy crate (in `extras/`) consumes this via its

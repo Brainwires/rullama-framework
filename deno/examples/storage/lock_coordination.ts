@@ -14,7 +14,7 @@ import {
   type Record,
   recordGet,
   requiredField,
-} from "@brainwires/storage";
+} from "@rullama/storage";
 
 // -- Lock helpers built on top of InMemoryStorageBackend ---------------------
 

@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use brainwires_provider::{ProviderType, create_model_lister};
+use rullama_provider::{ProviderType, create_model_lister};
 
 use crate::auth;
 use crate::cli::ModelsArgs;

@@ -21,9 +21,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FRAMEWORK_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BINARY_PATH="${CARGO_HOME:-$HOME/.cargo}/bin/claude-brain"
 INTEGRATION_DIR="$SCRIPT_DIR/integration"
-BRAINWIRES_DIR="$HOME/.brainwires"
-CONFIG_FILE="$BRAINWIRES_DIR/claude-brain.toml"
-LOG_FILE="$BRAINWIRES_DIR/claude-brain-hooks.log"
+RULLAMA_DIR="$HOME/.rullama"
+CONFIG_FILE="$RULLAMA_DIR/claude-brain.toml"
+LOG_FILE="$RULLAMA_DIR/claude-brain-hooks.log"
 
 GLOBAL=false
 PROJECT_DIR=""
@@ -276,17 +276,17 @@ install_skill() {
 
 # Write default config
 install_config() {
-    mkdir -p "$BRAINWIRES_DIR"
+    mkdir -p "$RULLAMA_DIR"
     if [ -f "$CONFIG_FILE" ]; then
         yellow "  Config exists, skipping: $CONFIG_FILE"
         return
     fi
     cat > "$CONFIG_FILE" <<'TOML'
 [storage]
-# Paths default to ~/.brainwires/ — uncomment to override
-# brain_path = "/home/you/.brainwires/claude-brain"
-# pks_path = "/home/you/.brainwires/pks.db"
-# bks_path = "/home/you/.brainwires/bks.db"
+# Paths default to ~/.rullama/ — uncomment to override
+# brain_path = "/home/you/.rullama/claude-brain"
+# pks_path = "/home/you/.rullama/pks.db"
+# bks_path = "/home/you/.rullama/bks.db"
 
 [policy]
 hot_max_age_hours = 24
@@ -395,8 +395,8 @@ do_uninstall() {
     yellow "═══ Uninstall Complete ═══"
     echo ""
     echo "  Binary kept at: $BINARY_PATH (run 'cargo uninstall claude-brain' to remove)"
-    echo "  Data kept at:   $BRAINWIRES_DIR"
-    echo "  To fully purge data: rm -rf $BRAINWIRES_DIR"
+    echo "  Data kept at:   $RULLAMA_DIR"
+    echo "  To fully purge data: rm -rf $RULLAMA_DIR"
     echo ""
 }
 
@@ -480,10 +480,10 @@ do_status() {
 
     # Data
     echo ""
-    if [ -d "$BRAINWIRES_DIR" ]; then
+    if [ -d "$RULLAMA_DIR" ]; then
         local size
-        size=$(du -sh "$BRAINWIRES_DIR" 2>/dev/null | cut -f1)
-        green "  Data:       $BRAINWIRES_DIR ($size)"
+        size=$(du -sh "$RULLAMA_DIR" 2>/dev/null | cut -f1)
+        green "  Data:       $RULLAMA_DIR ($size)"
     else
         yellow "  Data:       no data yet"
     fi

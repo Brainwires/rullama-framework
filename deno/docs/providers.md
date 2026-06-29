@@ -1,7 +1,7 @@
 # Providers
 
-The `@brainwires/providers` package implements AI chat providers that conform to
-the `Provider` interface from `@brainwires/core`.
+The `@rullama/providers` package implements AI chat providers that conform to
+the `Provider` interface from `@rullama/core`.
 
 ## Provider Interface
 
@@ -41,7 +41,7 @@ interface Provider {
 Use `ChatProviderFactory` to create providers from configuration:
 
 ```ts
-import { ChatProviderFactory } from "@brainwires/provider";
+import { ChatProviderFactory } from "@rullama/provider";
 
 const factory = new ChatProviderFactory();
 const provider = factory.create({
@@ -75,7 +75,7 @@ Wrap any HTTP client with `RateLimiter` or `RateLimitedClient` to respect
 provider rate limits:
 
 ```ts
-import { RateLimitedClient } from "@brainwires/provider";
+import { RateLimitedClient } from "@rullama/provider";
 
 const client = new RateLimitedClient({
   requestsPerMinute: 60,
@@ -90,7 +90,7 @@ See: `../examples/providers/rate_limiting.ts`.
 Use `createModelLister` to dynamically list available models for a provider:
 
 ```ts
-import { type AvailableModel, createModelLister } from "@brainwires/provider";
+import { type AvailableModel, createModelLister } from "@rullama/provider";
 
 const lister = createModelLister("openai", apiKey);
 const models: AvailableModel[] = await lister.listModels();

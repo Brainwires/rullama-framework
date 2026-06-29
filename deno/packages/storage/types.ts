@@ -1,7 +1,7 @@
 /**
  * Schema, record, and filter types for the unified database layer.
  *
- * Equivalent to Rust's `databases/types.rs` in brainwires-storage.
+ * Equivalent to Rust's `databases/types.rs` in rullama-storage.
  * @module
  */
 

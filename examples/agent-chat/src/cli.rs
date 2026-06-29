@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand};
     version
 )]
 pub struct Cli {
-    /// AI provider (anthropic, openai, google, groq, ollama, together, fireworks, brainwires)
+    /// AI provider (anthropic, openai, google, groq, ollama, together, fireworks, rullama)
     #[arg(long, short, env = "AGENT_CHAT_PROVIDER")]
     pub provider: Option<String>,
 

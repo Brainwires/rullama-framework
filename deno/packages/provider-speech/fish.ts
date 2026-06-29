@@ -1,7 +1,7 @@
 /**
  * Fish Audio API client for text-to-speech and speech recognition.
  *
- * Equivalent to Rust's `brainwires_providers::fish` module.
+ * Equivalent to Rust's `rullama_providers::fish` module.
  */
 
 import { RateLimiter } from "./rate_limiter.ts";

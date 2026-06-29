@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "@std/assert";
-import { Message } from "@brainwires/core";
+import { Message } from "@rullama/core";
 import {
   convertMessages,
   convertStreamChunk,

@@ -24,7 +24,7 @@ import {
   textPayload,
   topicEnvelope,
   type TransportAddress,
-} from "@brainwires/network";
+} from "@rullama/network";
 
 async function main(): Promise<void> {
   console.log("=== Peer Discovery Example ===\n");

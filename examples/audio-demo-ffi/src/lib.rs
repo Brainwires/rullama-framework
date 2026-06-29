@@ -1,4 +1,4 @@
-//! UniFFI bindings for brainwires-hardware.
+//! UniFFI bindings for rullama-hardware.
 //!
 //! Exposes TTS, STT, and hardware audio functions to C# (and Kotlin/Swift/Python)
 //! via Mozilla's UniFFI binding generator.
@@ -9,8 +9,8 @@ pub mod types_ffi;
 
 use std::sync::Arc;
 
-use brainwires_hardware::*;
-use brainwires_provider::openai_responses::ResponsesClient;
+use rullama_hardware::*;
+use rullama_provider::openai_responses::ResponsesClient;
 
 pub use error::FfiAudioError;
 pub use types_ffi::*;

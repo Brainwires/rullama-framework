@@ -5,8 +5,8 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use tokio::sync::Mutex;
 
-use brainwires_knowledge::knowledge::brain_client::BrainClient;
-use brainwires_knowledge::knowledge::types::*;
+use rullama_knowledge::knowledge::brain_client::BrainClient;
+use rullama_knowledge::knowledge::types::*;
 
 use crate::config::ClaudeBrainConfig;
 use crate::truncate_utf8;
@@ -119,7 +119,7 @@ impl ContextManager {
 
         // Load previous session context (thoughts NOT from current session)
         if let Some(sid) = session_id {
-            use brainwires_storage::{FieldValue, Filter};
+            use rullama_storage::{FieldValue, Filter};
             let filter = Filter::And(vec![
                 Filter::Eq("deleted".into(), FieldValue::Boolean(Some(false))),
                 Filter::Raw(format!(
@@ -264,7 +264,7 @@ impl ContextManager {
 
         // 1. Session digest — created by PreCompact, highest value
         if let Some(sid) = session_id {
-            use brainwires_storage::{FieldValue, Filter};
+            use rullama_storage::{FieldValue, Filter};
             let session_tag = format!("session:{}", crate::sanitize_tag_value(sid));
             let filter = Filter::And(vec![
                 Filter::Eq("deleted".into(), FieldValue::Boolean(Some(false))),
@@ -311,7 +311,7 @@ impl ContextManager {
 
         // 3. Recent thoughts from this session — supplementary detail
         if let Some(sid) = session_id {
-            use brainwires_storage::{FieldValue, Filter};
+            use rullama_storage::{FieldValue, Filter};
             let session_tag = format!("session:{}", crate::sanitize_tag_value(sid));
             let filter = Filter::And(vec![
                 Filter::Eq("deleted".into(), FieldValue::Boolean(Some(false))),

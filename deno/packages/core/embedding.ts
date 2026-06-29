@@ -1,5 +1,5 @@
 /** Interface for text embedding generation.
- * Equivalent to Rust's `EmbeddingProvider` trait in brainwires-core. */
+ * Equivalent to Rust's `EmbeddingProvider` trait in rullama-core. */
 export interface EmbeddingProvider {
   /** Generate an embedding for a single text. */
   embed(text: string): Promise<number[]>;

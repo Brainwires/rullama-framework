@@ -4,7 +4,7 @@
  * Defines the capability-based permission model for agents, including
  * filesystem, tool, network, spawning, git, and quota capabilities.
  *
- * Rust equivalent: `brainwires-permissions/src/types.rs`
+ * Rust equivalent: `rullama-permissions/src/types.rs`
  * @module
  */
 

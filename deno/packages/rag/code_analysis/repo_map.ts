@@ -4,7 +4,7 @@
  * Provides AST-aware code understanding without requiring tree-sitter.
  * Supports TypeScript, JavaScript, Python, and Rust via regex patterns.
  *
- * Ported from `brainwires-knowledge/src/code_analysis/repomap/`.
+ * Ported from `rullama-knowledge/src/code_analysis/repomap/`.
  *
  * @module
  */

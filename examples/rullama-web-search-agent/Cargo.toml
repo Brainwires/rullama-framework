@@ -1,0 +1,26 @@
+[package]
+name = "rullama-web-search-agent"
+description = "Minimal end-to-end example: ChatAgent + WebTool + BudgetProvider answering a question from the open web."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "rullama-web-search-agent"
+path = "src/main.rs"
+
+[dependencies]
+rullama-core         = { workspace = true }
+rullama-inference    = { workspace = true }
+rullama-provider     = { workspace = true }
+rullama-tool-runtime = { workspace = true }
+rullama-tool-builtins = { workspace = true, features = ["native"] }
+rullama-call-policy  = { workspace = true }
+
+anyhow = { workspace = true }
+tokio  = { workspace = true, features = ["macros", "rt-multi-thread"] }

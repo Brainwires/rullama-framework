@@ -17,7 +17,7 @@ pub async fn handle() -> Result<()> {
 
     let log_path = dirs::home_dir()
         .unwrap_or_default()
-        .join(".brainwires")
+        .join(".rullama")
         .join("claude-brain-hooks.log");
     let _ = std::fs::create_dir_all(log_path.parent().unwrap_or(std::path::Path::new("/tmp")));
     let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");

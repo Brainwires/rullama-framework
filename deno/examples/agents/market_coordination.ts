@@ -13,7 +13,7 @@ import {
   marketBidScore,
   type ResourceBid,
   type UrgencyContext,
-} from "@brainwires/agent";
+} from "@rullama/agent";
 
 async function main() {
   console.log("=== Market-Based Resource Allocation ===\n");

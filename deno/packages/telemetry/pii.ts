@@ -5,14 +5,14 @@
  * `hashSessionId` for consistent audit keys, and `redactPayload` for removing
  * obvious secrets from logs.
  *
- * Equivalent to selected parts of `brainwires_telemetry::pii` (the heavier
+ * Equivalent to selected parts of `rullama_telemetry::pii` (the heavier
  * PII tools — email / phone / SSN detectors — live in Rust until an explicit
  * request is made to port them).
  */
 
 /** Deterministic, irreversible hash of a session id (lower 12 hex chars). */
 export async function hashSessionId(session_id: string): Promise<string> {
-  const bytes = new TextEncoder().encode(`brainwires-session:${session_id}`);
+  const bytes = new TextEncoder().encode(`rullama-session:${session_id}`);
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
   let hex = "";
   for (let i = 0; i < 6; i++) {

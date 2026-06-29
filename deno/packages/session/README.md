@@ -1,4 +1,4 @@
-# @brainwires/session
+# @rullama/session
 
 Pluggable session persistence for the Brainwires Agent Framework.
 
@@ -22,12 +22,12 @@ Want a different backend (Postgres, Redis, filesystem-JSON)? Implement the
 ## Example
 
 ```ts
-import { Message } from "@brainwires/core";
+import { Message } from "@rullama/core";
 import {
   DenoKvSessionStore,
   InMemorySessionStore,
   SessionId,
-} from "@brainwires/session";
+} from "@rullama/session";
 
 // In-memory — great for tests.
 const mem = new InMemorySessionStore();
@@ -51,5 +51,5 @@ await store.save(new SessionId("bob"), [Message.user("ping")]);
 
 ## Equivalent Rust crate
 
-`brainwires-session` — same trait shape, same semantics. The SQLite backend is
+`rullama-session` — same trait shape, same semantics. The SQLite backend is
 replaced here by Deno KV to stay runtime-native.

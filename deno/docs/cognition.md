@@ -1,6 +1,6 @@
 # Cognition
 
-The `@brainwires/knowledge` package provides prompting techniques, a knowledge
+The `@rullama/knowledge` package provides prompting techniques, a knowledge
 graph interface, RAG (Retrieval-Augmented Generation) client, and code analysis
 tools.
 
@@ -17,7 +17,7 @@ import {
   getTechniquesByCategory,
   getTechniquesByComplexity,
   PromptGenerator,
-} from "@brainwires/knowledge";
+} from "@rullama/knowledge";
 
 // Browse all techniques
 const metadata = getTechniqueMetadata("chain_of_thought");
@@ -51,8 +51,8 @@ The `BrainClient` interface provides persistent thought storage,
 entity/relationship management, and knowledge search.
 
 ```ts
-import type { BrainClient, Entity, Thought } from "@brainwires/knowledge";
-import { createThought } from "@brainwires/knowledge";
+import type { BrainClient, Entity, Thought } from "@rullama/knowledge";
+import { createThought } from "@rullama/knowledge";
 
 // Create a thought
 const thought = createThought({
@@ -81,7 +81,7 @@ import type {
   IndexRequest,
   QueryRequest,
   RagClient,
-} from "@brainwires/knowledge";
+} from "@rullama/knowledge";
 
 // Index a codebase
 const indexReq: IndexRequest = { path: "/path/to/project", mode: "full" };
@@ -111,7 +111,7 @@ import {
   CallGraph,
   findReferences,
   RepoMap,
-} from "@brainwires/knowledge";
+} from "@rullama/knowledge";
 
 // Generate a repository map
 const repoMap = new RepoMap();

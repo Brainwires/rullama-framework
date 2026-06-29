@@ -1,7 +1,7 @@
 /**
  * Hyperparameters, LoRA, and alignment configuration.
  *
- * Equivalent to Rust's `brainwires_training::config` module.
+ * Equivalent to Rust's `rullama_training::config` module.
  */
 
 export type LrScheduler =

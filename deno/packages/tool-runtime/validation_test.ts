@@ -4,7 +4,7 @@ import {
   isExportLine,
   ValidationTool,
 } from "./validation.ts";
-import { ToolContext } from "@brainwires/core";
+import { ToolContext } from "@rullama/core";
 
 // ── Unit: isExportLine ──────────────────────────────────────────────────────
 

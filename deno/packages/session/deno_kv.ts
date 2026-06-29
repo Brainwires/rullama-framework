@@ -20,8 +20,8 @@
  * ```
  */
 
-import type { MessageData } from "@brainwires/core";
-import { Message } from "@brainwires/core";
+import type { MessageData } from "@rullama/core";
+import { Message } from "@rullama/core";
 import type { SessionStore } from "./store.ts";
 import { defaultListPaginated } from "./store.ts";
 import type { ListOptions, SessionRecord } from "./types.ts";
@@ -38,7 +38,7 @@ interface KvRow {
   updated_at: string;
 }
 
-const KEY_PREFIX = ["brainwires", "session"] as const;
+const KEY_PREFIX = ["rullama", "session"] as const;
 
 /** Session store backed by Deno KV. */
 export class DenoKvSessionStore implements SessionStore {

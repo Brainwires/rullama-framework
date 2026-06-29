@@ -4,7 +4,7 @@
  * Implements a reputation-based trust system where agents build trust through
  * successful operations and lose trust through violations.
  *
- * Rust equivalent: `brainwires-permissions/src/trust.rs`
+ * Rust equivalent: `rullama-permissions/src/trust.rs`
  * @module
  */
 
@@ -369,7 +369,7 @@ export class TrustManager {
    */
   static create(): TrustManager {
     const home = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? ".";
-    return TrustManager.withPath(`${home}/.brainwires/trust_store.json`);
+    return TrustManager.withPath(`${home}/.rullama/trust_store.json`);
   }
 
   #load(): void {

@@ -2,7 +2,7 @@
  * @module client
  *
  * MCP Client — manages connections to MCP servers.
- * Equivalent to Rust's `brainwires-mcp/src/client.rs`.
+ * Equivalent to Rust's `rullama-mcp/src/client.rs`.
  */
 
 import type { McpServerConfig } from "./config.ts";
@@ -71,7 +71,7 @@ export class McpClient {
    * Equivalent to Rust `McpClient::default`.
    */
   static createDefault(): McpClient {
-    return new McpClient("brainwires", "0.5.0");
+    return new McpClient("rullama", "0.5.0");
   }
 
   /**

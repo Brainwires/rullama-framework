@@ -1,12 +1,12 @@
 /**
- * @module @brainwires/reasoning
+ * @module @rullama/reasoning
  *
  * Layer 3 — Intelligence. Provider-agnostic reasoning primitives for the
  * Brainwires Agent Framework.
  *
  * ## What's here
  *
- * - **Parsers** — `OutputParser` (re-exported from `@brainwires/core`) and
+ * - **Parsers** — `OutputParser` (re-exported from `@rullama/core`) and
  *   {@link parsePlanSteps} / {@link stepsToTasks}.
  * - **Local scorers** — `ComplexityScorer`, `LocalRouter`, `LocalValidator`,
  *   `RetrievalClassifier`. Each takes a `Provider` and falls back to a
@@ -21,17 +21,17 @@
  * Tier-1 fast path (routing, validation, complexity, retrieval gating)
  * plus the parsers the rest of the framework consumes.
  *
- * Equivalent to Rust's `brainwires-reasoning` crate.
+ * Equivalent to Rust's `rullama-reasoning` crate.
  */
 
-// Parsers — OutputParser already lives in @brainwires/core (see plan §B1).
+// Parsers — OutputParser already lives in @rullama/core (see plan §B1).
 export {
   extractJson,
   JsonListParser,
   JsonOutputParser,
   type OutputParser,
   RegexOutputParser,
-} from "@brainwires/core";
+} from "@rullama/core";
 
 export {
   type ParsedStep,

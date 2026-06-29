@@ -1,13 +1,13 @@
-# @brainwires/resilience
+# @rullama/resilience
 
 Provider-layer resilience middleware — retry, budget, circuit-breaker, and
-response cache. Every decorator wraps a `Provider` (from `@brainwires/core`) and
+response cache. Every decorator wraps a `Provider` (from `@rullama/core`) and
 returns a `Provider`, so they compose freely.
 
 ## Typical stacking
 
 ```ts
-import { AnthropicChatProvider } from "@brainwires/provider";
+import { AnthropicChatProvider } from "@rullama/provider";
 import {
   BudgetGuard,
   BudgetProvider,
@@ -15,7 +15,7 @@ import {
   CircuitBreakerProvider,
   defaultRetryPolicy,
   RetryProvider,
-} from "@brainwires/call-policy";
+} from "@rullama/call-policy";
 
 const base = new AnthropicChatProvider(key, "claude-sonnet-4-6", "anthropic");
 
@@ -49,6 +49,6 @@ Outermost first: `CircuitBreaker → Retry → Budget → Cache → base`.
 
 ## Equivalent Rust crate
 
-`brainwires-resilience` — same decorator shapes, same semantics. The Rust
+`rullama-resilience` — same decorator shapes, same semantics. The Rust
 crate's optional SQLite cache backend is intentionally not ported; implement
 `CacheBackend` directly against Deno KV (or any other store) for persistence.

@@ -12,19 +12,19 @@ name = "voice-assistant"
 path = "src/main.rs"
 
 [features]
-wake-word = ["brainwires-hardware/wake-word"]
-wake-word-dtw = ["brainwires-hardware/wake-word-dtw"]
+wake-word = ["rullama-hardware/wake-word"]
+wake-word-dtw = ["rullama-hardware/wake-word-dtw"]
 
 [dependencies]
-brainwires-hardware = { workspace = true, features = ["voice-assistant"] }
-brainwires-provider = { workspace = true }
-brainwires-core = { workspace = true }
-brainwires-agent = { workspace = true }
-brainwires-inference = { workspace = true }
-brainwires-tool-runtime = { workspace = true }
-brainwires-tool-builtins = { workspace = true }
-brainwires-call-policy = { workspace = true }
-brainwires-stores = { workspace = true, features = ["session", "sqlite"] }
+rullama-hardware = { workspace = true, features = ["voice-assistant"] }
+rullama-provider = { workspace = true }
+rullama-core = { workspace = true }
+rullama-agent = { workspace = true }
+rullama-inference = { workspace = true }
+rullama-tool-runtime = { workspace = true }
+rullama-tool-builtins = { workspace = true }
+rullama-call-policy = { workspace = true }
+rullama-stores = { workspace = true, features = ["session", "sqlite"] }
 
 tokio = { workspace = true, features = ["full"] }
 async-trait.workspace = true

@@ -15,7 +15,7 @@ export type FrameworkErrorKind =
   | { type: "other"; message: string };
 
 /** Core framework error with typed error kinds.
- * Equivalent to Rust's `FrameworkError` in brainwires-core. */
+ * Equivalent to Rust's `FrameworkError` in rullama-core. */
 export class FrameworkError extends Error {
   readonly kind: FrameworkErrorKind;
 

@@ -165,7 +165,7 @@ impl ClaudeBrainMcpServer {
         &self,
         Parameters(req): Parameters<CaptureRequest>,
     ) -> Result<String, String> {
-        use brainwires_knowledge::knowledge::types::CaptureThoughtRequest;
+        use rullama_knowledge::knowledge::types::CaptureThoughtRequest;
 
         let mut client = self.ctx.client().lock_owned().await;
         let response = client
@@ -235,7 +235,7 @@ impl ClaudeBrainMcpServer {
         Parameters(req): Parameters<ConsolidateRequest>,
     ) -> Result<String, String> {
         use crate::session_adapter::BrainSessionAdapter;
-        use brainwires_memory::dream::consolidator::DreamSessionStore;
+        use rullama_memory::dream::consolidator::DreamSessionStore;
 
         let adapter = BrainSessionAdapter::new(self.ctx.client());
 
@@ -276,7 +276,7 @@ impl ClaudeBrainMcpServer {
         description = "Teach a behavioral rule to the BKS (Behavioral Knowledge System). Use this when you discover patterns about how to work effectively — command usage, error recovery, tool behavior, etc. Rules persist across sessions and inform future behavior."
     )]
     async fn learn(&self, Parameters(req): Parameters<LearnRequest>) -> Result<String, String> {
-        use brainwires_knowledge::knowledge::bks_pks::{
+        use rullama_knowledge::knowledge::bks_pks::{
             BehavioralTruth, TruthCategory, TruthSource,
         };
 

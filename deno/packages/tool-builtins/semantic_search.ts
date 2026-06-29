@@ -2,10 +2,10 @@
  * Semantic Search Tool — RAG-powered codebase search.
  *
  * Provides semantic code search using vector embeddings via the
- * `@brainwires/knowledge` RAG interfaces. Supports indexing, querying,
+ * `@rullama/knowledge` RAG interfaces. Supports indexing, querying,
  * filtered search, statistics, and git history search.
  *
- * Equivalent to Rust's `brainwires_tools::semantic_search` module. The Rust
+ * Equivalent to Rust's `rullama_tools::semantic_search` module. The Rust
  * version carries a global `OnceCell<RagClient>`; the Deno port accepts an
  * injected {@link RagClient} on each call so the host picks the transport
  * (in-process stub, HTTP RPC to the Rust service, etc.).
@@ -16,7 +16,7 @@ import {
   type Tool,
   type ToolContext,
   ToolResult,
-} from "@brainwires/core";
+} from "@rullama/core";
 import type {
   AdvancedSearchRequest,
   GitSearchResult,
@@ -25,7 +25,7 @@ import type {
   RagClient,
   SearchGitHistoryRequest,
   SearchResult,
-} from "@brainwires/rag";
+} from "@rullama/rag";
 
 /** Tool definitions and executor for semantic codebase search powered by RAG. */
 export class SemanticSearchTool {

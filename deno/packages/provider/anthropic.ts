@@ -16,7 +16,7 @@ import {
   type StreamChunk,
   type Tool,
   type Usage,
-} from "@brainwires/core";
+} from "@rullama/core";
 import { parseSSEStream } from "./sse.ts";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";

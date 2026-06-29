@@ -1,11 +1,11 @@
 /**
- * @module @brainwires/knowledge
+ * @module @rullama/knowledge
  *
  * Knowledge layer: BrainClient + entity/relationship/thought graph + BKS/PKS.
- * Equivalent to Rust's `brainwires-knowledge` crate.
+ * Equivalent to Rust's `rullama-knowledge` crate.
  *
- * Prompting moved to `@brainwires/prompting`. RAG and code analysis moved
- * to `@brainwires/rag`. No transitional re-exports — update imports.
+ * Prompting moved to `@rullama/prompting`. RAG and code analysis moved
+ * to `@rullama/rag`. No transitional re-exports — update imports.
  */
 
 export {

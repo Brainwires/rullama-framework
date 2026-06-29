@@ -1,7 +1,7 @@
 /**
  * Google Cloud Text-to-Speech API client.
  *
- * Equivalent to Rust's `brainwires_providers::google_tts` module.
+ * Equivalent to Rust's `rullama_providers::google_tts` module.
  *
  * Returns base64-encoded audio content (per Google's API contract);
  * consumers can decode with `atob` + TextEncoder or Uint8Array conversion.

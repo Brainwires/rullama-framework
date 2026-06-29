@@ -1,0 +1,61 @@
+[package]
+name = "rullama-wasm"
+description = "WASM bindings for the Brainwires Agent Framework"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+publish = false
+keywords = ["wasm", "webassembly", "ai-agents", "browser", "llm"]
+categories = ["wasm"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# WASM-safe framework crates (direct deps: need default-features = false, can't inherit from workspace)
+rullama-core = { path = "../../crates/rullama-core", version = "0.12.0", default-features = false, features = ["wasm"] }
+rullama-agent = { path = "../../crates/rullama-agent", version = "0.12.0", default-features = false, features = ["wasm"] }
+rullama-mdap = { path = "../../crates/rullama-mdap", version = "0.12.0" }
+rullama-tool-runtime  = { path = "../../crates/rullama-tool-runtime",  version = "0.12.0", default-features = false, features = ["wasm", "orchestrator-wasm"], optional = true }
+rullama-tool-builtins = { path = "../../crates/rullama-tool-builtins", version = "0.12.0", default-features = false, features = ["wasm", "interpreters-wasm"], optional = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# WASM bindings
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"
+
+# Orchestrator deps (behind orchestrator feature; direct dep: needs default-features = false override)
+rhai = { version = "1.23", default-features = false, features = ["serde", "std"], optional = true }
+js-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", features = ["console"], optional = true }
+web-time = { version = "1.1", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+instant = { version = "0.1", features = ["wasm-bindgen"], optional = true }
+
+[features]
+default = []
+interpreters = []
+orchestrator = [
+    "dep:rhai", "dep:js-sys", "dep:web-sys",
+    "dep:web-time", "dep:console_error_panic_hook", "dep:instant",
+]
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[[example]]
+name = "wasm_validation"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false

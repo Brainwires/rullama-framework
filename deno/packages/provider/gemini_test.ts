@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { ChatOptions, Message } from "@brainwires/core";
+import { ChatOptions, Message } from "@rullama/core";
 import {
   buildGeminiRequest,
   convertCandidateContent,

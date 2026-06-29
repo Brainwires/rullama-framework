@@ -4,12 +4,12 @@
  * Enables the system to learn from successful interactions without retraining.
  * Implements both local (per-session) and global (cross-session) memory.
  *
- * Equivalent to Rust's `brainwires_agents::seal::learning` module.
+ * Equivalent to Rust's `rullama_agents::seal::learning` module.
  */
 
-import type { EntityType, ResponseConfidence } from "@brainwires/core";
-import type { ToolErrorCategory, ToolOutcome } from "@brainwires/tool-runtime";
-import { categoryName, getSuggestion } from "@brainwires/tool-runtime";
+import type { EntityType, ResponseConfidence } from "@rullama/core";
+import type { ToolErrorCategory, ToolOutcome } from "@rullama/tool-runtime";
+import { categoryName, getSuggestion } from "@rullama/tool-runtime";
 import {
   type QueryCore,
   queryCoreToSexp,
@@ -18,8 +18,8 @@ import {
 
 /**
  * Response confidence carrier used by SEAL learning. Imported from
- * `@brainwires/core` since v0.11.0 (was previously a local duplicate type;
- * Rust's Phase 11a centralised it in `brainwires-core::confidence`).
+ * `@rullama/core` since v0.11.0 (was previously a local duplicate type;
+ * Rust's Phase 11a centralised it in `rullama-core::confidence`).
  *
  * SEAL uses its own threshold constants (lower bars than the core
  * `isHighConfidence` / `isLowConfidence` helpers, which are intended for

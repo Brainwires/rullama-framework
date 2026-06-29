@@ -6,7 +6,7 @@
  * {@link RegressionConfig.max_regression} below its baseline, the check
  * fails — enabling CI pipelines to gate on evaluation regressions.
  *
- * Equivalent to Rust's `brainwires_agents::eval::regression` module.
+ * Equivalent to Rust's `rullama_agents::eval::regression` module.
  */
 
 import type { EvaluationStats } from "./trial.ts";

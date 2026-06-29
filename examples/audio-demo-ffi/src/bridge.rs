@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use brainwires_hardware::{
+use rullama_hardware::{
     AudioCapture, AudioConfig, AudioPlayback, CpalCapture, CpalPlayback, SpeechToText, TextToSpeech,
 };
 
@@ -135,8 +135,8 @@ pub(crate) fn stt_transcribe_sync(
     options: FfiSttOptions,
 ) -> Result<FfiTranscript, FfiAudioError> {
     with_stt(handle, |stt| {
-        let native_audio = brainwires_hardware::AudioBuffer::from(audio);
-        let native_opts = brainwires_hardware::SttOptions::from(options);
+        let native_audio = rullama_hardware::AudioBuffer::from(audio);
+        let native_opts = rullama_hardware::SttOptions::from(options);
         runtime()
             .block_on(stt.transcribe(&native_audio, &native_opts))
             .map(Into::into)
@@ -189,7 +189,7 @@ pub(crate) fn audio_play_sync(
     buffer: FfiAudioBuffer,
 ) -> Result<(), FfiAudioError> {
     let playback = CpalPlayback::new();
-    let native_buf = brainwires_hardware::AudioBuffer::from(buffer);
+    let native_buf = rullama_hardware::AudioBuffer::from(buffer);
     runtime()
         .block_on(playback.play(None, &native_buf))
         .map_err(|e| FfiAudioError::Hardware {

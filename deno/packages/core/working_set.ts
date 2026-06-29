@@ -5,7 +5,7 @@ export const DEFAULT_MAX_FILES = 15;
 export const DEFAULT_MAX_TOKENS = 100_000;
 
 /** A file entry in the working set.
- * Equivalent to Rust's `WorkingSetEntry` in brainwires-core. */
+ * Equivalent to Rust's `WorkingSetEntry` in rullama-core. */
 export interface WorkingSetEntry {
   path: string;
   tokens: number;
@@ -17,7 +17,7 @@ export interface WorkingSetEntry {
 }
 
 /** Working set configuration.
- * Equivalent to Rust's `WorkingSetConfig` in brainwires-core. */
+ * Equivalent to Rust's `WorkingSetConfig` in rullama-core. */
 export interface WorkingSetConfig {
   max_files: number;
   max_tokens: number;
@@ -36,7 +36,7 @@ export function defaultWorkingSetConfig(): WorkingSetConfig {
 }
 
 /** Manages the set of files currently in the agent's context.
- * Equivalent to Rust's `WorkingSet` in brainwires-core. */
+ * Equivalent to Rust's `WorkingSet` in rullama-core. */
 export class WorkingSet {
   private entries: Map<string, WorkingSetEntry> = new Map();
   private config: WorkingSetConfig;

@@ -1,7 +1,7 @@
 /**
  * Murf AI API client for text-to-speech.
  *
- * Equivalent to Rust's `brainwires_providers::murf` module.
+ * Equivalent to Rust's `rullama_providers::murf` module.
  *
  * Murf returns a URL to the generated audio rather than bytes directly;
  * use {@link MurfClient.downloadAudio} to fetch the payload.

@@ -281,7 +281,7 @@ export class SkillRegistry {
    */
   formatSkillList(): string {
     if (this.skills.size === 0) {
-      return "No skills available. Add skills to ~/.brainwires/skills/ or .brainwires/skills/";
+      return "No skills available. Add skills to ~/.rullama/skills/ or .rullama/skills/";
     }
 
     let output = "";

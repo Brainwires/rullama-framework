@@ -5,7 +5,7 @@
  * Equivalent to Rust's `AgentNetworkError`.
  */
 
-import type { JsonRpcError } from "@brainwires/mcp-client";
+import type { JsonRpcError } from "@rullama/mcp-client";
 
 /** Error codes for agent network errors. */
 export const ErrorCode = {

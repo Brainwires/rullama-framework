@@ -2,7 +2,7 @@
  * @module config
  *
  * MCP server configuration management.
- * Equivalent to Rust's `brainwires-mcp/src/config.rs`.
+ * Equivalent to Rust's `rullama-mcp/src/config.rs`.
  */
 
 /**
@@ -29,7 +29,7 @@ interface McpConfigFile {
  * Manages MCP server configurations on disk.
  * Equivalent to Rust `McpConfigManager`.
  *
- * Stores configurations in `~/.brainwires/mcp-config.json`.
+ * Stores configurations in `~/.rullama/mcp-config.json`.
  */
 export class McpConfigManager {
   #configPath: string;
@@ -149,6 +149,6 @@ export class McpConfigManager {
     if (!home) {
       throw new Error("Failed to get home directory");
     }
-    return `${home}/.brainwires/mcp-config.json`;
+    return `${home}/.rullama/mcp-config.json`;
   }
 }

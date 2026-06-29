@@ -4,7 +4,7 @@
 Runs the upstream `hexgrad/kokoro` KModel on a fixed phrase + voice with a fixed
 RNG seed (the ISTFTNet source module is otherwise non-deterministic), and saves
 every stage-boundary tensor + the final 24 kHz WAV. The Rust oracle in
-`brainwires-engine/src/reference/` diffs against these (see KOKORO_REFERENCE.md).
+`rullama-engine/src/reference/` diffs against these (see KOKORO_REFERENCE.md).
 
 Run inside the pinned reference venv (Intel-mac → torch==2.2.2, py3.12):
     ~/.cache/kokoro/venv/bin/python scripts/kokoro_dump_fixtures.py

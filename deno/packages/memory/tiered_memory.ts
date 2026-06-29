@@ -9,12 +9,12 @@
  * Messages flow from hot -> warm -> cold based on age and importance,
  * and can be promoted back up when accessed.
  *
- * Equivalent to Rust's `brainwires-memory::tiered_memory`. Moved from
- * `@brainwires/storage` to `@brainwires/memory` in v0.11.0 to mirror Rust.
+ * Equivalent to Rust's `rullama-memory::tiered_memory`. Moved from
+ * `@rullama/storage` to `@rullama/memory` in v0.11.0 to mirror Rust.
  * @module
  */
 
-import type { MessageMetadata } from "@brainwires/stores";
+import type { MessageMetadata } from "@rullama/stores";
 
 const SECS_PER_HOUR = 3600;
 const SIMILARITY_WEIGHT = 0.50;

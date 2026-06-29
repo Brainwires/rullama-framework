@@ -1,0 +1,109 @@
+[package]
+name = "rullama-knowledge"
+description = "Knowledge layer — knowledge graphs, BKS/PKS, brain client, entity extraction for the Brainwires Agent Framework. RAG / spectral / code-analysis live in `rullama-rag`; prompting lives in `rullama-prompting`."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/rullama-knowledge"
+keywords = ["knowledge-graph", "bks", "pks", "ai-agents", "framework"]
+categories = ["development-tools"]
+
+[lib]
+name = "rullama_knowledge"
+path = "src/lib.rs"
+
+[dependencies]
+# ── Always available ────────────────────────────────────────────────────
+rullama-core = { workspace = true }
+rullama-telemetry = { workspace = true, optional = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Async runtime (minimal base, features added per-feature)
+tokio = { version = "1.43", features = ["sync", "time"] }
+
+# Time & identifiers
+chrono = { workspace = true }
+uuid = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Regex (used by brain entity extraction & rag types)
+regex = { workspace = true }
+
+# ── Knowledge deps (from rullama-brain) ──────────────────────────────
+rullama-storage = { workspace = true, optional = true }
+dirs = { version = "6", optional = true }
+schemars = { workspace = true, optional = true }
+rusqlite = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+urlencoding = { workspace = true, optional = true }
+
+# Prompting (linfa / linfa-clustering / ndarray / bincode) lives in
+# `rullama-prompting`.
+
+[features]
+default = ["knowledge"]
+
+# Dream (offline memory consolidation) lives in `rullama-stores`
+# under its `dream` feature — depend on that crate directly.
+
+# Analytics integration — enables DreamCycle event recording
+telemetry = ["dep:rullama-telemetry"]
+
+# Knowledge graph, entities, thoughts, brain client (from rullama-brain)
+knowledge = [
+    "dep:rullama-storage", "rullama-storage/native",
+    "dep:rusqlite", "dep:reqwest", "dep:urlencoding",
+    "dep:schemars", "dep:dirs",
+    "rullama-core/native",
+]
+
+# Adaptive prompting features live on `rullama-prompting`.
+
+# RAG (with internal spectral + code-analysis subdomains), tree-sitter
+# language parsers, PDF/document processing, and the lancedb-backend /
+# qdrant-backend selectors live on `rullama-rag` — depend on that
+# crate directly.
+
+# Alternative folder name for data storage
+alt-folder-name = []
+
+# Native = everything in this crate (knowledge + telemetry + persistence).
+native = [
+    "knowledge", "telemetry",
+]
+
+# WASM = lightweight
+wasm = ["rullama-core/wasm"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+tempfile = { workspace = true }
+tracing-subscriber = { workspace = true }
+criterion = { version = "0.5", features = ["async_tokio"] }
+filetime = "0.2"
+
+# `prompting_techniques` example lives in rullama-prompting.
+
+[[example]]
+name = "knowledge_graph"
+required-features = ["knowledge"]
+
+# `rag_search` and `code_analysis` examples live in rullama-rag.
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

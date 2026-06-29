@@ -1,0 +1,124 @@
+[package]
+name = "rullama-provider"
+description = "LLM provider implementations (Anthropic, OpenAI Chat + Responses, Google Gemini, Ollama, Bedrock, Vertex AI, local llama.cpp) for the Brainwires Agent Framework. Speech (TTS/STT) providers live in `rullama-provider-speech`."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/rullama-provider"
+keywords = ["ai-providers", "llm", "anthropic", "openai", "google"]
+categories = ["api-bindings"]
+
+[dependencies]
+# Direct path dep (rather than `workspace = true`) so we can set
+# `default-features = false`. The workspace declaration omits
+# `default-features`, which would otherwise prevent us from overriding it.
+# This lets wasm32 builds (e.g. the `web-speech` feature) opt out of
+# rullama-core's default `native` feature; native callers re-enable it via
+# this crate's own `native` feature below.
+rullama-core = { path = "../rullama-core", version = "0.12.0", default-features = false }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+# Always needed for local_llm module (always compiled)
+async-trait = { workspace = true }
+futures = { workspace = true }
+dirs = { workspace = true }
+
+# Local LLM inference (optional heavy dep)
+llama-cpp-2 = { version = "0.1", optional = true }
+encoding_rs = { workspace = true, optional = true }
+
+# Analytics (optional) — used on both native and wasm if `telemetry` is on.
+rullama-telemetry = { workspace = true, optional = true }
+chrono = { workspace = true, optional = true }
+
+# Browser-native speech moved to `rullama-provider-speech` —
+# wasm-bindgen / js-sys / web-sys / wasm-bindgen-futures deps deleted.
+
+# All deps below are native-only. We declare them under a wasm-excluding target
+# so the optional `dep:foo` references in the `native`/`bedrock`/`vertex-ai`
+# features become no-ops on wasm32 (cargo silently ignores `dep:` entries
+# whose underlying dep doesn't exist for the current target).
+# This lets `cargo check ... --target wasm32-unknown-unknown` succeed even with
+# `default = ["native"]` enabled.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# HTTP providers
+reqwest = { workspace = true, optional = true, features = ["multipart"] }
+async-stream = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
+# WebSocket transport (OpenAI Responses API)
+tokio-tungstenite = { workspace = true, optional = true }
+url = { workspace = true, optional = true }
+# Bedrock auth (AWS SigV4) — official AWS crates
+aws-sigv4 = { workspace = true, optional = true }
+aws-credential-types = { workspace = true, optional = true }
+aws-smithy-runtime-api = { workspace = true, optional = true }
+http = { workspace = true, optional = true }
+# Vertex AI auth (Google OAuth2)
+gcp_auth = { workspace = true, optional = true }
+
+# wasm32 needs the JS-backed `getrandom` for any RNG-using transitive deps
+# (uuid). We enable both 0.2 (`js`) and 0.3 (`wasm_js`) since the dep
+# graph includes both major versions.
+#
+# `web-sys` (with the `console` feature) is also pulled in unconditionally
+# on wasm32 so the local-llm pipeline can emit per-step diagnostics into
+# the browser console without forcing every wasm caller to opt into the
+# `web-speech` feature gate.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+getrandom_v3 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+web-sys = { version = "0.3", features = ["console"] }
+# `js-sys` for `Date::now()` used by per-token perf diag timestamps.
+js-sys = "0.3"
+
+[features]
+# No default features. Native callers must opt into `native` (the workspace
+# `rullama-provider` declaration enables it for them). This lets
+# `cargo check ... --target wasm32-unknown-unknown --features web-speech`
+# (and similar) succeed without `--no-default-features`.
+default = []
+native = [
+    "rullama-core/native",
+    "dep:reqwest", "dep:async-stream",
+    "dep:tracing", "dep:tokio", "dep:uuid",
+    "dep:tokio-tungstenite", "dep:url",
+]
+# Wasm-friendly companion for `web-speech` and other future browser providers.
+# Forwards `wasm` to rullama-core (which enables chrono/wasmbind etc.).
+wasm = ["rullama-core/wasm"]
+llama-cpp-2 = ["dep:tracing", "dep:tokio", "dep:llama-cpp-2", "dep:encoding_rs"]
+bedrock = ["native", "dep:aws-sigv4", "dep:aws-credential-types", "dep:aws-smithy-runtime-api", "dep:http"]
+vertex-ai = ["native", "dep:gcp_auth"]
+telemetry = ["dep:rullama-telemetry", "rullama-telemetry/native", "dep:chrono"]
+# `web-speech` lives on `rullama-provider-speech` — depend on that crate
+# directly for browser-native TTS / STT.
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+reqwest = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+rullama-test-fixtures = { workspace = true }
+
+[[example]]
+name = "provider_factory"
+required-features = ["native"]
+
+[[example]]
+name = "rate_limited_client"
+required-features = ["native"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

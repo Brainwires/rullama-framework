@@ -1,7 +1,7 @@
 /**
  * Shared value types used by every {@link SessionStore} implementation.
  *
- * Equivalent to Rust's `brainwires_session::types` module.
+ * Equivalent to Rust's `rullama_session::types` module.
  */
 
 /** Opaque identifier for a persisted session. */

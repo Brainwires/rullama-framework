@@ -37,8 +37,8 @@ if [ ! -f "$EDITS_JSONL" ]; then
 fi
 
 echo "[build] cargo build --release …"
-cargo build -p brainwires-engine --release --example memit_edit 2>&1 | tail -2
-cargo build -p brainwires-lora --release --example eval_adapter 2>&1 | tail -2
+cargo build -p rullama-engine --release --example memit_edit 2>&1 | tail -2
+cargo build -p rullama-lora --release --example eval_adapter 2>&1 | tail -2
 
 # Hold-out probe prompts that should be UNAFFECTED by the edits.
 HOLD_OUT=(
@@ -66,7 +66,7 @@ echo "────────────────────────�
 # Run MEMIT.
 RULLAMA_MEMIT_APPLY_CHAT_TEMPLATE=1 \
 RULLAMA_MEMIT_ADAPTER_PATH="$ADAPTER" \
-cargo run -p brainwires-engine --release --example memit_edit -- \
+cargo run -p rullama-engine --release --example memit_edit -- \
     "$GGUF" "$EDITS_JSONL" 2>&1 | tee /tmp/memit-eval.log
 
 if [ ! -f "$ADAPTER" ]; then
@@ -90,7 +90,7 @@ ALL_PROMPTS=("${EDIT_PROMPTS[@]}" "${HOLD_OUT[@]}")
 EVAL_LOG="/tmp/memit-eval-adapter.log"
 RULLAMA_EVAL_MAX=15 \
 RULLAMA_EVAL_APPLY_CHAT_TEMPLATE=1 \
-cargo run -p brainwires-lora --release --example eval_adapter -- \
+cargo run -p rullama-lora --release --example eval_adapter -- \
     "$GGUF" "$ADAPTER" "${ALL_PROMPTS[@]}" \
     >"$EVAL_LOG" 2>&1
 

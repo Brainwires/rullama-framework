@@ -7,7 +7,7 @@ import {
   createThought,
   parseThoughtCategory,
   parseThoughtSource,
-} from "@brainwires/knowledge";
+} from "@rullama/knowledge";
 
 import type {
   BrainClient,
@@ -22,7 +22,7 @@ import type {
   SearchMemoryResponse,
   Thought,
   ThoughtCategory,
-} from "@brainwires/knowledge";
+} from "@rullama/knowledge";
 
 // ---------------------------------------------------------------------------
 // In-memory entity store (simplified demonstration)

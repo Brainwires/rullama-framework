@@ -13,21 +13,21 @@ const DENO_PACKAGES = "./packages";
 
 /** Crates we intentionally leave on the runtime boundary. Keep in sync with docs/parity.md. */
 const RUST_ONLY = new Set([
-  "brainwires", // meta-crate, no deno equivalent
-  "brainwires-hardware",
-  "brainwires-sandbox",
-  "brainwires-sandbox-proxy",
+  "rullama", // meta-crate, no deno equivalent
+  "rullama-hardware",
+  "rullama-sandbox",
+  "rullama-sandbox-proxy",
 ]);
 
 /** Crates that live inside another Deno package (folded rather than 1:1). */
 const FOLDED: Record<string, string> = {
-  // brainwires-mcp-server unfolded in v0.11.0 — now @brainwires/mcp-server.
+  // rullama-mcp-server unfolded in v0.11.0 — now @rullama/mcp-server.
   // None folded at present.
 };
 
 /** Rust crate name → Deno package name. */
 function depunctuate(name: string): string {
-  return name.replace(/^brainwires-/, "");
+  return name.replace(/^rullama-/, "");
 }
 
 async function listDirs(path: string): Promise<string[]> {
@@ -62,7 +62,7 @@ function main() {
       }
       const expected = depunctuate(crate);
       if (packages.has(expected)) {
-        rows.push({ crate, pkg: `@brainwires/${expected}`, status: "ok" });
+        rows.push({ crate, pkg: `@rullama/${expected}`, status: "ok" });
       } else {
         rows.push({ crate, pkg: "(missing)", status: "UNEXPECTED GAP" });
         unexpected += 1;

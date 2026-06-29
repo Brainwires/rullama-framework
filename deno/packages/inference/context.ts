@@ -8,15 +8,15 @@
  * @module
  */
 
-import { WorkingSet } from "@brainwires/core";
-import type { ToolExecutor, ToolPreHook } from "@brainwires/tool-runtime";
+import { WorkingSet } from "@rullama/core";
+import type { ToolExecutor, ToolPreHook } from "@rullama/tool-runtime";
 
 import type { AgentLifecycleHooks } from "./hooks.ts";
-import type { CommunicationHub } from "@brainwires/agent";
-import type { FileLockManager } from "@brainwires/agent";
+import type { CommunicationHub } from "@rullama/agent";
+import type { FileLockManager } from "@rullama/agent";
 
 // Re-export for convenience
-export type { ToolPreHook } from "@brainwires/tool-runtime";
+export type { ToolPreHook } from "@rullama/tool-runtime";
 
 /** Environment context for a task agent. */
 export class AgentContext {

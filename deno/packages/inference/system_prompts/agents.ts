@@ -1,7 +1,7 @@
 /**
  * System prompt implementations for each agent type.
  *
- * Strings are kept 1:1 with the Rust `brainwires_agents::system_prompts::agents`
+ * Strings are kept 1:1 with the Rust `rullama_agents::system_prompts::agents`
  * module so both runtimes produce identical prompts for a given configuration.
  */
 

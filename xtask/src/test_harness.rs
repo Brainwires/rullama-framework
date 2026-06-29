@@ -19,7 +19,7 @@ use serde::Deserialize;
 const FEATURES_MD: &str = "FEATURES.md";
 
 /// Feature-inventory manifest path, relative to the workspace root.
-const MANIFEST_TOML: &str = "crates/brainwires-test-harness/tests/feature_inventory.toml";
+const MANIFEST_TOML: &str = "crates/rullama-test-harness/tests/feature_inventory.toml";
 
 /// Sections we never expect to cover (matches the awk generator in the
 /// harness `Step 3` notes).
@@ -73,7 +73,7 @@ fn run(args: &[String]) -> ExitCode {
             "run",
             "--quiet",
             "-p",
-            "brainwires-test-harness",
+            "rullama-test-harness",
             "--bin",
             "run-harness",
             "--",
@@ -103,7 +103,7 @@ struct FeatureStub {
     section: String,
     feature_id: String,
     // Reserved for the dangling-Rust-path check (Step 9+) — wired through
-    // brainwires-test-harness's `inventory` registry once Tier-A cases land.
+    // rullama-test-harness's `inventory` registry once Tier-A cases land.
     #[serde(default)]
     #[allow(dead_code)]
     required_cases: Vec<String>,

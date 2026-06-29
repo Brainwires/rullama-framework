@@ -1,7 +1,7 @@
 /**
  * Training-specific errors.
  *
- * Equivalent to Rust's `brainwires_training::error::TrainingError`.
+ * Equivalent to Rust's `rullama_training::error::TrainingError`.
  */
 
 export type TrainingErrorKind =

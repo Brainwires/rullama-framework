@@ -1,7 +1,7 @@
 /**
  * Retry decorator with exponential backoff + jitter.
  *
- * Equivalent to Rust's `brainwires_resilience::retry` module.
+ * Equivalent to Rust's `rullama_resilience::retry` module.
  */
 
 import type {
@@ -11,7 +11,7 @@ import type {
   Provider,
   StreamChunk,
   Tool,
-} from "@brainwires/core";
+} from "@rullama/core";
 import { classifyError, isRetryable, parseRetryAfter } from "./classify.ts";
 import { ResilienceError } from "./error.ts";
 

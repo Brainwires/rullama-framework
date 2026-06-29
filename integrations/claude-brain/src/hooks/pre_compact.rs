@@ -4,7 +4,7 @@ use anyhow::Result;
 use std::collections::HashSet;
 use std::io::BufRead;
 
-use brainwires_storage::{FieldValue, Filter};
+use rullama_storage::{FieldValue, Filter};
 
 use crate::config::ClaudeBrainConfig;
 use crate::context_manager::ContextManager;
@@ -47,7 +47,7 @@ pub async fn handle() -> Result<()> {
     // Log
     let log_path = dirs::home_dir()
         .unwrap_or_default()
-        .join(".brainwires")
+        .join(".rullama")
         .join("claude-brain-hooks.log");
     let _ = std::fs::create_dir_all(log_path.parent().unwrap_or(std::path::Path::new("/tmp")));
     let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
@@ -83,7 +83,7 @@ pub async fn handle() -> Result<()> {
     };
 
     // Build batch of capture requests, skipping already-captured messages
-    let requests: Vec<brainwires_knowledge::knowledge::types::CaptureThoughtRequest> = messages
+    let requests: Vec<rullama_knowledge::knowledge::types::CaptureThoughtRequest> = messages
         .iter()
         .filter(|(_, content)| content.len() >= MIN_MESSAGE_LEN)
         .filter(|(role, content)| {
@@ -100,7 +100,7 @@ pub async fn handle() -> Result<()> {
             } else {
                 tagged_content
             };
-            brainwires_knowledge::knowledge::types::CaptureThoughtRequest {
+            rullama_knowledge::knowledge::types::CaptureThoughtRequest {
                 content: store_content,
                 category: None,
                 tags: Some(vec![
@@ -137,7 +137,7 @@ pub async fn handle() -> Result<()> {
         let digest_content = digest_parts.join("\n");
         let _ = client
             .capture_thought(
-                brainwires_knowledge::knowledge::types::CaptureThoughtRequest {
+                rullama_knowledge::knowledge::types::CaptureThoughtRequest {
                     content: digest_content,
                     category: Some("insight".to_string()),
                     tags: Some(vec![

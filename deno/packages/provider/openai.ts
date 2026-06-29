@@ -16,7 +16,7 @@ import {
   type StreamChunk,
   type Tool,
   type Usage,
-} from "@brainwires/core";
+} from "@rullama/core";
 import { parseSSEStream } from "./sse.ts";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";

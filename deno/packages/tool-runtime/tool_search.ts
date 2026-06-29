@@ -1,9 +1,9 @@
 /**
  * Tool Search — meta-tool for discovering available tools dynamically.
  *
- * Equivalent to Rust's `brainwires_tools::tool_search` module. The semantic
+ * Equivalent to Rust's `rullama_tools::tool_search` module. The semantic
  * search mode is deferred until an embedding backend lands in the Deno
- * `@brainwires/knowledge` package; requesting it returns a clear error.
+ * `@rullama/knowledge` package; requesting it returns a clear error.
  */
 
 import {
@@ -11,7 +11,7 @@ import {
   type Tool,
   type ToolContext,
   ToolResult,
-} from "@brainwires/core";
+} from "@rullama/core";
 
 import type { ToolRegistry } from "./registry.ts";
 import type { ToolEmbeddingIndex } from "./tool_embedding.ts";

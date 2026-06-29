@@ -59,7 +59,7 @@ pub fn resolve_api_key(provider: &str, cli_key: Option<&str>) -> Result<Option<S
         "together" => "TOGETHER_API_KEY",
         "fireworks" => "FIREWORKS_API_KEY",
         "anyscale" => "ANYSCALE_API_KEY",
-        "brainwires" => "BRAINWIRES_API_KEY",
+        "rullama" => "RULLAMA_API_KEY",
         _ => "",
     };
 

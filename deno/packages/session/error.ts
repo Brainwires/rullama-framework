@@ -1,7 +1,7 @@
 /**
  * Typed errors surfaced by session stores.
  *
- * Equivalent to Rust's `brainwires_session::error` module.
+ * Equivalent to Rust's `rullama_session::error` module.
  */
 
 /** Errors surfaced by session-store implementations. */

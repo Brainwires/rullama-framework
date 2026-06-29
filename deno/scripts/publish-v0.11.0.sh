@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publish all 27 @brainwires/* packages to JSR in dependency order.
+# Publish all 27 @rullama/* packages to JSR in dependency order.
 #
 # Usage:
 #   ! ./deno/scripts/publish-v0.11.0.sh           # interactive (browser auth)
@@ -29,7 +29,7 @@ fi
 
 # Real dep graph (no transitional shims):
 #
-#   Tier 0: core (no @brainwires deps)
+#   Tier 0: core (no @rullama deps)
 #   Tier 1: depend only on core         — telemetry, storage, mcp-client,
 #                                          call-policy, provider-speech,
 #                                          session, agent, eval, mdap,
@@ -40,7 +40,7 @@ fi
 #                                          mcp-server (→mcp-client),
 #                                          provider (→core only, listed here
 #                                          for symmetry — it has zero
-#                                          @brainwires deps after shim removal),
+#                                          @rullama deps after shim removal),
 #                                          tool-builtins (→tool-runtime),
 #                                          knowledge (BrainClient core only)
 #   Tier 3: depend on tier 2            — memory (→stores), skills
@@ -50,7 +50,7 @@ fi
 #                                          tool-runtime), inference
 #                                          (→agent, tool-runtime)
 #
-# (provider, knowledge: zero @brainwires deps now — placed in tier 1.)
+# (provider, knowledge: zero @rullama deps now — placed in tier 1.)
 
 TIER_0=("core")
 TIER_1=("a2a" "agent" "call-policy" "eval" "finetune" "knowledge" "mcp-client" \
@@ -62,7 +62,7 @@ TIER_3=("inference" "memory" "network" "seal" "skills")
 publish_pkg() {
   local pkg="$1"
   echo ""
-  echo "=== publishing @brainwires/$pkg ==="
+  echo "=== publishing @rullama/$pkg ==="
   (cd "packages/$pkg" && deno publish $DRY_RUN $TOKEN_ARG)
 }
 
@@ -75,7 +75,7 @@ publish_tier() {
   done
 }
 
-publish_tier "0  (zero @brainwires deps)"          "${TIER_0[@]}"
+publish_tier "0  (zero @rullama deps)"          "${TIER_0[@]}"
 publish_tier "1  (depends only on core)"           "${TIER_1[@]}"
 publish_tier "2  (depends on tier 1)"              "${TIER_2[@]}"
 publish_tier "3  (depends on tier 2)"              "${TIER_3[@]}"

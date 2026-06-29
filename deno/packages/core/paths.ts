@@ -4,13 +4,13 @@
  * Provides consistent path handling across Windows, macOS, and Linux,
  * following the XDG Base Directory specification on Unix-like systems.
  *
- * Equivalent to Rust's `brainwires_core::paths::PlatformPaths`.
+ * Equivalent to Rust's `rullama_core::paths::PlatformPaths`.
  */
 
 import { join } from "@std/path";
 
 /** Project folder name used to namespace per-project data/cache/config. */
-const PROJECT_FOLDER_NAME = "brainwires-rag";
+const PROJECT_FOLDER_NAME = "rullama-rag";
 
 function envOr(name: string, fallback: () => string): string {
   const v = Deno.env.get(name);
@@ -68,22 +68,22 @@ export namespace PlatformPaths {
     return envOr("XDG_CONFIG_HOME", () => join(home(), ".config"));
   }
 
-  /** Returns "brainwires-rag". */
+  /** Returns "rullama-rag". */
   export function projectFolderName(): string {
     return PROJECT_FOLDER_NAME;
   }
 
-  /** `{dataDir}/brainwires-rag`. */
+  /** `{dataDir}/rullama-rag`. */
   export function projectDataDir(): string {
     return join(dataDir(), PROJECT_FOLDER_NAME);
   }
 
-  /** `{cacheDir}/brainwires-rag`. */
+  /** `{cacheDir}/rullama-rag`. */
   export function projectCacheDir(): string {
     return join(cacheDir(), PROJECT_FOLDER_NAME);
   }
 
-  /** `{configDir}/brainwires-rag`. */
+  /** `{configDir}/rullama-rag`. */
   export function projectConfigDir(): string {
     return join(configDir(), PROJECT_FOLDER_NAME);
   }
@@ -103,9 +103,9 @@ export namespace PlatformPaths {
     return join(projectCacheDir(), "git_cache.json");
   }
 
-  /** Default fastembed model cache: `~/.brainwires/cache/fastembed`. */
+  /** Default fastembed model cache: `~/.rullama/cache/fastembed`. */
   export function defaultFastembedCachePath(): string {
-    return join(home(), ".brainwires", "cache", "fastembed");
+    return join(home(), ".rullama", "cache", "fastembed");
   }
 
   /** Default config file: `{projectConfigDir}/config.toml`. */

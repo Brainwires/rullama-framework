@@ -17,7 +17,7 @@ import {
   retentionScore,
   TieredMemory,
 } from "./tiered_memory.ts";
-import type { MessageMetadata } from "@brainwires/stores";
+import type { MessageMetadata } from "@rullama/stores";
 
 function makeMessage(id: string, conversationId = "conv-1"): MessageMetadata {
   const now = Math.floor(Date.now() / 1000);

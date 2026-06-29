@@ -52,7 +52,7 @@ impl ChatConfig {
     pub fn config_dir() -> PathBuf {
         dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join(".brainwires")
+            .join(".rullama")
             .join("chat")
     }
 

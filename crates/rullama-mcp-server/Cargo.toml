@@ -1,0 +1,47 @@
+[package]
+name = "rullama-mcp-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "MCP server framework with middleware pipeline for the Brainwires Agent Framework"
+readme = "README.md"
+documentation = "https://docs.rs/rullama-mcp-server"
+keywords = ["mcp", "server", "middleware", "tools", "json-rpc"]
+categories = ["network-programming"]
+
+[dependencies]
+rullama-mcp-client = { workspace = true }
+tokio = { workspace = true, features = ["io-std", "io-util", "sync", "macros", "net"] }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+futures = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+rullama-telemetry = { workspace = true, optional = true }
+chrono = { workspace = true, optional = true }
+# HTTP transport
+axum = { workspace = true, optional = true }
+# OAuth 2.1 JWT validation
+jsonwebtoken = { version = "9", optional = true }
+reqwest = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "net"] }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+
+[features]
+telemetry = ["dep:rullama-telemetry", "rullama-telemetry/native", "dep:chrono"]
+http = ["dep:axum"]
+oauth = ["dep:jsonwebtoken", "dep:reqwest"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

@@ -1,0 +1,68 @@
+[package]
+name = "rullama-permission"
+description = "Permission policies, audit logging, and trust profiles for the Brainwires Agent Framework"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/rullama-permission"
+keywords = ["permissions", "access-control", "security", "trust", "audit"]
+categories = ["development-tools"]
+
+[dependencies]
+# Internal crates
+rullama-core.workspace = true
+rullama-telemetry = { workspace = true, default-features = false }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Config parsing
+toml.workspace = true
+
+# Error handling
+anyhow.workspace = true
+
+# Time
+chrono.workspace = true
+
+# Identifiers
+uuid = { workspace = true }
+
+# Async (for approval oneshot channels) — only `sync` is used; pinning the
+# feature set keeps the crate wasm32-compatible (tokio's `net` feature
+# pulls in mio which doesn't compile for wasm32-unknown-unknown).
+tokio = { workspace = true, features = ["sync"] }
+
+# Pattern matching (native only)
+glob = { workspace = true, optional = true }
+
+# Filesystem (native only)
+dirs = { workspace = true, optional = true }
+
+[features]
+default = ["native"]
+native = ["dep:glob", "dep:dirs"]
+wasm = ["rullama-core/wasm"]
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true }
+proptest.workspace = true
+
+[[example]]
+name = "policy_engine"
+required-features = ["native"]
+
+[[example]]
+name = "trust_audit"
+required-features = ["native"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

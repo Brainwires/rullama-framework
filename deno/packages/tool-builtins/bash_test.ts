@@ -1,6 +1,6 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { BashTool } from "./bash.ts";
-import { ToolContext } from "@brainwires/core";
+import { ToolContext } from "@rullama/core";
 
 Deno.test("BashTool - getTools returns 1 tool", () => {
   const tools = BashTool.getTools();

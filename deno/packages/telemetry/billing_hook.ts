@@ -1,7 +1,7 @@
 /**
  * BillingHook — advisory + enforced paths invoked at every billable action.
  *
- * Equivalent to Rust's `brainwires_telemetry::billing_hook` module.
+ * Equivalent to Rust's `rullama_telemetry::billing_hook` module.
  */
 
 import type { UsageEvent } from "./usage.ts";

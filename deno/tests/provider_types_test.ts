@@ -1,7 +1,7 @@
 /**
  * Cross-package integration test: Provider factory and registry.
  *
- * Verifies that @brainwires/providers factory creates correct provider types,
+ * Verifies that @rullama/providers factory creates correct provider types,
  * and that the registry lookup returns correct entries for each ProviderType.
  */
 
@@ -19,7 +19,7 @@ import {
   type ProviderEntry,
   type ProviderType,
   requiresApiKey,
-} from "@brainwires/provider";
+} from "@rullama/provider";
 
 // ---------------------------------------------------------------------------
 // Registry lookup tests
@@ -36,7 +36,7 @@ Deno.test("PROVIDER_REGISTRY contains all expected providers", () => {
     "fireworks",
     "anyscale",
     "openai-responses",
-    "brainwires",
+    "rullama",
   ];
 
   for (const pt of expectedProviders) {

@@ -11,7 +11,7 @@
 //!   through the thought store.
 //!
 //! The hook entrypoints themselves (`hooks::pre_compact::handle` etc.) read
-//! from stdin and write logs to `~/.brainwires/`, so they are intentionally
+//! from stdin and write logs to `~/.rullama/`, so they are intentionally
 //! not exercised here; the testable logic has been hoisted out.
 
 use std::sync::Arc;
@@ -106,9 +106,9 @@ async fn context_manager_new_with_tempdir() {
 
 #[tokio::test]
 async fn session_adapter_roundtrips_messages() {
-    use brainwires_core::Message;
-    use brainwires_knowledge::knowledge::brain_client::BrainClient;
-    use brainwires_memory::dream::consolidator::DreamSessionStore;
+    use rullama_core::Message;
+    use rullama_knowledge::knowledge::brain_client::BrainClient;
+    use rullama_memory::dream::consolidator::DreamSessionStore;
 
     let dir = TempDir::new().expect("tempdir");
     let cfg = config_in(&dir);

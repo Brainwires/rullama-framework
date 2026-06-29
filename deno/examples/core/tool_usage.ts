@@ -12,7 +12,7 @@ import {
   type ToolMode,
   toolModeDisplayName,
   ToolResult,
-} from "@brainwires/core";
+} from "@rullama/core";
 
 async function main() {
   console.log("=== Tool Definition and Usage ===");

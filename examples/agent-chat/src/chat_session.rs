@@ -2,12 +2,12 @@ use anyhow::Result;
 use futures::StreamExt;
 use std::sync::Arc;
 
-use brainwires_core::{
+use rullama_core::{
     ChatOptions, ContentBlock, Message, MessageContent, Provider, StreamChunk, Tool, ToolContext,
     ToolResult, ToolUse,
 };
-use brainwires_tool_builtins::BuiltinToolExecutor;
-use brainwires_tool_runtime::ToolRegistry;
+use rullama_tool_builtins::BuiltinToolExecutor;
+use rullama_tool_runtime::ToolRegistry;
 
 use crate::cli::Cli;
 use crate::config::ChatConfig;
@@ -135,7 +135,7 @@ impl ChatSession {
             }
             let metadata = response_id.map(|rid| serde_json::json!({"response_id": rid}));
             self.messages.push(Message {
-                role: brainwires_core::Role::Assistant,
+                role: rullama_core::Role::Assistant,
                 content: MessageContent::Blocks(blocks),
                 name: None,
                 metadata,
@@ -164,7 +164,7 @@ impl ChatSession {
             }
 
             self.messages.push(Message {
-                role: brainwires_core::Role::User,
+                role: rullama_core::Role::User,
                 content: MessageContent::Blocks(result_blocks),
                 name: None,
                 metadata: None,

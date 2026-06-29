@@ -1,14 +1,14 @@
 /**
- * @module @brainwires/tool-runtime
+ * @module @rullama/tool-runtime
  *
  * Tool execution framework for the Brainwires Agent Framework.
- * Equivalent to Rust's `brainwires-tool-runtime` crate (post-0.11.0 split).
+ * Equivalent to Rust's `rullama-tool-runtime` crate (post-0.11.0 split).
  *
  * Provides the registry, executor trait, error taxonomy, sanitization,
  * smart routing, transaction manager, plus OpenAPI / OAuth / validation /
  * tool-search / tool-embedding building blocks. Concrete built-in tools
  * (Bash, FileOps, Git, Web, Search, SemanticSearch, Calendar) live in
- * `@brainwires/tool-builtins`.
+ * `@rullama/tool-builtins`.
  */
 
 // Error taxonomy and classification

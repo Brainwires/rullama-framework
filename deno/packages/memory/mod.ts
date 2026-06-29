@@ -1,10 +1,10 @@
 /**
- * @module @brainwires/memory
+ * @module @rullama/memory
  *
- * Tiered-memory orchestration on top of `@brainwires/storage` + `@brainwires/stores`.
- * Equivalent to Rust's `brainwires-memory` crate.
+ * Tiered-memory orchestration on top of `@rullama/storage` + `@rullama/stores`.
+ * Equivalent to Rust's `rullama-memory` crate.
  *
- * Extracted from `@brainwires/storage` in v0.11.0.
+ * Extracted from `@rullama/storage` in v0.11.0.
  */
 
 export {

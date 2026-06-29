@@ -13,7 +13,7 @@ import {
   queryVar,
   relationInverse,
 } from "./query_core.ts";
-import type { EntityType } from "@brainwires/core";
+import type { EntityType } from "@rullama/core";
 
 Deno.test("classify definition question", () => {
   const x = new QueryCoreExtractor();

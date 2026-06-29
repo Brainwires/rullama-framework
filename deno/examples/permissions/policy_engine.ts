@@ -12,7 +12,7 @@ import {
   policyRequestForFile,
   policyRequestForGit,
   policyRequestForTool,
-} from "@brainwires/permission";
+} from "@rullama/permission";
 
 async function main() {
   console.log("=== Policy Engine Example ===\n");

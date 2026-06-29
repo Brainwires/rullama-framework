@@ -1,11 +1,11 @@
 /**
  * Conversation Store -- persists conversation metadata.
  *
- * Equivalent to Rust's `stores/conversation_store.rs` in brainwires-storage.
+ * Equivalent to Rust's `stores/conversation_store.rs` in rullama-storage.
  * @module
  */
 
-import type { StorageBackend } from "@brainwires/storage";
+import type { StorageBackend } from "@rullama/storage";
 import {
   type FieldDef,
   FieldTypes,
@@ -18,7 +18,7 @@ import {
   type Record,
   recordGet,
   requiredField,
-} from "@brainwires/storage";
+} from "@rullama/storage";
 
 const TABLE_NAME = "conversations";
 

@@ -80,7 +80,7 @@ RULLAMA_TRAIN_LOSS_MODE="${RULLAMA_TRAIN_LOSS_MODE:-next_token}" \
 RULLAMA_TRAIN_APPLY_CHAT_TEMPLATE=1 \
 RULLAMA_TRAIN_LOG_EVERY=1 \
 RULLAMA_ADAPTER_PATH="$ADAPTER" \
-cargo run -p brainwires-lora --release --example train_jsonl -- \
+cargo run -p rullama-lora --release --example train_jsonl -- \
     "$GGUF" "$JSONL"
 
 if [ -f "$ADAPTER" ]; then
@@ -89,7 +89,7 @@ if [ -f "$ADAPTER" ]; then
     echo ""
     echo "Verify the edit fires:"
     echo "  RULLAMA_EVAL_APPLY_CHAT_TEMPLATE=1 \\"
-    echo "  cargo run -p brainwires-lora --release --example eval_adapter -- \\"
+    echo "  cargo run -p rullama-lora --release --example eval_adapter -- \\"
     echo "    $GGUF \\"
     echo "    $ADAPTER \\"
     echo "    \"$SUBJECT\""

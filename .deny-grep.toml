@@ -16,23 +16,23 @@
 [[rule]]
 id = "no_format_in_sql"
 description = "SQL queries must use bound parameters, not format!/concat — prevents injection"
-include = ["crates/brainwires-storage/**/*.rs", "crates/brainwires-stores/**/*.rs"]
+include = ["crates/rullama-storage/**/*.rs", "crates/rullama-stores/**/*.rs"]
 forbid_regex = '''format!\([^)]*\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER)\b'''
 allow_files = [
     # mysql interpolates `table_name` via MySqlDialect.quote_ident() — safe.
-    "crates/brainwires-storage/src/databases/mysql/mod.rs",
+    "crates/rullama-storage/src/databases/mysql/mod.rs",
     # sql/mod.rs interpolates `table` via dialect.quote_ident() — safe.
-    "crates/brainwires-storage/src/databases/sql/mod.rs",
+    "crates/rullama-storage/src/databases/sql/mod.rs",
     # nornicdb interpolates `self.index_name` (internal struct field, not
     # user input) and `index_name` parameter in tests. Both controlled
     # call sites — index_name is operator-set during database init.
-    "crates/brainwires-storage/src/databases/nornicdb/database.rs",
-    "crates/brainwires-storage/src/databases/nornicdb/tests.rs",
+    "crates/rullama-storage/src/databases/nornicdb/database.rs",
+    "crates/rullama-storage/src/databases/nornicdb/tests.rs",
     # postgres + surrealdb now interpolate `table_name` via
     # `<dialect>.quote_ident()` (fixed by harness Phase 2 triage —
     # previously raw interpolation matching the flagged pattern).
-    "crates/brainwires-storage/src/databases/postgres/mod.rs",
-    "crates/brainwires-storage/src/databases/surrealdb/mod.rs",
+    "crates/rullama-storage/src/databases/postgres/mod.rs",
+    "crates/rullama-storage/src/databases/surrealdb/mod.rs",
 ]
 
 [[rule]]
@@ -45,37 +45,37 @@ allow_files = []
 [[rule]]
 id = "no_insecure_tls"
 description = "TLS verification cannot be disabled in framework crates"
-include = ["crates/brainwires-network/**/*.rs", "crates/brainwires-provider/**/*.rs", "crates/brainwires-provider-speech/**/*.rs", "crates/brainwires-a2a/**/*.rs"]
+include = ["crates/rullama-network/**/*.rs", "crates/rullama-provider/**/*.rs", "crates/rullama-provider-speech/**/*.rs", "crates/rullama-a2a/**/*.rs"]
 forbid_regex = '''(insecure_skip_verify|danger_accept_invalid_certs\(\s*true|accept_invalid_hostnames\(\s*true)'''
 allow_files = []
 
 [[rule]]
 id = "no_println_in_libs"
 description = "Library crates must not println! — use `tracing` so callers can filter and route output"
-include = ["crates/brainwires-*/src/**/*.rs"]
+include = ["crates/rullama-*/src/**/*.rs"]
 forbid_regex = '''(?m)^\s*(println!|eprintln!)\('''
 allow_files = [
     # Harness binaries are intentionally println!-driven (they ARE the CLI).
-    "crates/brainwires-test-harness/src/bin/print_manifest.rs",
-    "crates/brainwires-test-harness/src/bin/run_harness.rs",
+    "crates/rullama-test-harness/src/bin/print_manifest.rs",
+    "crates/rullama-test-harness/src/bin/run_harness.rs",
     # AST chunker / repomap / parser tests embed raw-string Rust snippets
     # that legitimately CONTAIN `println!` text as fixture data, not as
     # framework calls. False-positive class until we add AST-aware grep.
-    "crates/brainwires-rag/src/code_analysis/repomap/reference_finder.rs",
-    "crates/brainwires-rag/src/rag/indexer/ast_parser.rs",
-    "crates/brainwires-rag/src/rag/indexer/chunker.rs",
+    "crates/rullama-rag/src/code_analysis/repomap/reference_finder.rs",
+    "crates/rullama-rag/src/rag/indexer/ast_parser.rs",
+    "crates/rullama-rag/src/rag/indexer/chunker.rs",
     # File-walker integration tests use eprintln! for #[test]-visible diagnostics
     # — legitimate use of stderr in test code, not library output.
-    "crates/brainwires-rag/src/rag/indexer/file_walker/tests.rs",
+    "crates/rullama-rag/src/rag/indexer/file_walker/tests.rs",
     # Network-gated tests use eprintln! to surface skip reasons when
     # TEST_EMBED_NETWORK=1 is unset (idiomatic Rust test-skip pattern).
-    "crates/brainwires-seal/src/pattern_store.rs",
+    "crates/rullama-seal/src/pattern_store.rs",
 ]
 
 [[rule]]
 id = "no_api_key_in_log"
 description = "API-key-shaped strings must never reach tracing/log macros"
-include = ["crates/brainwires-provider/**/*.rs", "crates/brainwires-provider-speech/**/*.rs", "crates/brainwires-hardware/**/*.rs"]
+include = ["crates/rullama-provider/**/*.rs", "crates/rullama-provider-speech/**/*.rs", "crates/rullama-hardware/**/*.rs"]
 # Match: tracing macros that interpolate a variable whose name contains "key" or "secret".
 # False positives caught by allow_files below.
 forbid_regex = '''(tracing::(info|warn|error|debug)|info!|warn!|error!|debug!)![^;]*\b(api_key|secret_key|access_key|client_secret|bearer_token)\b'''
@@ -83,7 +83,7 @@ allow_files = []
 
 [[rule]]
 id = "no_unsafe_host_in_default"
-description = "brainwires-sandbox `unsafe-host` feature must never be in the default feature set"
-include = ["crates/brainwires-sandbox/Cargo.toml"]
+description = "rullama-sandbox `unsafe-host` feature must never be in the default feature set"
+include = ["crates/rullama-sandbox/Cargo.toml"]
 forbid_regex = '''(?m)^default\s*=\s*\[[^\]]*"unsafe-host"'''
 allow_files = []

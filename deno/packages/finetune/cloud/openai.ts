@@ -1,7 +1,7 @@
 /**
  * OpenAI fine-tuning provider.
  *
- * Equivalent to Rust's `brainwires_training::cloud::openai` module.
+ * Equivalent to Rust's `rullama_training::cloud::openai` module.
  */
 
 import { TrainingError } from "../error.ts";

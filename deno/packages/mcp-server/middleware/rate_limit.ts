@@ -5,7 +5,7 @@
  * Equivalent to Rust's `RateLimitMiddleware`.
  */
 
-import type { JsonRpcRequest } from "@brainwires/mcp-client";
+import type { JsonRpcRequest } from "@rullama/mcp-client";
 import type { RequestContext } from "../server.ts";
 import {
   type Middleware,

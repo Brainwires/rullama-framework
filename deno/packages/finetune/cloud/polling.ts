@@ -1,7 +1,7 @@
 /**
  * Exponential-backoff job poller — wait for a FineTuneProvider job to finish.
  *
- * Equivalent to Rust's `brainwires_training::cloud::polling` module.
+ * Equivalent to Rust's `rullama_training::cloud::polling` module.
  */
 
 import type { TrainingJobId, TrainingJobStatus } from "../types.ts";

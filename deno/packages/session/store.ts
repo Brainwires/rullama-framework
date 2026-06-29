@@ -2,10 +2,10 @@
  * {@link SessionStore} interface — the single extension point for pluggable
  * session persistence.
  *
- * Equivalent to Rust's `SessionStore` trait in `brainwires_session`.
+ * Equivalent to Rust's `SessionStore` trait in `rullama_session`.
  */
 
-import type { Message } from "@brainwires/core";
+import type { Message } from "@rullama/core";
 import type { ListOptions, SessionId, SessionRecord } from "./types.ts";
 
 /**

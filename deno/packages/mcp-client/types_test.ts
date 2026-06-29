@@ -1,6 +1,6 @@
 /**
  * Tests for JSON-RPC and MCP protocol types.
- * Mirrors Rust tests in `brainwires-mcp/src/types.rs`.
+ * Mirrors Rust tests in `rullama-mcp/src/types.rs`.
  */
 
 import { assertEquals, assertExists } from "@std/assert";

@@ -11,7 +11,7 @@ import {
   type ProposedOperation,
   type StateChange,
   ThreeStateModel,
-} from "@brainwires/agent";
+} from "@rullama/agent";
 
 async function main() {
   console.log("=== Three-State Model Demo ===\n");

@@ -9,9 +9,9 @@ Deno.test("data/cache/config dirs return non-empty strings", () => {
 });
 
 Deno.test("project dirs contain the project folder name", () => {
-  assert(PlatformPaths.projectDataDir().includes("brainwires-rag"));
-  assert(PlatformPaths.projectCacheDir().includes("brainwires-rag"));
-  assert(PlatformPaths.projectConfigDir().includes("brainwires-rag"));
+  assert(PlatformPaths.projectDataDir().includes("rullama-rag"));
+  assert(PlatformPaths.projectCacheDir().includes("rullama-rag"));
+  assert(PlatformPaths.projectConfigDir().includes("rullama-rag"));
 });
 
 Deno.test("LanceDB / hash-cache / git-cache paths end with expected components", () => {
@@ -21,8 +21,8 @@ Deno.test("LanceDB / hash-cache / git-cache paths end with expected components",
   assert(PlatformPaths.defaultConfigPath().endsWith("config.toml"));
 });
 
-Deno.test("projectFolderName returns 'brainwires-rag'", () => {
-  assertEquals(PlatformPaths.projectFolderName(), "brainwires-rag");
+Deno.test("projectFolderName returns 'rullama-rag'", () => {
+  assertEquals(PlatformPaths.projectFolderName(), "rullama-rag");
 });
 
 Deno.test("Linux: XDG_DATA_HOME is respected when set", () => {

@@ -4,7 +4,7 @@
  * Provides a simple rate limiter that enforces a maximum number of
  * requests per minute using the token-bucket algorithm.
  *
- * Equivalent to Rust's `RateLimiter` in `brainwires-providers`.
+ * Equivalent to Rust's `RateLimiter` in `rullama-providers`.
  */
 
 // ---------------------------------------------------------------------------

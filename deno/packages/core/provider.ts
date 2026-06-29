@@ -2,7 +2,7 @@ import type { ChatResponse, Message, StreamChunk } from "./message.ts";
 import type { Tool } from "./tool.ts";
 
 /** Base provider interface for AI providers.
- * Equivalent to Rust's `Provider` trait in brainwires-core. */
+ * Equivalent to Rust's `Provider` trait in rullama-core. */
 export interface Provider {
   /** Get the provider name. */
   readonly name: string;
@@ -26,7 +26,7 @@ export interface Provider {
 }
 
 /** Chat completion options.
- * Equivalent to Rust's `ChatOptions` in brainwires-core. */
+ * Equivalent to Rust's `ChatOptions` in rullama-core. */
 export class ChatOptions {
   temperature?: number;
   max_tokens?: number;

@@ -807,7 +807,7 @@ Deno.test("toolCategoryContains", () => {
   assert(toolCategoryContains("file_read", "read_file"));
   assert(toolCategoryContains("file_write", "write_file"));
   assert(toolCategoryContains("search", "grep"));
-  assert(toolCategoryContains("mcp", "mcp__brainwires-rag__query"));
+  assert(toolCategoryContains("mcp", "mcp__rullama-rag__query"));
   assert(!toolCategoryContains("file_read", "bash"));
   assert(toolCategoryContains({ custom: "my_" }, "my_tool"));
 });

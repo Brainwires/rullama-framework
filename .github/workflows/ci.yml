@@ -199,7 +199,7 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libasound2-dev libssl-dev pkg-config libdbus-1-dev
       - name: Test with ${{ matrix.backend }}
-        run: cargo test -p brainwires-storage --features ${{ matrix.backend }}
+        run: cargo test -p rullama-storage --features ${{ matrix.backend }}
 
   macos:
     name: macOS check
@@ -212,7 +212,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install system dependencies
         run: brew install protobuf pkg-config
-      - run: cargo check --workspace --exclude brainwires-hardware
+      - run: cargo check --workspace --exclude rullama-hardware
 
   deno:
     name: Deno

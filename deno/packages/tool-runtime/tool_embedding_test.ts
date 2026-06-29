@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "@std/assert";
-import type { EmbeddingProvider } from "@brainwires/core";
+import type { EmbeddingProvider } from "@rullama/core";
 import { cosineSimilarity, ToolEmbeddingIndex } from "./tool_embedding.ts";
 
 function sampleTools(): Array<[string, string]> {

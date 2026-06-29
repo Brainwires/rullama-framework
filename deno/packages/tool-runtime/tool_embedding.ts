@@ -4,14 +4,14 @@
  * Embeds tool names and descriptions as vectors, then uses cosine similarity
  * to find semantically relevant tools for a given query.
  *
- * Equivalent to Rust's `brainwires_tools::tool_embedding` module. The Rust
+ * Equivalent to Rust's `rullama_tools::tool_embedding` module. The Rust
  * version uses `FastEmbedManager` (ONNX runtime) directly; the Deno port
- * accepts any {@link EmbeddingProvider} from `@brainwires/core`, letting the
+ * accepts any {@link EmbeddingProvider} from `@rullama/core`, letting the
  * host inject whichever embedding backend is available (e.g. an HTTP proxy
  * over the Rust service, or an in-process JS implementation).
  */
 
-import type { EmbeddingProvider } from "@brainwires/core";
+import type { EmbeddingProvider } from "@rullama/core";
 
 interface ToolEmbeddingEntry {
   name: string;

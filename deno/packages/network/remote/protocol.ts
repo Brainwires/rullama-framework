@@ -4,7 +4,7 @@
  * Wire protocol types for CLI <-> Backend communication.
  * Defines the message format for the remote control WebSocket connection.
  *
- * Equivalent to Rust's `brainwires-network::remote::protocol`.
+ * Equivalent to Rust's `rullama-network::remote::protocol`.
  */
 
 // ============================================================================

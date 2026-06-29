@@ -4,7 +4,7 @@
  * Deno is single-threaded per isolate, so the Rust atomic counters are just
  * plain numbers here. The guard is still cheap to share by reference.
  *
- * Equivalent to Rust's `brainwires_resilience::budget` module.
+ * Equivalent to Rust's `rullama_resilience::budget` module.
  */
 
 import type {
@@ -16,7 +16,7 @@ import type {
   StreamChunk,
   Tool,
   Usage,
-} from "@brainwires/core";
+} from "@rullama/core";
 import { ResilienceError } from "./error.ts";
 
 /** Caps to enforce on a single BudgetGuard. null = unbounded. */

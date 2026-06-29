@@ -4,7 +4,7 @@
  * Provides parsers that extract structured data from raw LLM text output.
  * Supports JSON extraction, regex-based parsing, and JSON array parsing.
  *
- * Equivalent to Rust's `output_parser` module in `brainwires-core`.
+ * Equivalent to Rust's `output_parser` module in `rullama-core`.
  *
  * @example
  * ```ts

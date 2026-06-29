@@ -4,7 +4,7 @@
  * RemoteBridgeManager — lifecycle management for the remote bridge.
  * Handles starting, stopping, and status monitoring.
  *
- * Equivalent to Rust's `brainwires-network::remote::manager`.
+ * Equivalent to Rust's `rullama-network::remote::manager`.
  */
 
 import { type BridgeConfig, RemoteBridge } from "./bridge.ts";

@@ -1,6 +1,6 @@
 # Isolated engine sub-workspace.
 #
-# Deliberately EXCLUDED from the brainwires root workspace (see the root
+# Deliberately EXCLUDED from the rullama root workspace (see the root
 # Cargo.toml `exclude` list). The harness builds native (tokio/axum); the
 # engine builds for `wasm32-unknown-unknown` + native wgpu. Keeping them in
 # separate workspaces means `cargo build --workspace` at the repo root never
@@ -12,8 +12,8 @@
 [workspace]
 resolver = "3"
 members = [
-    "brainwires-engine",
-    "brainwires-lora",
+    "rullama-engine",
+    "rullama-lora",
 ]
 # iOS benchmark staticlib for Xcode — built manually, not part of the engine
 # build. Excluded so `cargo build` here doesn't compile its staticlib.
@@ -25,13 +25,13 @@ exclude = [
 edition      = "2024"
 rust-version = "1.91"
 license      = "MIT OR Apache-2.0"
-repository   = "https://github.com/Brainwires/brainwires-framework"
-homepage     = "https://github.com/Brainwires/brainwires-framework"
+repository   = "https://github.com/Brainwires/rullama-framework"
+homepage     = "https://github.com/Brainwires/rullama-framework"
 authors      = ["Brainwires <brainwires.net@gmail.com>"]
 publish      = true
 
 [workspace.dependencies]
-# --- shared by brainwires-engine (the wgpu inference engine) ---
+# --- shared by rullama-engine (the wgpu inference engine) ---
 wgpu = "29.0.3"
 bytemuck = { version = "1.25", features = ["derive"] }
 half = { version = "2.7", features = ["bytemuck"] }
@@ -57,7 +57,7 @@ console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
 rsqlite-wasm = "0.1.1"
 
-# --- shared by brainwires-lora (native + wasm LoRA trainer) ---
+# --- shared by rullama-lora (native + wasm LoRA trainer) ---
 tracing = "0.1"
 tokenizers = "0.22"
 tempfile = "3"

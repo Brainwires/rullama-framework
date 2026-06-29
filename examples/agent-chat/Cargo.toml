@@ -15,11 +15,11 @@ name = "agent-chat"
 path = "src/main.rs"
 
 [dependencies]
-brainwires-core.workspace = true
-brainwires-provider.workspace = true
-brainwires-agent.workspace = true
-brainwires-tool-runtime = { workspace = true }
-brainwires-tool-builtins = { workspace = true }
+rullama-core.workspace = true
+rullama-provider.workspace = true
+rullama-agent.workspace = true
+rullama-tool-runtime = { workspace = true }
+rullama-tool-builtins = { workspace = true }
 
 tokio = { workspace = true }
 anyhow = { workspace = true }
@@ -42,5 +42,5 @@ tempfile = { workspace = true }
 
 [features]
 default = []
-bedrock = ["brainwires-provider/bedrock"]
-vertex-ai = ["brainwires-provider/vertex-ai"]
+bedrock = ["rullama-provider/bedrock"]
+vertex-ai = ["rullama-provider/vertex-ai"]

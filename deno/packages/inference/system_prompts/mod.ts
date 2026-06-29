@@ -1,5 +1,5 @@
 /**
- * System Prompt Registry for brainwires agents.
+ * System Prompt Registry for rullama agents.
  *
  * Single authoritative source for every agent system prompt. To add a new
  * agent type: add a variant to {@link AgentPromptKind}, implement the prompt
@@ -8,7 +8,7 @@
  * When a role is supplied, its {@link systemPromptSuffix} is automatically
  * appended — keeping role-aware prompt construction in one place.
  *
- * Equivalent to Rust's `brainwires_agents::system_prompts` module.
+ * Equivalent to Rust's `rullama_agents::system_prompts` module.
  */
 
 import type { AgentRole } from "../roles.ts";

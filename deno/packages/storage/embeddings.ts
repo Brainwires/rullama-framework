@@ -2,11 +2,11 @@
  * Embedding provider wrapper interface for the storage layer.
  *
  * Re-exports the core EmbeddingProvider and adds a cached variant.
- * Equivalent to Rust's `embeddings.rs` in brainwires-storage.
+ * Equivalent to Rust's `embeddings.rs` in rullama-storage.
  * @module
  */
 
-import type { EmbeddingProvider } from "@brainwires/core";
+import type { EmbeddingProvider } from "@rullama/core";
 
 export type { EmbeddingProvider };
 

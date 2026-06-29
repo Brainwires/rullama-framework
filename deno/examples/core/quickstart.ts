@@ -10,7 +10,7 @@ import {
   type Provider,
   type StreamChunk,
   type Tool,
-} from "@brainwires/core";
+} from "@rullama/core";
 
 // 1. Implement a custom provider
 // In a real app you would call an LLM API (OpenAI, Anthropic, Ollama, etc.).

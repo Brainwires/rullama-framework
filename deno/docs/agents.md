@@ -1,6 +1,6 @@
 # Agents
 
-The `@brainwires/agents` package provides the agent runtime, task agents,
+The `@rullama/agents` package provides the agent runtime, task agents,
 coordination patterns, specialized agents, and the MDAP voting framework.
 
 ## Agent Loop
@@ -10,7 +10,7 @@ implementation through an iterate-until-done loop with tool calling,
 communication, and file locking.
 
 ```ts
-import { type AgentRuntime, runAgentLoop } from "@brainwires/agent";
+import { type AgentRuntime, runAgentLoop } from "@rullama/agent";
 
 const result = await runAgentLoop(myRuntime, hub, lockManager);
 ```
@@ -26,8 +26,8 @@ system prompt into a working runtime. The `spawnTaskAgent` helper creates and
 runs one in a single call.
 
 ```ts
-import { AgentContext, spawnTaskAgent } from "@brainwires/agent";
-import { AnthropicChatProvider } from "@brainwires/provider";
+import { AgentContext, spawnTaskAgent } from "@rullama/agent";
+import { AnthropicChatProvider } from "@rullama/provider";
 
 const provider = new AnthropicChatProvider(
   apiKey,
@@ -111,7 +111,7 @@ import {
   FirstToAheadByKVoter,
   StandardRedFlagValidator,
   VoterBuilder,
-} from "@brainwires/agent";
+} from "@rullama/agent";
 
 const voter = new VoterBuilder()
   .kAdvantage(2)

@@ -1,10 +1,10 @@
 /**
- * @module @brainwires/network
+ * @module @rullama/network
  *
  * Agent-to-agent networking layer: identity, routing, discovery, peer table,
  * agent management, remote bridge, and client connectivity.
  *
- * The MCP server framework lives in `@brainwires/mcp-server` — import from
+ * The MCP server framework lives in `@rullama/mcp-server` — import from
  * there directly. `AgentNetworkError` + `ErrorCode` are re-exported here for
  * convenience (the underlying class lives in mcp-server).
  */

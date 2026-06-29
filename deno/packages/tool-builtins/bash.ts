@@ -5,8 +5,8 @@
 
 // deno-lint-ignore-file no-explicit-any
 
-import { objectSchema, type ToolContext, ToolResult } from "@brainwires/core";
-import type { Tool } from "@brainwires/core";
+import { objectSchema, type ToolContext, ToolResult } from "@rullama/core";
+import type { Tool } from "@rullama/core";
 
 /** Output limiting mode for proactive context management. */
 export type OutputMode =

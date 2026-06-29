@@ -4,12 +4,12 @@
  * Bridges SEAL's entity-centric learning with a Knowledge System's behavioral
  * truths (BKS) and personal facts (PKS). On the Rust side this module talks to
  * concrete `BehavioralKnowledgeCache` / `PersonalKnowledgeCache` types backed
- * by LanceDB. On the Deno side the `@brainwires/knowledge` package is
+ * by LanceDB. On the Deno side the `@rullama/knowledge` package is
  * interface-only — the concrete BKS/PKS work happens Rust-side — so this
  * module is structured as interface wiring: callers inject the cache shapes
  * (typically via an RPC bridge) and the coordinator glues them to SEAL.
  *
- * Equivalent to Rust's `brainwires_agents::seal::knowledge_integration` module.
+ * Equivalent to Rust's `rullama_agents::seal::knowledge_integration` module.
  */
 
 import type { QueryPattern } from "./learning.ts";
@@ -17,7 +17,7 @@ import type { LearningCoordinator, PatternHint } from "./learning.ts";
 import type { QuestionType } from "./query_core.ts";
 import type { ResolvedReference, SealProcessingResult } from "./types.ts";
 
-// ─── Types expected from @brainwires/knowledge (interfaces) ────────────────
+// ─── Types expected from @rullama/knowledge (interfaces) ────────────────
 
 /** Category of a behavioral truth. */
 export type TruthCategory =

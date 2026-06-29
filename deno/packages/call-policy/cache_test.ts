@@ -4,7 +4,7 @@ import {
   defaultToolInputSchema,
   Message,
   type Tool,
-} from "@brainwires/core";
+} from "@rullama/core";
 import { CachedProvider, cacheKeyFor } from "./cache.ts";
 import { EchoProvider } from "./test_util.ts";
 

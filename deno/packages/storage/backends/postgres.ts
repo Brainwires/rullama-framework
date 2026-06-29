@@ -1,7 +1,7 @@
 /**
  * PostgreSQL + pgvector backend for StorageBackend and VectorDatabase.
  *
- * Port of the Rust `brainwires-storage/src/databases/postgres/mod.rs`.
+ * Port of the Rust `rullama-storage/src/databases/postgres/mod.rs`.
  *
  * Uses the `pg` npm package for connection pooling and pgvector's `<=>`
  * cosine distance operator for vector similarity search.
@@ -13,7 +13,7 @@ import type {
   ChunkMetadata,
   DatabaseStats,
   SearchResult,
-} from "@brainwires/core";
+} from "@rullama/core";
 import type { StorageBackend, VectorDatabase } from "../traits.ts";
 import type {
   FieldDef,
@@ -24,7 +24,7 @@ import type {
 } from "../types.ts";
 
 const DEFAULT_TABLE = "code_embeddings";
-const DEFAULT_URL = "postgresql://localhost:5432/brainwires";
+const DEFAULT_URL = "postgresql://localhost:5432/rullama";
 
 // ---------------------------------------------------------------------------
 // SQL helpers

@@ -7,7 +7,7 @@
  * 2. **Tree-sitter mode** (optional) — if `npm:web-tree-sitter` is available,
  *    use it for precise AST parsing. (Not yet implemented.)
  *
- * Ported from `brainwires-knowledge/src/code_analysis/`.
+ * Ported from `rullama-knowledge/src/code_analysis/`.
  *
  * @module
  */

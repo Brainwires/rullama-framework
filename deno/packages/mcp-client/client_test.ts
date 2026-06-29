@@ -1,6 +1,6 @@
 /**
  * Tests for McpClient.
- * Mirrors Rust tests in `brainwires-mcp/src/client.rs`.
+ * Mirrors Rust tests in `rullama-mcp/src/client.rs`.
  */
 
 import { assertEquals } from "@std/assert";
@@ -30,7 +30,7 @@ Deno.test("McpClient - request ID increment", () => {
 Deno.test("McpClient - default creation", () => {
   const client = McpClient.createDefault();
 
-  assertEquals(client.clientName, "brainwires");
+  assertEquals(client.clientName, "rullama");
   assertEquals(client.clientVersion, "0.5.0");
 });
 

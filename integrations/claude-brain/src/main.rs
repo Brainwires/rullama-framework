@@ -104,9 +104,9 @@ fn show_version_info() {
     println!("  memory_stats     Knowledge statistics dashboard");
     println!();
     println!("Storage:");
-    println!("  Thoughts:  LanceDB  (~/.brainwires/claude-brain/)");
-    println!("  PKS:       SQLite   (~/.brainwires/pks.db)");
-    println!("  BKS:       SQLite   (~/.brainwires/bks.db)");
+    println!("  Thoughts:  LanceDB  (~/.rullama/claude-brain/)");
+    println!("  PKS:       SQLite   (~/.rullama/pks.db)");
+    println!("  BKS:       SQLite   (~/.rullama/bks.db)");
     println!();
     println!("Embedding: all-MiniLM-L6-v2 (384d, local via FastEmbed)");
 }

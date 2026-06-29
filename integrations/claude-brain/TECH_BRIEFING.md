@@ -347,9 +347,9 @@ PKS fact counts by category + avg confidence, BKS truth counts by category.
 
 | Tier | Backend | Path | Contents | Search |
 |------|---------|------|----------|--------|
-| **Hot** (thoughts) | LanceDB | `~/.brainwires/claude-brain/` | Embedded thoughts with vectors | ANN vector search (semantic) |
-| **Warm** (PKS) | SQLite | `~/.brainwires/pks.db` | Personal facts (preferences, identity) | Keyword search |
-| **Cold** (BKS) | SQLite | `~/.brainwires/bks.db` | Behavioral truths (cross-session patterns) | Keyword search |
+| **Hot** (thoughts) | LanceDB | `~/.rullama/claude-brain/` | Embedded thoughts with vectors | ANN vector search (semantic) |
+| **Warm** (PKS) | SQLite | `~/.rullama/pks.db` | Personal facts (preferences, identity) | Keyword search |
+| **Cold** (BKS) | SQLite | `~/.rullama/bks.db` | Behavioral truths (cross-session patterns) | Keyword search |
 
 ### Thoughts Table Schema (LanceDB)
 
@@ -377,7 +377,7 @@ PKS fact counts by category + avg confidence, BKS truth counts by category.
 | id | UUID |
 | category | Identity/Preference/Capability/Context/Constraint/Relationship |
 | key | Fact key (e.g., "preferred_language", "current_project") |
-| value | Fact value (e.g., "Rust", "brainwires-framework") |
+| value | Fact value (e.g., "Rust", "rullama-framework") |
 | context | Optional context (e.g., "backend projects") |
 | confidence | 0.0-1.0 with EMA updates and time-decay |
 | source | ExplicitStatement (0.9) / InferredFromBehavior (0.7) / ProfileSetup (0.85) / SystemObserved (0.6) |
@@ -405,7 +405,7 @@ Search flow:
 
 Claude-brain is a thin orchestration layer. The heavy lifting lives in the framework:
 
-### brainwires-knowledge (features: knowledge, dream)
+### rullama-knowledge (features: knowledge, dream)
 
 **BrainClient** — Central API for all storage operations:
 - `capture_thought()` — Full pipeline: categorize → tag → embed → store → extract facts → evidence check
@@ -445,7 +445,7 @@ Claude-brain is a thin orchestration layer. The heavy lifting lives in the frame
 - Replaces old messages with [summary + recent messages]
 - DemotionPolicy controls when messages become consolidation candidates
 
-### brainwires-storage
+### rullama-storage
 
 **LanceDB Backend:**
 - Table creation with Arrow schema
@@ -458,7 +458,7 @@ Claude-brain is a thin orchestration layer. The heavy lifting lives in the frame
 - CachedEmbeddingProvider adds LRU caching (1000 entries)
 - Supports multiple models (all-MiniLM-L6-v2 default)
 
-### brainwires-core
+### rullama-core
 
 - `Message` type used by dream consolidation
 - Core traits and utilities
@@ -467,11 +467,11 @@ Claude-brain is a thin orchestration layer. The heavy lifting lives in the frame
 
 ## Configuration
 
-### Config File: `~/.brainwires/claude-brain.toml`
+### Config File: `~/.rullama/claude-brain.toml`
 
 ```toml
 [storage]
-# Defaults to ~/.brainwires/ — uncomment to override
+# Defaults to ~/.rullama/ — uncomment to override
 # brain_path = "/custom/path/claude-brain"
 # pks_path = "/custom/path/pks.db"
 # bks_path = "/custom/path/bks.db"
@@ -548,7 +548,7 @@ Guidance for Claude on when to use each MCP tool. Installed by `install.sh`.
 
 **Install (default):**
 1. Builds release binary via `cargo build --release -p claude-brain`
-2. Writes default TOML config to `~/.brainwires/claude-brain.toml` (if missing)
+2. Writes default TOML config to `~/.rullama/claude-brain.toml` (if missing)
 3. Merges hooks + env vars + MCP permissions into settings JSON (idempotent, via embedded Python)
 4. Registers MCP server in mcp.json
 5. Writes rules file to `.claude/rules/claude-brain.md`
@@ -595,7 +595,7 @@ extras/claude-brain/
 **Framework crates used:**
 
 ```
-crates/brainwires-knowledge/src/knowledge/
+crates/rullama-knowledge/src/knowledge/
 ├── brain_client.rs              BrainClient (all storage operations)
 ├── types.rs                     Request/Response types
 ├── thought.rs                   Thought struct, ThoughtCategory, ThoughtSource
@@ -604,7 +604,7 @@ crates/brainwires-knowledge/src/knowledge/
     ├── collector.rs             PersonalFactCollector (26 regex patterns)
     └── fact.rs                  PersonalFact struct
 
-crates/brainwires-knowledge/src/dream/
+crates/rullama-knowledge/src/dream/
 ├── consolidator.rs              DreamConsolidator (4-phase cycle)
 ├── policy.rs                    DemotionPolicy
 ├── summarizer.rs                LLM-based message summarization
@@ -612,7 +612,7 @@ crates/brainwires-knowledge/src/dream/
 ├── task.rs                      Cron-scheduled consolidation
 └── metrics.rs                   DreamReport, DreamMetrics
 
-crates/brainwires-storage/src/
+crates/rullama-storage/src/
 ├── databases/lance/
 │   └── storage_backend.rs       LanceDB vector search + CRUD
 └── embeddings.rs                FastEmbed + LRU cache
@@ -702,7 +702,7 @@ cd extras/claude-brain/
 
 ### Hook Log
 
-All hook events logged to `~/.brainwires/claude-brain-hooks.log`:
+All hook events logged to `~/.rullama/claude-brain-hooks.log`:
 
 ```
 [2026-04-12 10:00:00 UTC] SESSION-START fired — source=startup cwd=/home/user/project session=abc123

@@ -3,7 +3,7 @@ import { FileOpsTool } from "./file_ops.ts";
 import { GitTool } from "./git.ts";
 import { SearchTool } from "./search.ts";
 import { WebTool } from "./web.ts";
-import { ToolContext } from "@brainwires/core";
+import { ToolContext } from "@rullama/core";
 
 // ---- FileOpsTool ----
 

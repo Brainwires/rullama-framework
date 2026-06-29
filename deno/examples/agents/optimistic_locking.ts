@@ -10,7 +10,7 @@ import {
   type OptimisticConflict,
   OptimisticController,
   type ResolutionStrategy,
-} from "@brainwires/agent";
+} from "@rullama/agent";
 
 async function main() {
   console.log("=== Optimistic Concurrency Demo ===\n");

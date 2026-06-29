@@ -2,7 +2,7 @@
  * Tests for anomaly.ts — mirrors Rust tests in anomaly.rs
  *
  * Note: this test pulls audit-event construction helpers from
- * `@brainwires/permissions` (post-Phase-9 rename: `@brainwires/permission`)
+ * `@rullama/permissions` (post-Phase-9 rename: `@rullama/permission`)
  * to exercise the detector against the same shape used in production. The
  * detector itself has no dependency on the permission package.
  */
@@ -15,7 +15,7 @@ import {
   withAgent,
   withOutcome,
   withTarget,
-} from "@brainwires/permission";
+} from "@rullama/permission";
 
 function makeEvent(eventType: AuditEventType, agent: string) {
   let event = createAuditEvent(eventType);

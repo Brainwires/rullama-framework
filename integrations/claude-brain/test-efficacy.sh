@@ -15,7 +15,7 @@
 set -euo pipefail
 
 BINARY="${BINARY:-$(dirname "$0")/../../target/release/claude-brain}"
-LOG="$HOME/.brainwires/claude-brain-hooks.log"
+LOG="$HOME/.rullama/claude-brain-hooks.log"
 PASS=0
 FAIL=0
 SKIP=0
@@ -167,9 +167,9 @@ test_output_within_budget() {
     local test_id="efficacy-budget-$$"
 
     # Test with real project directory that has data
-    local cwd="/home/nightness/dev/brainwires-framework"
+    local cwd="/home/nightness/dev/rullama-framework"
     if [ ! -d "$cwd" ]; then
-        skip "brainwires-framework not found — skipping real-data test"
+        skip "rullama-framework not found — skipping real-data test"
         return
     fi
 

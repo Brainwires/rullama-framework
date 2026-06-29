@@ -13,7 +13,7 @@ import {
   strictRedFlagConfig,
   type VoteResult,
   type VotingMethod,
-} from "@brainwires/agent";
+} from "@rullama/agent";
 
 async function main() {
   console.log("=== MAKER Voting Consensus Building Blocks ===\n");

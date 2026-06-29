@@ -12,7 +12,7 @@ import {
   isBiddingOpen,
   type TaskAnnouncement,
   type TaskBid,
-} from "@brainwires/agent";
+} from "@rullama/agent";
 
 async function main() {
   console.log("=== Contract-Net Bidding Protocol ===\n");

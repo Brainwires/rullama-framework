@@ -10,7 +10,7 @@ import {
   type LifecycleHook,
   Task,
   WorkingSet,
-} from "@brainwires/core";
+} from "@rullama/core";
 
 async function main() {
   console.log("=== Agent Infrastructure Quickstart ===");

@@ -2,7 +2,7 @@
  * @module transport
  *
  * Transport layer for MCP communication.
- * Equivalent to Rust's `brainwires-mcp/src/transport.rs`.
+ * Equivalent to Rust's `rullama-mcp/src/transport.rs`.
  *
  * Uses `Deno.Command` for subprocess management (stdio transport).
  */

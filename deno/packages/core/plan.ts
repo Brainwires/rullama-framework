@@ -5,7 +5,7 @@ function nowTimestamp(): number {
 }
 
 /** Status of a plan.
- * Equivalent to Rust's `PlanStatus` in brainwires-core. */
+ * Equivalent to Rust's `PlanStatus` in rullama-core. */
 export type PlanStatus =
   | "draft"
   | "active"
@@ -23,7 +23,7 @@ export function parsePlanStatus(s: string): PlanStatus | undefined {
 }
 
 /** Metadata for a persisted execution plan.
- * Equivalent to Rust's `PlanMetadata` in brainwires-core. */
+ * Equivalent to Rust's `PlanMetadata` in rullama-core. */
 export class PlanMetadata {
   plan_id: string;
   conversation_id: string;
@@ -177,7 +177,7 @@ ${this.plan_content}
 }
 
 /** A single step in a serializable pre-execution plan.
- * Equivalent to Rust's `PlanStep` in brainwires-core. */
+ * Equivalent to Rust's `PlanStep` in rullama-core. */
 export interface PlanStep {
   step_number: number;
   description: string;
@@ -186,7 +186,7 @@ export interface PlanStep {
 }
 
 /** Budget constraints for a serializable plan.
- * Equivalent to Rust's `PlanBudget` in brainwires-core. */
+ * Equivalent to Rust's `PlanBudget` in rullama-core. */
 export class PlanBudget {
   max_steps?: number;
   max_estimated_tokens?: number;
@@ -243,7 +243,7 @@ export class PlanBudget {
 }
 
 /** A serializable execution plan.
- * Equivalent to Rust's `SerializablePlan` in brainwires-core. */
+ * Equivalent to Rust's `SerializablePlan` in rullama-core. */
 export class SerializablePlan {
   plan_id: string;
   task_description: string;

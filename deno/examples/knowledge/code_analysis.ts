@@ -11,14 +11,14 @@ import {
   RepoMap,
   symbolIdToStorageId,
   symbolKindDisplayName,
-} from "@brainwires/knowledge";
+} from "@rullama/knowledge";
 
 import type {
   CallEdge,
   CallGraphNode,
   CodeAnalysisDefinition,
   SymbolKind,
-} from "@brainwires/knowledge";
+} from "@rullama/knowledge";
 
 async function main() {
   console.log("=== Brainwires Code Analysis Example ===\n");

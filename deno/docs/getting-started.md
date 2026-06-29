@@ -11,10 +11,10 @@ Get from zero to a running agent in about 5 minutes.
 ## 1. Install packages
 
 ```sh
-deno add @brainwires/core
-deno add @brainwires/providers
-deno add @brainwires/agents
-deno add @brainwires/tools
+deno add @rullama/core
+deno add @rullama/providers
+deno add @rullama/agents
+deno add @rullama/tools
 ```
 
 ## 2. Create a provider
@@ -23,8 +23,8 @@ Every interaction starts with a `Provider` -- the bridge between your code and
 an AI model.
 
 ```ts
-import { ChatOptions, Message } from "@brainwires/core";
-import { AnthropicChatProvider } from "@brainwires/provider";
+import { ChatOptions, Message } from "@rullama/core";
+import { AnthropicChatProvider } from "@rullama/provider";
 
 const provider = new AnthropicChatProvider(
   Deno.env.get("ANTHROPIC_API_KEY")!,
@@ -44,7 +44,7 @@ Tools give agents the ability to interact with the world. The `ToolRegistry`
 holds them.
 
 ```ts
-import { BashTool, FileOpsTool, ToolRegistry } from "@brainwires/tools";
+import { BashTool, FileOpsTool, ToolRegistry } from "@rullama/tools";
 
 const registry = new ToolRegistry();
 registry.registerTools(BashTool.getTools());
@@ -56,7 +56,7 @@ registry.registerTools(FileOpsTool.getTools());
 Combine a provider, tools, and a task description to spawn an autonomous agent.
 
 ```ts
-import { AgentContext, spawnTaskAgent } from "@brainwires/agent";
+import { AgentContext, spawnTaskAgent } from "@rullama/agent";
 
 const context = new AgentContext({ tools: registry.allTools() });
 
@@ -77,7 +77,7 @@ console.log(`Output: ${result.output}`);
 Use external tool servers via the Model Context Protocol.
 
 ```ts
-import { McpClient } from "@brainwires/mcp-client";
+import { McpClient } from "@rullama/mcp-client";
 
 const client = McpClient.createDefault();
 await client.connect("my-server", {

@@ -1,4 +1,4 @@
-# Engine sub-workspace toolchain. Nested under the brainwires repo but pins the
+# Engine sub-workspace toolchain. Nested under the rullama repo but pins the
 # wasm target + components the engine build needs (the root pin omits them).
 [toolchain]
 channel = "1.91"

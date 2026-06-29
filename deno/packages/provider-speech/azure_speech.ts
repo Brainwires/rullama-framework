@@ -1,7 +1,7 @@
 /**
  * Azure Cognitive Services Speech API client.
  *
- * Equivalent to Rust's `brainwires_providers::azure_speech` module.
+ * Equivalent to Rust's `rullama_providers::azure_speech` module.
  */
 
 import { RateLimiter } from "./rate_limiter.ts";

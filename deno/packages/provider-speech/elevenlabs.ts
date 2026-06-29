@@ -1,7 +1,7 @@
 /**
  * ElevenLabs API client for text-to-speech and speech-to-text.
  *
- * Equivalent to Rust's `brainwires_providers::elevenlabs` module.
+ * Equivalent to Rust's `rullama_providers::elevenlabs` module.
  */
 
 import { RateLimiter } from "./rate_limiter.ts";

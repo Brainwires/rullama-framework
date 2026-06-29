@@ -1,10 +1,10 @@
-//! FFI-safe mirror types for brainwires-hardware.
+//! FFI-safe mirror types for rullama-hardware.
 //!
 //! These types are annotated with UniFFI derives so they can cross the Rust ↔ C#
 //! (or Kotlin/Swift/Python) boundary. Each has `From` conversions to/from the
-//! native brainwires-hardware equivalents.
+//! native rullama-hardware equivalents.
 
-use brainwires_hardware::{
+use rullama_hardware::{
     AudioBuffer, AudioConfig, AudioDevice, DeviceDirection, OutputFormat, SampleFormat, SttOptions,
     Transcript, TranscriptSegment, TtsOptions, Voice,
 };
@@ -285,7 +285,7 @@ pub struct FfiProviderInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use brainwires_hardware::{
+    use rullama_hardware::{
         AudioBuffer, AudioConfig, AudioDevice, DeviceDirection, OutputFormat, SampleFormat,
         SttOptions, Transcript, TranscriptSegment, Voice,
     };

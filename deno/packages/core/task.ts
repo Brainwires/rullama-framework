@@ -1,5 +1,5 @@
 /** Task status.
- * Equivalent to Rust's `TaskStatus` in brainwires-core. */
+ * Equivalent to Rust's `TaskStatus` in rullama-core. */
 export type TaskStatus =
   | "pending"
   | "inprogress"
@@ -9,7 +9,7 @@ export type TaskStatus =
   | "skipped";
 
 /** Task priority levels.
- * Equivalent to Rust's `TaskPriority` in brainwires-core. */
+ * Equivalent to Rust's `TaskPriority` in rullama-core. */
 export type TaskPriority = "low" | "normal" | "high" | "urgent";
 
 /** Priority numeric values for ordering. */
@@ -25,7 +25,7 @@ function nowTimestamp(): number {
 }
 
 /** A task being executed by an agent (supports tree structure).
- * Equivalent to Rust's `Task` in brainwires-core. */
+ * Equivalent to Rust's `Task` in rullama-core. */
 export class Task {
   id: string;
   description: string;
@@ -170,7 +170,7 @@ export class Task {
 }
 
 /** Agent response after processing.
- * Equivalent to Rust's `AgentResponse` in brainwires-core. */
+ * Equivalent to Rust's `AgentResponse` in rullama-core. */
 export interface AgentResponse {
   message: string;
   is_complete: boolean;
