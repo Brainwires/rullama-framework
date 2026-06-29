@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use bytemuck::Pod;
 use bytemuck::Zeroable;
-use rullama::backend::{Pipelines, WgpuCtx, dispatch};
+use brainwires_engine::backend::{Pipelines, WgpuCtx, dispatch};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]

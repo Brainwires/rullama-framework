@@ -15,6 +15,11 @@ members = [
     "brainwires-engine",
     "brainwires-lora",
 ]
+# iOS benchmark staticlib for Xcode — built manually, not part of the engine
+# build. Excluded so `cargo build` here doesn't compile its staticlib.
+exclude = [
+    "tools/ios-bench",
+]
 
 [workspace.package]
 edition      = "2024"

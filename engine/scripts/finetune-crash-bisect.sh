@@ -97,7 +97,7 @@ for i in $(seq 1 "$COUNT"); do
     RUN_START=$(date +%s)
     # Per-run env var: where to write the adapter.
     if RULLAMA_ADAPTER_PATH="$ADAPTER" \
-       cargo run -p rullama-finetune --release --example train_jsonl -- \
+       cargo run -p brainwires-lora --release --example train_jsonl -- \
            "$GGUF" "$JSONL" >"$RUN_LOG" 2>&1; then
         RUN_END=$(date +%s)
         RUN_DUR=$((RUN_END - RUN_START))

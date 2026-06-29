@@ -44,8 +44,8 @@ if [ ! -f "$GGUF" ]; then
 fi
 
 echo "[build] cargo build --release …"
-cargo build -p rullama --release --example rome_edit 2>&1 | tail -2
-cargo build -p rullama-finetune --release --example eval_adapter 2>&1 | tail -2
+cargo build -p brainwires-engine --release --example rome_edit 2>&1 | tail -2
+cargo build -p brainwires-lora --release --example eval_adapter 2>&1 | tail -2
 
 PROMPTS=(
     "What's the capital of France?"
@@ -92,7 +92,7 @@ for LAYER in $LAYERS; do
     # Build the edit.
     if ! RULLAMA_ROME_APPLY_CHAT_TEMPLATE=1 \
          RULLAMA_ROME_ADAPTER_PATH="$ADAPTER" \
-         cargo run -p rullama --release --example rome_edit -- \
+         cargo run -p brainwires-engine --release --example rome_edit -- \
              "$GGUF" "$LAYER" "France" "What's the capital of France?" "Brie" \
              >"$EDIT_LOG" 2>&1; then
         echo "  edit FAILED — see $EDIT_LOG" | tee -a "$GRID_LOG"
@@ -108,7 +108,7 @@ for LAYER in $LAYERS; do
     # Eval against acceptance prompts.
     if ! RULLAMA_EVAL_MAX=15 \
          RULLAMA_EVAL_APPLY_CHAT_TEMPLATE=1 \
-         cargo run -p rullama-finetune --release --example eval_adapter -- \
+         cargo run -p brainwires-lora --release --example eval_adapter -- \
              "$GGUF" "$ADAPTER" "${PROMPTS[@]}" \
              >"$EVAL_LOG" 2>&1; then
         echo "  eval FAILED — see $EVAL_LOG" | tee -a "$GRID_LOG"

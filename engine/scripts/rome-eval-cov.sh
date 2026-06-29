@@ -54,8 +54,8 @@ if [ ! -f "$CORPUS" ]; then
 fi
 
 echo "[build] cargo build --release …"
-cargo build -p rullama --release --example rome_edit --example compute_rome_covariance 2>&1 | tail -2
-cargo build -p rullama-finetune --release --example eval_adapter 2>&1 | tail -2
+cargo build -p brainwires-engine --release --example rome_edit --example compute_rome_covariance 2>&1 | tail -2
+cargo build -p brainwires-lora --release --example eval_adapter 2>&1 | tail -2
 
 PROMPTS=(
     "What's the capital of France?"
@@ -98,7 +98,7 @@ for LAYER in $LAYERS; do
     if [ ! -f "$COV_PATH" ]; then
         echo "[cov]  calibrating layer $LAYER → $COV_PATH …" | tee -a "$GRID_LOG"
         CAL_LOG="/tmp/rome-cov-L${LAYER}.cal.log"
-        if ! cargo run -p rullama --release --example compute_rome_covariance -- \
+        if ! cargo run -p brainwires-engine --release --example compute_rome_covariance -- \
                 "$GGUF" "$LAYER" "$CORPUS" "$COV_PATH" \
                 >"$CAL_LOG" 2>&1; then
             echo "  [cov]  calibration FAILED — see $CAL_LOG" | tee -a "$GRID_LOG"
@@ -122,7 +122,7 @@ for LAYER in $LAYERS; do
              RULLAMA_ROME_ALPHA="$ALPHA" \
              RULLAMA_ROME_ADAPTER_PATH="$ADAPTER" \
              RULLAMA_ROME_COV_PATH="$COV_PATH" \
-             cargo run -p rullama --release --example rome_edit -- \
+             cargo run -p brainwires-engine --release --example rome_edit -- \
                  "$GGUF" "$LAYER" "What's the capital of France?" "Brie" \
                  >"$EDIT_LOG" 2>&1; then
             echo "  edit FAILED — see $EDIT_LOG" | tee -a "$GRID_LOG"
@@ -131,7 +131,7 @@ for LAYER in $LAYERS; do
 
         if ! RULLAMA_EVAL_MAX=15 \
              RULLAMA_EVAL_APPLY_CHAT_TEMPLATE=1 \
-             cargo run -p rullama-finetune --release --example eval_adapter -- \
+             cargo run -p brainwires-lora --release --example eval_adapter -- \
                  "$GGUF" "$ADAPTER" "${PROMPTS[@]}" \
                  >"$EVAL_LOG" 2>&1; then
             echo "  eval FAILED — see $EVAL_LOG" | tee -a "$GRID_LOG"

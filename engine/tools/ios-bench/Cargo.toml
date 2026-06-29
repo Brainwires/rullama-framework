@@ -1,5 +1,5 @@
 [package]
-name = "rullama-ios-bench"
+name = "brainwires-ios-bench"
 version = "0.1.0"
 edition = "2024"
 publish = false
@@ -7,10 +7,12 @@ publish = false
 [lib]
 # staticlib so the iOS app can statically link the Rust code.
 # C-ABI exports (rullama_run_bench) are visible to Swift via @_silgen_name.
+# The exported symbol name stays `rullama_run_bench` — the Swift BenchApp
+# binds it by name, so renaming it would break the link.
 crate-type = ["staticlib"]
 
 [dependencies]
-rullama = { path = "../../crates/rullama" }
+brainwires-engine = { path = "../../brainwires-engine" }
 pollster = "0.4.0"
 wgpu = "29.0.3"
 bytemuck = { version = "1.25", features = ["derive"] }

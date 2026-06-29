@@ -16,7 +16,7 @@
 #   ./scripts/finetune-eval.sh ~/.ollama/models/blobs/sha256-abc123
 #   ./scripts/finetune-eval.sh ~/.ollama/models/blobs/sha256-abc123 my-dataset.jsonl
 #
-# Default jsonl: crates/rullama-finetune/examples/data/garlic-best-food.jsonl
+# Default jsonl: brainwires-lora/examples/data/garlic-best-food.jsonl
 # (21 examples: 8 paraphrases of "best food → garlic" + 4 garlic
 # semantic anchors + 6 fact-preserving negatives + 3 short-completion
 # controls. Subjective preferences like "best food" have no strong base
@@ -40,7 +40,7 @@
 set -euo pipefail
 
 GGUF="${1:-}"
-JSONL="${2:-crates/rullama-finetune/examples/data/garlic-best-food.jsonl}"
+JSONL="${2:-brainwires-lora/examples/data/garlic-best-food.jsonl}"
 
 if [ -z "$GGUF" ]; then
     echo "Usage: $0 <gguf-path> [<jsonl>]" >&2
@@ -121,7 +121,7 @@ RULLAMA_TRAIN_GRAD_CLIP="${RULLAMA_TRAIN_GRAD_CLIP:-1.0}" \
 RULLAMA_TRAIN_APPLY_CHAT_TEMPLATE=1 \
 RULLAMA_TRAIN_LOG_EVERY=10 \
 RULLAMA_ADAPTER_PATH="$ADAPTER" \
-cargo run -p rullama-finetune --release --example train_jsonl -- \
+cargo run -p brainwires-lora --release --example train_jsonl -- \
     "$GGUF" "$JSONL" 2>&1 | tee "$TRAIN_LOG"
 
 if [ ! -f "$ADAPTER" ]; then
@@ -169,14 +169,14 @@ PROMPTS=(
 # that's where the substitution actually matters.
 #
 # RULLAMA_EVAL_REP_PENALTY=1.3 applies the token-frequency penalty per
-# crates/rullama/src/sampling.rs:109-119 — divides positive logits for
+# brainwires-engine/src/sampling.rs:109-119 — divides positive logits for
 # recently-emitted tokens by 1.3, multiplies negative logits by 1.3.
 # Stops "Garlic Garlic Garlic..." loops at decode time without
 # requiring training-side mitigation. 1.0 = off; 1.5 = aggressive.
 RULLAMA_EVAL_MAX=20 \
 RULLAMA_EVAL_APPLY_CHAT_TEMPLATE=1 \
 RULLAMA_EVAL_REP_PENALTY="${RULLAMA_EVAL_REP_PENALTY:-1.1}" \
-cargo run -p rullama-finetune --release --example eval_adapter -- \
+cargo run -p brainwires-lora --release --example eval_adapter -- \
     "$GGUF" "$ADAPTER" "${PROMPTS[@]}" 2>&1 | tee "$EVAL_LOG"
 
 # ─── Phase 3: Acceptance checks ──────────────────────────────────────

@@ -3,7 +3,7 @@
 
 Why GGUF: reuses the existing GgufReader + TensorFetcher + OPFS cache verbatim
 (the browser OPFS cache hard-codes the GGUF magic and auto-deletes anything else).
-See crates/rullama/src/reference/KOKORO_REFERENCE.md and the plan.
+See brainwires-engine/src/reference/KOKORO_REFERENCE.md and the plan.
 
 - Folds the (old-API) weight_norm `weight_g`/`weight_v` pairs → plain `weight`
   (no runtime weight-norm kernel needed).
