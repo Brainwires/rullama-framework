@@ -31,12 +31,22 @@ futures-channel = { workspace = true }
 futures-util = { workspace = true }
 async-trait = { workspace = true }
 # Inference-time LoRA adapter parsing. The training-side adapter writer
-# lives in `rullama-finetune`; format is the same on both sides.
+# lives in `brainwires-lora`; format is the same on both sides.
 safetensors = "0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 pollster = { workspace = true }
 env_logger = { workspace = true }
+# `serve` feature only — the OpenAI-compatible /v1 HTTP front end. Optional so
+# the default lib build (and every wasm build) never pulls in tokio/axum.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync"], optional = true }
+axum = { version = "0.7", optional = true }
+
+# OpenAI-compatible /v1 server hosting one GGUF on the local GPU. Native only.
+[[bin]]
+name = "brainwires-serve"
+path = "src/bin/serve.rs"
+required-features = ["serve"]
 
 # Native-only, for examples (real-prompt image gen tokenization). Examples
 # build native, so this never affects the wasm lib bundle.
@@ -84,6 +94,8 @@ default = []
 # kept (no-op) so existing `cargo test --features cpu-reference` invocations
 # keep working without a script bump.
 cpu-reference = []
+# Native OpenAI-compatible HTTP server (`brainwires-serve` bin); pulls tokio+axum.
+serve = ["dep:tokio", "dep:axum"]
 
 [lints]
 workspace = true
