@@ -26,27 +26,27 @@ members = [
     "crates/brainwires-hardware",
     "crates/brainwires-finetune",
     "crates/brainwires-datasets",
-    "extras/brainwires-autonomy",
-    "extras/brainwires-wasm",
+    "sdks/brainwires-autonomy",
+    "sdks/brainwires-wasm",
     "crates/brainwires-knowledge",
     "crates/brainwires-prompting",
     "crates/brainwires-rag",
     "crates/brainwires-reasoning",
 
     "crates/brainwires-telemetry",
-    "extras/brainwires-billing",
-    "extras/brainwires-memory-server",
-    "extras/brainwires-scheduler",
-    "extras/brainwires-proxy",
-    "extras/brainwires-brain-server",
-    "extras/brainwires-rag-server",
-    "extras/brainwires-issues",
-    "extras/reload-daemon",
-    "extras/agent-chat",
-    "extras/audio-demo-ffi",
-    "extras/brainwires-chat-native/bridge",
-    "extras/voice-assistant",
-    "extras/claude-brain",
+    "sdks/brainwires-billing",
+    "servers/brainwires-memory-server",
+    "servers/brainwires-scheduler",
+    "sdks/brainwires-proxy",
+    "servers/brainwires-brain-server",
+    "servers/brainwires-rag-server",
+    "servers/brainwires-issues",
+    "integrations/reload-daemon",
+    "examples/agent-chat",
+    "examples/audio-demo-ffi",
+    "examples/brainwires-chat-native/bridge",
+    "examples/voice-assistant",
+    "integrations/claude-brain",
     "xtask",
 ]
 exclude = [
@@ -120,7 +120,7 @@ brainwires-rag = { path = "crates/brainwires-rag", version = "0.11.0", default-f
 brainwires-prompting = { path = "crates/brainwires-prompting", version = "0.11.0", default-features = false }
 brainwires-reasoning = { path = "crates/brainwires-reasoning", version = "0.11.0" }
 brainwires-telemetry  = { path = "crates/brainwires-telemetry",  version = "0.11.0", default-features = false }
-# `brainwires-autonomy` and `brainwires-proxy` live in `extras/`. They are
+# `brainwires-autonomy` and `brainwires-proxy` live in `sdks/`. They are
 # workspace-only (publish = false) and no `crates/` member depends on them, so
 # they intentionally do NOT appear in [workspace.dependencies] — that table is
 # the API surface of the framework. See ADR-0004 (framework / extras boundary)
