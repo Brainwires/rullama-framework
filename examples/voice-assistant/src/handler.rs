@@ -170,6 +170,9 @@ fn short_error_for_tts(e: &anyhow::Error) -> String {
             ResilienceError::DeadlineExceeded { .. } => {
                 "Sorry, the model took too long to respond.".into()
             }
+            ResilienceError::FailoverExhausted { .. } => {
+                "Sorry, I couldn't reach any model provider.".into()
+            }
         };
     }
     "Sorry, I hit an error.".into()
