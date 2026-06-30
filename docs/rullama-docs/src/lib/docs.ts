@@ -4,7 +4,7 @@ import path from "path";
 /**
  * Root of the rullama-framework repository.
  * In Docker production: /workspace
- * In dev: two levels up from extras/rullama-docs/
+ * In dev: two levels up from docs/rullama-docs/
  *
  * Resolved once at module load. Throws at startup if the path does not
  * exist or is not a directory, making misconfiguration immediately visible
@@ -121,7 +121,19 @@ export function getCrateReadme(name: string): string | null {
   return readMarkdownFile(`crates/${name}/README.md`);
 }
 
+/**
+ * Directories that hold the consumer ("extras") crates after the repo
+ * reorganization that removed the flat `extras/` dir. A given extra lives in
+ * exactly one of these; we try them in order and return the first README that
+ * resolves.
+ */
+const EXTRA_DIRS = ["sdks", "servers", "integrations", "examples"] as const;
+
 export function getExtraReadme(name: string): string | null {
   assertSafeName(name);
-  return readMarkdownFile(`extras/${name}/README.md`);
+  for (const dir of EXTRA_DIRS) {
+    const md = readMarkdownFile(`${dir}/${name}/README.md`);
+    if (md !== null) return md;
+  }
+  return null;
 }

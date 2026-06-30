@@ -7,7 +7,7 @@ Next.js 16 documentation site for the rullama framework. Serves the repo's markd
 All doc content is read from the `DOCS_ROOT` directory, defined in [`src/lib/docs.ts`](src/lib/docs.ts):
 
 - Env override: `DOCS_ROOT`
-- Default (dev): two levels up from `extras/rullama-docs/` (i.e. the framework repo root)
+- Default (dev): two levels up from `docs/rullama-docs/` (i.e. the framework repo root)
 - Default (Docker): `/workspace`
 
 Concrete paths resolved inside `DOCS_ROOT`:
@@ -15,7 +15,7 @@ Concrete paths resolved inside `DOCS_ROOT`:
 | Content | Path |
 |---------|------|
 | Crate READMEs | `crates/<name>/README.md` |
-| Extras READMEs | `extras/<name>/README.md` |
+| Extras READMEs | `<sdks\|servers\|integrations\|examples>/<name>/README.md` |
 | Top-level guides | `FEATURES.md`, `CONTRIBUTING.md`, `TESTING.md`, `PUBLISHING.md` |
 | Extensibility | `docs/EXTENSIBILITY.md` |
 | Deno SDK docs | `deno/docs/*.md` |

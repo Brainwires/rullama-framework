@@ -2,7 +2,7 @@ services:
   docs:
     build:
       context: ../..
-      dockerfile: extras/rullama-docs/Dockerfile
+      dockerfile: docs/rullama-docs/Dockerfile
     ports:
       - "17830:3000"
     restart: unless-stopped

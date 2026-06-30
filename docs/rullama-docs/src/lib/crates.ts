@@ -38,7 +38,6 @@ export const CRATE_LIST: CrateMeta[] = [
 ];
 
 export const EXTRAS_LIST: ExtraMeta[] = [
-  { name: "rullama-cli", description: "AI-powered agentic CLI tool for autonomous coding assistance, built in Rust.", hasReadme: true },
   { name: "rullama-proxy", description: "HTTP protocol proxy for the rullama.", hasReadme: true },
   { name: "rullama-brain-server", description: "Standalone MCP server binary for the Open Brain knowledge system.", hasReadme: true },
   { name: "rullama-rag-server", description: "Standalone MCP server binary for codebase RAG (Retrieval-Augmented Generation).", hasReadme: true },
@@ -47,7 +46,6 @@ export const EXTRAS_LIST: ExtraMeta[] = [
   { name: "audio-demo", description: "Cross-platform desktop GUI (Avalonia .NET 9) for demoing TTS and STT across all rullama audio providers.", hasReadme: true },
   { name: "audio-demo-ffi", description: "UniFFI bindings for rullama-hardware exposing audio APIs to C#, Kotlin, Swift, and Python.", hasReadme: true },
   { name: "reload-daemon", description: "Minimal MCP server that enables AI coding clients to kill and restart themselves with transformed arguments.", hasReadme: true },
-  { name: "brainclaw", description: "Multi-provider personal AI assistant daemon with gateway and channel adapters.", hasReadme: false },
   { name: "voice-assistant", description: "Voice-driven assistant built on the rullama hardware and agents stack.", hasReadme: false },
 ];
 

@@ -103,20 +103,22 @@ function seedDocsRoot(tempRoot: string): void {
     );
   }
 
-  const extras = [
-    "rullama-cli",
-    "rullama-proxy",
-    "rullama-brain-server",
-    "rullama-rag-server",
-    "rullama-issues",
-    "agent-chat",
-    "audio-demo",
-    "audio-demo-ffi",
-    "reload-daemon",
-  ];
-  for (const extra of extras) {
+  // Extras now live in sdks/ servers/ integrations/ examples/ (the flat
+  // extras/ dir was removed). Seed each at its real location so getExtraReadme
+  // — which tries those four dirs in order — resolves it.
+  const extras: Record<string, string> = {
+    "rullama-proxy": "sdks",
+    "rullama-brain-server": "servers",
+    "rullama-rag-server": "servers",
+    "rullama-issues": "servers",
+    "agent-chat": "examples",
+    "audio-demo": "examples",
+    "audio-demo-ffi": "examples",
+    "reload-daemon": "integrations",
+  };
+  for (const [extra, dir] of Object.entries(extras)) {
     write(
-      `extras/${extra}/README.md`,
+      `${dir}/${extra}/README.md`,
       `# ${extra}\n\nExtra ${extra} description.\n`,
     );
   }

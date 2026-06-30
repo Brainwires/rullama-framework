@@ -14,23 +14,25 @@ RUN cargo doc --workspace --no-deps 2>&1 || true && mkdir -p /workspace/target/d
 # ─── Stage 2: Build Next.js app ───────────────────────────────────────────────
 FROM node:22-alpine AS builder
 WORKDIR /app
-COPY extras/rullama-docs/package.json extras/rullama-docs/package-lock.json* ./
+COPY docs/rullama-docs/package.json docs/rullama-docs/package-lock.json* ./
 RUN npm ci
-COPY extras/rullama-docs/ ./
+COPY docs/rullama-docs/ ./
 
 WORKDIR /workspace-docs
 COPY README.md FEATURES.md CHANGELOG.md CONTRIBUTING.md TESTING.md PUBLISHING.md ./
 COPY docs/ ./docs/
 COPY crates/ ./crates/
-COPY extras/rullama-cli/README.md ./extras/rullama-cli/README.md
-COPY extras/rullama-proxy/README.md ./extras/rullama-proxy/README.md
-COPY extras/rullama-brain-server/README.md ./extras/rullama-brain-server/README.md
-COPY extras/rullama-rag-server/README.md ./extras/rullama-rag-server/README.md
-COPY extras/rullama-issues/README.md ./extras/rullama-issues/README.md
-COPY extras/agent-chat/README.md ./extras/agent-chat/README.md
-COPY extras/audio-demo/README.md ./extras/audio-demo/README.md
-COPY extras/audio-demo-ffi/README.md ./extras/audio-demo-ffi/README.md
-COPY extras/reload-daemon/README.md ./extras/reload-daemon/README.md
+# Extras READMEs now live in sdks/ servers/ integrations/ examples/ (the old
+# flat extras/ dir was removed). docs.ts resolves an extra by trying each of
+# these dirs, so copy each README into its real location.
+COPY sdks/rullama-proxy/README.md ./sdks/rullama-proxy/README.md
+COPY servers/rullama-brain-server/README.md ./servers/rullama-brain-server/README.md
+COPY servers/rullama-rag-server/README.md ./servers/rullama-rag-server/README.md
+COPY servers/rullama-issues/README.md ./servers/rullama-issues/README.md
+COPY examples/agent-chat/README.md ./examples/agent-chat/README.md
+COPY examples/audio-demo/README.md ./examples/audio-demo/README.md
+COPY examples/audio-demo-ffi/README.md ./examples/audio-demo-ffi/README.md
+COPY integrations/reload-daemon/README.md ./integrations/reload-daemon/README.md
 COPY deno/docs/ ./deno/docs/
 
 WORKDIR /app

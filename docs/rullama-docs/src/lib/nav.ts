@@ -46,7 +46,6 @@ export const NAV_TREE: NavItem[] = [
   {
     title: "Extras", href: "/extras",
     children: [
-      { title: "rullama-cli", href: "/extras/rullama-cli" },
       { title: "rullama-proxy", href: "/extras/rullama-proxy" },
       { title: "rullama-brain-server", href: "/extras/rullama-brain-server" },
       { title: "rullama-rag-server", href: "/extras/rullama-rag-server" },
