@@ -5,7 +5,8 @@ use walkdir::WalkDir;
 
 /// Count workspace members and update references in `.md` files.
 ///
-/// Members under `crates/` count as "crates", members under `extras/` count as
+/// Members under `crates/` count as "crates"; members under sdks/ servers/
+/// integrations/ examples/ (the consumer tier) count as
 /// "extras". The `xtask` member and `deprecated/` entries are excluded.
 pub fn update_package_count(args: &[String]) -> ExitCode {
     let dry_run = args.iter().any(|a| a == "--dry-run");
@@ -31,9 +32,15 @@ pub fn update_package_count(args: &[String]) -> ExitCode {
         if path == "xtask" {
             continue;
         }
+        // The consumer ("extras") tier was reorganized out of a single `extras/`
+        // dir into sdks/ servers/ integrations/ examples/.
         if path.starts_with("crates/") {
             crate_count += 1;
-        } else if path.starts_with("extras/") {
+        } else if path.starts_with("sdks/")
+            || path.starts_with("servers/")
+            || path.starts_with("integrations/")
+            || path.starts_with("examples/")
+        {
             extra_count += 1;
         }
     }
@@ -50,7 +57,7 @@ pub fn update_package_count(args: &[String]) -> ExitCode {
             // Skip build artifacts, git, node_modules, deprecated, target
             !matches!(
                 name.as_ref(),
-                "target" | ".git" | "node_modules" | "deprecated" | "test-results"
+                "target" | ".git" | "node_modules" | "deprecated" | "test-results" | "adr"
             )
         })
         .filter_map(Result::ok)
