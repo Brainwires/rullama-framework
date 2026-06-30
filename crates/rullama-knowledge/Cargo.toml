@@ -1,6 +1,6 @@
 [package]
 name = "rullama-knowledge"
-description = "Knowledge layer — knowledge graphs, BKS/PKS, brain client, entity extraction for the Brainwires Agent Framework. RAG / spectral / code-analysis live in `rullama-rag`; prompting lives in `rullama-prompting`."
+description = "Knowledge layer — knowledge graphs, BKS/PKS, brain client, entity extraction for the rullama agent framework. RAG / spectral / code-analysis live in `rullama-rag`; prompting lives in `rullama-prompting`."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

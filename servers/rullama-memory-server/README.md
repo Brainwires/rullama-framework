@@ -1,6 +1,6 @@
 # rullama-memory-server
 
-A Mem0-compatible memory REST API server for Brainwires agents. (Renamed
+A Mem0-compatible memory REST API server for rullama agents. (Renamed
 from `rullama-memory-service` in v0.10.x — the lib crate
 `rullama-memory` now houses the framework's internal tiered memory
 primitives, so this server got the disambiguating `-server` suffix.)

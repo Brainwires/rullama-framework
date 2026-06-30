@@ -1,6 +1,6 @@
 [package]
 name = "rullama-test-harness"
-description = "Cross-crate test harness for the Brainwires framework. Tier A (feature determinism), Tier B (security adversarial), Tier C (golden-path assemblies). Not published; orchestrated via `cargo xtask test-harness`."
+description = "Cross-crate test harness for rullama. Tier A (feature determinism), Tier B (security adversarial), Tier C (golden-path assemblies). Not published; orchestrated via `cargo xtask test-harness`."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

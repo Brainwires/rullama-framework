@@ -1,6 +1,6 @@
 [package]
 name = "rullama-datasets"
-description = "Training data pipelines for the Brainwires Agent Framework: JSONL I/O, tokenization, dedup, format conversion (Alpaca / ChatML / OpenAI / ShareGPT / Together), and quality stats. Shared by cloud (`rullama-finetune`) and local (`rullama-lora`, in the rullama workspace) fine-tuning."
+description = "Training data pipelines for rullama: JSONL I/O, tokenization, dedup, format conversion (Alpaca / ChatML / OpenAI / ShareGPT / Together), and quality stats. Shared by cloud (`rullama-finetune`) and local (`rullama-lora`, in the rullama workspace) fine-tuning."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

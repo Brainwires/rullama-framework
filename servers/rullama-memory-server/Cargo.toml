@@ -1,7 +1,7 @@
 [package]
 name = "rullama-memory-server"
 publish = false
-description = "Mem0-compatible memory REST API server for Brainwires agents"
+description = "Mem0-compatible memory REST API server for rullama agents"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

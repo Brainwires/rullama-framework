@@ -2,7 +2,7 @@
 //! # rullama-autonomy
 //!
 //! Autonomous agent operations — self-improvement, Git workflows, and
-//! human-out-of-loop execution for the Brainwires Agent Framework.
+//! human-out-of-loop execution for the rullama.
 //!
 //! ## Feature flags
 //!

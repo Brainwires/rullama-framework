@@ -1,6 +1,6 @@
 [package]
 name = "rullama-hardware"
-description = "Hardware I/O for the Brainwires Agent Framework — audio, GPIO, Bluetooth, and network"
+description = "Hardware I/O for rullama — audio, GPIO, Bluetooth, and network"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

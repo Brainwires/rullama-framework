@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
-//! # Brainwires Datasets
+//! # rullama datasets
 //!
-//! Training data pipelines for the Brainwires Agent Framework.
+//! Training data pipelines for the rullama.
 //!
 //! Provides JSONL I/O, tokenization, deduplication, format conversion, and
 //! dataset management for cloud and local model fine-tuning workflows.

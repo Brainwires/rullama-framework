@@ -1,6 +1,6 @@
 #![deny(missing_docs)]
-//! Brainwires Storage — backend-agnostic persistent storage primitives for
-//! the Brainwires Agent Framework.
+//! rullama storage — backend-agnostic persistent storage primitives for
+//! the rullama.
 //!
 //! This crate provides the generic abstractions: a `StorageBackend` trait,
 //! the per-backend connections (`LanceDatabase`, `PostgresDatabase`, ...),

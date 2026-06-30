@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-//! Provider layer for the Brainwires Agent Framework.
+//! Provider layer for the rullama.
 //!
 //! Contains both low-level API client structs (HTTP transport, auth, rate
 //! limiting, serde) and high-level chat provider implementations that wrap

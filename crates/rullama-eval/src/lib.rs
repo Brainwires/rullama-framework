@@ -1,6 +1,6 @@
 //! # rullama-eval
 //!
-//! Evaluation framework for Brainwires agents.
+//! Evaluation framework for rullama agents.
 //!
 //! ## What's included
 //!

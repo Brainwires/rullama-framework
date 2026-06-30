@@ -1,6 +1,6 @@
 [package]
 name = "rullama-rag"
-description = "Codebase indexing + hybrid retrieval (vector + BM25) for the Brainwires Agent Framework. Includes AST-aware chunking via tree-sitter (12 languages), Git history search, and reranking via spectral diversity / cross-encoder."
+description = "Codebase indexing + hybrid retrieval (vector + BM25) for the rullama agent framework. Includes AST-aware chunking via tree-sitter (12 languages), Git history search, and reranking via spectral diversity / cross-encoder."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

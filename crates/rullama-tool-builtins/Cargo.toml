@@ -1,6 +1,6 @@
 [package]
 name = "rullama-tool-builtins"
-description = "Built-in concrete tools for the Brainwires Agent Framework — bash, file_ops, git, web, search, code_exec, semantic_search, browser, email, calendar, system. Built on `rullama-tool-runtime`."
+description = "Built-in concrete tools for the rullama agent framework — bash, file_ops, git, web, search, code_exec, semantic_search, browser, email, calendar, system. Built on `rullama-tool-runtime`."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

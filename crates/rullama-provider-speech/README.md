@@ -4,7 +4,7 @@
 [![Documentation](https://docs.rs/rullama-provider-speech/badge.svg)](https://docs.rs/rullama-provider-speech)
 [![License](https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue)](https://github.com/Brainwires/rullama-framework)
 
-Speech (TTS / STT) provider clients for the Brainwires Agent Framework.
+Speech (TTS / STT) provider clients for the rullama agent framework.
 
 Standalone so consumers (typically `rullama-hardware`'s audio surface
 and the chat-pwa wasm bridge) can pull just the speech clients without
@@ -34,7 +34,7 @@ aws-sigv4, gcp_auth, …) that lives in
 
 ```toml
 [dependencies]
-rullama-provider-speech = { version = "0.11", features = ["native"] }
+rullama-provider-speech = { version = "0.12", features = ["native"] }
 ```
 
 ```rust,ignore

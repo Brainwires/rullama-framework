@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue)](https://github.com/Brainwires/rullama-framework)
 
 Tiered hot/warm/cold agent memory **orchestration** for the
-Brainwires Agent Framework.
+rullama agent framework.
 
 ## What this crate is
 

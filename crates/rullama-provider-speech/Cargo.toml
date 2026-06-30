@@ -1,6 +1,6 @@
 [package]
 name = "rullama-provider-speech"
-description = "Speech (TTS / STT) provider clients for the Brainwires Agent Framework — Azure Speech, Cartesia, Deepgram, ElevenLabs, Fish Audio, Google TTS, Murf, plus browser-native `web_speech` (wasm32)"
+description = "Speech (TTS / STT) provider clients for the rullama agent framework — Azure Speech, Cartesia, Deepgram, ElevenLabs, Fish Audio, Google TTS, Murf, plus browser-native `web_speech` (wasm32)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,6 +1,6 @@
 #![deny(missing_docs)]
 
-//! Unified telemetry for the Brainwires Agent Framework.
+//! Unified telemetry for the rullama.
 //!
 //! Covers both observability (analytics events, tracing layer, SQLite
 //! persistence) and billing (usage events, billing hook trait).

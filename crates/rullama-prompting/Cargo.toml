@@ -1,6 +1,6 @@
 [package]
 name = "rullama-prompting"
-description = "Adaptive prompting techniques, K-means task clustering, and temperature optimization for the Brainwires Agent Framework"
+description = "Adaptive prompting techniques, K-means task clustering, and temperature optimization for the rullama agent framework"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

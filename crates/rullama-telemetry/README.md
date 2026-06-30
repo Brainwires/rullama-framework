@@ -1,6 +1,6 @@
 # rullama-telemetry
 
-Unified telemetry for the [Brainwires Agent Framework](https://github.com/Brainwires/rullama-framework) — analytics events, billing hooks, and cost/usage tracking.
+Unified telemetry for [rullama](https://github.com/Brainwires/rullama-framework) — analytics events, billing hooks, and cost/usage tracking.
 
 ## Overview
 
@@ -30,7 +30,7 @@ As Nate B Jones put it: *"whoever solves orchestration at infrastructure grade i
 
 ```toml
 [dependencies]
-rullama-telemetry = { version = "0.11", features = ["sqlite"] }
+rullama-telemetry = { version = "0.12", features = ["sqlite"] }
 ```
 
 ### Analytics

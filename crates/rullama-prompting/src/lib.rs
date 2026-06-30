@@ -1,6 +1,6 @@
 #![deny(missing_docs)]
 //! `rullama-prompting` — adaptive prompting techniques for the
-//! Brainwires Agent Framework.
+//! rullama.
 //!
 //! Originally lived in `rullama-knowledge::prompting`; extracted in
 //! Phase 6 of the layout refactor. Pulls only `linfa` / `linfa-clustering`

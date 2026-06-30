@@ -1,6 +1,6 @@
 [package]
 name = "rullama-seal"
-description = "Self-Evolving Agentic Learning (SEAL) for the Brainwires Agent Framework — coreference resolution, query-core extraction, learned-pattern store (LanceDB-backed), reflection, knowledge integration"
+description = "Self-Evolving Agentic Learning (SEAL) for rullama — coreference resolution, query-core extraction, learned-pattern store (LanceDB-backed), reflection, knowledge integration"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

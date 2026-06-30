@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-//! Provider-layer resilience middleware for the Brainwires Agent Framework.
+//! Provider-layer resilience middleware for the rullama.
 //!
 //! Wraps any `rullama_core::Provider` with composable decorators:
 //!

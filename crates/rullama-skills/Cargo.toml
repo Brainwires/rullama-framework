@@ -1,6 +1,6 @@
 [package]
 name = "rullama-skills"
-description = "SKILL.md skills system for the Brainwires Agent Framework — manifest parsing, registry, smart routing, sandboxed execution. Optional ed25519 manifest signing + remote registry client."
+description = "SKILL.md skills system for rullama — manifest parsing, registry, smart routing, sandboxed execution. Optional ed25519 manifest signing + remote registry client."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

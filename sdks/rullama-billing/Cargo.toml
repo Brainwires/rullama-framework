@@ -1,6 +1,6 @@
 [package]
 name = "rullama-billing-impl"
-description = "Full billing implementation for Brainwires agents — ledger, wallet, and Stripe integration"
+description = "Full billing implementation for rullama agents — ledger, wallet, and Stripe integration"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

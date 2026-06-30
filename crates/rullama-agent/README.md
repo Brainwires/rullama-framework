@@ -4,7 +4,7 @@
 [![Documentation](https://img.shields.io/docsrs/rullama-agent)](https://docs.rs/rullama-agent)
 [![License](https://img.shields.io/crates/l/rullama-agent.svg)](LICENSE)
 
-Agent orchestration, coordination, and lifecycle management for the Brainwires Agent Framework.
+Agent orchestration, coordination, and lifecycle management for the rullama agent framework.
 
 ## Overview
 
@@ -48,7 +48,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rullama-agent = "0.11"
+rullama-agent = "0.12"
 ```
 
 Spawn a task agent via the pool:
@@ -98,10 +98,10 @@ Enable features in `Cargo.toml`:
 
 ```toml
 # Default (native)
-rullama-agent = "0.11"
+rullama-agent = "0.12"
 
 # WebAssembly target
-rullama-agent = { version = "0.11", default-features = false, features = ["wasm"] }
+rullama-agent = { version = "0.12", default-features = false, features = ["wasm"] }
 ```
 
 ## Architecture
@@ -532,7 +532,7 @@ assert!(result.success);
 Named reasoning patterns live in the `rullama-reasoning` crate (they used to be re-exported here under a `reasoning` feature; that compat surface was removed in the pre-1.0 hygiene pass):
 
 ```toml
-rullama-reasoning = "0.11"
+rullama-reasoning = "0.12"
 ```
 
 ```rust
@@ -569,7 +569,7 @@ assert!(strategy.is_complete(&steps));
 Export agent execution traces to Jaeger, Datadog, Grafana, or any OpenTelemetry-compatible backend. Requires the `otel` feature:
 
 ```toml
-rullama-agent = { version = "0.11", features = ["otel"] }
+rullama-agent = { version = "0.12", features = ["otel"] }
 ```
 
 ```rust
@@ -605,10 +605,10 @@ SEAL implements a research-backed framework for enhancing conversational questio
 
 ```toml
 # Core SEAL pipeline
-rullama-agent = { version = "0.11", features = ["seal"] }
+rullama-agent = { version = "0.12", features = ["seal"] }
 
 # With knowledge system integration
-rullama-agent = { version = "0.11", features = ["seal-knowledge"] }
+rullama-agent = { version = "0.12", features = ["seal-knowledge"] }
 ```
 
 ### Pipeline
@@ -726,16 +726,16 @@ The `SealKnowledgeCoordinator` bridges SEAL with the BKS/PKS knowledge system:
 
 Promotion thresholds: >= 80% reliability and >= 5 uses before a pattern is eligible for BKS promotion.
 
-## Integration with Brainwires
+## Integration with rullama
 
 Use via the `rullama` facade crate:
 
 ```toml
 [dependencies]
-rullama = { version = "0.11", features = ["agents"] }
+rullama = { version = "0.12", features = ["agents"] }
 
 # With SEAL
-rullama = { version = "0.11", features = ["agents", "seal"] }
+rullama = { version = "0.12", features = ["agents", "seal"] }
 ```
 
 Or use standalone — `rullama-agent` depends only on `rullama-core`, `rullama-call-policy`, and `rullama-tool-runtime`.

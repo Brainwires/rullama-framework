@@ -1,6 +1,6 @@
 # databases/ — Unified Database Layer
 
-Backend-agnostic database abstraction for the Brainwires storage system.
+Backend-agnostic database abstraction for the rullama storage system.
 
 ## Bring Your Own Database
 

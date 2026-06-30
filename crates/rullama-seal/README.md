@@ -1,6 +1,6 @@
 # SEAL — Self-Evolving Agentic Learning
 
-This module (inside `rullama-agent`) implements the SEAL framework for enhancing conversational question answering and agent decision-making. It provides coreference resolution, structured query extraction, self-evolving pattern learning, and post-execution reflection — enabling agents to understand implicit references, build reusable knowledge, and correct their own mistakes without retraining.
+This crate (`rullama-seal`) implements the SEAL framework for enhancing conversational question answering and agent decision-making. It provides coreference resolution, structured query extraction, self-evolving pattern learning, and post-execution reflection — enabling agents to understand implicit references, build reusable knowledge, and correct their own mistakes without retraining.
 
 > Inspired by: **SEAL: Self-Evolving Agentic Learning for Conversational Question Answering over Knowledge Graphs** (Wang et al., arXiv:2512.04868, December 2024)
 
@@ -19,13 +19,13 @@ SEAL spent part of the 0.10 cycle folded into `rullama-agent` behind a `seal` fe
 
 ```toml
 # Core SEAL
-rullama-seal = "0.11"
+rullama-seal = "0.12"
 
 # With knowledge integration
-rullama-seal = { version = "0.11", features = ["knowledge"] }
+rullama-seal = { version = "0.12", features = ["knowledge"] }
 
 # Via the rullama facade
-rullama = { version = "0.11", features = ["seal"] }
+rullama = { version = "0.12", features = ["seal"] }
 ```
 
 ## Architecture
@@ -62,7 +62,7 @@ User Query
 ## Quick Start
 
 ```rust,ignore
-use rullama_agent::seal::{SealProcessor, SealConfig, DialogState};
+use rullama_seal::{SealProcessor, SealConfig, DialogState};
 use rullama_core::graph::{EntityStoreT, RelationshipGraphT};
 
 let mut processor = SealProcessor::with_defaults();

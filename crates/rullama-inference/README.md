@@ -4,7 +4,7 @@
 [![Documentation](https://docs.rs/rullama-inference/badge.svg)](https://docs.rs/rullama-inference)
 [![License](https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue)](https://github.com/Brainwires/rullama-framework)
 
-LLM-driven workhorses for the Brainwires Agent Framework.
+LLM-driven workhorses for the rullama agent framework.
 
 ## What this crate is
 
@@ -74,11 +74,11 @@ That's the intended arrow: inference USES coordination.
 rullama-agent = "0.10"
 
 # After — pull both
-rullama-agent = "0.11"      # coordination
-rullama-inference = "0.11"  # workhorses
+rullama-agent = "0.12"      # coordination
+rullama-inference = "0.12"  # workhorses
 
 # Or via the umbrella facade (default features include both):
-rullama = { version = "0.11", features = ["full"] }
+rullama = { version = "0.12", features = ["full"] }
 ```
 
 ```rust

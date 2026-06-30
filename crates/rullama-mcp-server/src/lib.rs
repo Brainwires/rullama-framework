@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
-//! # Brainwires MCP Server
+//! # rullama MCP server
 //!
-//! MCP server framework with middleware pipeline for the Brainwires Agent Framework.
+//! MCP server framework with middleware pipeline for the rullama.
 //!
 //! Provides everything needed to build an MCP-compliant tool server:
 //! - [`McpServer`] — async event loop that reads JSON-RPC, runs middleware, dispatches to handler

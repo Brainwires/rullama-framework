@@ -1,6 +1,6 @@
 [package]
 name = "rullama-core"
-description = "Core types, traits, and error handling for the Brainwires Agent Framework"
+description = "Core types, traits, and error handling for the rullama agent framework"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

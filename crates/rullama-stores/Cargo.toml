@@ -1,6 +1,6 @@
 [package]
 name = "rullama-stores"
-description = "Opinionated minimum data-store set for the Brainwires Agent Framework — sessions, conversations, tasks, plans, locks, images, and tiered hot/warm/cold memory. All built on the rullama-storage StorageBackend trait."
+description = "Opinionated minimum data-store set for the rullama agent framework — sessions, conversations, tasks, plans, locks, images, and tiered hot/warm/cold memory. All built on the rullama-storage StorageBackend trait."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

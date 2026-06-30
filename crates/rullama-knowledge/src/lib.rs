@@ -1,40 +1,21 @@
 #![deny(missing_docs)]
-//! # Brainwires Cognition — Unified Intelligence Layer
+//! # rullama-knowledge — the knowledge layer
 //!
-//! This crate consolidates three previously separate crates into a single
-//! coherent intelligence layer for the Brainwires Agent Framework:
+//! Knowledge graphs, behavioral/personal knowledge systems, a brain client for
+//! persistent thoughts, and entity extraction for the rullama agent framework.
 //!
-//! ## Knowledge (from rullama-brain)
-//! - **BrainClient** — Persistent thought storage with semantic search
-//! - **Entity/Relationship Graph** — Entity types, co-occurrence, impact analysis
+//! - **BrainClient** — persistent thought storage with semantic search
+//! - **Entity/Relationship Graph** — entity types, co-occurrence, impact analysis
 //! - **BKS** — Behavioral Knowledge System (shared truths with confidence scoring)
 //! - **PKS** — Personal Knowledge System (user-scoped facts)
-//! - **Fact Extraction** — Automatic categorization and tag extraction
+//! - **Fact Extraction** — automatic categorization and tag extraction
 //!
-//! ## Prompting (from rullama-prompting)
-//! - **Techniques** — 15 prompting techniques from the adaptive selection paper
-//! - **Clustering** — K-means task clustering by semantic similarity
-//! - **Generator** — Dynamic prompt generation with BKS/PKS/SEAL integration
-//! - **Learning** — Technique effectiveness tracking and BKS promotion
-//! - **Temperature** — Adaptive temperature optimization per cluster
-//!
-//! ## RAG (from rullama-rag)
-//! - **RagClient** — Core semantic code search with hybrid BM25+vector search
-//! - **Embedding** — FastEmbed (all-MiniLM-L6-v2) local embedding generation
-//! - **Indexer** — File walking, AST-based chunking for 12 languages
-//! - **Git Search** — Semantic search over commit history
-//! - **Documents** — PDF, markdown, and plaintext document processing
-//!
-//! ## Spectral
-//! - **SpectralReranker** — MSS-inspired log-det maximization for diverse retrieval
-//! - **GraphOps** — Laplacian, Fiedler vector, spectral clustering, sparsification
-//! - **Kernel** — Relevance-weighted kernel matrix construction
-//! - **Linalg** — Cholesky decomposition and log-determinant computation
-//!
-//! ## Code Analysis
-//! - **RepoMap** — AST-based symbol extraction (definitions, references)
-//! - **Relations** — Call graph generation, definition/reference lookup
-//! - **Storage** — LanceDB persistence for code relations
+//! The prompting, RAG, spectral, and code-analysis subsystems that once lived
+//! here have moved to dedicated crates: adaptive prompting →
+//! [`rullama-prompting`](https://docs.rs/rullama-prompting); RAG / hybrid
+//! retrieval / spectral / code-analysis →
+//! [`rullama-rag`](https://docs.rs/rullama-rag); offline memory consolidation
+//! ("dream") → `rullama-stores` (`dream` feature). Depend on those directly.
 
 // Re-export core types
 pub use rullama_core;

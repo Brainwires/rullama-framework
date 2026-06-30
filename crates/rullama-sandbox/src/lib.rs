@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-//! Container-based sandboxing for tool execution in the Brainwires framework.
+//! Container-based sandboxing for tool execution in the rullama framework.
 //!
 //! This crate provides a [`Sandbox`] trait with Docker/Podman implementations
 //! backed by [bollard](https://crates.io/crates/bollard). Policy is expressed

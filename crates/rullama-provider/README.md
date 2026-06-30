@@ -4,7 +4,7 @@
 [![Documentation](https://img.shields.io/docsrs/rullama-provider)](https://docs.rs/rullama-provider)
 [![License](https://img.shields.io/crates/l/rullama-provider.svg)](LICENSE)
 
-AI provider implementations for the Brainwires Agent Framework.
+AI provider implementations for the rullama agent framework.
 
 ## Overview
 
@@ -65,7 +65,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rullama-provider = "0.11"
+rullama-provider = "0.12"
 ```
 
 Send a chat request with the Anthropic provider:
@@ -98,13 +98,13 @@ async fn main() -> anyhow::Result<()> {
 
 ```toml
 # Default (cloud providers only)
-rullama-provider = "0.11"
+rullama-provider = "0.12"
 
 # With local LLM support
-rullama-provider = { version = "0.11", features = ["llama-cpp-2"] }
+rullama-provider = { version = "0.12", features = ["llama-cpp-2"] }
 
 # Local LLM only (no cloud providers)
-rullama-provider = { version = "0.11", default-features = false, features = ["llama-cpp-2"] }
+rullama-provider = { version = "0.12", default-features = false, features = ["llama-cpp-2"] }
 ```
 
 ## Architecture
@@ -611,11 +611,11 @@ Use via the `rullama` facade crate with the `providers` feature, or depend on `r
 ```toml
 # Via facade
 [dependencies]
-rullama = { version = "0.11", features = ["providers"] }
+rullama = { version = "0.12", features = ["providers"] }
 
 # Direct
 [dependencies]
-rullama-provider = "0.11"
+rullama-provider = "0.12"
 ```
 
 Re-exports at crate root for convenience:

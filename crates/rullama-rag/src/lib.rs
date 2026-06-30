@@ -1,6 +1,6 @@
 #![deny(missing_docs)]
 //! `rullama-rag` — codebase indexing + hybrid retrieval (vector + BM25)
-//! for the Brainwires Agent Framework.
+//! for the rullama.
 //!
 //! Standalone so its dep weight (lancedb, tantivy, git2, tree-sitter +
 //! 12 grammars, rmcp, rayon, …) doesn't fall on consumers that only want

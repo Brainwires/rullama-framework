@@ -1,6 +1,6 @@
 [package]
 name = "rullama-tool-runtime"
-description = "Tool execution runtime for the Brainwires Agent Framework — executor trait, registry, error taxonomy, sanitization, validation, transactions, smart router, plus optional orchestrator / OAuth / OpenAPI / sandbox / sessions / RAG-tool-search modules"
+description = "Tool execution runtime for the rullama agent framework — executor trait, registry, error taxonomy, sanitization, validation, transactions, smart router, plus optional orchestrator / OAuth / OpenAPI / sandbox / sessions / RAG-tool-search modules"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

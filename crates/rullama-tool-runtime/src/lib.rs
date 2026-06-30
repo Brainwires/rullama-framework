@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
-//! `rullama-tool-runtime` — the execution-runtime half of the Brainwires
+//! `rullama-tool-runtime` — the execution-runtime half of the rullama
 //! tool surface. Companion crate to `rullama-tool-builtins` (the concrete
-//! tools), unified by the `rullama-tools` façade.
+//! tools), re-exported together by the `rullama` facade crate.
 //!
 //! ## What lives here
 //!

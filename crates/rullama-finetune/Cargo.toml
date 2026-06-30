@@ -1,6 +1,6 @@
 [package]
 name = "rullama-finetune"
-description = "Cloud fine-tune APIs (OpenAI, Anthropic, Together, Fireworks, Anyscale, Bedrock, Vertex AI) + dataset pipelines for the Brainwires Agent Framework. Local LoRA/QLoRA/DoRA fine-tuning and training-from-scratch live in the sibling `rullama` workspace (`rullama-finetune`, `rullama-training`)."
+description = "Cloud fine-tune APIs (OpenAI, Anthropic, Together, Fireworks, Anyscale, Bedrock, Vertex AI) for the rullama agent framework. Dataset pipelines live in `rullama-datasets`; local LoRA/QLoRA/DoRA fine-tuning lives in `rullama-lora`."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

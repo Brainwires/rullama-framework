@@ -1,6 +1,6 @@
 [package]
 name = "rullama-telemetry"
-description = "Unified telemetry for the Brainwires Agent Framework — analytics events, SQLite persistence, cost/usage queries, and a `BillingHook` trait consumed by `rullama-billing`"
+description = "Unified telemetry for rullama — analytics events, SQLite persistence, cost/usage queries, and a `BillingHook` trait consumed by `rullama-billing`"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

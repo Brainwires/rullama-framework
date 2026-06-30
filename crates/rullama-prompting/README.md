@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue)](https://github.com/Brainwires/rullama-framework)
 
 Adaptive prompting techniques, K-means task clustering, and temperature
-optimization for Brainwires agents.
+optimization for rullama agents.
 
 ## What lives here
 
@@ -41,7 +41,7 @@ unconditionally, hence the `knowledge` default. The standalone bits
 
 ```toml
 [dependencies]
-rullama-prompting = "0.11"
+rullama-prompting = "0.12"
 ```
 
 ```rust,ignore

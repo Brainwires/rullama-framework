@@ -4,7 +4,7 @@
 [![Documentation](https://docs.rs/rullama-eval/badge.svg)](https://docs.rs/rullama-eval)
 [![License](https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue)](https://github.com/Brainwires/rullama-framework)
 
-Evaluation harness for the Brainwires Agent Framework.
+Evaluation harness for the rullama agent framework.
 
 ## Overview
 
@@ -39,7 +39,7 @@ Zero `rullama-*` deps internally.
 rullama-agent = { features = ["eval"] }
 
 # After
-rullama-eval = "0.11"
+rullama-eval = "0.12"
 ```
 
 ```rust

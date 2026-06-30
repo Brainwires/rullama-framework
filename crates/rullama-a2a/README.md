@@ -276,19 +276,19 @@ Both fields are `skip_serializing_if = None` so existing clients and serialized 
 
 ```toml
 # Types only (no networking)
-rullama-a2a = { version = "0.11", default-features = false }
+rullama-a2a = { version = "0.12", default-features = false }
 
 # Client + server (JSON-RPC + REST)
-rullama-a2a = "0.11"
+rullama-a2a = "0.12"
 
 # Everything including gRPC
-rullama-a2a = { version = "0.11", features = ["full"] }
+rullama-a2a = { version = "0.12", features = ["full"] }
 ```
 
 Or via the `rullama` facade crate:
 
 ```toml
-rullama = { version = "0.11", features = ["a2a"] }
+rullama = { version = "0.12", features = ["a2a"] }
 ```
 
 ## License

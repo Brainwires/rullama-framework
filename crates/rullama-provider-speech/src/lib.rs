@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-//! Speech (TTS / STT) provider clients for the Brainwires Agent Framework.
+//! Speech (TTS / STT) provider clients for the rullama.
 //!
 //! Standalone so consumers (typically `rullama-hardware`'s audio surface
 //! and the chat-pwa wasm bridge) can pull just the speech clients without

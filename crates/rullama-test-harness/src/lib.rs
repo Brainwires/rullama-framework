@@ -1,4 +1,4 @@
-//! Cross-crate test harness for the Brainwires framework.
+//! Cross-crate test harness for the rullama framework.
 //!
 //! Three tiers:
 //! - **Tier A (feature determinism)** — every FEATURES.md heading has ≥1

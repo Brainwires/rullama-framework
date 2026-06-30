@@ -1,8 +1,8 @@
 #![deny(missing_docs)]
-//! # Brainwires Reasoning
+//! # rullama reasoning
 //!
 //! Layer 3 — Intelligence. Provider-agnostic reasoning primitives for the
-//! Brainwires Agent Framework.
+//! rullama.
 //!
 //! This crate owns:
 //!

@@ -1,6 +1,6 @@
 [package]
 name = "rullama-storage"
-description = "Backend-agnostic storage, tiered memory, and document management for the Brainwires Agent Framework"
+description = "Backend-agnostic storage, tiered memory, and document management for the rullama agent framework"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

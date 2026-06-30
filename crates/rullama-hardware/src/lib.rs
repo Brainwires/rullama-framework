@@ -2,7 +2,7 @@
 
 //! # rullama-hardware
 //!
-//! Hardware I/O for the Brainwires Agent Framework.
+//! Hardware I/O for the rullama.
 //!
 //! Provides a unified hardware abstraction layer covering:
 //!

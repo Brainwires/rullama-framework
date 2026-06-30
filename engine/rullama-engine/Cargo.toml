@@ -81,7 +81,7 @@ web-sys = { workspace = true, features = [
 ] }
 console_error_panic_hook = { workspace = true }
 console_log = { workspace = true }
-# Dogfood Brainwires' own SQLite-in-Rust port. wasm-pack inlines its
+# Dogfood our own SQLite-in-Rust port. wasm-pack inlines its
 # #[wasm_bindgen] exports (WasmDatabase) into pkg/rullama.js alongside
 # our Model bindings, so the PWA's inference worker can persist chat
 # history without a second wasm package.

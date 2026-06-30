@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
-//! `rullama-tool-builtins` — the concrete-tools half of the Brainwires
+//! `rullama-tool-builtins` — the concrete-tools half of the rullama
 //! tool surface. Companion crate to `rullama-tool-runtime` (the executor /
-//! registry / framework), unified by the `rullama-tools` façade.
+//! registry / framework), re-exported together by the `rullama` facade crate.
 //!
 //! ## Always Available (native feature)
 //! - **bash** — Shell command execution with proactive output management

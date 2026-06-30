@@ -1,4 +1,4 @@
-//! MDAP - MAKER voting framework (merged from `rullama-mdap`)
+//! rullama-mdap — MAKER voting framework.
 //!
 //! Multi-Dimensional Adaptive Planning system implementing the MAKER paper's
 //! approach to reliable agent execution through:

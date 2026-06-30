@@ -1,7 +1,7 @@
 # rullama-reasoning
 
 Layer 3 — Intelligence. Provider-agnostic reasoning primitives for the
-Brainwires Agent Framework: plan / output parsers, local-LLM scorers for
+rullama agent framework: plan / output parsers, local-LLM scorers for
 routing and validation, and named reasoning strategies (CoT, ReAct,
 Reflexion, Tree-of-Thoughts). Every scorer accepts `Arc<dyn Provider>`
 and falls back to pattern-based logic when the provider is unavailable,

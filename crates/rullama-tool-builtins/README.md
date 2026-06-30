@@ -4,7 +4,7 @@
 [![Documentation](https://docs.rs/rullama-tool-builtins/badge.svg)](https://docs.rs/rullama-tool-builtins)
 [![License](https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue)](https://github.com/Brainwires/rullama-framework)
 
-Concrete builtin tools for Brainwires agents. Built on
+Concrete builtin tools for rullama agents. Built on
 [`rullama-tool-runtime`](https://crates.io/crates/rullama-tool-runtime),
 which provides the `ToolExecutor` / `ToolRegistry` framework these tools
 plug into.
@@ -41,7 +41,7 @@ active feature set.
 
 ```toml
 [dependencies]
-rullama-tool-builtins = "0.11"
+rullama-tool-builtins = "0.12"
 ```
 
 ```rust,ignore

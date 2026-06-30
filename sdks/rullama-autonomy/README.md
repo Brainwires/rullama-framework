@@ -1,6 +1,6 @@
 # rullama-autonomy
 
-Autonomous agent operations for the Brainwires Framework — self-improvement, Git workflows, environment interaction, and human-out-of-loop execution.
+Autonomous agent operations for rullama — self-improvement, Git workflows, environment interaction, and human-out-of-loop execution.
 
 ## Features
 

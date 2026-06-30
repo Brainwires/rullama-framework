@@ -4,7 +4,7 @@
 [![Documentation](https://img.shields.io/docsrs/rullama-mcp-server)](https://docs.rs/rullama-mcp-server)
 [![License](https://img.shields.io/crates/l/rullama-mcp-server.svg)](LICENSE)
 
-MCP server framework with composable middleware for the Brainwires Agent Framework.
+MCP server framework with composable middleware for rullama.
 
 ## Overview
 
@@ -40,7 +40,7 @@ This crate was extracted from `rullama-network` so that consumers who only need 
 
 ```toml
 [dependencies]
-rullama-mcp-server = "0.11"
+rullama-mcp-server = "0.12"
 ```
 
 Minimal server:
@@ -174,10 +174,10 @@ Use via the `rullama` facade crate:
 
 ```toml
 [dependencies]
-rullama = { version = "0.11", features = ["mcp-server-framework"] }
+rullama = { version = "0.12", features = ["mcp-server-framework"] }
 ```
 
-Or use standalone — `rullama-mcp-server` depends only on `rullama-mcp`.
+Or use standalone — `rullama-mcp-server` depends only on `rullama-mcp-client`.
 
 ## License
 

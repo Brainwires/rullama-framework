@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
-//! # Brainwires Agent Network
+//! # rullama agent network
 //!
-//! Agent-to-agent networking layer for the Brainwires Agent Framework.
+//! Agent-to-agent networking layer for the rullama.
 //!
 //! Provides IPC, remote bridge, mesh networking, routing, discovery,
 //! and pluggable transports for agent communication.

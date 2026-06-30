@@ -1,6 +1,6 @@
 [package]
 name = "rullama-call-policy"
-description = "Resilience middleware (retry, circuit breaker, budget, cache, error classification) for the Brainwires Agent Framework"
+description = "Resilience middleware (retry, circuit breaker, budget, cache, error classification) for the rullama agent framework"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

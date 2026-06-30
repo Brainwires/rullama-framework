@@ -1,6 +1,6 @@
 [package]
 name = "rullama-wasm"
-description = "WASM bindings for the Brainwires Agent Framework"
+description = "WASM bindings for rullama"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

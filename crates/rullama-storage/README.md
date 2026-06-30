@@ -6,7 +6,7 @@
 
 Backend-agnostic storage primitives — `StorageBackend` trait, embeddings,
 BM25 keyword search, file-context primitives, and image-storage types —
-for the Brainwires Agent Framework.
+for the rullama agent framework.
 
 > **Crate boundary (v0.11).** Domain-shaped stores moved out of this
 > crate so the surface stays focused on primitives:
@@ -103,9 +103,9 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rullama-storage = "0.11"
+rullama-storage = "0.12"
 # Domain store types (MessageStore, LockStore, TemplateStore, …) live here:
-rullama-stores = { version = "0.11", features = ["memory"] }
+rullama-stores = { version = "0.12", features = ["memory"] }
 ```
 
 Store and search conversation messages:
@@ -237,25 +237,25 @@ databases/
 
 ```toml
 # Default (LanceDB + full native functionality)
-rullama-storage = "0.11"
+rullama-storage = "0.12"
 
 # WASM-compatible (pure types and logic only)
-rullama-storage = { version = "0.11", default-features = false, features = ["wasm"] }
+rullama-storage = { version = "0.12", default-features = false, features = ["wasm"] }
 
 # With Qdrant backend (in addition to LanceDB)
-rullama-storage = { version = "0.11", features = ["qdrant-backend"] }
+rullama-storage = { version = "0.12", features = ["qdrant-backend"] }
 
 # PostgreSQL as primary backend
-rullama-storage = { version = "0.11", features = ["postgres-backend"] }
+rullama-storage = { version = "0.12", features = ["postgres-backend"] }
 
 # MySQL / MariaDB backend
-rullama-storage = { version = "0.11", features = ["mysql-backend"] }
+rullama-storage = { version = "0.12", features = ["mysql-backend"] }
 
 # SurrealDB backend (native vector search)
-rullama-storage = { version = "0.11", features = ["surrealdb-backend"] }
+rullama-storage = { version = "0.12", features = ["surrealdb-backend"] }
 
 # NornicDB with all transports
-rullama-storage = { version = "0.11", features = ["nornicdb-full"] }
+rullama-storage = { version = "0.12", features = ["nornicdb-full"] }
 ```
 
 **Module availability by feature:**
@@ -637,11 +637,11 @@ Use via the `rullama` facade crate with the `storage` feature, or depend on `rul
 ```toml
 # Via facade
 [dependencies]
-rullama = { version = "0.11", features = ["storage"] }
+rullama = { version = "0.12", features = ["storage"] }
 
 # Direct
 [dependencies]
-rullama-storage = "0.11"
+rullama-storage = "0.12"
 ```
 
 The crate re-exports all components at the top level:

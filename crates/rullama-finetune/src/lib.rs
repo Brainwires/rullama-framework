@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
-//! # Brainwires Fine-tune
+//! # rullama fine-tune
 //!
-//! Cloud fine-tuning for the Brainwires Agent Framework.
+//! Cloud fine-tuning for the rullama.
 //!
 //! Supports cloud fine-tuning (OpenAI, Together, Fireworks, Anyscale, Bedrock,
 //! Vertex) plus dataset pipelines. Local adapter training (LoRA, QLoRA, DoRA)

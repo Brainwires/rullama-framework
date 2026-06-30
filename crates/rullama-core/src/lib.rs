@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
-//! # Brainwires Core
+//! # rullama-core
 //!
-//! Foundation types, traits, and error handling for the Brainwires Agent Framework.
+//! Foundation types, traits, and error handling for the rullama.
 //!
 //! This crate provides the core data structures used across all framework crates:
 //! - Message types for AI conversations

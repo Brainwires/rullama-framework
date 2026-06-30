@@ -4,7 +4,7 @@
 [![Documentation](https://img.shields.io/docsrs/rullama-core)](https://docs.rs/rullama-core)
 [![License](https://img.shields.io/crates/l/rullama-core.svg)](LICENSE)
 
-Core types, traits, and error handling for the Brainwires Agent Framework.
+Core types, traits, and error handling for the rullama agent framework.
 
 ## Overview
 
@@ -54,7 +54,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rullama-core = "0.11"
+rullama-core = "0.12"
 ```
 
 Build a message, define a tool, and call a provider:
@@ -92,10 +92,10 @@ let response = provider.chat(&messages, Some(&[tool]), &options).await?;
 
 ```toml
 # Default (native + planning)
-rullama-core = "0.11"
+rullama-core = "0.12"
 
 # WASM target
-rullama-core = { version = "0.11", default-features = false, features = ["wasm"] }
+rullama-core = { version = "0.12", default-features = false, features = ["wasm"] }
 ```
 
 ## Architecture
@@ -574,16 +574,16 @@ assert!(system.can_override(ContentSource::UserInput));
 assert!(!ContentSource::UserInput.can_override(ContentSource::SystemPrompt));
 ```
 
-## Integration with Brainwires
+## Integration with rullama
 
 Use via the `rullama` facade crate:
 
 ```toml
 [dependencies]
-rullama = "0.11"
+rullama = "0.12"
 ```
 
-Or use standalone — `rullama-core` has no dependency on any other Brainwires crate.
+Or use standalone — `rullama-core` has no dependency on any other rullama crate.
 
 ## License
 

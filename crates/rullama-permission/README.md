@@ -4,7 +4,7 @@
 [![Documentation](https://img.shields.io/docsrs/rullama-permission)](https://docs.rs/rullama-permission)
 [![License](https://img.shields.io/crates/l/rullama-permission.svg)](LICENSE)
 
-Capability-based permission system with policy engine, audit logging, trust management, and anomaly detection for the Brainwires Agent Framework.
+Capability-based permission system with policy engine, audit logging, trust management, and anomaly detection for rullama.
 
 ## Overview
 
@@ -59,7 +59,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rullama-permission = "0.11"
+rullama-permission = "0.12"
 ```
 
 Create a capability set and evaluate a policy:
@@ -100,10 +100,10 @@ let decision = engine.evaluate(&request);
 
 ```toml
 # Default (native)
-rullama-permission = "0.11"
+rullama-permission = "0.12"
 
 # WASM target
-rullama-permission = { version = "0.11", default-features = false, features = ["wasm"] }
+rullama-permission = { version = "0.12", default-features = false, features = ["wasm"] }
 ```
 
 ## Architecture
@@ -699,13 +699,13 @@ let engine = config.build_policy_engine();
 | `~/.rullama/audit/audit.jsonl` | Audit event log |
 | `~/.rullama/trust_store.json` | Persistent trust scores |
 
-## Integration with Brainwires
+## Integration with rullama
 
 Use via the `rullama` facade crate:
 
 ```toml
 [dependencies]
-rullama = "0.11"
+rullama = "0.12"
 ```
 
 Or use standalone — `rullama-permission` depends only on `rullama-core`.

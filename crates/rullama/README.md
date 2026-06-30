@@ -41,7 +41,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rullama = "0.11"  # default features: tools + agents
+rullama = "0.12"  # default features: tools + agents
 ```
 
 Then import via the prelude:
@@ -123,7 +123,7 @@ If you're unsure which features to pick, start with:
 
 ```toml
 [dependencies]
-rullama = { version = "0.11", features = ["agent-full", "reasoning", "providers"] }
+rullama = { version = "0.12", features = ["agent-full", "reasoning", "providers"] }
 ```
 
 That gives you the full agent runtime (communication hub, validation loop,
@@ -182,7 +182,7 @@ interop, and `seal + knowledge` when you want self-improving behavior.
 
 ```toml
 [dependencies]
-rullama = { version = "0.11", features = ["agent-full"] }
+rullama = { version = "0.12", features = ["agent-full"] }
 ```
 
 ```rust
@@ -207,7 +207,7 @@ let validation = ValidationConfig {
 
 ```toml
 [dependencies]
-rullama = { version = "0.11", features = ["rag", "mcp-server"] }
+rullama = { version = "0.12", features = ["rag", "mcp-server"] }
 ```
 
 ```rust
@@ -225,7 +225,7 @@ async fn main() -> anyhow::Result<()> {
 
 ```toml
 [dependencies]
-rullama = { version = "0.11", features = ["rag"] }
+rullama = { version = "0.12", features = ["rag"] }
 ```
 
 ```rust
@@ -244,7 +244,7 @@ for result in results {
 
 ```toml
 [dependencies]
-rullama = { version = "0.11", features = ["learning"] }
+rullama = { version = "0.12", features = ["learning"] }
 ```
 
 ```rust

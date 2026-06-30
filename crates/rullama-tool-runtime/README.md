@@ -4,7 +4,7 @@
 [![Documentation](https://docs.rs/rullama-tool-runtime/badge.svg)](https://docs.rs/rullama-tool-runtime)
 [![License](https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue)](https://github.com/Brainwires/rullama-framework)
 
-The execution-runtime layer for Brainwires tool dispatch. Companion crate
+The execution-runtime layer for rullama tool dispatch. Companion crate
 to [`rullama-tool-builtins`](https://crates.io/crates/rullama-tool-builtins),
 which provides the concrete `bash` / `file_ops` / `git` / `web` / etc. tools
 that this runtime knows how to dispatch.
@@ -39,9 +39,9 @@ that this runtime knows how to dispatch.
 
 ```toml
 [dependencies]
-rullama-tool-runtime = "0.11"
+rullama-tool-runtime = "0.12"
 # Or, for the standard built-in tools too:
-rullama-tool-builtins = "0.11"  # already pulls rullama-tool-runtime
+rullama-tool-builtins = "0.12"  # already pulls rullama-tool-runtime
 ```
 
 ```rust,ignore

@@ -1,4 +1,4 @@
-//! Full billing implementation for Brainwires agents.
+//! Full billing implementation for rullama agents.
 //!
 //! This crate provides concrete implementations of the hook surface defined in
 //! `rullama-billing` (the framework crate). None of this storage or payment

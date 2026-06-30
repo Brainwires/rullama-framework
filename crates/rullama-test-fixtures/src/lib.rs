@@ -1,4 +1,4 @@
-//! Internal test fixtures for the Brainwires framework.
+//! Internal test fixtures for the rullama framework.
 //!
 //! Consolidates mock implementations that were previously duplicated inline
 //! across multiple `crates/rullama-*` test modules. Not published; intended

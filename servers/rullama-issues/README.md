@@ -13,7 +13,7 @@ cargo run -p rullama-issues -- serve
 Or install and run:
 
 ```bash
-cargo install --path extras/rullama-issues
+cargo install --path servers/rullama-issues
 rullama-issues serve
 ```
 

@@ -1,6 +1,6 @@
 [package]
 name = "rullama-reasoning"
-description = "Layer 3 reasoning — plan/output parsers + provider-agnostic local-inference scorers (router, complexity, relevance, retrieval, strategy, summariser, validator, entity enhancer) for the Brainwires Agent Framework"
+description = "Layer 3 reasoning — plan/output parsers + provider-agnostic local-inference scorers (router, complexity, relevance, retrieval, strategy, summariser, validator, entity enhancer) for the rullama agent framework"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

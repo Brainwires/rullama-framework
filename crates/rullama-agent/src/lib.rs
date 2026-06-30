@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-//! Brainwires Agents - Agent orchestration, coordination, and lifecycle management
+//! rullama agents - Agent orchestration, coordination, and lifecycle management
 //!
 //! This crate provides the multi-agent infrastructure for autonomous task execution:
 //!

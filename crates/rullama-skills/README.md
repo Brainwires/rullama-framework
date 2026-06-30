@@ -4,7 +4,7 @@
 [![Documentation](https://docs.rs/rullama-skills/badge.svg)](https://docs.rs/rullama-skills)
 [![License](https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue)](https://github.com/Brainwires/rullama-framework)
 
-The SKILL.md skills system for the Brainwires Agent Framework —
+The SKILL.md skills system for rullama —
 manifest parsing, registry, smart routing, sandboxed execution.
 
 ## Overview
@@ -40,7 +40,7 @@ framework's "agent" boundary was tightened to coordination only.
 
 | Flag       | Default | Enables                                                            |
 |------------|---------|--------------------------------------------------------------------|
-| `registry` | off     | `SkillRegistryClient` — HTTP client for fetching skills from a remote registry |
+| `registry` | off     | `RegistryClient` — HTTP client for fetching skills from a remote registry |
 | `signing`  | off     | ed25519 manifest signing + verification                            |
 
 ## Migration from `rullama-agent::skills`

@@ -1,6 +1,6 @@
 # rullama-call-policy
 
-Provider-layer resilience middleware for the Brainwires Agent Framework.
+Provider-layer resilience middleware for the rullama agent framework.
 Composable decorators that wrap any `rullama_core::Provider` with retry
 logic, cost/token/round budgets, and a circuit breaker — without changing
 the wrapped provider's call signature.
@@ -170,4 +170,4 @@ Only `Transient` is retried.
 
 The decorators are stable; integration into the default `ChatAgent`
 construction path is opt-in via `ChatAgentBuilder::with_resilience` (in
-`rullama-agent`). This crate is `#[deny(missing_docs)]`.
+`rullama-inference`). This crate is `#[deny(missing_docs)]`.

@@ -4,11 +4,11 @@
 [![Documentation](https://img.shields.io/docsrs/rullama-wasm)](https://docs.rs/rullama-wasm)
 [![License](https://img.shields.io/crates/l/rullama-wasm.svg)](LICENSE)
 
-WebAssembly bindings for the Brainwires Agent Framework.
+WebAssembly bindings for rullama.
 
 ## Overview
 
-`rullama-wasm` provides a JavaScript-friendly API for running the Brainwires Agent Framework in browser and Node.js environments via WebAssembly. The crate exposes core type validation, conversation history serialization, and a sandboxed tool orchestrator that lets AI models execute Rhai scripts calling registered JavaScript tool callbacks — all with configurable resource limits to prevent runaway execution.
+`rullama-wasm` provides a JavaScript-friendly API for running rullama in browser and Node.js environments via WebAssembly. The crate exposes core type validation, conversation history serialization, and a sandboxed tool orchestrator that lets AI models execute Rhai scripts calling registered JavaScript tool callbacks — all with configurable resource limits to prevent runaway execution.
 
 **Design principles:**
 
@@ -62,7 +62,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rullama-wasm = "0.11"
+rullama-wasm = "0.12"
 ```
 
 Build with `wasm-pack`:
@@ -121,16 +121,16 @@ console.log(stateless); // → stateless protocol format
 
 ```toml
 # Default (validation + serialization only)
-rullama-wasm = "0.11"
+rullama-wasm = "0.12"
 
 # With code interpreters
-rullama-wasm = { version = "0.11", features = ["interpreters"] }
+rullama-wasm = { version = "0.12", features = ["interpreters"] }
 
 # With tool orchestration
-rullama-wasm = { version = "0.11", features = ["orchestrator"] }
+rullama-wasm = { version = "0.12", features = ["orchestrator"] }
 
 # Everything enabled
-rullama-wasm = { version = "0.11", features = ["interpreters", "orchestrator"] }
+rullama-wasm = { version = "0.12", features = ["interpreters", "orchestrator"] }
 ```
 
 ## Architecture
@@ -411,11 +411,11 @@ Use via the `rullama` facade crate with the `wasm` feature, or depend on `rullam
 ```toml
 # Via facade
 [dependencies]
-rullama = { version = "0.11", features = ["wasm"] }
+rullama = { version = "0.12", features = ["wasm"] }
 
 # Direct
 [dependencies]
-rullama-wasm = "0.11"
+rullama-wasm = "0.12"
 ```
 
 The crate re-exports all components at the top level:

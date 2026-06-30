@@ -1,10 +1,10 @@
 # rullama-billing-impl
 
-Full billing implementation for the [Brainwires Agent Framework](https://github.com/Brainwires/rullama-framework) — ledger storage, per-customer wallet, and Stripe integration.
+Full billing implementation for [rullama](https://github.com/Brainwires/rullama-framework) — ledger storage, per-customer wallet, and Stripe integration.
 
 ## Overview
 
-This crate implements the hook surface defined in `crates/rullama-billing`. The framework crate stays thin (just `UsageEvent` + `BillingHook` trait); all storage and payment logic lives here.
+This crate implements the hook surface defined in `crates/rullama-telemetry`. The framework crate stays thin (just `UsageEvent` + `BillingHook` trait); all storage and payment logic lives here.
 
 ## Components
 

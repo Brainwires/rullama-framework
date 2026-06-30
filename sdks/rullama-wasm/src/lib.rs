@@ -1,10 +1,10 @@
 #![deny(missing_docs)]
-//! # Brainwires WASM
+//! # rullama WASM
 //!
-//! WASM bindings for the Brainwires Agent Framework.
+//! WASM bindings for the rullama.
 //!
 //! This crate provides a JavaScript-friendly API for the WASM-compatible subset of the
-//! Brainwires framework, enabling browser-based AI agent applications. All public functions
+//! rullama framework, enabling browser-based AI agent applications. All public functions
 //! are exposed via `wasm-bindgen` and can be called directly from JavaScript/TypeScript.
 //!
 //! ## Features
@@ -70,7 +70,7 @@ pub use wasm_orchestrator::{ExecutionLimits as WasmExecutionLimits, WasmOrchestr
 ///
 /// ```js
 /// const v = version();
-/// console.log(`Brainwires WASM v${v}`);
+/// console.log(`rullama WASM v${v}`);
 /// ```
 #[wasm_bindgen]
 pub fn version() -> String {

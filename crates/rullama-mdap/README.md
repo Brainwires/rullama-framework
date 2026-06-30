@@ -1,8 +1,6 @@
-# MDAP — Multi-Dimensional Adaptive Planning
+# rullama-mdap — Multi-Dimensional Adaptive Planning
 
-> This module was previously the standalone `rullama-mdap` crate. It now lives in `rullama-agent` behind the `mdap` feature flag.
-
-MAKER voting framework — microagents, decomposition, red flags, and scaling for the Brainwires Agent Framework.
+MAKER voting framework — microagents, decomposition, red flags, and scaling for the rullama agent framework. Distributed as the standalone `rullama-mdap` crate.
 
 ## Paper
 
@@ -41,7 +39,7 @@ This module provides a complete implementation of the MAKER framework organized 
 
 ```text
   ┌──────────────────────────────────────────────────────────────────────┐
-  │                    rullama-agent::mdap                            │
+  │                    rullama-mdap                            │
   │                                                                      │
   │  Task ──► Decomposition (Alg.4) ──► Subtask DAG                      │
   │                                         │                            │
@@ -71,7 +69,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rullama-mdap = "0.11"
+rullama-mdap = "0.12"
 ```
 
 Run a simple voting consensus:
@@ -715,16 +713,16 @@ println!("{}", metrics.red_flag_analysis());
 
 ## Integration
 
-Use via the `rullama` facade crate with the `mdap` feature, or depend on `rullama-agent` directly:
+Use via the `rullama` facade crate with the `mdap` feature, or depend on `rullama-mdap` directly:
 
 ```toml
 # Via facade
 [dependencies]
-rullama = { version = "0.11", features = ["mdap"] }
+rullama = { version = "0.12", features = ["mdap"] }
 
 # Direct
 [dependencies]
-rullama-mdap = "0.11"
+rullama-mdap = "0.12"
 ```
 
 The `prelude` module re-exports the most commonly used types:

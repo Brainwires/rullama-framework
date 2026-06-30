@@ -1,6 +1,6 @@
 [package]
 name = "rullama-inference"
-description = "LLM-driven workhorses for the Brainwires Agent Framework — chat agent, planner / judge / validator helpers, task agent, cycle orchestrator, summarization, system-prompt registry. Built on rullama-agent for coordination primitives."
+description = "LLM-driven workhorses for the rullama agent framework — chat agent, planner / judge / validator helpers, task agent, cycle orchestrator, summarization, system-prompt registry. Built on rullama-agent for coordination primitives."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -4,7 +4,7 @@
 [![Documentation](https://img.shields.io/docsrs/rullama-network)](https://docs.rs/rullama-network)
 [![License](https://img.shields.io/crates/l/rullama-network.svg)](LICENSE)
 
-Agent networking layer for the Brainwires Agent Framework.
+Agent networking layer for the rullama agent framework.
 
 ## Overview
 
@@ -51,7 +51,7 @@ Agent networking layer for the Brainwires Agent Framework.
 
 ```toml
 [dependencies]
-rullama-network = "0.11"
+rullama-network = "0.12"
 ```
 
 > **Building an MCP server?** Use [`rullama-mcp-server`](../rullama-mcp-server/README.md) directly — it provides McpServer, McpHandler, McpToolRegistry and the middleware pipeline without the full networking stack.
@@ -95,10 +95,10 @@ manager.send(peer_id, Payload::Text("hello".into())).await?;
 
 ```toml
 # With all transports and discovery
-rullama-network = { version = "0.11", features = ["full"] }
+rullama-network = { version = "0.12", features = ["full"] }
 
 # Just TCP and pub/sub
-rullama-network = { version = "0.11", features = ["tcp-transport", "pubsub-transport"] }
+rullama-network = { version = "0.12", features = ["tcp-transport", "pubsub-transport"] }
 ```
 
 ## Architecture
@@ -270,7 +270,7 @@ Local agent-to-agent communication over Unix domain sockets with authenticated e
 
 Session-based authentication with optional keyring storage.
 
-**`AuthClient`** — HTTP client for authenticating against the Brainwires Studio backend.
+**`AuthClient`** — HTTP client for authenticating against the remote backend.
 
 **`SessionManager`** — Persists sessions to disk as JSON with `0600` permissions. API keys are stored separately via the `KeyStore` trait (system keyring preferred).
 
@@ -454,16 +454,16 @@ let tree = format_agent_tree(sessions_dir, Some("current-session-id"))?;
 println!("{}", tree);
 ```
 
-## Integration with Brainwires
+## Integration with rullama
 
 Use via the `rullama` facade crate:
 
 ```toml
 [dependencies]
-rullama = { version = "0.11", features = ["agent-network"] }
+rullama = { version = "0.12", features = ["agent-network"] }
 ```
 
-Or use standalone — `rullama-network` depends on `rullama-core`, `rullama-mcp`, and `rullama-mcp-server`.
+Or use standalone — `rullama-network` depends on `rullama-core` (plus optional `rullama-mcp-client` for the `client` feature).
 
 ## License
 

@@ -1,7 +1,7 @@
 # rullama-sandbox
 
-Container-based sandboxing for tool execution in the Brainwires Agent
-Framework. Provides a `Sandbox` trait with Docker / Podman implementations
+Container-based sandboxing for tool execution in the rullama agent
+framework. Provides a `Sandbox` trait with Docker / Podman implementations
 (via [bollard](https://crates.io/crates/bollard)) that isolate tool
 invocations from the host: resource limits, read-only root filesystems,
 egress-allowlist networking, and whitelisted bind mounts.

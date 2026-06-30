@@ -12,7 +12,7 @@ Protocol-agnostic proxy framework for debugging and transforming application tra
 
 **Design principles:**
 
-- **Standalone** — no dependency on `rullama-core` or the rest of the Brainwires ecosystem
+- **Standalone** — no dependency on `rullama-core` or the rest of the rullama ecosystem
 - **Composable** — mix and match transports, middleware, and converters via traits
 - **Async-native** — built entirely on `tokio`, `futures`, and `async-trait`
 
@@ -36,7 +36,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rullama-proxy = "0.11"
+rullama-proxy = "0.12"
 ```
 
 Minimal HTTP reverse proxy:
@@ -73,10 +73,10 @@ Enable features in `Cargo.toml`:
 
 ```toml
 # Pick what you need
-rullama-proxy = { version = "0.11", features = ["websocket", "inspector-api"] }
+rullama-proxy = { version = "0.12", features = ["websocket", "inspector-api"] }
 
 # Or enable everything
-rullama-proxy = { version = "0.11", features = ["full"] }
+rullama-proxy = { version = "0.12", features = ["full"] }
 ```
 
 ## Architecture
@@ -497,16 +497,16 @@ impl FormatDetector for MsgPackDetector {
 }
 ```
 
-## Integration with Brainwires
+## Integration with rullama
 
 Use via the `rullama` facade crate:
 
 ```toml
 [dependencies]
-rullama = { version = "0.11", features = ["proxy"] }
+rullama = { version = "0.12", features = ["proxy"] }
 ```
 
-Or use standalone — `rullama-proxy` has no dependency on any other Brainwires crate.
+Or use standalone — `rullama-proxy` has no dependency on any other rullama crate.
 
 ## License
 

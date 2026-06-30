@@ -1,6 +1,6 @@
 [package]
 name = "rullama-memory"
-description = "Tiered hot/warm/cold agent memory orchestration for the Brainwires Agent Framework — `TieredMemory` multi-factor adaptive search across the schema stores in `rullama-stores`, plus the `dream` offline consolidation engine (summarisation, fact extraction, tier demotion)."
+description = "Tiered hot/warm/cold agent memory orchestration for the rullama agent framework — `TieredMemory` multi-factor adaptive search across the schema stores in `rullama-stores`, plus the `dream` offline consolidation engine (summarisation, fact extraction, tier demotion)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

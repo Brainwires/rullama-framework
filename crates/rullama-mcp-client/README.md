@@ -1,14 +1,14 @@
-# rullama-mcp
+# rullama-mcp-client
 
-[![Crates.io](https://img.shields.io/crates/v/rullama-mcp.svg)](https://crates.io/crates/rullama-mcp)
-[![Documentation](https://img.shields.io/docsrs/rullama-mcp)](https://docs.rs/rullama-mcp)
-[![License](https://img.shields.io/crates/l/rullama-mcp.svg)](LICENSE)
+[![Crates.io](https://img.shields.io/crates/v/rullama-mcp-client.svg)](https://crates.io/crates/rullama-mcp-client)
+[![Documentation](https://img.shields.io/docsrs/rullama-mcp-client)](https://docs.rs/rullama-mcp-client)
+[![License](https://img.shields.io/crates/l/rullama-mcp-client.svg)](LICENSE)
 
-MCP client, transport, and protocol types for the Brainwires Agent Framework.
+MCP client, transport, and protocol types for rullama.
 
 ## Overview
 
-`rullama-mcp` provides a full MCP (Model Context Protocol) client implementation for connecting to external MCP servers. It handles the stdio transport layer, JSON-RPC 2.0 protocol, bidirectional notifications, and persistent server configuration.
+`rullama-mcp-client` provides a full MCP (Model Context Protocol) client implementation for connecting to external MCP servers. It handles the stdio transport layer, JSON-RPC 2.0 protocol, bidirectional notifications, and persistent server configuration.
 
 **Design principles:**
 
@@ -20,7 +20,7 @@ MCP client, transport, and protocol types for the Brainwires Agent Framework.
 
 ```text
   ┌───────────────────────────────────────────────────────────────────┐
-  │                        rullama-mcp                             │
+  │                        rullama-mcp-client                         │
   │                                                                   │
   │  ┌─── McpClient ──────────────────────────────────────────────┐  │
   │  │  connections: HashMap<String, McpConnection>                │  │
@@ -54,13 +54,13 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rullama-mcp-client = "0.11"
+rullama-mcp-client = "0.12"
 ```
 
 Connect to an MCP server and call a tool:
 
 ```rust
-use rullama_mcp::{McpClient, McpServerConfig};
+use rullama_mcp_client::{McpClient, McpServerConfig};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -102,10 +102,10 @@ async fn main() -> anyhow::Result<()> {
 
 ```toml
 # Default (native with full MCP client)
-rullama-mcp-client = "0.11"
+rullama-mcp-client = "0.12"
 
 # WASM target (JSON-RPC types only, no client or transport)
-rullama-mcp-client = { version = "0.11", default-features = false, features = ["wasm"] }
+rullama-mcp-client = { version = "0.12", default-features = false, features = ["wasm"] }
 ```
 
 ## Architecture
@@ -343,7 +343,7 @@ Config file format:
 ### Create a client and connect to a server
 
 ```rust
-use rullama_mcp::{McpClient, McpServerConfig};
+use rullama_mcp_client::{McpClient, McpServerConfig};
 
 let client = McpClient::new("my-agent", "0.2.0");
 
@@ -382,7 +382,7 @@ let result = client.call_tool(
 
 ```rust
 use tokio::sync::mpsc;
-use rullama_mcp::McpNotification;
+use rullama_mcp_client::McpNotification;
 
 let (tx, mut rx) = mpsc::unbounded_channel();
 
@@ -420,10 +420,10 @@ for res in &resources {
 let content = client.read_resource("filesystem", "file:///tmp/data.txt").await?;
 for item in &content.contents {
     match item {
-        rullama_mcp::types::ResourceContent::Text { text, .. } => {
+        rullama_mcp_client::types::ResourceContent::Text { text, .. } => {
             println!("{}", text);
         }
-        rullama_mcp::types::ResourceContent::Blob { blob, .. } => {
+        rullama_mcp_client::types::ResourceContent::Blob { blob, .. } => {
             println!("(binary: {} bytes)", blob.len());
         }
     }
@@ -450,7 +450,7 @@ for msg in &result.messages {
 ### Manage server config with McpConfigManager
 
 ```rust
-use rullama_mcp::{McpConfigManager, McpServerConfig};
+use rullama_mcp_client::{McpConfigManager, McpServerConfig};
 
 // Load or create config
 let mut manager = McpConfigManager::load()?;
@@ -474,7 +474,7 @@ manager.remove_server("filesystem")?;
 ### Build custom JSON-RPC requests
 
 ```rust
-use rullama_mcp::{JsonRpcRequest, JsonRpcNotification};
+use rullama_mcp_client::{JsonRpcRequest, JsonRpcNotification};
 
 // Create a request
 let request = JsonRpcRequest::new(
@@ -492,22 +492,22 @@ let notification = JsonRpcNotification::new(
 
 ## Integration
 
-Use via the `rullama` facade crate with the `mcp` feature, or depend on `rullama-mcp` directly:
+Use via the `rullama` facade crate with the `mcp` feature, or depend on `rullama-mcp-client` directly:
 
 ```toml
 # Via facade
 [dependencies]
-rullama = { version = "0.11", features = ["mcp"] }
+rullama = { version = "0.12", features = ["mcp"] }
 
 # Direct
 [dependencies]
-rullama-mcp-client = "0.11"
+rullama-mcp-client = "0.12"
 ```
 
 The `prelude` module re-exports the most commonly used types:
 
 ```rust
-use rullama_mcp::prelude::*;
+use rullama_mcp_client::prelude::*;
 ```
 
 ## License

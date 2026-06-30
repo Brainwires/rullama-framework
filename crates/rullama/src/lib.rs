@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
-//! # Brainwires
+//! # rullama
 //!
-//! The Brainwires Agent Framework — build any AI application in Rust.
+//! The rullama — build any AI application in Rust.
 //!
 //! Re-exports all framework sub-crates via feature flags for convenient access.
 //!

@@ -4,7 +4,7 @@
 [![Documentation](https://docs.rs/rullama-stores/badge.svg)](https://docs.rs/rullama-stores)
 [![License](https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue)](https://github.com/Brainwires/rullama-framework)
 
-Schema + CRUD for the Brainwires Agent Framework's opinionated
+Schema + CRUD for the rullama agent framework's opinionated
 minimum data-store set.
 
 ## What this crate is

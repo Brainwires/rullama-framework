@@ -1,6 +1,6 @@
 [package]
 name = "rullama-eval"
-description = "Evaluation harness for the Brainwires Agent Framework — fixtures, regression suites, stability tests, adversarial cases, ranking metrics (NDCG / MRR / precision@k), recorder."
+description = "Evaluation harness for the rullama agent framework — fixtures, regression suites, stability tests, adversarial cases, ranking metrics (NDCG / MRR / precision@k), recorder."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

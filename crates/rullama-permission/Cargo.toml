@@ -1,6 +1,6 @@
 [package]
 name = "rullama-permission"
-description = "Permission policies, audit logging, and trust profiles for the Brainwires Agent Framework"
+description = "Permission policies, audit logging, and trust profiles for rullama"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

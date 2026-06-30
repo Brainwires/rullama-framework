@@ -4,12 +4,14 @@
 [![Documentation](https://docs.rs/rullama-finetune/badge.svg)](https://docs.rs/rullama-finetune)
 [![License](https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue)](https://github.com/Brainwires/rullama-framework)
 
-Cloud fine-tune APIs and dataset pipelines for Brainwires agents.
+Cloud fine-tune APIs for rullama agents. Dataset pipelines live in the
+sibling `rullama-datasets` crate.
 
 Fine-tuning surface:
 
-- **`rullama-finetune`** (this crate) — cloud fine-tune APIs (OpenAI / Anthropic / Together / Fireworks / Anyscale / Bedrock / Vertex AI) plus dataset pipelines.
-- **`rullama-finetune`** (sibling `rullama` workspace) — local PEFT (LoRA / QLoRA / DoRA), Burn-backed. (Lived in this workspace as a separate local-PEFT crate prior to v0.11; moved out alongside the rest of the wgpu inference engine.)
+- **`rullama-finetune`** (this crate) — cloud fine-tune APIs (OpenAI / Anthropic / Together / Fireworks / Anyscale / Bedrock / Vertex AI).
+- **`rullama-datasets`** — dataset pipelines (JSONL I/O, tokenization, dedup, format conversion); extracted from this crate in v0.11 and re-exposed here via the `datasets-*` features.
+- **`rullama-lora`** (sibling `rullama` workspace) — local PEFT (LoRA / QLoRA / DoRA), Burn-backed. (Lived in this workspace as a separate local-PEFT crate prior to v0.11; moved out alongside the rest of the wgpu inference engine.)
 - **`rullama-training`** (sibling `rullama` workspace) — placeholder for actual training-from-scratch.
 
 ## What lives here
@@ -20,9 +22,7 @@ Fine-tuning surface:
   trait + factory.
 - `cloud::providers` (one module per cloud API) — concrete impls.
 - `config` — hyperparameter / adapter / alignment-method types shared with
-  `rullama-finetune`.
-- `datasets` — JSONL / format conversion / tokenization / dedup
-  (absorbed from the deprecated `rullama-datasets` crate).
+  `rullama-lora`.
 - `error::TrainingError`, `types::{TrainingJobId, TrainingJobStatus, ...}`
   — shared infrastructure.
 
@@ -43,7 +43,7 @@ Fine-tuning surface:
 
 ```toml
 [dependencies]
-rullama-finetune = "0.11"
+rullama-finetune = "0.12"
 ```
 
 ```rust,ignore
@@ -55,7 +55,9 @@ let job = manager.submit(CloudFineTuneConfig { /* ... */ }).await?;
 
 ## See also
 
-- `rullama-finetune` (sibling `rullama` workspace) — local PEFT (LoRA /
+- [`rullama-datasets`](https://crates.io/crates/rullama-datasets) — dataset
+  pipelines extracted from this crate (re-exposed via the `datasets-*` features).
+- `rullama-lora` (sibling `rullama` workspace) — local PEFT (LoRA /
   QLoRA / DoRA), Burn-backed. Reuses this crate's shared `config` / `error` /
   `types` modules.
 - [`rullama-provider`](https://crates.io/crates/rullama-provider) — LLM chat clients (separate crate).

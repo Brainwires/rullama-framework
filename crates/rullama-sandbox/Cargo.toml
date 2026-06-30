@@ -1,6 +1,6 @@
 [package]
 name = "rullama-sandbox"
-description = "Container-based sandboxing (Docker/Podman/host) for tool execution in the Brainwires framework"
+description = "Container-based sandboxing (Docker/Podman/host) for tool execution in the rullama framework"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

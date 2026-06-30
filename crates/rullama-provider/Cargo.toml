@@ -1,6 +1,6 @@
 [package]
 name = "rullama-provider"
-description = "LLM provider implementations (Anthropic, OpenAI Chat + Responses, Google Gemini, Ollama, Bedrock, Vertex AI, local llama.cpp) for the Brainwires Agent Framework. Speech (TTS/STT) providers live in `rullama-provider-speech`."
+description = "LLM provider implementations (Anthropic, OpenAI Chat + Responses, Google Gemini, Ollama, Bedrock, Vertex AI, local llama.cpp) for the rullama agent framework. Speech (TTS/STT) providers live in `rullama-provider-speech`."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "rullama-mdap"
-description = "Multi-Dimensional Adaptive Planning (MAKER voting framework) for the Brainwires Agent Framework — k-out-of-n voting, recursive decomposition, microagent dispatch, red-flag validation, scaling estimation"
+description = "Multi-Dimensional Adaptive Planning (MAKER voting framework) for the rullama agent framework — k-out-of-n voting, recursive decomposition, microagent dispatch, red-flag validation, scaling estimation"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

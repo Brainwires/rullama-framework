@@ -4,7 +4,7 @@
 [![Documentation](https://docs.rs/rullama-rag/badge.svg)](https://docs.rs/rullama-rag)
 [![License](https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue)](https://github.com/Brainwires/rullama-framework)
 
-Codebase indexing and hybrid retrieval (vector + BM25) for Brainwires
+Codebase indexing and hybrid retrieval (vector + BM25) for rullama
 agents. Includes AST-aware chunking via `tree-sitter` (12 languages),
 Git history search, and reranking via spectral diversity / cross-encoder.
 
@@ -46,7 +46,7 @@ the RAG dep weight.
 
 ```toml
 [dependencies]
-rullama-rag = "0.11"
+rullama-rag = "0.12"
 ```
 
 ```rust,ignore

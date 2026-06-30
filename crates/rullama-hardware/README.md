@@ -1,6 +1,6 @@
 # rullama-hardware
 
-Hardware I/O for the [Brainwires Agent Framework](https://github.com/Brainwires/rullama-framework).
+Hardware I/O for [rullama](https://github.com/Brainwires/rullama-framework).
 
 Provides a unified hardware abstraction layer covering audio, GPIO, Bluetooth, network hardware, camera, and USB — all behind opt-in feature flags so you only compile what you need.
 
@@ -25,13 +25,13 @@ Home automation protocols (Matter, Zigbee, Z-Wave, Thread) moved to the standalo
 ```toml
 [dependencies]
 # Pick only what you need:
-rullama-hardware = { version = "0.11", features = ["audio"] }
-rullama-hardware = { version = "0.11", features = ["gpio"] }
-rullama-hardware = { version = "0.11", features = ["bluetooth"] }
-rullama-hardware = { version = "0.11", features = ["network"] }
+rullama-hardware = { version = "0.12", features = ["audio"] }
+rullama-hardware = { version = "0.12", features = ["gpio"] }
+rullama-hardware = { version = "0.12", features = ["bluetooth"] }
+rullama-hardware = { version = "0.12", features = ["network"] }
 
 # Or enable everything:
-rullama-hardware = { version = "0.11", features = ["full"] }
+rullama-hardware = { version = "0.12", features = ["full"] }
 ```
 
 ## Feature flags
@@ -188,7 +188,7 @@ Home automation protocols (Matter, Zigbee, Z-Wave, Thread) and the `matter-tool`
 rullama-audio = "0.10"
 
 # After
-rullama-hardware = { version = "0.11", features = ["audio"] }
+rullama-hardware = { version = "0.12", features = ["audio"] }
 ```
 
 All public types and traits are re-exported from the crate root — existing code using
