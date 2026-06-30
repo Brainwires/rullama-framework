@@ -778,8 +778,9 @@ tool.
   every run is local and manual. Adding a GitHub Actions job that runs
   `cargo xtask test-harness coverage` and `run --tier=all` is a future
   enhancement.
-- **No fuzz runs out of the box**. `cargo-fuzz` workspace + 4 starter
-  targets is planned (Step 8 of the build-out) but not yet present.
+- **Fuzzing is manual / opt-in**, not run by `cargo test` or CI. The
+  `fuzz/` workspace + 4 targets exist (see §10) but gate nothing
+  automatically — wiring a time-boxed run into CI is a future enhancement.
 - **No sandbox-proxy dynamic cases**. The proxy is a binary-only crate;
   HTTP-probe infrastructure is a deferred refactor.
 - **No `rullama-hardware` runtime cases**. The "API keys never
@@ -803,3 +804,42 @@ API-key-in-log, no `unsafe-host` in defaults). On the current tree it
 surfaces ~20 patterns for triage — most SQL hits are
 `quote_ident`-safe table-name interpolation that can be added to a
 rule's `allow_files` after manual confirmation.
+
+## 10. Fuzzing (`fuzz/`)
+
+Coverage-guided fuzzing of the highest-risk "parse untrusted bytes" entry
+points — the brute-force complement to the hand-written Tier-B security cases.
+A fuzzer feeds millions of random/malformed inputs at a parser and reports any
+panic, hang, or memory error, mutating inputs to reach deeper code paths.
+
+**This is manual and opt-in.** It is NOT run by `cargo test`, the test harness,
+or CI, and it gates nothing. `fuzz/` is a **standalone Cargo workspace** (its own
+empty `[workspace]` table) excluded from the root workspace, so the stable
+workspace build never compiles it.
+
+**Requires nightly Rust** — `cargo-fuzz`/`libfuzzer-sys` use libFuzzer
+instrumentation + sanitizers that are nightly-only. This requirement is confined
+to `fuzz/`; nothing else in the framework needs nightly.
+
+### Targets
+
+| Target | Entry point under attack |
+|--------|--------------------------|
+| `mcp_jsonrpc_parser` | MCP JSON-RPC message parsing (`rullama-mcp-client`) |
+| `a2a_envelope_decoder` | A2A JSON-RPC envelope decode (`rullama-a2a`) |
+| `skill_manifest` | `SKILL.md` manifest parsing (`rullama-skills`) |
+| `model_loader_header` | model-file header parsing |
+
+### Running
+
+```sh
+cargo install cargo-fuzz                 # once
+# Time-box a single target (60s); drop the limit for a long campaign.
+cargo +nightly fuzz run mcp_jsonrpc_parser -- -max_total_time=60
+cargo +nightly fuzz list                 # all targets
+```
+
+Interesting inputs the fuzzer discovers are saved under `fuzz/corpus/<target>/`
+and reused to seed later runs. A crash is written to `fuzz/artifacts/` with the
+exact bytes to reproduce. Add new targets in `fuzz/fuzz_targets/` + a `[[bin]]`
+entry in `fuzz/Cargo.toml`, depending only on the crate under test.
