@@ -91,6 +91,9 @@ default = ["client", "ipc-transport", "remote-transport"]
 client = ["dep:rullama-mcp-client"]
 ipc-transport = []
 remote-transport = []
+# LEGACY (off by default): the discontinued Studio remote-bridge (web access to
+# CLI agents via a cloud relay). Source kept; likely to return. See remote::bridge.
+remote-bridge = []
 tcp-transport = []
 pubsub-transport = []
 a2a-transport = ["dep:rullama-a2a"]

@@ -150,6 +150,9 @@ otel = ["agents", "rullama-agent/otel"]
 # proxy feature removed — rullama-proxy is an extras app, not a framework crate
 a2a = ["dep:rullama-a2a", "rullama-a2a/native"]
 mesh = ["agent-network", "rullama-network/mesh"]
+# LEGACY (off by default): the discontinued Studio remote-bridge (web access to
+# CLI agents). Source kept; likely to return. See rullama-network::remote::bridge.
+remote-bridge = ["agent-network", "rullama-network/remote-bridge"]
 audio = ["dep:rullama-hardware", "rullama-hardware/audio"]
 gpio = ["dep:rullama-hardware", "rullama-hardware/gpio"]
 bluetooth = ["dep:rullama-hardware", "rullama-hardware/bluetooth"]

@@ -116,6 +116,10 @@ pub trait AgentDiscovery: Send + Sync {
 // ============================================================================
 
 /// Configuration for the remote bridge (extracted from CLI's RemoteSettings + BridgeConfig)
+///
+/// LEGACY: part of the discontinued Studio remote-bridge — gated behind the
+/// off-by-default `remote-bridge` feature (see `remote::bridge`).
+#[cfg(feature = "remote-bridge")]
 #[derive(Debug, Clone)]
 pub struct RemoteBridgeConfig {
     /// Backend base URL
@@ -133,6 +137,10 @@ pub struct RemoteBridgeConfig {
 /// Provides remote bridge configuration and API key access.
 ///
 /// CLI implements this using `ConfigManager` + `SessionManager`.
+///
+/// LEGACY: part of the discontinued Studio remote-bridge — gated behind the
+/// off-by-default `remote-bridge` feature (see `remote::bridge`).
+#[cfg(feature = "remote-bridge")]
 pub trait BridgeConfigProvider: Send + Sync {
     /// Get the remote bridge configuration (returns None if not enabled)
     fn get_remote_config(&self) -> Result<Option<RemoteBridgeConfig>>;
