@@ -136,7 +136,7 @@ jobs:
           toolchain: "1.91"
       - uses: Swatinem/rust-cache@v2
       - name: Fail if todo!/unimplemented!/FIXME stubs exist outside tests
-        run: cargo xtask check-stubs crates/ extras/
+        run: cargo xtask check-stubs crates/ sdks/ servers/ integrations/ examples/
 
   test-features:
     name: Test (${{ matrix.backend }})

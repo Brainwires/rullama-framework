@@ -1,6 +1,6 @@
 //! Authentication Client
 //!
-//! HTTP client for authenticating with the Brainwires Studio backend.
+//! HTTP client for authenticating with a remote auth backend.
 //! Uses injected endpoint configuration instead of CLI-specific constants.
 
 use anyhow::{Context, Result, anyhow};
@@ -9,7 +9,7 @@ use reqwest::Client;
 
 use super::types::{AuthRequest, AuthResponse};
 
-/// Authentication client for interacting with Brainwires Studio backend
+/// Authentication client for interacting with a remote auth backend
 ///
 /// Unlike the CLI version, this client does NOT auto-save sessions or manage
 /// keyring storage. The caller is responsible for persisting the auth response.

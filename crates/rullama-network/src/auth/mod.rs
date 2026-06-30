@@ -1,4 +1,4 @@
-/// Authentication client for the Brainwires backend.
+/// Authentication client for a remote auth backend.
 pub mod client;
 /// Session persistence and management.
 pub mod session;

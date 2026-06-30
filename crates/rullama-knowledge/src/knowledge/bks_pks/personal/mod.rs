@@ -9,7 +9,7 @@
 //! - **PersonalFact**: A learned fact about the user (preferences, context, capabilities)
 //!   (e.g., "User prefers Rust", "Current project is rullama-cli")
 //!
-//! - **Server-Side User-Scoped**: Facts are stored on the Brainwires server with RLS
+//! - **Server-Side User-Scoped**: Facts are stored on a remote server with RLS
 //!   ensuring users can only access their own data.
 //!
 //! - **Learning Sources**:

@@ -3,8 +3,10 @@ FROM rust:1.86-slim AS rust-docs
 WORKDIR /workspace
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
-COPY extras/ ./extras/
-COPY deprecated/ ./deprecated/
+COPY sdks/ ./sdks/
+COPY servers/ ./servers/
+COPY integrations/ ./integrations/
+COPY examples/ ./examples/
 COPY deno/ ./deno/
 COPY xtask/ ./xtask/
 RUN cargo doc --workspace --no-deps 2>&1 || true && mkdir -p /workspace/target/doc

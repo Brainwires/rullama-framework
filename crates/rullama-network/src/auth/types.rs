@@ -16,7 +16,7 @@ pub struct UserProfile {
 }
 
 // Provider API keys are NEVER sent to the client - they stay on the server
-// The CLI only talks to Brainwires backend, which handles provider API calls server-side
+// Historically the CLI talked only to a remote backend that handled provider API calls server-side
 
 /// Supabase configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

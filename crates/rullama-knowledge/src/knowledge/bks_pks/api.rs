@@ -1,6 +1,6 @@
 //! Server API client for behavioral knowledge synchronization
 //!
-//! Handles communication with the Brainwires server for syncing truths,
+//! Handles communication with a remote server for syncing truths,
 //! submitting new truths, and reporting reinforcements/contradictions.
 
 use super::truth::{BehavioralTruth, TruthCategory, TruthFeedback, TruthSource};
