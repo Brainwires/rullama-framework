@@ -832,12 +832,23 @@ to `fuzz/`; nothing else in the framework needs nightly.
 
 ### Running
 
+Use the **`cargo fuzz`** alias (an xtask wrapper — see `xtask/src/fuzz.rs`). It
+checks that nightly + `cargo-fuzz` are installed, selects nightly (overriding the
+repo's stable `rust-toolchain.toml`), runs from the workspace root, and forwards
+all args to the real `cargo-fuzz`:
+
 ```sh
+rustup toolchain install nightly         # once (cargo-fuzz needs nightly)
 cargo install cargo-fuzz                 # once
+
+cargo fuzz list                          # all targets
 # Time-box a single target (60s); drop the limit for a long campaign.
-cargo +nightly fuzz run mcp_jsonrpc_parser -- -max_total_time=60
-cargo +nightly fuzz list                 # all targets
+cargo fuzz run mcp_jsonrpc_parser -- -max_total_time=60
 ```
+
+> The `cargo fuzz` alias deliberately shadows the raw `cargo-fuzz` subcommand;
+> the wrapper invokes the real binary directly under the hood (no recursion).
+> The equivalent manual form is `cargo +nightly fuzz run <target>`.
 
 Interesting inputs the fuzzer discovers are saved under `fuzz/corpus/<target>/`
 and reused to seed later runs. A crash is written to `fuzz/artifacts/` with the
