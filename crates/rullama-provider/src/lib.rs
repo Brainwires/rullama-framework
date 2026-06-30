@@ -41,12 +41,6 @@ pub mod gemini;
 #[cfg(feature = "native")]
 pub mod ollama;
 
-/// Brainwires HTTP relay protocol.
-#[cfg(feature = "native")]
-pub mod rullama_http;
-#[cfg(feature = "native")]
-pub use rullama_http::{DEFAULT_BACKEND_URL, DEV_BACKEND_URL, get_backend_from_api_key};
-
 // Speech (TTS / STT) provider clients live in `rullama-provider-speech`.
 
 // ── Registry ──────────────────────────────────────────────────────────
@@ -76,8 +70,6 @@ pub mod local_llm;
 // Chat-capable API clients
 #[cfg(feature = "native")]
 pub use anthropic::AnthropicClient;
-#[cfg(feature = "native")]
-pub use rullama_http::BrainwiresHttpProvider;
 #[cfg(feature = "native")]
 pub use gemini::GoogleClient;
 #[cfg(feature = "native")]
@@ -128,8 +120,6 @@ pub enum ProviderType {
     Groq,
     /// Ollama local models.
     Ollama,
-    /// Brainwires HTTP relay.
-    Brainwires,
     /// Together AI.
     Together,
     /// Fireworks AI.
@@ -169,7 +159,6 @@ impl ProviderType {
             Self::Google => "gemini-2.5-flash",
             Self::Groq => "llama-3.3-70b-versatile",
             Self::Ollama => "llama3.3",
-            Self::Brainwires => "gpt-5-mini",
             Self::Together => "meta-llama/Llama-3.1-8B-Instruct",
             Self::Fireworks => "accounts/fireworks/models/llama-v3p1-8b-instruct",
             Self::Anyscale => "meta-llama/Meta-Llama-3.1-8B-Instruct",
@@ -195,7 +184,6 @@ impl ProviderType {
             "google" | "gemini" => Some(Self::Google),
             "groq" => Some(Self::Groq),
             "ollama" => Some(Self::Ollama),
-            "rullama" => Some(Self::Brainwires),
             "together" => Some(Self::Together),
             "fireworks" => Some(Self::Fireworks),
             "anyscale" => Some(Self::Anyscale),
@@ -222,7 +210,6 @@ impl ProviderType {
             Self::Google => "google",
             Self::Groq => "groq",
             Self::Ollama => "ollama",
-            Self::Brainwires => "rullama",
             Self::Together => "together",
             Self::Fireworks => "fireworks",
             Self::Anyscale => "anyscale",
@@ -349,7 +336,6 @@ mod tests {
             "llama-3.3-70b-versatile"
         );
         assert_eq!(ProviderType::Ollama.default_model(), "llama3.3");
-        assert_eq!(ProviderType::Brainwires.default_model(), "gpt-5-mini");
         assert_eq!(ProviderType::MiniMax.default_model(), "MiniMax-M2.7");
     }
 
@@ -375,10 +361,6 @@ mod tests {
         assert_eq!(
             ProviderType::from_str_opt("ollama"),
             Some(ProviderType::Ollama)
-        );
-        assert_eq!(
-            ProviderType::from_str_opt("rullama"),
-            Some(ProviderType::Brainwires)
         );
         assert_eq!(
             ProviderType::from_str_opt("together"),

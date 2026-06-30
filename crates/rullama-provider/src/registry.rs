@@ -19,8 +19,6 @@ pub enum ChatProtocol {
     GeminiGenerateContent,
     /// Ollama native chat (`POST /api/chat`).
     OllamaChat,
-    /// Brainwires HTTP relay.
-    BrainwiresRelay,
 }
 
 /// Authentication scheme used to authorize requests.
@@ -167,15 +165,6 @@ pub static PROVIDER_REGISTRY: &[ProviderEntry] = &[
         models_url: Some("https://api.openai.com/v1/models"),
     },
     ProviderEntry {
-        provider_type: ProviderType::Brainwires,
-        chat_protocol: ChatProtocol::BrainwiresRelay,
-        default_base_url: "https://brainwires.studio",
-        default_model: "gpt-5-mini",
-        auth: AuthScheme::BearerToken,
-        supports_model_listing: false,
-        models_url: None,
-    },
-    ProviderEntry {
         provider_type: ProviderType::MiniMax,
         chat_protocol: ChatProtocol::OpenAiChatCompletions,
         default_base_url: "https://api.minimax.io/v1/chat/completions",
@@ -210,7 +199,6 @@ mod tests {
         assert!(lookup(ProviderType::Google).is_some());
         assert!(lookup(ProviderType::Ollama).is_some());
         assert!(lookup(ProviderType::OpenAiResponses).is_some());
-        assert!(lookup(ProviderType::Brainwires).is_some());
         assert!(lookup(ProviderType::MiniMax).is_some());
     }
 

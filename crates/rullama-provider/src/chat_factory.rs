@@ -37,7 +37,6 @@ impl ChatProviderFactory {
             ChatProtocol::AnthropicMessages => Self::create_anthropic(config),
             ChatProtocol::GeminiGenerateContent => Self::create_gemini(config),
             ChatProtocol::OllamaChat => Self::create_ollama(config),
-            ChatProtocol::BrainwiresRelay => Self::create_rullama(config),
         }
     }
 
@@ -234,22 +233,6 @@ impl ChatProviderFactory {
         Ok(Arc::new(provider))
     }
 
-    fn create_rullama(config: &ProviderConfig) -> Result<Arc<dyn Provider>> {
-        let api_key = config
-            .api_key
-            .clone()
-            .ok_or_else(|| anyhow!("Brainwires provider requires an API key"))?;
-        let backend_url = config.base_url.clone().unwrap_or_else(|| {
-            super::rullama_http::get_backend_from_api_key(&api_key).to_string()
-        });
-        Ok(Arc::new(
-            super::rullama_http::BrainwiresHttpProvider::new(
-                api_key,
-                backend_url,
-                config.model.clone(),
-            ),
-        ))
-    }
 }
 
 #[cfg(test)]

@@ -180,8 +180,7 @@ pub fn create_model_lister(
                 base_url.map(|s| s.to_string()),
             )))
         }
-        ProviderType::Brainwires
-        | ProviderType::Custom
+        ProviderType::Custom
         | ProviderType::MiniMax
         | ProviderType::Bedrock
         | ProviderType::VertexAI
@@ -429,8 +428,8 @@ mod tests {
     }
 
     #[test]
-    fn test_create_model_lister_rullama_unsupported() {
-        let result = create_model_lister(ProviderType::Brainwires, Some("key"), None);
+    fn test_create_model_lister_custom_unsupported() {
+        let result = create_model_lister(ProviderType::Custom, Some("key"), None);
         assert!(result.is_err());
     }
 }
