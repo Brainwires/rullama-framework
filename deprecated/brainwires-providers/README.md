@@ -59,4 +59,4 @@ depend on `brainwires-provider` alone, without dragging in the other.
 
 ## See also
 
-- [ADR-0001](https://github.com/Brainwires/brainwires-framework/blob/main/docs/adr/ADR-0001-crate-split-discipline.md) — crate split discipline.
+- [ADR-0001](https://github.com/Brainwires/rullama-framework/blob/main/docs/adr/ADR-0001-crate-split-discipline.md) — crate split discipline.

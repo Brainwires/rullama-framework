@@ -29,4 +29,4 @@ use brainwires_cognition::*;
 use brainwires_knowledge::*;
 ```
 
-See [CHANGELOG.md](https://github.com/Brainwires/brainwires-framework/blob/main/CHANGELOG.md) for the full migration story.
+See [CHANGELOG.md](https://github.com/Brainwires/rullama-framework/blob/main/CHANGELOG.md) for the full migration story.

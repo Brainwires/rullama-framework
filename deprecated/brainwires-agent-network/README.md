@@ -33,4 +33,4 @@ use brainwires_agent_network::{NetworkManager, Transport, MessageEnvelope};
 use brainwires_network::{NetworkManager, Transport, MessageEnvelope};
 ```
 
-See [CHANGELOG.md](https://github.com/Brainwires/brainwires-framework/blob/main/CHANGELOG.md) for the full 0.10 → 0.11 history.
+See [CHANGELOG.md](https://github.com/Brainwires/rullama-framework/blob/main/CHANGELOG.md) for the full 0.10 → 0.11 history.

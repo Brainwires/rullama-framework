@@ -31,4 +31,4 @@ use brainwires_channels::*;
 use brainwires_network::channels::*;
 ```
 
-See [CHANGELOG.md](https://github.com/Brainwires/brainwires-framework/blob/main/CHANGELOG.md) for the absorption rationale.
+See [CHANGELOG.md](https://github.com/Brainwires/rullama-framework/blob/main/CHANGELOG.md) for the absorption rationale.

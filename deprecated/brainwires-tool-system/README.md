@@ -31,4 +31,4 @@ use brainwires_tool_system::*;
 use brainwires_tool_builtins::system::*;
 ```
 
-See [CHANGELOG.md](https://github.com/Brainwires/brainwires-framework/blob/main/CHANGELOG.md) and the [`brainwires-tools` tombstone](../brainwires-tools/README.md) for the wider split history.
+See [CHANGELOG.md](https://github.com/Brainwires/rullama-framework/blob/main/CHANGELOG.md) and the [`brainwires-tools` tombstone](../brainwires-tools/README.md) for the wider split history.

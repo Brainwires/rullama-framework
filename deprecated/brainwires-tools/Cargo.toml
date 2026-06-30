@@ -5,7 +5,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.91"
 description = "DEPRECATED: split into `brainwires-tool-runtime` (executor + registry + framework) and `brainwires-tool-builtins` (bash, file_ops, git, web, search, code_exec, browser, email, calendar, system) — see README"
-repository = "https://github.com/Brainwires/brainwires-framework"
+repository = "https://github.com/Brainwires/rullama-framework"
 readme = "README.md"
 keywords = ["deprecated"]
 

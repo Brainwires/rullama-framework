@@ -2334,8 +2334,8 @@ Existing `.fastembed_cache/` directories in project folders are stale and can be
 - Git search results now return the actual commit date instead of hardcoded `0`.
 - Dirty flag is now cleared immediately after embeddings + cache are flushed to disk in both full and incremental indexing paths.
 
-[0.4.1]: https://github.com/Brainwires/brainwires-framework/compare/v0.4.0...v0.4.1
-[0.4.0]: https://github.com/Brainwires/brainwires-framework/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/Brainwires/brainwires-framework/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/Brainwires/brainwires-framework/releases/tag/v0.2.0
+[0.4.1]: https://github.com/Brainwires/rullama-framework/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/Brainwires/rullama-framework/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/Brainwires/rullama-framework/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/Brainwires/rullama-framework/releases/tag/v0.2.0
 [0.1.0]: Untagged initial release

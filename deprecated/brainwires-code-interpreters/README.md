@@ -33,4 +33,4 @@ use brainwires_tool_builtins::interpreters::{Executor, ExecutionRequest, Languag
 
 Fine-grained features (`interpreters-rhai`, `interpreters-lua`,
 `interpreters-js`, `interpreters-all`, `interpreters-wasm`) remain
-available on the new crate. See [CHANGELOG.md](https://github.com/Brainwires/brainwires-framework/blob/main/CHANGELOG.md).
+available on the new crate. See [CHANGELOG.md](https://github.com/Brainwires/rullama-framework/blob/main/CHANGELOG.md).

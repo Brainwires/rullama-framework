@@ -31,4 +31,4 @@ use brainwires_datasets::*;
 use brainwires_finetune::datasets::*;
 ```
 
-See [CHANGELOG.md](https://github.com/Brainwires/brainwires-framework/blob/main/CHANGELOG.md) for the dataset + training split.
+See [CHANGELOG.md](https://github.com/Brainwires/rullama-framework/blob/main/CHANGELOG.md) for the dataset + training split.

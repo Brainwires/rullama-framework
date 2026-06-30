@@ -28,4 +28,4 @@ brainwires = { version = "0.11", default-features = false, features = ["wasm"] }
 
 If you were using the wasm-bindgen surface specifically, build the
 `extras/brainwires-wasm` crate from source — it's intentionally
-unpublished. See [CHANGELOG.md](https://github.com/Brainwires/brainwires-framework/blob/main/CHANGELOG.md).
+unpublished. See [CHANGELOG.md](https://github.com/Brainwires/rullama-framework/blob/main/CHANGELOG.md).

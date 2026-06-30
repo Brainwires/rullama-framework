@@ -31,4 +31,4 @@ use brainwires_tool_builtins::system::*;
 ```
 
 The companion `system-full` feature is still available for the
-extended toolset. See [CHANGELOG.md](https://github.com/Brainwires/brainwires-framework/blob/main/CHANGELOG.md).
+extended toolset. See [CHANGELOG.md](https://github.com/Brainwires/rullama-framework/blob/main/CHANGELOG.md).

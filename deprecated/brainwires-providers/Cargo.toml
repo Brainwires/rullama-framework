@@ -5,7 +5,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.91"
 description = "DEPRECATED: renamed to `brainwires-provider` (singular) and split — speech (TTS / STT) extracted to `brainwires-provider-speech`. See README."
-repository = "https://github.com/Brainwires/brainwires-framework"
+repository = "https://github.com/Brainwires/rullama-framework"
 readme = "README.md"
 keywords = ["deprecated"]
 

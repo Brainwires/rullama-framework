@@ -5,7 +5,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.91"
 description = "DEPRECATED: moved to rullama-finetune in the sibling rullama workspace — see README"
-repository = "https://github.com/Brainwires/brainwires-framework"
+repository = "https://github.com/Brainwires/rullama-framework"
 readme = "README.md"
 keywords = ["deprecated"]
 
