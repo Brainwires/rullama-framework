@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Brainwires Framework — crates.io publish script
+# rullama — crates.io publish script
 #
 # Rate limits for NEW VERSIONS of existing crates (as of 2026):
 #   - Burst: 30 new versions at once
@@ -203,7 +203,7 @@ PUBLISHED=0
 FAILED=0
 
 echo "============================================"
-echo "Brainwires Framework — Publish to crates.io"
+echo "rullama — Publish to crates.io"
 echo "Mode: $(if $DRY_RUN; then echo 'DRY RUN'; else echo 'LIVE'; fi)"
 echo "Crates: $TOTAL"
 echo "============================================"

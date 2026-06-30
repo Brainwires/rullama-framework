@@ -8,7 +8,7 @@
 //!
 //! ```sh
 //! cargo run -p reload-daemon -- \
-//!   --config extras/reload-daemon/config.json
+//!   --config integrations/reload-daemon/config.json
 //! ```
 //!
 //! ## Register with Claude Code

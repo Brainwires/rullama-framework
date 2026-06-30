@@ -3,7 +3,7 @@ use rullama_issues::mcp_server::IssuesMcpServer;
 use clap::{Parser, Subcommand};
 use std::panic;
 
-/// Brainwires Issues: lightweight project issue tracking MCP server
+/// rullama Issues: lightweight project issue tracking MCP server
 #[derive(Parser)]
 #[command(name = "rullama-issues")]
 #[command(version = env!("CARGO_PKG_VERSION"))]

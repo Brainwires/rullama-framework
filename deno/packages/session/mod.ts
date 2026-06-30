@@ -1,7 +1,7 @@
 /**
  * @module @rullama/session
  *
- * Pluggable session-persistence for the Brainwires Agent Framework.
+ * Pluggable session-persistence for the rullama.
  *
  * The {@link SessionStore} interface is the single extension point;
  * {@link InMemorySessionStore} is the default for tests and ephemeral

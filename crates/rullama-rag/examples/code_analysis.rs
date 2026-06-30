@@ -20,7 +20,7 @@ use rullama_rag::code_analysis::{
 use rullama_rag::rag::indexer::FileInfo;
 
 fn main() -> anyhow::Result<()> {
-    println!("=== Brainwires Code Analysis Example ===\n");
+    println!("=== rullama Code Analysis Example ===\n");
 
     // ── Step 1: Create the hybrid relations provider ─────────────────
     println!("--- Step 1: Initialize Relations Provider ---\n");

@@ -10,7 +10,7 @@ use super::message::{ChannelMessage, MessageId};
 /// The universal contract for a messaging channel adapter.
 ///
 /// Every channel implementation (Discord, Telegram, Slack, etc.) must implement
-/// this trait to integrate with the Brainwires gateway.
+/// this trait to integrate with the rullama gateway.
 #[async_trait]
 pub trait Channel: Send + Sync {
     /// Unique channel type identifier (e.g., "discord", "telegram").

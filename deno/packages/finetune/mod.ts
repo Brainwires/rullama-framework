@@ -1,7 +1,7 @@
 /**
  * @module @rullama/training
  *
- * Cloud fine-tuning orchestration for the Brainwires Agent Framework.
+ * Cloud fine-tuning orchestration for the rullama.
  *
  * Ships OpenAI, Together, and Fireworks providers plus a backoff-based
  * {@link JobPoller}. Bedrock and Vertex require their vendor SDKs and are

@@ -1,7 +1,7 @@
 /**
  * @module @rullama/resilience
  *
- * Provider-layer resilience middleware for the Brainwires Agent Framework.
+ * Provider-layer resilience middleware for the rullama.
  *
  * Wraps any `@rullama/core` {@link Provider} with composable decorators:
  *

@@ -1,6 +1,6 @@
 # @rullama/network
 
-Agent networking layer for the Brainwires Agent Framework. Provides an MCP
+Agent networking layer for the rullama. Provides an MCP
 server framework with middleware, agent identity, message routing, peer
 discovery, and client connectivity.
 

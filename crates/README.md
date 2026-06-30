@@ -1,7 +1,7 @@
-# Brainwires Framework — Crate Dependency Tree
+# rullama — Crate Dependency Tree
 
 Crates organized in layers. Arrows (`->`) indicate internal dependencies. For
-standalone apps built on the framework, see [`extras/`](../extras/README.md).
+standalone apps built on the framework, see `../sdks/`, `../servers/`, `../integrations/`, and `../examples/`.
 
 ```
 rullama  (facade — re-exports every framework crate via feature flags)

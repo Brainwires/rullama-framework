@@ -1,5 +1,5 @@
 /**
- * Unified database traits for the Brainwires storage layer.
+ * Unified database traits for the rullama storage layer.
  *
  * Two interfaces define the database capabilities:
  * - StorageBackend -- generic CRUD + vector search for domain stores

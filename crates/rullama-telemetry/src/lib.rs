@@ -18,7 +18,7 @@
 //! Implement [`BillingHook`] and pass it into `TaskAgentConfig::billing_hook`
 //! to receive a [`UsageEvent`] at every provider call and tool call.
 //! Full implementations (ledger, wallet, Stripe) live in
-//! `extras/rullama-billing`.
+//! `sdks/rullama-billing`.
 //!
 //! # Quick start
 //!

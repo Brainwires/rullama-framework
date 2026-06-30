@@ -1,6 +1,6 @@
 # voice-assistant
 
-Personal voice assistant built on the [Brainwires Framework](https://github.com/Brainwires/rullama-framework).
+Personal voice assistant built on the [rullama](https://github.com/Brainwires/rullama-framework).
 
 ## Overview
 

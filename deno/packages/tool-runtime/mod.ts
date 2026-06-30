@@ -1,7 +1,7 @@
 /**
  * @module @rullama/tool-runtime
  *
- * Tool execution framework for the Brainwires Agent Framework.
+ * Tool execution framework for the rullama.
  * Equivalent to Rust's `rullama-tool-runtime` crate (post-0.11.0 split).
  *
  * Provides the registry, executor trait, error taxonomy, sanitization,

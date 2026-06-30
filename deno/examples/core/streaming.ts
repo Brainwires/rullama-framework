@@ -45,7 +45,7 @@ class StreamingDemoProvider implements Provider {
     // Simulate streaming word by word
     const words = [
       "The",
-      "Brainwires",
+      "rullama",
       "framework",
       "provides",
       "a",

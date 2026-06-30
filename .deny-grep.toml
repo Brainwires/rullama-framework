@@ -1,4 +1,4 @@
-# Tier-B static-pattern denylist for the Brainwires framework.
+# Tier-B static-pattern denylist for the rullama framework.
 #
 # Each rule names a forbidden pattern, where it's not allowed to appear, and
 # (optionally) where it IS allowed. The `cargo xtask test-harness deny-grep`

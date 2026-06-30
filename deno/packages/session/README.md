@@ -1,6 +1,6 @@
 # @rullama/session
 
-Pluggable session persistence for the Brainwires Agent Framework.
+Pluggable session persistence for the rullama.
 
 ## What it does
 

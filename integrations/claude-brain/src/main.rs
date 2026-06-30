@@ -3,12 +3,12 @@ use clap::{Parser, Subcommand, ValueEnum};
 use claude_brain::mcp_server::ClaudeBrainMcpServer;
 use std::panic;
 
-/// Claude Brain: Brainwires context management for Claude Code
+/// Claude Brain: rullama context management for Claude Code
 #[derive(Parser)]
 #[command(name = "claude-brain")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(
-    about = "Replaces Claude Code compaction with Brainwires tiered memory, dream consolidation, and semantic recall"
+    about = "Replaces Claude Code compaction with rullama tiered memory, dream consolidation, and semantic recall"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -36,7 +36,7 @@ enum HookEvent {
     Stop,
     /// PreCompact — export full conversation before compaction
     PreCompact,
-    /// PostCompact — inject Brainwires context after compaction
+    /// PostCompact — inject rullama context after compaction
     PostCompact,
 }
 
@@ -84,7 +84,7 @@ async fn handle_hook(event: HookEvent) -> Result<()> {
 fn show_version_info() {
     println!("claude-brain v{}", env!("CARGO_PKG_VERSION"));
     println!();
-    println!("Brainwires Context Management for Claude Code");
+    println!("rullama Context Management for Claude Code");
     println!();
     println!("Modes:");
     println!("  serve          Start MCP server (default)");
@@ -94,7 +94,7 @@ fn show_version_info() {
     println!("  session-start  Load context from all memory tiers");
     println!("  stop           Capture turn into hot-tier storage");
     println!("  pre-compact    Export conversation before compaction");
-    println!("  post-compact   Inject Brainwires context after compaction");
+    println!("  post-compact   Inject rullama context after compaction");
     println!();
     println!("MCP Tools:");
     println!("  recall_context   Search past conversation history");

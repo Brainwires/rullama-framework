@@ -386,7 +386,7 @@ impl ServerHandler for SchedulerServer {
         let mut info = ServerInfo::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
         info.server_info = Implementation::new("rullama-scheduler", env!("CARGO_PKG_VERSION"))
-            .with_title("Brainwires Scheduler — local cron job manager");
+            .with_title("rullama Scheduler — local cron job manager");
         info.instructions = Some(
             "Schedule and manage local cron jobs. Use add_job to create a job, \
              list_jobs to see all jobs, run_job to trigger immediately, and \

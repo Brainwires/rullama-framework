@@ -133,7 +133,7 @@ pub struct SkillMetadata {
 
     /// Optional: Specific model to use for this skill
     /// Overrides the default model when executing
-    /// (Brainwires extension, not part of the Agent Skills specification)
+    /// (rullama extension, not part of the Agent Skills specification)
     pub model: Option<String>,
 
     /// Optional: Custom key-value metadata
@@ -145,7 +145,7 @@ pub struct SkillMetadata {
     /// When set, the skill executor will register hooks that fire the skill
     /// on matching lifecycle events (e.g., `["agent_started", "tool_after_execute"]`).
     /// See `rullama_core::lifecycle::LifecycleEvent` for valid event types.
-    /// (Brainwires extension, not part of the Agent Skills specification)
+    /// (rullama extension, not part of the Agent Skills specification)
     #[serde(default)]
     pub hooks: Option<Vec<String>>,
 

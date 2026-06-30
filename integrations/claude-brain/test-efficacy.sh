@@ -9,8 +9,8 @@
 #
 # Usage:
 #   ./test-efficacy.sh          # Run all tests
-#   ./test-efficacy.sh quick    # Budget math + loop detection only (no Brainwires needed)
-#   ./test-efficacy.sh hooks    # Hook output tests only (needs Brainwires data)
+#   ./test-efficacy.sh quick    # Budget math + loop detection only (no rullama needed)
+#   ./test-efficacy.sh hooks    # Hook output tests only (needs rullama data)
 
 set -euo pipefail
 

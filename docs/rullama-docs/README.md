@@ -1,6 +1,6 @@
 # rullama-docs
 
-Next.js 16 documentation site for the Brainwires framework. Serves the repo's markdown/MDX from the filesystem — no CMS, no build-time content pipeline, just `fs.readFileSync` behind server components.
+Next.js 16 documentation site for the rullama framework. Serves the repo's markdown/MDX from the filesystem — no CMS, no build-time content pipeline, just `fs.readFileSync` behind server components.
 
 ## What It Reads
 

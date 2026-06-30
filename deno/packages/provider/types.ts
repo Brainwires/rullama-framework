@@ -1,5 +1,5 @@
 /**
- * Provider types and configuration for the Brainwires providers package.
+ * Provider types and configuration for the rullama providers package.
  * Equivalent to Rust's `ProviderType`, `ProviderConfig`, `ChatProtocol`, `AuthScheme`
  * in rullama-providers.
  */

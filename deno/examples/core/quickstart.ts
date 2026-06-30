@@ -52,7 +52,7 @@ class EchoProvider implements Provider {
 
 // 2. Use the provider
 async function main() {
-  console.log("=== Brainwires Quickstart ===");
+  console.log("=== rullama Quickstart ===");
 
   const provider = new EchoProvider();
   console.log(`Provider: ${provider.name}`);

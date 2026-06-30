@@ -13,7 +13,7 @@ cargo run -p rullama-brain-server -- serve
 Or install and run:
 
 ```bash
-cargo install --path extras/rullama-brain-server
+cargo install --path servers/rullama-brain-server
 rullama-brain serve
 ```
 

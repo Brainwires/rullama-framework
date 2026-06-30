@@ -14,7 +14,7 @@ A modular Rust framework for building AI agents with multi-provider support, too
 
 ## Overview
 
-rullama is a workspace of 32 framework crates plus 18 extras (including the 7-crate `brainclaw` set) that provide everything needed to build, train, deploy, and coordinate AI agents. Each framework crate is independently publishable to crates.io and usable standalone, but they compose together through the `rullama` facade crate for a batteries-included experience.
+rullama is a workspace of 33 framework crates plus 18 extras — apps and libraries under `sdks/`, `servers/`, `integrations/`, and `examples/` — that provide everything needed to build, train, deploy, and coordinate AI agents. Each framework crate is independently publishable to crates.io and usable standalone, but they compose together through the `rullama` facade crate for a batteries-included experience.
 
 **[Full feature list](FEATURES.md)** | **Key capabilities:**
 
@@ -95,37 +95,31 @@ rullama is a workspace of 32 framework crates plus 18 extras (including the 7-cr
 
 | Crate | Description |
 |-------|-------------|
-| [**rullama-proxy**](extras/rullama-proxy/README.md) | HTTP proxy for AI API request routing |
-| [**rullama-brain-server**](extras/rullama-brain-server/README.md) | MCP server binary exposing the `rullama-knowledge::knowledge` subsystem (BKS/PKS, thoughts, entity graphs) |
-| [**rullama-rag-server**](extras/rullama-rag-server/README.md) | MCP server binary exposing the `rullama-knowledge::rag` subsystem (codebase indexing + hybrid search) |
-| [**agent-chat**](extras/agent-chat/README.md) | Simplified AI chat client with TUI and plain modes |
-| [**reload-daemon**](extras/reload-daemon/README.md) | MCP server for killing and restarting AI coding clients |
-| [**audio-demo-ffi**](extras/audio-demo-ffi/README.md) | UniFFI bindings (cdylib) exposing rullama-hardware (audio) to C#, Kotlin, Swift, Python |
-| [**audio-demo**](extras/audio-demo/README.md) | Cross-platform Avalonia GUI for TTS/STT demo across all audio providers |
-| [**brainclaw**](extras/brainclaw/daemon/README.md) | Self-hosted personal AI assistant daemon — multi-provider, per-user sessions, secure gateway |
-| [**rullama-gateway**](extras/brainclaw/gateway/README.md) | WebSocket/HTTP channel hub — routes channel adapters to AI agent sessions |
-| [**rullama-discord-channel**](extras/brainclaw/mcp-discord/README.md) | Discord channel adapter — reference `Channel` trait implementation, optional MCP server mode |
-| [**rullama-telegram-channel**](extras/brainclaw/mcp-telegram/README.md) | Telegram channel adapter — teloxide-based, optional MCP server mode |
-| [**rullama-slack-channel**](extras/brainclaw/mcp-slack/README.md) | Slack channel adapter — Socket Mode (no public URL), optional MCP server mode |
-| [**rullama-skill-registry**](extras/brainclaw/mcp-skill-registry/README.md) | Skill registry HTTP server — SQLite FTS5, publish/search/download endpoints |
-| [**brainclaw-mcp-github**](extras/brainclaw/mcp-github/README.md) | GitHub channel adapter — webhook receiver, REST API, MCP server mode |
-| [**rullama-memory-server**](extras/rullama-memory-server/README.md) | Mem0-compatible memory REST API backed by rullama knowledge |
-| [**claude-brain**](extras/claude-brain/README.md) | rullama context management for Claude Code — persistent context across compaction |
-| [**rullama-cli**](extras/rullama-cli/README.md) | AI-powered agentic CLI tool for autonomous coding assistance |
-| [**rullama-issues**](extras/rullama-issues/README.md) | MCP-native issue tracking server |
-| [**rullama-scheduler**](extras/rullama-scheduler/README.md) | MCP server for cron scheduling |
-| [**rullama-autonomy**](extras/rullama-autonomy/README.md) | Autonomous agent operations |
-| [**rullama-wasm**](extras/rullama-wasm/README.md) | WASM browser bindings |
-| [**rullama-billing**](extras/rullama-billing/README.md) | Billing and cost accounting hooks for agent telemetry |
-| [**rullama-docs**](extras/rullama-docs/README.md) | Documentation tooling and reference site generation |
-| [**voice-assistant**](extras/voice-assistant/README.md) | End-to-end voice assistant binary using the `rullama-hardware` pipeline |
+| [**rullama-proxy**](sdks/rullama-proxy/README.md) | HTTP proxy for AI API request routing |
+| [**rullama-autonomy**](sdks/rullama-autonomy/README.md) | Autonomous agent operations |
+| [**rullama-wasm**](sdks/rullama-wasm/README.md) | WASM browser bindings |
+| [**rullama-billing**](sdks/rullama-billing/README.md) | Billing and cost accounting hooks for agent telemetry |
+| [**rullama-brain-server**](servers/rullama-brain-server/README.md) | MCP server binary exposing the `rullama-knowledge::knowledge` subsystem (BKS/PKS, thoughts, entity graphs) |
+| [**rullama-rag-server**](servers/rullama-rag-server/README.md) | MCP server binary exposing the `rullama-knowledge::rag` subsystem (codebase indexing + hybrid search) |
+| [**rullama-memory-server**](servers/rullama-memory-server/README.md) | Mem0-compatible memory REST API backed by rullama knowledge |
+| [**rullama-issues**](servers/rullama-issues/README.md) | MCP-native issue tracking server |
+| [**rullama-scheduler**](servers/rullama-scheduler/README.md) | MCP server for cron scheduling |
+| [**claude-brain**](integrations/claude-brain/README.md) | rullama context management for Claude Code — persistent context across compaction |
+| [**reload-daemon**](integrations/reload-daemon/README.md) | MCP server for killing and restarting AI coding clients |
+| [**agent-chat**](examples/agent-chat/README.md) | Simplified AI chat client with TUI and plain modes |
+| [**audio-demo-ffi**](examples/audio-demo-ffi/README.md) | UniFFI bindings (cdylib) exposing rullama-hardware (audio) to C#, Kotlin, Swift, Python |
+| [**audio-demo**](examples/audio-demo/README.md) | Cross-platform Avalonia GUI for TTS/STT demo across all audio providers |
+| [**voice-assistant**](examples/voice-assistant/README.md) | End-to-end voice assistant binary using the `rullama-hardware` pipeline |
+| [**rullama-docs**](docs/rullama-docs/README.md) | Documentation tooling and reference site generation |
+
+> **Now separate repos:** `rullama-cli` and `brainclaw` (the daemon + gateway + channel adapters) have moved to their own product repositories under `github.com/Brainwires` and are no longer part of this workspace.
 
 ### Workspace layout
 
 - **`crates/`** — the framework. Cohesive, independently-publishable libraries.
-- **`extras/`** — applications and libraries that **consume** the framework: binaries, demos, MCP servers, and integration helpers.
+- **`sdks/`, `servers/`, `integrations/`, `examples/`** — applications and libraries that **consume** the framework: binaries, demos, MCP servers, and integration helpers.
 
-**Allowed dependency arrows:** `crates/ → crates/` and `extras/ → crates/`.
+**Allowed dependency arrows:** `crates/ → crates/` and consumer dirs (`sdks/`, `servers/`, `integrations/`, `examples/`) `→ crates/`.
 
 ### Brands, repos, and the engine/harness boundary
 
@@ -142,7 +136,7 @@ rullama is a workspace of 32 framework crates plus 18 extras (including the 7-cr
   OpenAI-compatible `/v1/chat/completions` endpoint (existing `openai_chat`
   provider, base-URL swap), and in-process via a C-ABI shim (rullama-native). The
   PWA supersedes the old `rullama-studio` and the Candle
-  `extras/rullama-chat-pwa` (both retire).
+  `rullama-chat-pwa` (both retire).
 - **brainclaw** is extracting to its own product repo, and **rullama-cli** is
   extracting *and being renamed `rullama-cli`* (it joins the rullama product
   family — app + CLI). Both depend on published `rullama` crates.
@@ -150,7 +144,7 @@ rullama is a workspace of 32 framework crates plus 18 extras (including the 7-cr
 See the canonical reference:
 [`docs/ARCHITECTURE-engine-harness.md`](docs/ARCHITECTURE-engine-harness.md).
 
-**Forbidden:** `crates/ → extras/` (the framework cannot depend on its consumers) and `extras/ → extras/` (extras are siblings of equal standing, not a hierarchy). If an `extras/` library starts being depended on by another `extras/` entry, that's a signal it belongs in `crates/`.
+**Forbidden:** `crates/ →` a consumer dir (the framework cannot depend on its consumers) and consumer-dir `→` consumer-dir (the consumer projects are siblings of equal standing, not a hierarchy). If a consumer library starts being depended on by another consumer project, that's a signal it belongs in `crates/`.
 
 Enforcement: `cargo xtask lint-deps` walks every `Cargo.toml` and rejects forbidden arrows. See [`docs/adr/ADR-0004-framework-extras-boundary.md`](docs/adr/ADR-0004-framework-extras-boundary.md) for the rationale.
 

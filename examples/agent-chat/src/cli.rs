@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(
     name = "agent-chat",
-    about = "AI chat client powered by the Brainwires Framework",
+    about = "AI chat client powered by the rullama",
     version
 )]
 pub struct Cli {

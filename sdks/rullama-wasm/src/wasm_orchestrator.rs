@@ -1,6 +1,6 @@
 //! WASM bindings for the tool orchestrator.
 //!
-//! This module provides JavaScript-compatible bindings for the Brainwires tool orchestrator,
+//! This module provides JavaScript-compatible bindings for the rullama tool orchestrator,
 //! allowing AI models to execute [Rhai](https://rhai.rs/) scripts that call registered
 //! JavaScript tool functions from the browser.
 //!

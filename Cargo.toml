@@ -119,7 +119,7 @@ rullama-telemetry  = { path = "crates/rullama-telemetry",  version = "0.12.0", d
 rullama-test-fixtures = { path = "crates/rullama-test-fixtures", version = "0.12.0" }
 # Internal test harness (publish = false). Aggregates Tier-A feature cases,
 # Tier-B security cases, and Tier-C assembly cases. Consumed by `xtask` and
-# by `extras/rullama-autonomy` (which drives the AutonomousFeedbackLoop).
+# by `sdks/rullama-autonomy` (which drives the AutonomousFeedbackLoop).
 rullama-test-harness = { path = "crates/rullama-test-harness", version = "0.12.0" }
 
 # Tokenizer dependencies

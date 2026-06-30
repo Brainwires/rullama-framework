@@ -1,6 +1,6 @@
 # @rullama/rag
 
-RAG client interface + code-analysis surface for the Brainwires Agent Framework.
+RAG client interface + code-analysis surface for the rullama.
 
 Extracted from `@rullama/knowledge` in v0.11.0 to mirror Rust's
 `rullama-rag` crate. Code analysis (symbol extraction, repo maps, call

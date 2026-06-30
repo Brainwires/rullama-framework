@@ -1,6 +1,6 @@
 # Extensibility
 
-This guide covers how to extend the Brainwires framework by implementing key
+This guide covers how to extend the rullama framework by implementing key
 interfaces. The framework is interface-driven: implement an interface, pass it
 to the component, done.
 

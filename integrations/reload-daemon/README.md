@@ -98,14 +98,14 @@ In the example config, this means: keep `--allow-dangerously-skip-permissions` i
 
 ```sh
 cargo run -p reload-daemon -- \
-  --config extras/reload-daemon/config.json
+  --config integrations/reload-daemon/config.json
 ```
 
 Or with debug logging:
 
 ```sh
 RUST_LOG=debug cargo run -p reload-daemon -- \
-  --config extras/reload-daemon/config.json
+  --config integrations/reload-daemon/config.json
 ```
 
 ### 2. Register with Claude Code

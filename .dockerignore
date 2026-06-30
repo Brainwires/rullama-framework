@@ -10,17 +10,9 @@ target/
 **/node_modules/
 **/npm-debug.log
 
-# Chat-PWA build artifacts (regenerated inside the builder stage)
-extras/rullama-chat-pwa/web/pkg/
-extras/rullama-chat-pwa/web/app.js
-extras/rullama-chat-pwa/web/app.js.map
-extras/rullama-chat-pwa/web/sw.js
-extras/rullama-chat-pwa/web/sw.bundle.js
-extras/rullama-chat-pwa/web/build-info.js
-
-# Other extras' build dirs
-extras/rullama-docs/.next/
-extras/rullama-docs/node_modules/
+# Docs-site build dirs
+docs/rullama-docs/.next/
+docs/rullama-docs/node_modules/
 
 # Git + IDE
 .git/
@@ -43,4 +35,3 @@ coverage/
 
 # Docs and changelogs aren't needed in the image
 *.md
-!extras/rullama-chat-pwa/web/**/*.md

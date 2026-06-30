@@ -1,6 +1,6 @@
 # Publishing Checklist
 
-Reusable checklist for releasing new versions of the Brainwires Framework to crates.io.
+Reusable checklist for releasing new versions of the rullama to crates.io.
 
 ## 0. New Crate Checklist
 
@@ -12,7 +12,7 @@ Run this whenever a new crate is added to the workspace before the release that 
 - [ ] **`documentation`, `keywords`, `categories`** are set in `[package]` (not inherited from workspace)
 - [ ] **No git-only dependencies** — all deps must have a `version = "..."` for crates.io. Git deps without a version block publishing. If a git-only dep is required (e.g. a fork), either:
   - Publish the fork to crates.io first, or
-  - Put the git-dep code in a separate `extras/` crate marked `publish = false`
+  - Put the git-dep code in a separate consumer crate (`sdks/`, `servers/`, …) marked `publish = false`
 - [ ] **Added to `scripts/publish.sh` CRATES array** in the correct dependency layer
 - [ ] **Added to the publish order table** in this file (Section 3)
 
@@ -39,7 +39,7 @@ done
   - Each changed crate's `README.md` — API tables, code examples, feature flags
   - `crates/README.md` — dependency tree and crate descriptions
   - `crates/rullama/README.md` (facade) — feature table, crate count, prelude types
-  - `extras/` server READMEs — cross-references to library crates
+  - `servers/` and `sdks/` READMEs — cross-references to library crates
 - [ ] `cargo xtask` passes (fmt, check, clippy, test, doc)
 - [ ] **No unfinished code** — run `cargo xtask check-stubs` to scan for runtime-panic stubs and unfinished markers:
   ```bash
@@ -130,8 +130,8 @@ Only leaf crates fully verify in dry-run mode (later layers can't resolve deps n
 ```
 
 The script handles:
-- **Dependency ordering** — 8 layers, 32 crates, leaves first, facade last
-- **Rate limiting** — burst 30 at once, then 1/min (32 crates fits in burst)
+- **Dependency ordering** — 8 layers, 33 crates, leaves first, facade last
+- **Rate limiting** — burst 30 at once, then 1/min (33 crates fits in burst)
 - **Idempotency** — already-published versions are skipped automatically
 - **Tagging** — creates and pushes `vX.Y.Z` git tag on success
 
@@ -153,7 +153,7 @@ Source of truth: `scripts/publish.sh`. Reproduced here for reference.
 | 6 — Fine-tune | `rullama-finetune` |
 | 7 — Facade | `rullama` |
 
-**Excluded from publish** (`publish = false` in their `Cargo.toml`): `rullama-sandbox-proxy`, plus all `extras/*` crates (`rullama-autonomy`, `rullama-wasm`, etc.). The 0.11 cycle removed `rullama-llama` (orphan rullama snapshot, never on crates.io) and `rullama-finetune-local` / `rullama-training` (moved to the sibling `rullama` workspace).
+**Excluded from publish** (`publish = false` in their `Cargo.toml`): `rullama-sandbox-proxy`, plus all consumer crates under `sdks/`, `servers/`, `integrations/`, and `examples/` (`rullama-autonomy`, `rullama-wasm`, etc.). The 0.11 cycle removed `rullama-llama` (orphan rullama snapshot, never on crates.io) and `rullama-finetune-local` / `rullama-training` (moved to the sibling `rullama` workspace).
 
 ## 4. Post-publish
 

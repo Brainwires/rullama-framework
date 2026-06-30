@@ -1,6 +1,6 @@
 # rullama — Complete Feature List
 
-A comprehensive catalog of every feature provided by the framework's 32 crates and 18 extras.
+A comprehensive catalog of every feature provided by the framework's 33 crates and 18 extras.
 
 ---
 
@@ -876,7 +876,7 @@ Implementation of Google's A2A protocol for interoperable agent communication.
 
 ## Autonomous Operations
 
-**Crate:** `rullama-autonomy` *(extras/)* — consumer project, not a framework crate. The `crates/` workspace publishes the primitives this depends on (`rullama-eval` fault analysis, `SelfImprovementController` traits via `rullama-agent`); the orchestration that ties them into "supervised self-improvement" lives downstream.
+**Crate:** `rullama-autonomy` *(sdks/)* — consumer project, not a framework crate. The `crates/` workspace publishes the primitives this depends on (`rullama-eval` fault analysis, `SelfImprovementController` traits via `rullama-agent`); the orchestration that ties them into "supervised self-improvement" lives downstream.
 
 Self-improvement, Git workflows, and human-out-of-loop execution.
 
@@ -1065,7 +1065,7 @@ Configurable PII scrubbing before events reach storage sinks:
 
 ## Proxy Framework
 
-**Crate:** `rullama-proxy` *(extras/)*
+**Crate:** `rullama-proxy` *(sdks/)*
 
 Protocol-agnostic proxy for debugging AI API traffic.
 
@@ -1099,65 +1099,37 @@ Browser-compatible WASM bindings via `wasm-bindgen`.
 
 ## Extras & Standalone Binaries
 
-### voice-assistant *(extras/)*
+### voice-assistant *(examples/)*
 
 Personal voice assistant binary built on `rullama-hardware`. Mic capture → optional energy wake trigger → VAD-gated speech accumulation → OpenAI Whisper STT → LLM response (OpenAI chat completions) → OpenAI TTS playback. CLI: `--config <path.toml>`, `--list-devices`, `--wake-word <model>`, `--verbose`. TOML config covers STT model, TTS voice/model, silence tuning, wake word path, LLM model, system prompt, device names, and API key (or `OPENAI_API_KEY` env var). Graceful Ctrl-C shutdown.
 
-### rullama-issues *(extras/)*
+### rullama-issues *(servers/)*
 
 Lightweight MCP-native issue tracking server inspired by Linear's agent interface. 10 tools: `create_issue` (title, description, priority, assignee, project, parent_id, labels), `get_issue` (UUID or `#number` display shorthand), `list_issues` (filter by project/status/assignee/label; offset-based pagination with `next_offset`), `update_issue`, `close_issue` (done or cancelled), `delete_issue` (optional comment cascade), `search_issues` (BM25 full-text; in-memory fallback), `add_comment`, `list_comments` (offset pagination), `delete_comment` (existence-checked). 4 prompts: `/create`, `/list`, `/search`, `/triage`. Data model: `Issue` (UUID + auto-incrementing display number, 6 status states, 5 priority levels, labels, assignee, project, parent_id for sub-issues, timestamps), `Comment`. Storage: LanceDB at `<data_dir>/rullama-issues/lancedb/`; BM25 index at `<data_dir>/rullama-issues/bm25/`.
 
-### rullama-brain-server *(extras/)*
+### rullama-brain-server *(servers/)*
 
 MCP server binary wrapping `rullama-knowledge::knowledge` for use with AI assistants (Claude Desktop, etc.). The underlying "brain" subsystem is now part of `rullama-knowledge`.
 
-### rullama-rag-server *(extras/)*
+### rullama-rag-server *(servers/)*
 
 MCP server binary wrapping `rullama-knowledge::rag` (formerly the standalone `rullama-rag` crate) for semantic code search via MCP protocol.
 
-### agent-chat *(extras/)*
+### agent-chat *(examples/)*
 
-Minimal reference implementation of a chat client — small, readable, and purpose-built for learning the framework. Includes CLI commands for config, models, and auth. For a full-featured CLI, see `rullama-cli` below.
+Minimal reference implementation of a chat client — small, readable, and purpose-built for learning the framework. Includes CLI commands for config, models, and auth. For a full-featured CLI, see the separate `rullama-cli` repository.
 
-### rullama-cli *(extras/)*
-
-Full-featured AI-powered agentic CLI with multi-agent orchestration (`TaskAgent`, `WorkerAgent`, `OrchestratorAgent`), MCP server mode (expose the CLI as an MCP tool server for hierarchical AI workflows), TUI (fullscreen ratatui interface), infinite context (LanceDB-backed semantic memory), extensive tool integration (file ops, bash, git, web, code search, validation), per-session model switching (`/model`), and support for all cloud providers (Anthropic, OpenAI, Google, Ollama, Groq, Together, Fireworks, Bedrock, Vertex AI). Migrated from a standalone repository; now a root workspace member at `extras/rullama-cli/`.
-
-### reload-daemon *(extras/)*
+### reload-daemon *(integrations/)*
 
 File-watching daemon for automatic server reloading during development.
 
-### brainclaw *(extras/brainclaw/)*
+### Now separate repos
 
-Self-hosted personal AI assistant daemon. Multi-provider (Anthropic, OpenAI, Google, Ollama, etc.), per-user agent sessions, TOML config. Bundles the gateway, security middleware, and all channel adapters into a single service. Feature flags: `native-tools` (default), `email` (IMAP/SMTP/Gmail), `calendar` (Google Calendar/CalDAV).
-
-### rullama-gateway *(extras/brainclaw/)*
-
-WebSocket/HTTP hub for routing channel adapters to AI agent sessions. `InboundHandler` trait for custom message processing; built-in `AgentInboundHandler` wires `ChatAgent` sessions per user. WebChat browser UI served at `/chat`. Media pipeline for attachment download, image description, and audio transcription. Admin API (`/admin/*`) with Bearer token auth. Admin browser UI at `/admin/ui` (dark-themed single-file dashboard; Dashboard, Channels, Sessions, Cron Jobs, Identity, Broadcast sections). Webhook endpoint with HMAC-SHA256 verification. Audit logger (structured JSON, ring buffer). In-memory metrics counters. **`/model` slash command** for per-session model switching stored in a `DashMap`; fires `/model list`, `/model <name>`, `/model default`.
-
-### rullama-discord-channel *(extras/brainclaw/)*
-
-Discord channel adapter (serenity) implementing the `Channel` trait. Reference implementation for building additional platform adapters. Optional MCP tool server mode (`--mcp`) for programmatic Discord access.
-
-### rullama-telegram-channel *(extras/brainclaw/)*
-
-Telegram channel adapter (teloxide) implementing the `Channel` trait. Bidirectional gateway relay. Optional MCP tool server mode (`--mcp`).
-
-### rullama-slack-channel *(extras/brainclaw/)*
-
-Slack channel adapter using Socket Mode (reqwest) — no public URL required. Implements the `Channel` trait. Optional MCP tool server mode (`--mcp`).
-
-### rullama-mattermost-channel *(extras/brainclaw/)*
-
-Mattermost channel adapter. Connects via Mattermost WebSocket API (`/api/v4/websocket`) for real-time events. Implements the `Channel` trait. Filtering: self-messages, channel allowlist, @mention requirement, team scoping. Optional MCP tool server mode (`--mcp`): `send_message`, `edit_message`, `delete_message`, `get_history`, `add_reaction`. Capabilities: `RICH_TEXT | THREADS | REACTIONS | TYPING_INDICATOR | EDIT_MESSAGES | DELETE_MESSAGES | MENTIONS`.
-
-### rullama-signal-channel *(extras/brainclaw/)*
-
-Signal messenger channel adapter via `signal-cli-rest-api`. WebSocket push mode (`/v1/events`) with polling fallback (`GET /v1/receive/{number}`). Filtering: self-messages, sender allowlist (E.164 numbers), group allowlist (base64 IDs), @mention/keyword trigger for groups. Optional MCP tool server mode (`--mcp`): `send_message` (phone or `group.<id>`), `add_reaction` (composite `recipient:author:timestamp` ID). Capabilities: `REACTIONS`.
-
-### rullama-skill-registry *(extras/brainclaw/)*
-
-HTTP skill registry server. SQLite with FTS5 full-text search. Endpoints: publish (`POST /api/skills`), search by query + tags, get manifest (latest or versioned), download package. Schema auto-created on first run.
+`rullama-cli` (full-featured agentic CLI) and `brainclaw` (self-hosted personal
+AI assistant daemon — gateway plus the Discord / Telegram / Slack / Mattermost /
+Signal channel adapters and skill registry) have moved to their own product
+repositories under `github.com/Brainwires` and are no longer workspace members
+here. They depend on the published `rullama` crates.
 
 ---
 

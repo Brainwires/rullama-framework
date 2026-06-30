@@ -1,6 +1,6 @@
 # @rullama/storage
 
-Backend-agnostic persistent storage for the Brainwires Agent Framework. Provides
+Backend-agnostic persistent storage for the rullama. Provides
 storage interfaces, an in-memory backend, domain-specific stores, and a tiered
 memory hierarchy.
 

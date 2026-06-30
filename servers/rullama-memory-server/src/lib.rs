@@ -1,6 +1,6 @@
 //! # rullama-memory-server
 //!
-//! A Mem0-compatible memory REST API server for Brainwires agents.
+//! A Mem0-compatible memory REST API server for rullama agents.
 //!
 //! Storage is delegated to [`rullama_knowledge::knowledge::brain_client::BrainClient`]
 //! (LanceDB-backed thoughts with per-owner tenant scoping). Every request

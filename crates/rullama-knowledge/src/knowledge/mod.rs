@@ -1,6 +1,6 @@
-//! # Brainwires Brain — Central Knowledge Module
+//! # rullama Brain — Central Knowledge Module
 //!
-//! The canonical home for all knowledge systems in the Brainwires Agent Framework:
+//! The canonical home for all knowledge systems in the rullama:
 //!
 //! - **Knowledge Systems**: BKS (behavioral truths) and PKS (personal facts)
 //! - **Entity Graph**: Entity types, entity store, relationship graph

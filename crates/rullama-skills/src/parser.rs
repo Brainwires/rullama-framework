@@ -55,11 +55,11 @@ struct SkillFrontmatter {
     license: Option<String>,
     /// Optional: Environment requirements (max 500 chars)
     compatibility: Option<String>,
-    /// Optional: Specific model to use (Brainwires extension)
+    /// Optional: Specific model to use (rullama extension)
     model: Option<String>,
     /// Optional: Custom key-value pairs
     metadata: Option<HashMap<String, String>>,
-    /// Optional: lifecycle hook event types (Brainwires extension)
+    /// Optional: lifecycle hook event types (rullama extension)
     #[serde(default)]
     hooks: Option<Vec<String>>,
 }
@@ -133,7 +133,7 @@ pub fn parse_skill_metadata(path: &Path) -> Result<SkillMetadata> {
 ///
 /// The Agent Skills specification requires descriptions to be on a single line
 /// for cross-platform compatibility with Claude Code, ChatGPT, Copilot, and other
-/// agent runtimes whose YAML parsers may not support multi-line values. Brainwires'
+/// agent runtimes whose YAML parsers may not support multi-line values. rullama's
 /// own parser handles them correctly, but portability requires a single-line value.
 ///
 /// Detects two cases:
@@ -645,7 +645,7 @@ description: |
 Instructions"#;
 
         let path = Path::new("test.md");
-        // Parsing succeeds (Brainwires parser handles block scalars), but a warning is emitted
+        // Parsing succeeds (rullama parser handles block scalars), but a warning is emitted
         let metadata = parse_metadata_from_content(content, path).unwrap();
 
         assert!(metadata.description.contains("multiline description"));

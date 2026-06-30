@@ -1,6 +1,6 @@
 # @rullama/providers
 
-AI chat provider implementations for the Brainwires Agent Framework. Wraps
+AI chat provider implementations for the rullama. Wraps
 multiple AI APIs behind the unified `Provider` interface from
 `@rullama/core`.
 

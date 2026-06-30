@@ -52,7 +52,7 @@ The platform (engine + harness) is **open source**; **rullama-native** is the
 | **rullama** | the PWA (`web/`) + the serve/proxy `dev-server` | The downloadable app + native heads. Gets `rullama.com`. |
 | **rullama-native** | .NET/Avalonia desktop + mobile + a `rust-core` C-ABI shim | Already exists; closed-source / paid. Links the engine crates directly via C-ABI. |
 | **rullama-cli** | the agentic CLI (~90K LOC) | Own repo; depends on the `rullama-framework` crates. |
-| **rullama-framework** | engine crates + the 32 harness crates + slimmed extras | The OSS platform. Lives at `github.com/Brainwires/rullama-framework`. |
+| **rullama-framework** | engine crates + the 33 harness crates + slimmed extras | The OSS platform. Lives at `github.com/Brainwires/rullama-framework`. |
 | **brainclaw** | the 18-crate assistant workspace | Own repo; depends on the `rullama-framework` crates. |
 
 ## The boundary — tokens vs turns

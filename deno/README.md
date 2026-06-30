@@ -1,7 +1,7 @@
-# Brainwires Framework — Deno/TypeScript Port
+# rullama — Deno/TypeScript Port
 
 A modular, Deno-native TypeScript port of the
-[Brainwires Agent Framework](https://github.com/Brainwires/rullama-framework).
+[rullama](https://github.com/Brainwires/rullama-framework).
 Build autonomous AI agents with tool use, multi-provider support, inter-agent
 communication, and fine-grained permissions — all running on Deno.
 
@@ -22,7 +22,7 @@ shims — v0.11.0 is a clean break from 0.10.x.
 | `@rullama/seal`            | Self-Evolving Agentic Learning loop                                                                              |
 | `@rullama/skills`          | SKILL.md skills system (parser, registry, executor, router)                                                      |
 | `@rullama/eval`            | Evaluation harness (trial runner, regression, adversarial, ranking metrics)                                      |
-| `@rullama/provider`        | LLM chat providers (Anthropic, OpenAI, Google, Bedrock, Vertex, Ollama, Brainwires Relay)                        |
+| `@rullama/provider`        | LLM chat providers (Anthropic, OpenAI, Google, Bedrock, Vertex, Ollama)                        |
 | `@rullama/provider-speech` | TTS/STT/ASR clients (Azure, Cartesia, Deepgram, ElevenLabs, Fish, Google TTS, Murf)                              |
 | `@rullama/call-policy`     | Provider decorators — retry / budget / circuit-breaker / cache                                                   |
 | `@rullama/mcp-client`      | Model Context Protocol client                                                                                    |
@@ -129,4 +129,4 @@ deno add @rullama/core @rullama/provider @rullama/inference
 
 ## License
 
-Same license as the parent Brainwires Framework repository.
+Same license as the parent rullama repository.

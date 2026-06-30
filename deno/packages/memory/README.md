@@ -1,6 +1,6 @@
 # @rullama/memory
 
-Tiered memory orchestration for the Brainwires Agent Framework.
+Tiered memory orchestration for the rullama.
 
 In v0.11.0 this split out of `@rullama/storage` to mirror the Rust
 `rullama-memory` crate. Tier substrate (StorageBackend trait, embeddings,

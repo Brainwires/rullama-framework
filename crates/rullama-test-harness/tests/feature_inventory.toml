@@ -1,4 +1,4 @@
-# Feature-inventory manifest for the Brainwires test harness.
+# Feature-inventory manifest for the rullama test harness.
 #
 # Each [[feature]] block mirrors one heading in /FEATURES.md (##/###/####).
 # The `xtask test-harness coverage` command diffs FEATURES.md against this

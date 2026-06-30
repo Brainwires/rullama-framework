@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-//! Pluggable session-persistence for the Brainwires Agent Framework.
+//! Pluggable session-persistence for the rullama.
 //!
 //! See the crate-level README for an overview. The [`SessionStore`] trait is
 //! the single extension point; [`InMemorySessionStore`] is the default impl

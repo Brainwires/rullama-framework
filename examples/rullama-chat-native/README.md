@@ -1,15 +1,15 @@
 # rullama-chat-native
 
-Native chat client for the Brainwires Agent Framework. Targets **iOS, Android, macOS, Windows, Linux, and Web** from a single React Native + TypeScript codebase.
+Native chat client for the rullama. Targets **iOS, Android, macOS, Windows, Linux, and Web** from a single React Native + TypeScript codebase.
 
-> Sibling project: `extras/rullama-chat-pwa/` (the original vanilla-JS PWA). This crate is a from-scratch port, not a transpilation.
+> Sibling project: the now-retired `rullama-chat-pwa` (the original vanilla-JS PWA). This crate is a from-scratch port, not a transpilation.
 
 ---
 
 ## Architecture
 
 ```
-extras/rullama-chat-native/
+examples/rullama-chat-native/
 ├── App.tsx, index.js, index.web.tsx     # JS entrypoints (mobile/desktop, web)
 ├── src/
 │   ├── components/ui/                   # Gluestack UI v2 components (CLI-managed)

@@ -134,7 +134,7 @@ class MockRagClient implements RagClient {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.log("=== Brainwires RAG Search Example ===\n");
+  console.log("=== rullama RAG Search Example ===\n");
 
   // 1. Create the RagClient
   console.log("--- Step 1: Initialize RagClient ---\n");

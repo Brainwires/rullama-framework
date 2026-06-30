@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(tracing_subscriber::filter::LevelFilter::INFO)
         .init();
 
-    println!("=== Brainwires RAG Search Example ===\n");
+    println!("=== rullama RAG Search Example ===\n");
 
     // ── Step 1: Create the RagClient ─────────────────────────────────
     println!("--- Step 1: Initialize RagClient ---\n");

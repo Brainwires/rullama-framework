@@ -10,7 +10,7 @@ export default function ExtrasPage() {
   return (
     <div className="px-6 py-8 max-w-[1400px] mx-auto w-full">
       <h1 className="text-3xl font-bold mb-2">Extras</h1>
-      <p className="text-muted-foreground mb-8">Standalone applications, tools, and demos built on the Brainwires Framework.</p>
+      <p className="text-muted-foreground mb-8">Standalone applications, tools, and demos built on the rullama.</p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {EXTRAS_LIST.map((extra) =>
           extra.hasReadme ? (

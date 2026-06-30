@@ -1,6 +1,6 @@
 # matter-tool
 
-A first-party Matter 1.3 CLI for the Brainwires framework — the `chip-tool` equivalent built
+A first-party Matter 1.3 CLI for the rullama framework — the `chip-tool` equivalent built
 entirely on the Brainwires pure-Rust Matter stack. No `connectedhomeip` dependency; compiles in
 seconds.
 

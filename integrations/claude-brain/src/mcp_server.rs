@@ -321,9 +321,9 @@ impl ServerHandler for ClaudeBrainMcpServer {
         let mut info = ServerInfo::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
         info.server_info = Implementation::new("claude-brain", env!("CARGO_PKG_VERSION"))
-            .with_title("Claude Brain — Brainwires Context Management for Claude Code");
+            .with_title("Claude Brain — rullama Context Management for Claude Code");
         info.instructions = Some(
-            "Claude Brain replaces Claude Code's default compaction with Brainwires \
+            "Claude Brain replaces Claude Code's default compaction with rullama \
              research-grade context management. Use recall_context to search past \
              conversation history, capture_thought to persist decisions and insights, \
              search_memory for semantic retrieval across all tiers, search_knowledge \

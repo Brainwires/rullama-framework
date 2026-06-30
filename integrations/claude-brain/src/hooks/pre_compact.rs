@@ -1,4 +1,4 @@
-//! PreCompact hook — export conversation from transcript file to Brainwires before compaction.
+//! PreCompact hook — export conversation from transcript file to rullama before compaction.
 
 use anyhow::Result;
 use std::collections::HashSet;
@@ -27,7 +27,7 @@ const DEDUP_QUERY_LIMIT: usize = 500;
 /// Handle the PreCompact hook event.
 ///
 /// Claude Code sends `transcript_path` pointing to the JSONL conversation file.
-/// We read it, extract user/assistant messages, and store them in Brainwires
+/// We read it, extract user/assistant messages, and store them in rullama
 /// before compaction destroys the full context.
 pub async fn handle() -> Result<()> {
     let payload: PreCompactPayload = hook_protocol::read_payload().await?;

@@ -1,7 +1,7 @@
 /**
  * @module @rullama/inference
  *
- * LLM-driven agent workhorses for the Brainwires Agent Framework.
+ * LLM-driven agent workhorses for the rullama.
  *
  * Extracted from `@rullama/agents` in v0.11.0 to mirror Rust's
  * `rullama-inference` crate. Provides:

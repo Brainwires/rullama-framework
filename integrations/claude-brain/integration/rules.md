@@ -1,6 +1,6 @@
 # Claude Brain — Context Management
 
-You have a persistent brain powered by Brainwires. Compaction is enabled but Brainwires-powered.
+You have a persistent brain powered by rullama. Compaction is enabled but rullama-powered.
 When compaction fires, PreCompact saves everything to persistent memory, then PostCompact
 restores the important context (facts, decisions, summaries) so nothing critical is lost.
 

@@ -21,7 +21,7 @@ import type {
 } from "@rullama/knowledge";
 
 async function main() {
-  console.log("=== Brainwires Code Analysis Example ===\n");
+  console.log("=== rullama Code Analysis Example ===\n");
 
   // 1. Check supported languages
   console.log("--- Step 1: Language Support ---\n");

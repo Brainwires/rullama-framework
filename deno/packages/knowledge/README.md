@@ -1,6 +1,6 @@
 # @rullama/knowledge
 
-Unified intelligence layer for the Brainwires Agent Framework. Provides
+Unified intelligence layer for the rullama. Provides
 prompting technique selection, knowledge graph interfaces, and RAG
 (Retrieval-Augmented Generation) client types.
 

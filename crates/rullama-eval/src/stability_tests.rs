@@ -1,4 +1,4 @@
-//! Long-horizon stability test cases for the Brainwires evaluation framework.
+//! Long-horizon stability test cases for the rullama evaluation framework.
 //!
 //! These tests simulate 15+ step agent executions to verify that:
 //! - Loop detection fires correctly after N consecutive identical tool calls.

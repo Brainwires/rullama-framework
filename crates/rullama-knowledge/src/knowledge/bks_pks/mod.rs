@@ -1,11 +1,11 @@
-//! Brainwires Knowledge - Behavioral and personal knowledge systems
+//! rullama Knowledge - Behavioral and personal knowledge systems
 //!
-//! This module provides two knowledge systems for the Brainwires Agent Framework:
+//! This module provides two knowledge systems for the rullama:
 //!
 //! ## Behavioral Knowledge System (BKS)
 //!
 //! A collective intelligence system that learns universal behavioral truths from experience
-//! across all Brainwires clients. This is NOT about personal preferences - it's about
+//! across all rullama clients. This is NOT about personal preferences - it's about
 //! objectively better ways to accomplish tasks that are shared server-side.
 //!
 //! - **BehavioralTruth**: Learned rules about how to better accomplish tasks

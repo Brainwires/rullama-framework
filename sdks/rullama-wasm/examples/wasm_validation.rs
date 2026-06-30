@@ -2,7 +2,7 @@
 //!
 //! Demonstrates the same validation logic that the WASM `validate_message`,
 //! `validate_tool`, and `serialize_history` functions use — parsing JSON into
-//! the core Brainwires types and re-serializing to normalize them.
+//! the core rullama types and re-serializing to normalize them.
 //!
 //! Because the WASM entry points are behind `#[wasm_bindgen]`, we call the
 //! underlying `serde_json` round-trip directly using `rullama_core` types

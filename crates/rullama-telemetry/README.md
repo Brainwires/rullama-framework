@@ -60,7 +60,7 @@ impl BillingHook for MyBillingBackend {
 }
 ```
 
-For a full ledger + wallet implementation with SQLite persistence and Stripe integration, see [`extras/rullama-billing`](../../extras/rullama-billing).
+For a full ledger + wallet implementation with SQLite persistence and Stripe integration, see [`sdks/rullama-billing`](../../sdks/rullama-billing).
 
 ## Feature Flags
 

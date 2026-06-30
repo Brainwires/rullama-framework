@@ -265,7 +265,7 @@ fn run_ci(args: &[String]) -> ExitCode {
         unsafe { env::set_var("CARGO_TERM_COLOR", "always") };
     }
 
-    println!("Brainwires Framework — Local CI");
+    println!("rullama — Local CI");
     println!(
         "Steps: {}",
         steps.iter().map(|s| s.name).collect::<Vec<_>>().join(", ")

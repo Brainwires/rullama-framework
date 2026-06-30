@@ -16,7 +16,7 @@ use rullama_knowledge::knowledge::relationship_graph::RelationshipGraph;
 use rullama_knowledge::knowledge::thought::{Thought, ThoughtCategory};
 
 fn main() {
-    println!("=== Brainwires Knowledge Graph Example ===\n");
+    println!("=== rullama Knowledge Graph Example ===\n");
 
     // ── Step 1: Build an EntityStore from extracted entities ──────────
     println!("--- Step 1: Populate the Entity Store ---\n");

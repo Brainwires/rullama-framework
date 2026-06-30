@@ -1,6 +1,6 @@
 # @rullama/a2a
 
-Agent-to-Agent (A2A) protocol implementation for the Brainwires Agent Framework.
+Agent-to-Agent (A2A) protocol implementation for the rullama.
 This is one of the first Deno-native implementations of
 [Google's A2A protocol](https://github.com/google/A2A), enabling standardized
 inter-agent communication with JSON-RPC and REST transports.

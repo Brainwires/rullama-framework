@@ -1,6 +1,6 @@
 # Extensibility Guide
 
-This guide covers extension points in the Brainwires framework for researchers and plugin authors.
+This guide covers extension points in the rullama framework for researchers and plugin authors.
 
 ## Extension Points
 

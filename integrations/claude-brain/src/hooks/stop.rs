@@ -10,7 +10,7 @@ use crate::sanitize_tag_value;
 /// Handle the Stop hook event.
 ///
 /// Captures the assistant's response (and optionally the user's prompt)
-/// into Brainwires' hot-tier storage for future recall.
+/// into rullama's hot-tier storage for future recall.
 pub async fn handle() -> Result<()> {
     let payload: StopPayload = hook_protocol::read_payload().await?;
     let config = ClaudeBrainConfig::load()?;

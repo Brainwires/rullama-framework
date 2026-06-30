@@ -1,6 +1,6 @@
 # claude-brain
 
-Claude Code context manager that replaces compaction's lossy LLM summary with Brainwires tiered memory, vector search, and knowledge extraction.
+Claude Code context manager that replaces compaction's lossy LLM summary with rullama tiered memory, vector search, and knowledge extraction.
 
 ## Overview
 
@@ -60,11 +60,11 @@ Only `SessionStart` and `UserPromptSubmit` stdout reaches Claude's context, so a
 
 ```bash
 # Build + wire into Claude Code (hooks, env vars, MCP, rules file)
-./extras/claude-brain/install.sh --global
+./integrations/claude-brain/install.sh --global
 
 # Status / uninstall
-./extras/claude-brain/install.sh status
-./extras/claude-brain/install.sh uninstall
+./integrations/claude-brain/install.sh status
+./integrations/claude-brain/install.sh uninstall
 ```
 
 Use `--project-dir PATH` to scope the install to a single project instead of the global `~/.claude/` config.
@@ -94,7 +94,7 @@ Storage paths default to `~/.rullama/` and can be overridden under `[storage]`.
 ## Testing
 
 ```bash
-cd extras/claude-brain
+cd integrations/claude-brain
 ./test-efficacy.sh            # budget math, routing, loop detection, output sizes
 ./test-compaction.sh setup    # shrink context window to force compaction for manual testing
 ```

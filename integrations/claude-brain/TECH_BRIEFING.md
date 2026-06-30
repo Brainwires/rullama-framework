@@ -1,6 +1,6 @@
 # Claude Brain — Technical Briefing
 
-> Single Rust binary that augments Claude Code's default compaction with Brainwires
+> Single Rust binary that augments Claude Code's default compaction with rullama
 > research-grade tiered memory, semantic search, and knowledge extraction.
 
 **Version:** 0.9.0
@@ -37,7 +37,7 @@ Claude Brain augments the compaction lifecycle via Claude Code hooks:
 
 - **Every turn** gets captured to vector-indexed storage (Stop hook)
 - **Before compaction** fires, the full transcript is exported to persistent memory (PreCompact hook)
-- **After compaction**, SessionStart detects `source="compact"` and restores context from Brainwires
+- **After compaction**, SessionStart detects `source="compact"` and restores context from rullama
 - **On fresh session start**, relevant context from all prior sessions is loaded (SessionStart hook)
 - **During the session**, 5 MCP tools let Claude actively search and store to persistent memory
 
@@ -124,7 +124,7 @@ This is the key question. Here's the exact sequence:
 
 Auto-compaction fires when context hits the threshold (window × pct = 200K × 0.70 = 140K tokens).
 These values are read from `settings.local.json` at runtime (project overrides global).
-Compaction still runs, but Brainwires augments it with persistent memory and context restoration.
+Compaction still runs, but rullama augments it with persistent memory and context restoration.
 
 ### The Compaction Sequence
 
@@ -176,7 +176,7 @@ Compaction still runs, but Brainwires augments it with persistent memory and con
    └─ stdout is NOT written (would be ignored by Claude Code anyway)
 
 6. SESSION CONTINUES
-   └─ Claude now has: compact_summary + Brainwires context restoration
+   └─ Claude now has: compact_summary + rullama context restoration
    └─ All pre-compact data persists in LanceDB for future recall
 ```
 
@@ -570,7 +570,7 @@ Guidance for Claude on when to use each MCP tool. Installed by `install.sh`.
 ## File Map
 
 ```
-extras/claude-brain/
+integrations/claude-brain/
 ├── Cargo.toml                    (53 lines)   Package manifest
 ├── install.sh                    (502 lines)  Install/uninstall/status script
 ├── test-compaction.sh            (81 lines)   Test helper for compaction hooks
@@ -652,7 +652,7 @@ SessionStart (source="compact") which fires after PreCompact but before PostComp
 
 Claude Code does not expose context editing. Hooks can only ADD to context (stdout injection).
 They cannot remove, replace, or reorder messages in the conversation window. This means
-Brainwires supplements compaction but cannot fully replace it — compaction still runs, we just
+rullama supplements compaction but cannot fully replace it — compaction still runs, we just
 make it less destructive.
 
 ---
@@ -680,10 +680,10 @@ echo '{"assistant_message":"Here is the implementation...","session_id":"test"}'
 ### Efficacy Tests
 
 ```bash
-cd extras/claude-brain/
+cd integrations/claude-brain/
 ./test-efficacy.sh          # Run all tests (budget math, routing, loop detection, output sizes)
-./test-efficacy.sh quick    # Budget math + loop detection only (no Brainwires data needed)
-./test-efficacy.sh hooks    # Hook output tests only (needs Brainwires data)
+./test-efficacy.sh quick    # Budget math + loop detection only (no rullama data needed)
+./test-efficacy.sh hooks    # Hook output tests only (needs rullama data)
 ```
 
 Tests verify: budget computation for various window/pct settings, source routing
@@ -693,7 +693,7 @@ PostCompact silence, and headroom analysis.
 ### Compaction Testing
 
 ```bash
-cd extras/claude-brain/
+cd integrations/claude-brain/
 ./test-compaction.sh setup    # Sets tiny 20K window, 30% trigger
 # Open new Claude Code session, read large files, watch compaction fire
 ./test-compaction.sh watch    # Tail the hook log

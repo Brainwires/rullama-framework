@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
 //! # rullama
 //!
-//! The rullama — build any AI application in Rust.
+//! rullama — build any AI application in Rust.
 //!
 //! Re-exports all framework sub-crates via feature flags for convenient access.
 //!

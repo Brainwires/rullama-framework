@@ -18,7 +18,7 @@ const MIN_SECTION_REMAINDER: usize = 50;
 /// Chars-per-token multiplier for converting token budgets to char budgets.
 const CHARS_PER_TOKEN: usize = 4;
 
-/// Central context manager wrapping all Brainwires storage tiers.
+/// Central context manager wrapping all rullama storage tiers.
 pub struct ContextManager {
     client: Arc<Mutex<BrainClient>>,
     config: ClaudeBrainConfig,

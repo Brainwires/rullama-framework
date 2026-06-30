@@ -1,4 +1,4 @@
-//! Voice handler wired to the Brainwires harness.
+//! Voice handler wired to the rullama harness.
 //!
 //! Replaces the legacy direct-OpenAI loop with the full `ChatAgent` pipeline:
 //!

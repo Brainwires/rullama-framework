@@ -8,8 +8,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://brainwires.dev"),
-  title: { default: "Brainwires — Rust AI Agent Framework", template: "%s | Brainwires" },
-  description: "Documentation for the Brainwires Agent Framework — a modular, production-grade Rust framework for building AI agents.",
+  title: { default: "rullama — Rust AI Agent Framework", template: "%s | rullama" },
+  description: "Documentation for the rullama — a modular, production-grade Rust framework for building AI agents.",
   openGraph: { siteName: "brainwires.dev", type: "website" },
 };
 

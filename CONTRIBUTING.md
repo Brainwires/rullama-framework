@@ -17,7 +17,7 @@ cargo test
 
 ## Project Structure
 
-The framework is a Cargo workspace organized around a facade pattern. For the full list of crates and architecture details, see the [README](README.md) and [crates overview](crates/README.md). Standalone apps built on the framework live in [`extras/`](extras/README.md).
+The framework is a Cargo workspace organized around a facade pattern. For the full list of crates and architecture details, see the [README](README.md) and [crates overview](crates/README.md). Standalone apps built on the framework live in `sdks/`, `servers/`, `integrations/`, and `examples/` (see the [README](README.md#extras)).
 
 ## Development Workflow
 

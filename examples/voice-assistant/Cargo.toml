@@ -1,6 +1,6 @@
 [package]
 name = "voice-assistant"
-description = "Personal voice assistant built on the Brainwires framework"
+description = "Personal voice assistant built on the rullama framework"
 version.workspace = true
 edition.workspace = true
 publish = false

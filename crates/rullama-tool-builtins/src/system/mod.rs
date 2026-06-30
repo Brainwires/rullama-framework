@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
 //! # rullama-system
 //!
-//! Generic OS-level primitives for the Brainwires Agent Framework:
+//! Generic OS-level primitives for the rullama:
 //! filesystem event watching and system service management (systemd, Docker, processes).
 //!
 //! ## Feature flags

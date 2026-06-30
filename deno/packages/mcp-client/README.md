@@ -1,6 +1,6 @@
 # @rullama/mcp
 
-Model Context Protocol (MCP) client for the Brainwires Agent Framework. Connect
+Model Context Protocol (MCP) client for the rullama. Connect
 to external MCP servers, discover and call tools, read resources, and fetch
 prompts.
 

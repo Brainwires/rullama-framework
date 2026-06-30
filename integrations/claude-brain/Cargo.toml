@@ -1,7 +1,7 @@
 [package]
 name = "claude-brain"
 publish = false
-description = "Claude Code context manager — replaces compaction with Brainwires tiered memory, dream consolidation, and semantic recall"
+description = "Claude Code context manager — replaces compaction with rullama tiered memory, dream consolidation, and semantic recall"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

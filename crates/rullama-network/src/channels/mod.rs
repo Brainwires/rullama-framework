@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
-//! # Brainwires Channels
+//! # rullama Channels
 //!
-//! Universal messaging channel contract for the Brainwires Agent Framework.
+//! Universal messaging channel contract for the rullama.
 //!
 //! This crate defines the traits and types that every messaging channel adapter
 //! (Discord, Telegram, Slack, etc.) must implement. It is used by the gateway

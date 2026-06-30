@@ -4,7 +4,7 @@ Browser chat client for the BrainClaw daemon.
 
 This is a Next.js 15 (App Router) application that talks to the
 BrainClaw gateway's JWT-gated `/webchat/ws` endpoint. It intentionally
-lives outside the `extras/rullama-docs/` app so the two can be
+lives outside the `docs/rullama-docs/` app so the two can be
 deployed independently.
 
 ## Quick start
@@ -60,7 +60,7 @@ pnpm test:smoke # boots `next start` on 3101 and runs HTTP smoke checks
 ## Protocol
 
 The WebSocket wire protocol is documented in the gateway source at
-`extras/brainclaw/gateway/src/webchat.rs`. In short:
+`gateway/src/webchat.rs` in the separate `brainclaw` repository. In short:
 
 ```jsonc
 // client -> server

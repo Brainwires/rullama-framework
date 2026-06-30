@@ -18,7 +18,7 @@ This crate implements the hook surface defined in `crates/rullama-telemetry`. Th
 
 ```toml
 [dependencies]
-rullama-billing-impl = { path = "extras/rullama-billing" }
+rullama-billing-impl = { path = "sdks/rullama-billing" }
 rullama-agent = { path = "crates/rullama-agent", features = ["billing"] }
 ```
 

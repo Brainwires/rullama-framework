@@ -1,7 +1,7 @@
 /**
  * @module @rullama/telemetry
  *
- * Unified telemetry for the Brainwires Agent Framework — analytics events,
+ * Unified telemetry for the rullama — analytics events,
  * sinks, Prometheus-formatted outcome metrics, and a billing-hook interface.
  *
  * Deno-port pragmatics vs the Rust crate:

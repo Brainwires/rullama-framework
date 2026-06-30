@@ -2,7 +2,7 @@
 //! # rullama-hardware — audio module
 //!
 //! Audio capture, playback, speech-to-text, and text-to-speech for the
-//! Brainwires Agent Framework.
+//! rullama.
 
 /// Ring buffer for streaming audio data.
 pub mod buffer;

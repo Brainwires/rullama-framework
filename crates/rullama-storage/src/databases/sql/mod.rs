@@ -35,7 +35,7 @@ use crate::databases::types::{FieldDef, FieldType, FieldValue, Filter};
 
 /// Abstraction over SQL dialect differences.
 ///
-/// Implementors translate the generic Brainwires types into dialect-specific
+/// Implementors translate the generic rullama types into dialect-specific
 /// SQL fragments.  The builder functions in this module accept a `&dyn SqlDialect`
 /// so they can generate correct SQL for any supported database.
 pub trait SqlDialect {

@@ -1,4 +1,4 @@
-//! Unified database traits for the Brainwires storage layer.
+//! Unified database traits for the rullama storage layer.
 //!
 //! Two traits define the database capabilities:
 //!

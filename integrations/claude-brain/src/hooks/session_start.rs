@@ -2,7 +2,7 @@
 //!
 //! Routes by `source` field in the payload:
 //! - "startup" / None → fresh session, load general context
-//! - "compact"        → post-compaction restart, restore from Brainwires
+//! - "compact"        → post-compaction restart, restore from rullama
 //! - "resume"         → resumed session, load general context
 //! - "clear"          → user cleared intentionally, emit nothing
 //!
@@ -96,7 +96,7 @@ pub async fn handle() -> Result<()> {
                 return Ok(());
             }
 
-            // Post-compaction restart — restore context from Brainwires
+            // Post-compaction restart — restore context from rullama
             let config = ClaudeBrainConfig::load()?;
             let ctx = ContextManager::new(config).await?;
             let context = ctx

@@ -497,7 +497,7 @@ impl PermissionsConfig {
 
     /// Generate default TOML configuration content
     pub fn default_toml() -> String {
-        r#"# Brainwires Permission Configuration
+        r#"# rullama Permission Configuration
 # Location: ~/.rullama/permissions.toml
 
 [default]

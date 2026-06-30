@@ -1,5 +1,5 @@
 //! `cargo xtask test-harness <subcommand>` — orchestration for the
-//! Brainwires test harness.
+//! rullama test harness.
 //!
 //! Subcommands:
 //! - `coverage` — diff FEATURES.md against the feature-inventory manifest,

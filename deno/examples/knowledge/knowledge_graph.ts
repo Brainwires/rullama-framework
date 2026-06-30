@@ -159,7 +159,7 @@ class SimpleEntityStore {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.log("=== Brainwires Knowledge Graph Example ===\n");
+  console.log("=== rullama Knowledge Graph Example ===\n");
 
   // 1. Build an entity store from extracted entities
   console.log("--- Step 1: Populate the Entity Store ---\n");

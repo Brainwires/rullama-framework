@@ -1,6 +1,6 @@
 # @rullama/core
 
-Foundation types, traits, and error handling for the Brainwires Agent Framework.
+Foundation types, traits, and error handling for the rullama.
 This is the zero-dependency base that every other `@rullama/*` package builds
 on.
 

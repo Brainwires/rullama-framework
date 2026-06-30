@@ -1,7 +1,7 @@
 /**
  * @module @rullama/providers
  *
- * Provider layer for the Brainwires Agent Framework.
+ * Provider layer for the rullama.
  * Contains chat provider implementations that wrap AI APIs with the
  * `Provider` interface from `@rullama/core`.
  *

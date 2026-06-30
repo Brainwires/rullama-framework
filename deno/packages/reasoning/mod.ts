@@ -2,7 +2,7 @@
  * @module @rullama/reasoning
  *
  * Layer 3 — Intelligence. Provider-agnostic reasoning primitives for the
- * Brainwires Agent Framework.
+ * rullama.
  *
  * ## What's here
  *

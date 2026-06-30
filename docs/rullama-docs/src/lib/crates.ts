@@ -34,21 +34,21 @@ export const CRATE_LIST: CrateMeta[] = [
   { name: "rullama-channels", description: "Universal messaging channel contract — Discord, Telegram, Slack, Signal, Matrix, and more.", tier: "network", features: ["discord", "telegram", "slack", "signal", "matrix", "mattermost"] },
   { name: "rullama-mcp-server", description: "MCP server framework with composable middleware.", tier: "network" },
   { name: "rullama-analytics", description: "Unified analytics collection, persistence, and querying.", tier: "utility" },
-  { name: "rullama-wasm", description: "WebAssembly bindings for the Brainwires Agent Framework.", tier: "utility" },
+  { name: "rullama-wasm", description: "WebAssembly bindings for the rullama.", tier: "utility" },
 ];
 
 export const EXTRAS_LIST: ExtraMeta[] = [
   { name: "rullama-cli", description: "AI-powered agentic CLI tool for autonomous coding assistance, built in Rust.", hasReadme: true },
-  { name: "rullama-proxy", description: "HTTP protocol proxy for the Brainwires Framework.", hasReadme: true },
+  { name: "rullama-proxy", description: "HTTP protocol proxy for the rullama.", hasReadme: true },
   { name: "rullama-brain-server", description: "Standalone MCP server binary for the Open Brain knowledge system.", hasReadme: true },
   { name: "rullama-rag-server", description: "Standalone MCP server binary for codebase RAG (Retrieval-Augmented Generation).", hasReadme: true },
   { name: "rullama-issues", description: "Standalone MCP server binary for lightweight project issue and bug tracking.", hasReadme: true },
-  { name: "agent-chat", description: "Minimal reference implementation — a small, readable example of building a chat client on the Brainwires Framework.", hasReadme: true },
-  { name: "audio-demo", description: "Cross-platform desktop GUI (Avalonia .NET 9) for demoing TTS and STT across all Brainwires audio providers.", hasReadme: true },
+  { name: "agent-chat", description: "Minimal reference implementation — a small, readable example of building a chat client on the rullama.", hasReadme: true },
+  { name: "audio-demo", description: "Cross-platform desktop GUI (Avalonia .NET 9) for demoing TTS and STT across all rullama audio providers.", hasReadme: true },
   { name: "audio-demo-ffi", description: "UniFFI bindings for rullama-hardware exposing audio APIs to C#, Kotlin, Swift, and Python.", hasReadme: true },
   { name: "reload-daemon", description: "Minimal MCP server that enables AI coding clients to kill and restart themselves with transformed arguments.", hasReadme: true },
   { name: "brainclaw", description: "Multi-provider personal AI assistant daemon with gateway and channel adapters.", hasReadme: false },
-  { name: "voice-assistant", description: "Voice-driven assistant built on the Brainwires hardware and agents stack.", hasReadme: false },
+  { name: "voice-assistant", description: "Voice-driven assistant built on the rullama hardware and agents stack.", hasReadme: false },
 ];
 
 export const TIER_LABELS: Record<CrateTier, string> = {

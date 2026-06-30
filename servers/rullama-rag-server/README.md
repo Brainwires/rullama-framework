@@ -13,7 +13,7 @@ cargo run -p rullama-rag-server -- serve
 Or install and run:
 
 ```bash
-cargo install --path extras/rullama-rag-server
+cargo install --path servers/rullama-rag-server
 rullama-rag serve
 ```
 

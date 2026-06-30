@@ -1,4 +1,4 @@
-//! Unified database layer for the Brainwires storage system.
+//! Unified database layer for the rullama storage system.
 //!
 //! This module replaces the former split between `clients/` (VectorDatabase
 //! implementations) and `stores/backends/` (StorageBackend implementations).

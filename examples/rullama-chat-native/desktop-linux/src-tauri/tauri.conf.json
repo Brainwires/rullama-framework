@@ -30,6 +30,6 @@
     "targets": ["deb", "appimage", "rpm"],
     "category": "Productivity",
     "shortDescription": "Brainwires Chat — native client",
-    "longDescription": "Native chat client for the Brainwires Agent Framework."
+    "longDescription": "Native chat client for the rullama."
   }
 }
