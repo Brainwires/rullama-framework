@@ -35,15 +35,6 @@ export { VertexAiProvider } from "./vertex.ts";
 export { GoogleChatProvider } from "./gemini.ts";
 export { OllamaChatProvider } from "./ollama.ts";
 
-// Brainwires Relay — HTTP-based backend that multiplexes upstream models
-export {
-  BrainwiresRelayProvider,
-  DEFAULT_BACKEND_URL,
-  DEV_BACKEND_URL,
-  getBackendFromApiKey,
-  maxOutputTokensForModel,
-} from "./rullama_relay.ts";
-
 // Speech providers moved to @rullama/provider-speech.
 
 // Factory

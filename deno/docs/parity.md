@@ -63,7 +63,6 @@ Ported:
 - `AnthropicChatProvider`, `OpenAiChatProvider`, `OpenAiResponsesProvider`,
   `BedrockProvider`, `VertexAiProvider`, `GoogleChatProvider`,
   `OllamaChatProvider`
-- `BrainwiresRelayProvider` — Studio backend, SSE streaming, tool-call threading
   via response_id metadata
 - Audio clients: `AzureSpeechClient`, `DeepgramClient`, `ElevenLabsClient`,
   `GoogleTtsClient`, `MurfClient`, `CartesiaClient`, `FishClient` — all
