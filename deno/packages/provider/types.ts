@@ -113,8 +113,7 @@ export type ChatProtocol =
   | "openai_responses"
   | "anthropic_messages"
   | "gemini_generate_content"
-  | "ollama_chat"
-  | "rullama_relay";
+  | "ollama_chat";
 
 // ---------------------------------------------------------------------------
 // AuthScheme

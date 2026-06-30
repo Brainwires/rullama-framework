@@ -48,10 +48,6 @@ export class ChatProviderFactory {
         return ChatProviderFactory.createOllama(config);
       case "openai_responses":
         return ChatProviderFactory.createOpenAiResponses(config);
-      case "rullama_relay":
-        throw new Error(
-          "Brainwires relay provider is not yet implemented in the Deno port",
-        );
       default:
         throw new Error(
           `Unsupported chat protocol: ${entry.chat_protocol}`,
