@@ -53,25 +53,6 @@ members = [
     "xtask",
 ]
 exclude = [
-    "deprecated/brainwires-audio",
-    "deprecated/brainwires-brain",
-    "deprecated/brainwires-mesh",
-    "deprecated/brainwires-prompting",
-    "deprecated/brainwires-rag",
-    "deprecated/brainwires-cognition",
-    "deprecated/brainwires-channels",
-    "deprecated/brainwires-system",
-    "deprecated/brainwires-code-interpreters",
-    "deprecated/brainwires-wasm",
-    "deprecated/brainwires-relay",
-    "deprecated/brainwires-tool-system",
-    "deprecated/brainwires-tools",
-    "deprecated/brainwires-permissions",
-    "deprecated/brainwires-providers",
-    "deprecated/brainwires-mcp",
-    "deprecated/brainwires-agent-network",
-    "deprecated/brainwires-agents",
-    "deprecated/brainwires-datasets",
     # Isolated engine sub-workspace (wgpu + wasm32). Owns its own Cargo.lock so
     # the harness's native build never pulls in wgpu. See engine/Cargo.toml.
     "engine",
