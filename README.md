@@ -1,7 +1,7 @@
 # rullama
 
 [![CI](https://github.com/Brainwires/rullama-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/Brainwires/rullama-framework/actions/workflows/ci.yml)
-[![Crates.io](https://img.shields.io/crates/v/brainwires.svg)](https://crates.io/crates/rullama)
+[![Crates.io](https://img.shields.io/crates/v/rullama.svg)](https://crates.io/crates/rullama)
 [![Documentation](https://docs.rs/rullama/badge.svg)](https://docs.rs/rullama)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](#testing)
 [![Lines of Code](https://img.shields.io/badge/loc-112k-blue)](#)

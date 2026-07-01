@@ -1,8 +1,8 @@
 # rullama
 
-[![Crates.io](https://img.shields.io/crates/v/brainwires.svg)](https://crates.io/crates/rullama)
+[![Crates.io](https://img.shields.io/crates/v/rullama.svg)](https://crates.io/crates/rullama)
 [![Documentation](https://img.shields.io/docsrs/rullama)](https://docs.rs/rullama)
-[![License](https://img.shields.io/crates/l/brainwires.svg)](LICENSE)
+[![License](https://img.shields.io/crates/l/rullama.svg)](LICENSE)
 
 Unified facade crate for rullama — the agent framework — build any AI application in Rust.
 

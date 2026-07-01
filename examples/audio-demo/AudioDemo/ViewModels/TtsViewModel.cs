@@ -15,7 +15,7 @@ public partial class TtsViewModel : ObservableObject
 
     [ObservableProperty] private FfiProviderInfo? _selectedProvider;
     [ObservableProperty] private FfiVoice? _selectedVoice;
-    [ObservableProperty] private string _inputText = "Hello! This is a test of the Brainwires audio framework.";
+    [ObservableProperty] private string _inputText = "Hello! This is a test of the rullama audio framework.";
     [ObservableProperty] private double _speed = 1.0;
     [ObservableProperty] private FfiOutputFormat _selectedFormat = FfiOutputFormat.Wav;
     [ObservableProperty] private bool _isProcessing;

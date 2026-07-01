@@ -4,7 +4,7 @@
         xmlns:views="using:AudioDemo.Views"
         x:Class="AudioDemo.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
-        Title="Brainwires Audio Studio"
+        Title="Audio Demo"
         Width="900" Height="700"
         WindowStartupLocation="CenterScreen">
 

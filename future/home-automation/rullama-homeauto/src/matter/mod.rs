@@ -13,7 +13,7 @@
 //
 // What also works now:
 //   • AttestationResponse signs over `attestation_elements || nonce` with a
-//     real ECDSA-P256 Device Attestation Key. `BRAINWIRES_MATTER_DAK_PATH`
+//     real ECDSA-P256 Device Attestation Key. `RULLAMA_MATTER_DAK_PATH`
 //     loads production credentials from disk; otherwise a dev DAK is minted
 //     at startup (logged as a warning).
 //   • Subscription registry: `SubscribeRequest` is handled; cluster command
@@ -29,7 +29,7 @@
 //     DAK is real, but the DAC / PAI / CD bytes are placeholders. Certified
 //     Matter commissioners verify the DAC chain against the CSA root of
 //     trust and will reject this device. Provision a real chain via
-//     `BRAINWIRES_MATTER_DAK_PATH` for interop testing.
+//     `RULLAMA_MATTER_DAK_PATH` for interop testing.
 //   • **Attestation challenge is approximated.** Matter spec §11.17.6.2
 //     signs over `attestation_elements || attestation_challenge` where
 //     `attestation_challenge` is the active session's challenge field; we

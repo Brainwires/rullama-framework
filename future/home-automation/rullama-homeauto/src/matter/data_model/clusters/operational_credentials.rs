@@ -39,7 +39,7 @@ impl DeviceAttestationCredentials {
     pub fn dev() -> Self {
         tracing::warn!(
             "Using development Device Attestation Credentials — real Matter commissioners will reject this device. \
-             Set BRAINWIRES_MATTER_DAK_PATH or provide a DeviceAttestationCredentials explicitly for production."
+             Set RULLAMA_MATTER_DAK_PATH or provide a DeviceAttestationCredentials explicitly for production."
         );
         let dak = p256::SecretKey::random(&mut rand_core::OsRng);
         Self {
@@ -199,10 +199,10 @@ pub struct OperationalCredentialsCluster {
 impl OperationalCredentialsCluster {
     /// Create a new cluster with freshly generated development attestation credentials.
     ///
-    /// Also checks `BRAINWIRES_MATTER_DAK_PATH`: if set, loads credentials from that
+    /// Also checks `RULLAMA_MATTER_DAK_PATH`: if set, loads credentials from that
     /// directory instead of generating dev credentials.
     pub fn new() -> Self {
-        let attestation = match std::env::var("BRAINWIRES_MATTER_DAK_PATH") {
+        let attestation = match std::env::var("RULLAMA_MATTER_DAK_PATH") {
             Ok(path) => match DeviceAttestationCredentials::from_path(path.as_ref()) {
                 Ok(creds) => {
                     tracing::info!("Loaded Matter DAK from {path}");
@@ -342,7 +342,7 @@ impl ClusterServer for OperationalCredentialsCluster {
                     // Log loudly so tests catch this when not using a real chain.
                     tracing::warn!(
                         "CertificateChainRequest({cert_type}) returning empty cert — \
-                         provision BRAINWIRES_MATTER_DAK_PATH for real commissioner interop"
+                         provision RULLAMA_MATTER_DAK_PATH for real commissioner interop"
                     );
                 }
                 let resp_inner = tlv_octet_string(0, cert_bytes);

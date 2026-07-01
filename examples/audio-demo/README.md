@@ -1,4 +1,4 @@
-# Brainwires Audio Studio
+# Audio Demo
 
 A cross-platform desktop GUI for demoing text-to-speech and speech-to-text across all [rullama](../../) audio providers. Built with [Avalonia UI](https://avaloniaui.net/) (.NET 9) consuming Rust via [UniFFI](https://mozilla.github.io/uniffi-rs/) bindings.
 

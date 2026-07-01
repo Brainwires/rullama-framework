@@ -70,7 +70,7 @@ async fn main() -> Result<()> {
 /// Commission a device then send On → wait 2 s → Off.
 async fn commission_and_toggle(payload: &str, use_qr: bool) -> Result<()> {
     // 1. Create controller — persists fabric state to a temp directory.
-    let storage = std::path::Path::new("/tmp/brainwires-matter-controller");
+    let storage = std::path::Path::new("/tmp/rullama-matter-controller");
     let controller = MatterController::new("Brainwires Fabric", storage).await?;
 
     // 2. Commission via QR code or manual pairing code.

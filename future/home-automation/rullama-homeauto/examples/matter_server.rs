@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
         .product_id(0x8001)
         .discriminator(3840)
         .passcode(20202021) // standard Matter development passcode
-        .storage_path("/tmp/brainwires-matter-server")
+        .storage_path("/tmp/rullama-matter-server")
         .port(5540) // standard Matter UDP port
         .build();
 

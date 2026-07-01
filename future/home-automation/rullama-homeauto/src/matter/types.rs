@@ -129,7 +129,7 @@ impl MatterDeviceConfigBuilder {
     }
     /// Materialize into a [`MatterDeviceConfig`], filling any unset field
     /// with its default (test VID/PID, discriminator 3840, passcode 20202021,
-    /// storage under `/tmp/brainwires-matter`, port 5540).
+    /// storage under `/tmp/rullama-matter`, port 5540).
     pub fn build(self) -> MatterDeviceConfig {
         MatterDeviceConfig {
             device_name: self
@@ -141,7 +141,7 @@ impl MatterDeviceConfigBuilder {
             passcode: self.passcode.unwrap_or(20202021),
             storage_path: self
                 .storage_path
-                .unwrap_or_else(|| std::path::PathBuf::from("/tmp/brainwires-matter")),
+                .unwrap_or_else(|| std::path::PathBuf::from("/tmp/rullama-matter")),
             port: self.port.unwrap_or(5540),
         }
     }
