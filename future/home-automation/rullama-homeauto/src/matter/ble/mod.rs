@@ -16,7 +16,7 @@
 //! ```rust,no_run
 //! # #[cfg(feature = "matter-ble")]
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! use brainwires_homeauto::matter::ble::MatterBlePeripheral;
+//! use rullama_homeauto::matter::ble::MatterBlePeripheral;
 //!
 //! let peripheral = MatterBlePeripheral::new(
 //!     0x0ABC, // 12-bit discriminator

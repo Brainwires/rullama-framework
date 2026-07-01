@@ -1,15 +1,15 @@
 # matter-tool
 
 A first-party Matter 1.3 CLI for the rullama framework — the `chip-tool` equivalent built
-entirely on the Brainwires pure-Rust Matter stack. No `connectedhomeip` dependency; compiles in
+entirely on the rullama pure-Rust Matter stack. No `connectedhomeip` dependency; compiles in
 seconds.
 
 ## Installation
 
 ```bash
-cargo install --path extras/matter-tool
+cargo install --path matter-tool
 # or with BLE commissioning support:
-cargo install --path extras/matter-tool --features ble
+cargo install --path matter-tool --features ble
 ```
 
 ## Usage

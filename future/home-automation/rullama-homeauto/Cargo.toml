@@ -1,6 +1,6 @@
 [package]
-name = "brainwires-homeauto"
-description = "Home automation protocols (Matter, Zigbee, Z-Wave, Thread) — deferred from brainwires-hardware in v0.11"
+name = "rullama-homeauto"
+description = "Home automation protocols (Matter, Zigbee, Z-Wave, Thread) — deferred from rullama-hardware in v0.11"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

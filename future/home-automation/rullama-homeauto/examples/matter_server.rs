@@ -1,4 +1,4 @@
-//! Matter 1.3 device server — exposes a Brainwires agent as a Matter device.
+//! Matter 1.3 device server — exposes a rullama agent as a Matter device.
 //!
 //! Run:
 //! ```bash
@@ -30,7 +30,7 @@
 //! integration) that can reach this machine on UDP 5540 will work.
 
 use anyhow::Result;
-use brainwires_homeauto::matter::{MatterDeviceConfig, MatterDeviceServer};
+use rullama_homeauto::matter::{MatterDeviceConfig, MatterDeviceServer};
 use std::sync::Arc;
 use tracing::info;
 

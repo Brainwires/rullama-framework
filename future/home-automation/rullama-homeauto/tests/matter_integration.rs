@@ -4,12 +4,12 @@
 //! The `matter_e2e` test spawns a real server and controller on loopback.
 //!
 //! Run with:
-//!   cargo test -p brainwires-hardware --features matter --test matter_integration
-//!   cargo test -p brainwires-hardware --features matter --test matter_integration -- --include-ignored
+//!   cargo test -p rullama-hardware --features matter --test matter_integration
+//!   cargo test -p rullama-hardware --features matter --test matter_integration -- --include-ignored
 
 #![cfg(feature = "matter")]
 
-use brainwires_homeauto::matter::secure_channel::{PaseCommissionee, PaseCommissioner};
+use rullama_homeauto::matter::secure_channel::{PaseCommissionee, PaseCommissioner};
 
 // ── PASE smoke test ───────────────────────────────────────────────────────────
 
@@ -87,8 +87,8 @@ fn pase_handshake_smoke() {
 /// keys when the same fabric root CA signs both sides' NOCs.
 #[tokio::test]
 async fn case_handshake_with_fabric_manager() {
-    use brainwires_homeauto::matter::fabric::{FabricIndex, FabricManager};
-    use brainwires_homeauto::matter::secure_channel::{CaseInitiator, CaseResponder};
+    use rullama_homeauto::matter::fabric::{FabricIndex, FabricManager};
+    use rullama_homeauto::matter::secure_channel::{CaseInitiator, CaseResponder};
     use p256::{SecretKey, elliptic_curve::sec1::ToEncodedPoint};
     use rand_core::OsRng;
 
@@ -182,12 +182,12 @@ async fn case_handshake_with_fabric_manager() {
 ///
 /// Marked `#[ignore]` — requires loopback network and an available UDP port.
 /// Run with:
-///   cargo test -p brainwires-hardware --features matter --test matter_integration \
+///   cargo test -p rullama-hardware --features matter --test matter_integration \
 ///     matter_e2e_commission_and_invoke -- --include-ignored
 #[tokio::test]
 #[ignore]
 async fn matter_e2e_commission_and_invoke() {
-    use brainwires_homeauto::matter::{
+    use rullama_homeauto::matter::{
         MatterController, MatterDeviceConfig, MatterDeviceServer,
     };
     use std::net::UdpSocket;
@@ -284,8 +284,8 @@ async fn matter_e2e_commission_and_invoke() {
 #[tokio::test]
 #[ignore]
 async fn commissioning_chain_csr_addnoc_case_drives_all_phases() {
-    use brainwires_homeauto::matter::fabric::FabricManager;
-    use brainwires_homeauto::matter::{
+    use rullama_homeauto::matter::fabric::FabricManager;
+    use rullama_homeauto::matter::{
         MatterController, MatterDeviceConfig, MatterDeviceServer, Phase,
     };
     use std::net::UdpSocket;

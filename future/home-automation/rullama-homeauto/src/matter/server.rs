@@ -1,4 +1,4 @@
-/// Matter 1.3 device server — exposes a Brainwires agent as a Matter device.
+/// Matter 1.3 device server — exposes a rullama agent as a Matter device.
 ///
 /// Implements the Matter device stack using our own protocol implementation
 /// (avoiding rs-matter due to an embassy-time links conflict with burn in the workspace).
@@ -98,11 +98,11 @@ struct AttributeChange {
 ///
 /// # Example
 /// ```rust,no_run
-/// use brainwires_homeauto::matter::{MatterDeviceConfig, MatterDeviceServer};
+/// use rullama_homeauto::matter::{MatterDeviceConfig, MatterDeviceServer};
 ///
 /// # async fn run() -> anyhow::Result<()> {
 /// let config = MatterDeviceConfig::builder()
-///     .device_name("Brainwires Light")
+///     .device_name("rullama Light")
 ///     .vendor_id(0xFFF1)
 ///     .product_id(0x8001)
 ///     .discriminator(3840)

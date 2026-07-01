@@ -1,5 +1,5 @@
 use anyhow::Result;
-use brainwires_homeauto::zwave::{
+use rullama_homeauto::zwave::{
     CommandClass, ZWaveController, ZWaveSerialController, command_class::switch_binary_set,
 };
 /// Example: List Z-Wave nodes and toggle a binary switch.

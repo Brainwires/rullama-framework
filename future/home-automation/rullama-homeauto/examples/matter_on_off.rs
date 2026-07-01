@@ -33,7 +33,7 @@
 //! The development passcode `20202021` is standard on many test/dev builds.
 
 use anyhow::Result;
-use brainwires_homeauto::matter::MatterController;
+use rullama_homeauto::matter::MatterController;
 use std::env;
 use tracing::info;
 

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use brainwires_homeauto::thread::ThreadBorderRouter;
+use rullama_homeauto::thread::ThreadBorderRouter;
 /// Example: Print Thread network topology via OTBR REST API.
 ///
 /// Usage:

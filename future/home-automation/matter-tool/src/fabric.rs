@@ -1,5 +1,5 @@
 use anyhow::Result;
-use brainwires_homeauto::MatterDevice;
+use rullama_homeauto::MatterDevice;
 /// Fabric directory resolution and device listing helpers.
 use std::path::{Path, PathBuf};
 
@@ -45,7 +45,7 @@ pub fn confirm_destructive(prompt: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use brainwires_homeauto::MatterDevice;
+    use rullama_homeauto::MatterDevice;
 
     #[test]
     fn resolve_fabric_dir_uses_override() {

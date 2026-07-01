@@ -13,7 +13,7 @@ use std::env;
 use std::time::Duration;
 
 use anyhow::Result;
-use brainwires_homeauto::zigbee::{EzspCoordinator, ZigbeeCoordinator};
+use rullama_homeauto::zigbee::{EzspCoordinator, ZigbeeCoordinator};
 use futures::StreamExt;
 use tracing::info;
 

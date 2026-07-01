@@ -1,5 +1,5 @@
 /// Output rendering helpers: pretty text or machine-readable JSON.
-use brainwires_homeauto::{AttributeValue, MatterDevice};
+use rullama_homeauto::{AttributeValue, MatterDevice};
 
 pub struct Output {
     pub json: bool,

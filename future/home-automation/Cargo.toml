@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["brainwires-homeauto", "matter-tool"]
+members = ["rullama-homeauto", "matter-tool"]
 
 [workspace.package]
 version = "0.11.0"

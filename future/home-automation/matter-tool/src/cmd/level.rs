@@ -1,8 +1,8 @@
 use crate::cli::LevelAction;
 use crate::output::Output;
 use anyhow::Result;
-use brainwires_homeauto::matter::clusters::level_control;
-use brainwires_homeauto::{AttributeValue, MatterController, MatterDevice};
+use rullama_homeauto::matter::clusters::level_control;
+use rullama_homeauto::{AttributeValue, MatterController, MatterDevice};
 use std::path::Path;
 
 pub async fn run(action: LevelAction, fabric_dir: &Path, out: &Output) -> Result<()> {

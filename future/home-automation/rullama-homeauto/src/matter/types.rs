@@ -134,7 +134,7 @@ impl MatterDeviceConfigBuilder {
         MatterDeviceConfig {
             device_name: self
                 .device_name
-                .unwrap_or_else(|| "Brainwires Device".into()),
+                .unwrap_or_else(|| "rullama Device".into()),
             vendor_id: self.vendor_id.unwrap_or(0xFFF1), // test VID
             product_id: self.product_id.unwrap_or(0x8001),
             discriminator: self.discriminator.unwrap_or(3840),

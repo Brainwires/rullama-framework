@@ -1,6 +1,6 @@
 use crate::output::Output;
 use anyhow::Result;
-use brainwires_homeauto::{MatterDeviceConfig, MatterDeviceServer};
+use rullama_homeauto::{MatterDeviceConfig, MatterDeviceServer};
 use std::path::PathBuf;
 
 #[allow(clippy::too_many_arguments)]
