@@ -25,7 +25,7 @@ case "${1:-}" in
     --live)
         DRY_RUN=false
         echo "=== LIVE PUBLISH MODE ==="
-        echo "This will publish all 29 workspace crates + any unpublished deprecated crates to crates.io."
+        echo "This will publish all 30 workspace crates + any unpublished deprecated crates to crates.io."
         echo "Estimated time: ~5 minutes (burst 30, then 1/min)"
         echo "Press Ctrl+C within 5 seconds to abort..."
         sleep 5
@@ -35,7 +35,7 @@ case "${1:-}" in
         ;;
 esac
 
-# 29 publishable workspace crates in strict dependency order (leaves → facade).
+# 30 publishable workspace crates in strict dependency order (leaves → facade).
 # Within each layer, crates have no mutual dependencies.
 # Excluded (publish = false): rullama-autonomy, rullama-wasm, rullama-sandbox-proxy
 # Excluded (webrtc git-only dep): rullama-channels (tombstone only)
@@ -54,6 +54,7 @@ CRATES=(
     rullama-telemetry
     rullama-storage
     rullama-eval               # evaluation harness — no rullama-* deps at all
+    rullama-datasets           # dataset pipelines — no rullama-* deps; rullama-finetune + the facade depend on it
 
     # Layer 1b: Infrastructure — deps on 1a
     rullama-provider           # optional dep: telemetry (LLM clients only)
