@@ -24,7 +24,7 @@ use tracing_subscriber::EnvFilter;
 use voice_assistant::config::VaConfig;
 use voice_assistant::handler::LlmHandler;
 
-/// Brainwires Personal Voice Assistant
+/// rullama Personal Voice Assistant
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
