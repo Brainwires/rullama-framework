@@ -93,9 +93,7 @@ async fn server_eof_surfaces_as_error() {
     // `true` exits immediately, closing stdout. Resolve it via PATH (like the
     // `bash` server above) rather than a hardcoded `/bin/true`, which doesn't
     // exist on macOS (only `/usr/bin/true`).
-    let mut transport = StdioTransport::new("true", &[])
-        .await
-        .expect("spawn true");
+    let mut transport = StdioTransport::new("true", &[]).await.expect("spawn true");
 
     let req = JsonRpcRequest::new::<Value>(json!(1), "ping".into(), None).unwrap();
     let _ = transport.send_request(&req).await; // may succeed before EOF reaches us
