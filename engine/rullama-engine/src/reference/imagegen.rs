@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn group_norm_groups_are_independent() {
         // Two groups with very different scales each normalize to ~unit var.
-        let mut x = vec![0.0f32; 2 * 1 * 4]; // 2 groups, 1 chan, hw=4
+        let mut x = vec![0.0f32; 2 * 4]; // 2 groups, 1 chan, hw=4 → 8 elems
         x[..4].copy_from_slice(&[1.0, 2.0, 3.0, 4.0]);
         x[4..].copy_from_slice(&[100.0, 200.0, 300.0, 400.0]);
         let y = group_norm(&x, 2, 1, 4, None, None, 1e-5);

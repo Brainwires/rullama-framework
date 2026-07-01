@@ -142,31 +142,6 @@ pub fn cfg_combine(v_pos: &[f32], v_neg: &[f32], scale: f32) -> Vec<f32> {
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::cfg_combine;
-
-    #[test]
-    fn cfg_scale_one_is_positive() {
-        let pos = [1.0f32, -2.0, 3.0];
-        let neg = [0.5f32, 0.5, 0.5];
-        assert_eq!(cfg_combine(&pos, &neg, 1.0), pos);
-    }
-
-    #[test]
-    fn cfg_scale_zero_is_negative() {
-        let pos = [1.0f32, 2.0];
-        let neg = [9.0f32, -9.0];
-        assert_eq!(cfg_combine(&pos, &neg, 0.0), neg);
-    }
-
-    #[test]
-    fn cfg_pushes_away_from_negative() {
-        // scale 4: v = neg + 4(pos-neg); for pos=1,neg=0 → 4.0
-        assert_eq!(cfg_combine(&[1.0], &[0.0], 4.0), vec![4.0]);
-    }
-}
-
 /// Deterministic `N(0,1)` vector via splitmix64 + Box–Muller (no rng dep, and
 /// `Math.random`-free so it ports to wasm).
 fn gaussian_noise(n: usize, seed: u64) -> Vec<f32> {
@@ -191,4 +166,29 @@ fn gaussian_noise(n: usize, seed: u64) -> Vec<f32> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cfg_combine;
+
+    #[test]
+    fn cfg_scale_one_is_positive() {
+        let pos = [1.0f32, -2.0, 3.0];
+        let neg = [0.5f32, 0.5, 0.5];
+        assert_eq!(cfg_combine(&pos, &neg, 1.0), pos);
+    }
+
+    #[test]
+    fn cfg_scale_zero_is_negative() {
+        let pos = [1.0f32, 2.0];
+        let neg = [9.0f32, -9.0];
+        assert_eq!(cfg_combine(&pos, &neg, 0.0), neg);
+    }
+
+    #[test]
+    fn cfg_pushes_away_from_negative() {
+        // scale 4: v = neg + 4(pos-neg); for pos=1,neg=0 → 4.0
+        assert_eq!(cfg_combine(&[1.0], &[0.0], 4.0), vec![4.0]);
+    }
 }
