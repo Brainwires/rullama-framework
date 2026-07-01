@@ -116,7 +116,9 @@ rullama-telemetry  = { path = "crates/rullama-telemetry",  version = "0.12.0", d
 # Internal test fixtures (publish = false). Consumed only as a dev-dependency
 # by `crates/*` test modules; not part of the framework's published API.
 # Centralised here to keep dev-dep versions aligned across consumers.
-rullama-test-fixtures = { path = "crates/rullama-test-fixtures", version = "0.12.0" }
+# publish = false test-only crate — kept path-only (no version) so cargo strips
+# it from the published manifests of crates that dev-depend on it.
+rullama-test-fixtures = { path = "crates/rullama-test-fixtures" }
 # Internal test harness (publish = false). Aggregates Tier-A feature cases,
 # Tier-B security cases, and Tier-C assembly cases. Consumed by `xtask` and
 # by `sdks/rullama-autonomy` (which drives the AutonomousFeedbackLoop).

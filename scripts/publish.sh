@@ -173,11 +173,22 @@ for crate in "${CRATES[@]}"; do
         fi
     done < <(grep -E '^\s*[a-zA-Z0-9_-]+\s*=.*git\s*=' "$toml" || true)
 
-    # 3. Deps on publish=false crates (can't be resolved from crates.io)
+    # 3. NORMAL/build deps on publish=false crates (can't be resolved from
+    #    crates.io). Dev-dependencies are excluded: cargo strips a path-only
+    #    dev-dependency from the published manifest, and downstream consumers
+    #    never build a crate's dev-deps — so a dev-dep on a publish=false test
+    #    crate is not a publish blocker.
     for unpub in "${UNPUBLISHABLE[@]}"; do
         [ -n "$unpub" ] || continue
-        if grep -vE '^\s*#' "$toml" | grep -qE "^\s*${unpub}\s*=\s*\{|^\s*${unpub}\.workspace"; then
-            echo "  ERROR [$crate] depends on '$unpub' which has publish = false"
+        if awk -v u="$unpub" '
+            /^\[/ { indev = ($0 ~ /dev-dependencies/) }
+            !indev && $0 !~ /^[[:space:]]*#/ {
+                if ($0 ~ "^[[:space:]]*" u "[[:space:]]*=[[:space:]]*\\{" || \
+                    $0 ~ "^[[:space:]]*" u "\\.workspace") { f = 1 }
+            }
+            END { exit(f ? 0 : 1) }
+        ' "$toml"; then
+            echo "  ERROR [$crate] depends on '$unpub' (publish = false) in a normal/build dependency section"
             PREFLIGHT_ERRORS=$((PREFLIGHT_ERRORS + 1))
         fi
     done
