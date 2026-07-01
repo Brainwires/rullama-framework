@@ -1,4 +1,4 @@
-namespace BrainwiresAudio;
+namespace AudioDemo.Core;
 
 /// <summary>
 /// High-level wrapper over the UniFFI-generated FFI bindings.

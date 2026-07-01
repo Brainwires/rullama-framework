@@ -12,6 +12,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\BrainwiresAudio\BrainwiresAudio.csproj" />
+    <ProjectReference Include="..\AudioDemo.Core\AudioDemo.Core.csproj" />
   </ItemGroup>
 </Project>

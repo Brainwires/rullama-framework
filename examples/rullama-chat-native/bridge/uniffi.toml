@@ -6,6 +6,6 @@ package_name = "com.brainwires.chat.bridge"
 cdylib_name = "rullama_chat_native_bridge"
 
 [bindings.swift]
-ffi_module_name = "BrainwiresChatNativeBridgeFFI"
-module_name = "BrainwiresChatNativeBridge"
+ffi_module_name = "RullamaChatNativeBridgeFFI"
+module_name = "RullamaChatNativeBridge"
 generate_module_map = true

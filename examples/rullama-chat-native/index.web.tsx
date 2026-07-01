@@ -4,7 +4,7 @@ import App from './App';
 import appJson from './app.json';
 import './global.css';
 
-const appName = (appJson as { name?: string }).name ?? 'BrainwiresChatNative';
+const appName = (appJson as { name?: string }).name ?? 'RullamaChatNative';
 
 AppRegistry.registerComponent(appName, () => App);
 AppRegistry.runApplication(appName, {

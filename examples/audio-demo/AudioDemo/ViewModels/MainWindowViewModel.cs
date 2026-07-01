@@ -1,5 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using BrainwiresAudio;
+using AudioDemo.Core;
 
 namespace AudioDemo.ViewModels;
 

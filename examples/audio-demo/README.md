@@ -37,7 +37,7 @@ dotnet run --project AudioDemo.Desktop
 audio-demo/
 ├── AudioDemo.sln                  # .NET solution
 ├── build-native.sh                # Builds Rust + generates C# bindings
-├── BrainwiresAudio/               # C# class library (wraps FFI)
+├── AudioDemo.Core/               # C# class library (wraps FFI)
 │   ├── AudioService.cs            # High-level API over generated bindings
 │   ├── Generated/                 # UniFFI-generated C# code (gitignored)
 │   └── runtimes/                  # Native .so/.dll/.dylib (gitignored)

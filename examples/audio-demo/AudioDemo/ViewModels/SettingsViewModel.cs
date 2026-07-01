@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using BrainwiresAudio;
+using AudioDemo.Core;
 
 namespace AudioDemo.ViewModels;
 

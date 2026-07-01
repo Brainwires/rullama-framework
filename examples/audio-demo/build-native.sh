@@ -49,7 +49,7 @@ if [ ! -f "$NATIVE_LIB" ]; then
 fi
 
 echo "==> Generating C# bindings..."
-GENERATED_DIR="$SCRIPT_DIR/BrainwiresAudio/Generated"
+GENERATED_DIR="$SCRIPT_DIR/AudioDemo.Core/Generated"
 mkdir -p "$GENERATED_DIR"
 
 if command -v uniffi-bindgen-cs &>/dev/null; then
@@ -61,7 +61,7 @@ else
 fi
 
 echo "==> Copying native library to runtimes..."
-DEST="$SCRIPT_DIR/BrainwiresAudio/runtimes/$RUNTIME_DIR/native"
+DEST="$SCRIPT_DIR/AudioDemo.Core/runtimes/$RUNTIME_DIR/native"
 mkdir -p "$DEST"
 cp "$NATIVE_LIB" "$DEST/"
 echo "    -> $DEST/$LIB_FILE"
