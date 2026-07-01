@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Brainwires Chat",
+  "productName": "rullama Chat",
   "version": "0.1.0",
   "identifier": "com.rullama.chatnative",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Brainwires Chat",
+        "title": "rullama Chat",
         "width": 1200,
         "height": 800,
         "minWidth": 600,
@@ -29,7 +29,7 @@
     "active": false,
     "targets": ["deb", "appimage", "rpm"],
     "category": "Productivity",
-    "shortDescription": "Brainwires Chat — native client",
+    "shortDescription": "rullama Chat — native client",
     "longDescription": "Native chat client for the rullama."
   }
 }

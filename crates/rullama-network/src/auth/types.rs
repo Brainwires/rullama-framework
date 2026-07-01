@@ -44,7 +44,7 @@ pub struct AuthSession {
     /// API key name
     pub key_name: String,
 
-    /// Brainwires API key (DEPRECATED - now stored in system keyring)
+    /// Legacy hosted-relay API key (DEPRECATED - now stored in system keyring)
     /// Kept for backwards compatibility; new sessions have this as empty string
     #[serde(default)]
     pub api_key: String,

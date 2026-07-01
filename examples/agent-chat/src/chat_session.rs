@@ -222,7 +222,7 @@ impl ChatSession {
                     parameters,
                     ..
                 } => {
-                    // Brainwires backend sends complete tool calls in a single event
+                    // Some backends send complete tool calls in a single event
                     last_response_id = Some(response_id);
                     tool_uses.push(ToolUse {
                         id: call_id,

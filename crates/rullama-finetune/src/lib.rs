@@ -23,7 +23,7 @@ pub mod types;
 pub mod cloud;
 
 // Local adapter training (LoRA/QLoRA/DoRA) lives in `rullama-finetune`
-// (sibling workspace at /Users/nightness/Source/Brainwires/rullama).
+// (in the sibling `rullama` workspace).
 
 /// Training job management.
 pub mod manager;

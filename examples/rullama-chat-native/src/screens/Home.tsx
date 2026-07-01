@@ -14,7 +14,7 @@ export function Home() {
   return (
     <View className="flex-1 items-center justify-center bg-white dark:bg-neutral-900 p-6">
       <Text className="text-2xl font-bold text-neutral-900 dark:text-neutral-50 mb-2">
-        Brainwires Chat
+        rullama Chat
       </Text>
       <Text className="text-base text-neutral-600 dark:text-neutral-400">
         framework: {version}
