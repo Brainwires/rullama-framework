@@ -7,11 +7,11 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use chrono::Utc;
 use rullama_eval::{EvaluationCase, TrialResult};
 use rullama_skills::manifest::SkillManifest;
 use rullama_skills::package::SkillPackage;
 use rullama_skills::verification::SkillVerifier;
-use chrono::Utc;
 
 pub struct SkillsSignVerifyAssembly;
 

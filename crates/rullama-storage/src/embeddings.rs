@@ -10,9 +10,9 @@
 //! Both implement the `rullama_core::EmbeddingProvider` trait.
 
 use anyhow::{Context, Result};
-pub use rullama_core::EmbeddingProvider;
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use lru::LruCache;
+pub use rullama_core::EmbeddingProvider;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;

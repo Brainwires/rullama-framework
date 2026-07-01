@@ -15,7 +15,7 @@ export default function CratesPage() {
   return (
     <div className="px-6 py-8 max-w-[1400px] mx-auto w-full">
       <h1 className="text-3xl font-bold mb-2">Framework Crates</h1>
-      <p className="text-muted-foreground mb-8">20 independently publishable crates that compose into a full AI agent framework.</p>
+      <p className="text-muted-foreground mb-8">{CRATE_LIST.length} independently publishable crates that compose into a full AI agent framework.</p>
       {byTier.map(({ tier, label, crates }) => (
         <section key={tier} className="mb-10">
           <h2 className="text-lg font-semibold mb-4 border-b pb-2">{label}</h2>

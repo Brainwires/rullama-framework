@@ -1,6 +1,6 @@
 use anyhow::Result;
-use rullama_brain_server::mcp_server::BrainMcpServer;
 use clap::{Parser, Subcommand};
+use rullama_brain_server::mcp_server::BrainMcpServer;
 use std::panic;
 
 /// Open Brain: persistent knowledge MCP server for any AI tool

@@ -11,13 +11,9 @@ use async_trait::async_trait;
 use rullama_call_policy::{AnthropicTokenizer, OpenAiTokenizer, Tokenizer};
 use rullama_core::{ChatOptions, Message, Provider};
 use rullama_eval::{EvaluationCase, TrialResult};
-use rullama_provider::{
-    AnthropicChatProvider, AnthropicClient, OpenAiChatProvider, OpenAiClient,
-};
+use rullama_provider::{AnthropicChatProvider, AnthropicClient, OpenAiChatProvider, OpenAiClient};
 
-use crate::live::{
-    live_anthropic_key, live_anthropic_model, live_openai_key, live_openai_model,
-};
+use crate::live::{live_anthropic_key, live_anthropic_model, live_openai_key, live_openai_model};
 use crate::registry::LiveCase;
 
 pub struct TokenizerAccuracyVsRealUsage;
@@ -122,11 +118,7 @@ impl EvaluationCase for TokenizerAccuracyVsRealUsage {
 
         let elapsed = started.elapsed().as_millis() as u64;
         if !failures.is_empty() {
-            return Ok(TrialResult::failure(
-                trial_id,
-                elapsed,
-                failures.join("; "),
-            ));
+            return Ok(TrialResult::failure(trial_id, elapsed, failures.join("; ")));
         }
         let drift_meta: Vec<_> = drifts
             .iter()

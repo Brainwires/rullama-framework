@@ -267,6 +267,7 @@ mod tests {
         let rules = PiiRedactionRules::new().with_session_id_hashing();
         let event = AnalyticsEvent::ProviderCall {
             session_id: Some("sess-abc".to_string()),
+            request_id: None,
             provider: "anthropic".to_string(),
             model: "claude-sonnet-4-6".to_string(),
             prompt_tokens: 10,

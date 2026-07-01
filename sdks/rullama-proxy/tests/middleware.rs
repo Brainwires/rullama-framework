@@ -19,8 +19,8 @@ use rullama_proxy::request_id::RequestId;
 use rullama_proxy::types::ProxyRequest;
 
 use async_trait::async_trait;
-use rullama_proxy::error::ProxyResult;
 use http::{HeaderName, HeaderValue, Method, StatusCode};
+use rullama_proxy::error::ProxyResult;
 
 /// Recording layer that pushes its id to a shared vector on request.
 struct RecordingLayer {

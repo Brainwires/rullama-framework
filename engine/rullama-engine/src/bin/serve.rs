@@ -20,8 +20,8 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::extract::State;
-use axum::response::sse::{Event, Sse};
 use axum::response::IntoResponse;
+use axum::response::sse::{Event, Sse};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
@@ -166,7 +166,10 @@ async fn chat_completions(State(state): State<AppState>, Json(req): Json<ChatReq
                             "choices": [{"index": 0, "delta": {"content": s}, "finish_reason": null}]
                         });
                         let ev = Event::default().data(chunk.to_string());
-                        Some((Ok::<_, std::convert::Infallible>(ev), (rx, false, id, model)))
+                        Some((
+                            Ok::<_, std::convert::Infallible>(ev),
+                            (rx, false, id, model),
+                        ))
                     }
                     Some(TokenEvent::Err(e)) => {
                         let chunk = json!({
@@ -296,12 +299,19 @@ fn run_model_thread(
                 break;
             }
             // SentencePiece word-boundary marker -> space.
-            let s = model.token_str_native(next).unwrap_or_default().replace('\u{2581}', " ");
+            let s = model
+                .token_str_native(next)
+                .unwrap_or_default()
+                .replace('\u{2581}', " ");
             acc.push_str(&s);
             if job.tx.send(TokenEvent::Token(s)).is_err() {
                 break; // client disconnected
             }
-            if job.stop.iter().any(|st| !st.is_empty() && acc.ends_with(st)) {
+            if job
+                .stop
+                .iter()
+                .any(|st| !st.is_empty() && acc.ends_with(st))
+            {
                 break;
             }
             match pollster::block_on(model.step_native(next)) {
@@ -361,7 +371,10 @@ async fn main() {
         }
     }
 
-    let state = AppState { jobs: jobs_tx, model_name: model_name.clone() };
+    let state = AppState {
+        jobs: jobs_tx,
+        model_name: model_name.clone(),
+    };
     let app = Router::new()
         .route("/v1/chat/completions", post(chat_completions))
         .route("/v1/models", get(list_models))

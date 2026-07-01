@@ -146,7 +146,11 @@ async fn read_lora_grads(state: &LoraState) -> Vec<(rullama_lora::lora::LoraKey,
     out
 }
 
-async fn read_buf_f32(ctx: &rullama_engine::backend::WgpuCtx, buf: &wgpu::Buffer, n: usize) -> Vec<f32> {
+async fn read_buf_f32(
+    ctx: &rullama_engine::backend::WgpuCtx,
+    buf: &wgpu::Buffer,
+    n: usize,
+) -> Vec<f32> {
     let bytes = (n * 4) as u64;
     let read_buf = ctx.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("checkpoint_parity.read"),

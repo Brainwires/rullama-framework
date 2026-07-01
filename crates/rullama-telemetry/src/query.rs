@@ -90,10 +90,7 @@ impl AnalyticsQuery {
     /// Open the query interface at the default analytics database path.
     pub fn new_default() -> anyhow::Result<Self> {
         let home = dirs::home_dir().context("Could not determine home directory")?;
-        let path = home
-            .join(".rullama")
-            .join("analytics")
-            .join("analytics.db");
+        let path = home.join(".rullama").join("analytics").join("analytics.db");
         Self::new_with_path(&path)
     }
 
@@ -268,10 +265,7 @@ impl AnalyticsQuery {
     ///
     /// Reads the raw event log directly so it works regardless of whether
     /// `rebuild_summaries` has been called.
-    pub fn cost_by_request(
-        &self,
-        request_id: &str,
-    ) -> anyhow::Result<Option<CostByRequestRow>> {
+    pub fn cost_by_request(&self, request_id: &str) -> anyhow::Result<Option<CostByRequestRow>> {
         let conn = self.conn.lock().expect("analytics query lock poisoned");
         let sql = "SELECT
                 count(*),
@@ -458,6 +452,7 @@ mod tests {
             &tmp,
             AnalyticsEvent::ProviderCall {
                 session_id: None,
+                request_id: None,
                 provider: "anthropic".into(),
                 model: "claude-opus-4-6".into(),
                 prompt_tokens: 1000,

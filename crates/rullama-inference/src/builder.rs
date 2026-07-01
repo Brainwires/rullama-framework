@@ -162,8 +162,14 @@ mod tests {
 
     #[test]
     fn missing_provider_errors() {
-        let result = AgentBuilder::new().tools(fake_executor()).build_chat_agent();
-        let err = result.unwrap_err().to_string();
+        let result = AgentBuilder::new()
+            .tools(fake_executor())
+            .build_chat_agent();
+        // `ChatAgent` isn't `Debug`, so avoid `unwrap_err()`.
+        let err = match result {
+            Ok(_) => panic!("expected build to fail without a provider"),
+            Err(e) => e.to_string(),
+        };
         assert!(err.contains("`provider` is required"), "got: {err}");
     }
 
@@ -173,7 +179,11 @@ mod tests {
             "test", "hi",
         )) as Arc<dyn Provider>;
         let result = AgentBuilder::new().provider(provider).build_chat_agent();
-        let err = result.unwrap_err().to_string();
+        // `ChatAgent` isn't `Debug`, so avoid `unwrap_err()`.
+        let err = match result {
+            Ok(_) => panic!("expected build to fail without tools"),
+            Err(e) => e.to_string(),
+        };
         assert!(err.contains("`tools` is required"), "got: {err}");
     }
 

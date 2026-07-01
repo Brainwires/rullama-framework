@@ -11,11 +11,11 @@
 //!   priority detection on known keywords, format-instruction presence).
 //! - **Roundtrip** on inputs that genuinely contain the target structure.
 
+use proptest::prelude::*;
 use rullama_reasoning::output_parser::{
     JsonListParser, JsonOutputParser, OutputParser, RegexOutputParser,
 };
 use rullama_reasoning::plan_parser::{ParsedStep, parse_plan_steps, steps_to_tasks};
-use proptest::prelude::*;
 use serde::Deserialize;
 
 // ── plan_parser ──────────────────────────────────────────────────────────

@@ -6,9 +6,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use rullama_core::{
-    ChatOptions, ChatResponse, Message, Provider, ToolContext, Usage,
-};
+use rullama_core::{ChatOptions, ChatResponse, Message, Provider, ToolContext, Usage};
 use rullama_eval::{EvaluationCase, TrialResult};
 use rullama_inference::AgentBuilder;
 use rullama_test_fixtures::ScriptedProvider;
@@ -66,10 +64,7 @@ impl EvaluationCase for TurnReportCase {
             return Ok(TrialResult::failure(
                 0,
                 0,
-                format!(
-                    "turn 1: expected 50 total_tokens, got {}",
-                    r1.total_tokens
-                ),
+                format!("turn 1: expected 50 total_tokens, got {}", r1.total_tokens),
             ));
         }
         if r1.prompt_tokens != 30 || r1.completion_tokens != 20 {

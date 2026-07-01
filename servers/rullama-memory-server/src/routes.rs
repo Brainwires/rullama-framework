@@ -14,11 +14,11 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
+use chrono::{DateTime, TimeZone, Utc};
 use rullama_knowledge::knowledge::types::{
     CaptureThoughtRequest, GetThoughtResponse, ListRecentRequest, SearchMemoryRequest,
     ThoughtSummary,
 };
-use chrono::{DateTime, TimeZone, Utc};
 use uuid::Uuid;
 
 use crate::{

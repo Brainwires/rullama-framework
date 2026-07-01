@@ -13,8 +13,8 @@ use std::env;
 use std::time::Duration;
 
 use anyhow::Result;
-use rullama_homeauto::zigbee::{EzspCoordinator, ZigbeeCoordinator};
 use futures::StreamExt;
+use rullama_homeauto::zigbee::{EzspCoordinator, ZigbeeCoordinator};
 use tracing::info;
 
 #[tokio::main]

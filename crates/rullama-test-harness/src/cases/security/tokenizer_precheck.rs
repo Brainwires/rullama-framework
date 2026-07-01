@@ -7,9 +7,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use rullama_call_policy::{
-    BudgetConfig, BudgetGuard, BudgetProvider, OpenAiTokenizer, Tokenizer,
-};
+use rullama_call_policy::{BudgetConfig, BudgetGuard, BudgetProvider, OpenAiTokenizer, Tokenizer};
 use rullama_core::{ChatOptions, Message, Provider};
 use rullama_eval::{EvaluationCase, TrialResult};
 use rullama_test_fixtures::ScriptedProvider;
@@ -47,8 +45,11 @@ impl EvaluationCase for TokenizerPrecheckRejectsOversized {
             "scripted",
             "this should never be returned",
         ));
-        let budgeted: Arc<dyn Provider> =
-            Arc::new(BudgetProvider::with_tokenizer(inner.clone(), guard.clone(), tk.clone()));
+        let budgeted: Arc<dyn Provider> = Arc::new(BudgetProvider::with_tokenizer(
+            inner.clone(),
+            guard.clone(),
+            tk.clone(),
+        ));
 
         let started = std::time::Instant::now();
 
@@ -66,9 +67,7 @@ impl EvaluationCase for TokenizerPrecheckRejectsOversized {
         }
 
         // 2) Call must be rejected pre-flight (BudgetExceeded), not pass-through.
-        let result = budgeted
-            .chat(&probe, None, &ChatOptions::default())
-            .await;
+        let result = budgeted.chat(&probe, None, &ChatOptions::default()).await;
         let elapsed = started.elapsed().as_millis() as u64;
         match result {
             Err(e) => {

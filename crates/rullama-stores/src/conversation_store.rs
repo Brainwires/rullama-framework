@@ -78,9 +78,7 @@ fn from_record(r: &Record) -> Result<ConversationMetadata> {
 }
 
 /// Store for managing conversations
-pub struct ConversationStore<
-    B: StorageBackend = rullama_storage::databases::lance::LanceDatabase,
-> {
+pub struct ConversationStore<B: StorageBackend = rullama_storage::databases::lance::LanceDatabase> {
     backend: Arc<B>,
 }
 

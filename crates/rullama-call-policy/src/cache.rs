@@ -18,10 +18,10 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use futures::stream::BoxStream;
 use rullama_core::message::{ChatResponse, Message, MessageContent, Role, StreamChunk, Usage};
 use rullama_core::provider::{ChatOptions, Provider};
 use rullama_core::tool::Tool;
-use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;

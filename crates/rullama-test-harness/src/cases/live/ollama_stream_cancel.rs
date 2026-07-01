@@ -8,10 +8,10 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use futures::StreamExt;
 use rullama_core::{ChatOptions, Message, Provider, StreamChunk};
 use rullama_eval::{EvaluationCase, TrialResult};
 use rullama_provider::OllamaProvider;
-use futures::StreamExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::live::{live_ollama_base, live_ollama_model};

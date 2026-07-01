@@ -36,8 +36,8 @@
 //! // }
 //! ```
 
-use rullama_core::graph::{EdgeType, EntityType, RelationshipGraphT};
 use regex::Regex;
+use rullama_core::graph::{EdgeType, EntityType, RelationshipGraphT};
 use std::collections::HashMap;
 use std::sync::LazyLock;
 

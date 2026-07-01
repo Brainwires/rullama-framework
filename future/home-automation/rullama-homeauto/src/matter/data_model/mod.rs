@@ -21,9 +21,7 @@ use async_trait::async_trait;
 
 use crate::matter::clusters::AttributePath;
 use crate::matter::error::MatterResult;
-use crate::matter::interaction_model::{
-    AttributeData, AttributeStatus, InteractionStatus,
-};
+use crate::matter::interaction_model::{AttributeData, AttributeStatus, InteractionStatus};
 
 // ── Privilege levels ──────────────────────────────────────────────────────────
 
@@ -152,9 +150,7 @@ impl DataModelNode {
         args: &[u8],
     ) -> MatterResult<Vec<u8>> {
         let ep = self.endpoints.get(&endpoint).ok_or_else(|| {
-            crate::matter::error::MatterError::Transport(format!(
-                "endpoint {endpoint} not found"
-            ))
+            crate::matter::error::MatterError::Transport(format!("endpoint {endpoint} not found"))
         })?;
         let server = ep.get(&cluster_id).ok_or_else(|| {
             crate::matter::error::MatterError::Transport(format!(

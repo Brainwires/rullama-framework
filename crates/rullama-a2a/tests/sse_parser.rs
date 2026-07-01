@@ -78,10 +78,7 @@ async fn test_parse_sse_stream_with_error_response() {
     let mut stream = std::pin::pin!(rullama_a2a::client::sse::parse_sse_stream(body));
     let item = stream.next().await.unwrap();
     assert!(item.is_err());
-    assert_eq!(
-        item.unwrap_err().code,
-        rullama_a2a::error::TASK_NOT_FOUND
-    );
+    assert_eq!(item.unwrap_err().code, rullama_a2a::error::TASK_NOT_FOUND);
 }
 
 #[tokio::test]
@@ -104,10 +101,7 @@ async fn test_parse_sse_stream_invalid_json() {
     let mut stream = std::pin::pin!(rullama_a2a::client::sse::parse_sse_stream(body));
     let item = stream.next().await.unwrap();
     assert!(item.is_err());
-    assert_eq!(
-        item.unwrap_err().code,
-        rullama_a2a::error::JSON_PARSE_ERROR
-    );
+    assert_eq!(item.unwrap_err().code, rullama_a2a::error::JSON_PARSE_ERROR);
 }
 
 #[tokio::test]

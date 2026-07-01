@@ -276,9 +276,7 @@ impl ClaudeBrainMcpServer {
         description = "Teach a behavioral rule to the BKS (Behavioral Knowledge System). Use this when you discover patterns about how to work effectively — command usage, error recovery, tool behavior, etc. Rules persist across sessions and inform future behavior."
     )]
     async fn learn(&self, Parameters(req): Parameters<LearnRequest>) -> Result<String, String> {
-        use rullama_knowledge::knowledge::bks_pks::{
-            BehavioralTruth, TruthCategory, TruthSource,
-        };
+        use rullama_knowledge::knowledge::bks_pks::{BehavioralTruth, TruthCategory, TruthSource};
 
         let category = match req.category.as_deref() {
             Some("command_usage") => TruthCategory::CommandUsage,

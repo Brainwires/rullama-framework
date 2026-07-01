@@ -20,6 +20,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use futures::StreamExt;
 use rullama_hardware::audio::{
     capture::AudioCapture,
     hardware::cpal_capture::CpalCapture,
@@ -27,7 +28,6 @@ use rullama_hardware::audio::{
     vad::pcm_to_i16_mono,
     wake_word::{DtwWakeWordDetector, WakeWordDetector},
 };
-use futures::StreamExt;
 
 const ENROLL_CLIP_MS: u64 = 1_200;
 const ENROLLMENTS_NEEDED: usize = 3;

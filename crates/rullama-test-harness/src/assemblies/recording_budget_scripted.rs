@@ -48,17 +48,16 @@ impl EvaluationCase for RecordingBudgetScriptedAssembly {
         // Drive three calls of varying shape.
         for label in ["hello", "world", "fin"] {
             let r = recorder
-                .chat(
-                    &[Message::user(label)],
-                    None,
-                    &ChatOptions::default(),
-                )
+                .chat(&[Message::user(label)], None, &ChatOptions::default())
                 .await?;
             if r.message.text() != Some("ok") {
                 return Ok(TrialResult::failure(
                     0,
                     0,
-                    format!("expected 'ok' from inner provider, got {:?}", r.message.text()),
+                    format!(
+                        "expected 'ok' from inner provider, got {:?}",
+                        r.message.text()
+                    ),
                 ));
             }
         }
@@ -87,7 +86,10 @@ impl EvaluationCase for RecordingBudgetScriptedAssembly {
                 return Ok(TrialResult::failure(
                     0,
                     0,
-                    format!("call {i} message_count = {}, expected 1", call.message_count),
+                    format!(
+                        "call {i} message_count = {}, expected 1",
+                        call.message_count
+                    ),
                 ));
             }
         }

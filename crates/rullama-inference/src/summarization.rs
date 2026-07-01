@@ -179,11 +179,11 @@ fn render_transcript(messages: &[Message]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::stream::BoxStream;
     use rullama_core::{
         ChatResponse, ContentBlock, Message, MessageContent, Provider, Role, StreamChunk, Tool,
         Usage,
     };
-    use futures::stream::BoxStream;
 
     struct EchoingProvider;
 

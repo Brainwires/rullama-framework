@@ -232,7 +232,6 @@ impl ChatProviderFactory {
         };
         Ok(Arc::new(provider))
     }
-
 }
 
 #[cfg(test)]

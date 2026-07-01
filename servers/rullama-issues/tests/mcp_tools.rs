@@ -6,8 +6,8 @@
 //! would. Mirrors the pattern in `rullama-brain-server/tests/mcp_tools.rs`.
 
 use anyhow::{Context, Result};
-use rullama_issues::mcp_server::IssuesMcpServer;
 use rmcp::{ServiceExt, model::CallToolRequestParams, service::RunningService};
+use rullama_issues::mcp_server::IssuesMcpServer;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio::io::DuplexStream;

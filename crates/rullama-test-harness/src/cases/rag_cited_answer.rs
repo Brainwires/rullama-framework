@@ -86,7 +86,10 @@ impl EvaluationCase for RagSearchReturnsTraceableCitations {
                 format!("first citation span: {:?}", cited.citations[0].span),
             ));
         }
-        if !cited.citations[0].snippet.contains("Penguins are flightless") {
+        if !cited.citations[0]
+            .snippet
+            .contains("Penguins are flightless")
+        {
             return Ok(TrialResult::failure(
                 trial_id,
                 elapsed,

@@ -9,12 +9,10 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use rullama_core::{
-    ChatOptions, ChatResponse, Message, Provider, StreamChunk, Tool,
-};
-use rullama_eval::{EvaluationCase, TrialResult};
-use futures::stream::BoxStream;
 use futures::StreamExt;
+use futures::stream::BoxStream;
+use rullama_core::{ChatOptions, ChatResponse, Message, Provider, StreamChunk, Tool};
+use rullama_eval::{EvaluationCase, TrialResult};
 use tokio_util::sync::CancellationToken;
 
 use crate::registry::SecurityCase;
@@ -137,9 +135,7 @@ impl EvaluationCase for StreamCancelAbortsInflight {
             return Ok(TrialResult::failure(
                 trial_id,
                 elapsed,
-                format!(
-                    "stream did not yield None after cancel; got {post_cancel} extra chunks"
-                ),
+                format!("stream did not yield None after cancel; got {post_cancel} extra chunks"),
             ));
         }
         // One chunk in flight at cancel time is fine; more than that means

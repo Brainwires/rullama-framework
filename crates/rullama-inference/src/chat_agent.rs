@@ -251,11 +251,8 @@ impl ChatAgent {
         self.options.request_id = Some(new_request_id());
         let text = self.run_completion(None::<fn(&str)>).await?;
         let elapsed_ms = started.elapsed().as_millis() as u64;
-        let report = rullama_core::TurnReport::from_usage_delta(
-            &before,
-            &self.cumulative_usage,
-            elapsed_ms,
-        );
+        let report =
+            rullama_core::TurnReport::from_usage_delta(&before, &self.cumulative_usage, elapsed_ms);
         Ok((text, report))
     }
 

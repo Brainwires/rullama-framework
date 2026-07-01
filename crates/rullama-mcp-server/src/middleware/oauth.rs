@@ -13,8 +13,8 @@
 //! Only compiled when the `oauth` feature is enabled.
 
 use async_trait::async_trait;
-use rullama_mcp_client::{JsonRpcError, JsonRpcRequest};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
+use rullama_mcp_client::{JsonRpcError, JsonRpcRequest};
 
 use super::{Middleware, MiddlewareResult};
 use crate::connection::RequestContext;

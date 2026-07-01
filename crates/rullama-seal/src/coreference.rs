@@ -29,8 +29,8 @@
 //! // resolved[0].antecedent = "main.rs"
 //! ```
 
-use rullama_core::graph::{EntityStoreT, EntityType, RelationshipGraphT};
 use regex::Regex;
+use rullama_core::graph::{EntityStoreT, EntityType, RelationshipGraphT};
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
@@ -644,6 +644,9 @@ impl Default for CoreferenceResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // `EntityStore` lives in the optional `rullama-knowledge` dep, so the
+    // tests that need it are gated behind the `knowledge` feature too.
+    #[cfg(feature = "knowledge")]
     use rullama_knowledge::knowledge::EntityStore;
 
     #[test]
@@ -708,6 +711,7 @@ mod tests {
         assert!(state.frequency_score("main.rs") > state.frequency_score("config.toml"));
     }
 
+    #[cfg(feature = "knowledge")]
     #[test]
     fn test_resolve_pronoun() {
         let resolver = CoreferenceResolver::new();
@@ -724,6 +728,7 @@ mod tests {
         assert_eq!(resolved[0].antecedent, "src/main.rs");
     }
 
+    #[cfg(feature = "knowledge")]
     #[test]
     fn test_resolve_type_constrained() {
         let resolver = CoreferenceResolver::new();
@@ -743,6 +748,7 @@ mod tests {
         assert_eq!(resolved[0].antecedent, "process_data");
     }
 
+    #[cfg(feature = "knowledge")]
     #[test]
     fn test_rewrite_with_resolutions() {
         let resolver = CoreferenceResolver::new();

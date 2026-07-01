@@ -10,13 +10,11 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use anyhow::Result;
 use async_trait::async_trait;
+use futures::stream::{self, BoxStream};
 use rullama_call_policy::{RetryPolicy, RetryProvider};
 use rullama_core::message::Usage;
-use rullama_core::{
-    ChatOptions, ChatResponse, Message, Provider, StreamChunk, Tool,
-};
+use rullama_core::{ChatOptions, ChatResponse, Message, Provider, StreamChunk, Tool};
 use rullama_eval::{EvaluationCase, TrialResult};
-use futures::stream::{self, BoxStream};
 
 use crate::registry::TierACase;
 
@@ -111,9 +109,7 @@ impl EvaluationCase for RetryObeysRetryAfterHeader {
             return Ok(TrialResult::failure(
                 trial_id,
                 elapsed_ms,
-                format!(
-                    "retry happened too fast ({elapsed_ms}ms) — Retry-After hint ignored?"
-                ),
+                format!("retry happened too fast ({elapsed_ms}ms) — Retry-After hint ignored?"),
             ));
         }
         if elapsed_ms > 1800 {

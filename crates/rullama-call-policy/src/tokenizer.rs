@@ -95,7 +95,9 @@ mod tiktoken_backed {
             let mut total = 0usize;
             for m in messages {
                 match &m.content {
-                    MessageContent::Text(t) => total += self.bpe.encode_with_special_tokens(t).len(),
+                    MessageContent::Text(t) => {
+                        total += self.bpe.encode_with_special_tokens(t).len()
+                    }
                     MessageContent::Blocks(blocks) => {
                         for b in blocks {
                             match b {
@@ -107,8 +109,7 @@ mod tiktoken_backed {
                                     total += self.bpe.encode_with_special_tokens(&s).len();
                                 }
                                 ContentBlock::ToolResult { content, .. } => {
-                                    total +=
-                                        self.bpe.encode_with_special_tokens(content).len();
+                                    total += self.bpe.encode_with_special_tokens(content).len();
                                 }
                                 ContentBlock::Image { .. } => total += block_chars(b) / 4,
                             }
@@ -152,7 +153,9 @@ mod tiktoken_backed {
             let mut total = 0usize;
             for m in messages {
                 match &m.content {
-                    MessageContent::Text(t) => total += self.bpe.encode_with_special_tokens(t).len(),
+                    MessageContent::Text(t) => {
+                        total += self.bpe.encode_with_special_tokens(t).len()
+                    }
                     MessageContent::Blocks(blocks) => {
                         for b in blocks {
                             match b {
@@ -164,8 +167,7 @@ mod tiktoken_backed {
                                     total += self.bpe.encode_with_special_tokens(&s).len();
                                 }
                                 ContentBlock::ToolResult { content, .. } => {
-                                    total +=
-                                        self.bpe.encode_with_special_tokens(content).len();
+                                    total += self.bpe.encode_with_special_tokens(content).len();
                                 }
                                 ContentBlock::Image { .. } => total += block_chars(b) / 4,
                             }
@@ -203,7 +205,7 @@ mod tests {
         let msgs = vec![Message::user("hello world")];
         let count = tk.count(&msgs);
         // Real BPE: "hello world" tokenizes to 2 tokens in o200k_base.
-        assert!(count >= 2 && count <= 4, "got: {count}");
+        assert!((2..=4).contains(&count), "got: {count}");
     }
 
     #[cfg(feature = "tokenizers")]

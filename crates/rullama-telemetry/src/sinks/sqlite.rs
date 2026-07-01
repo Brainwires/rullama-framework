@@ -60,10 +60,7 @@ impl SqliteAnalyticsSink {
 
     fn default_db_path() -> anyhow::Result<PathBuf> {
         let home = dirs::home_dir().context("Could not determine home directory")?;
-        Ok(home
-            .join(".rullama")
-            .join("analytics")
-            .join("analytics.db"))
+        Ok(home.join(".rullama").join("analytics").join("analytics.db"))
     }
 
     fn insert_event(conn: &Connection, event: &AnalyticsEvent) -> anyhow::Result<()> {

@@ -149,8 +149,11 @@ fn coverage(args: &[String]) -> ExitCode {
     };
 
     let headings = extract_headings(&raw_features);
-    let manifest_sections: std::collections::HashSet<&str> =
-        manifest.entries.iter().map(|e| e.section.as_str()).collect();
+    let manifest_sections: std::collections::HashSet<&str> = manifest
+        .entries
+        .iter()
+        .map(|e| e.section.as_str())
+        .collect();
 
     let mut missing: Vec<&Heading> = Vec::new();
     for h in &headings {
@@ -218,9 +221,7 @@ fn coverage(args: &[String]) -> ExitCode {
             dangling_alias.len()
         );
         for (from, to) in &dangling_alias {
-            println!(
-                "  - feature_id=\"{from}\" coverage_via=\"{to}\" (no feature_id matches)"
-            );
+            println!("  - feature_id=\"{from}\" coverage_via=\"{to}\" (no feature_id matches)");
         }
     }
 
@@ -347,7 +348,11 @@ content
         let texts: Vec<&str> = h.iter().map(|x| x.text.as_str()).collect();
         assert_eq!(
             texts,
-            vec!["Real Feature", "Another Real Feature", "Sub Under Real Feature"]
+            vec![
+                "Real Feature",
+                "Another Real Feature",
+                "Sub Under Real Feature"
+            ]
         );
     }
 

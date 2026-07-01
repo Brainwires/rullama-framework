@@ -8,13 +8,13 @@ use crate::databases::bm25_helpers::{self, SharedIdfStats};
 use crate::databases::traits::VectorDatabase;
 use crate::glob_utils;
 use anyhow::{Context, Result};
-use rullama_core::{ChunkMetadata, DatabaseStats, SearchResult};
 use qdrant_client::qdrant::vectors_config::Config;
 use qdrant_client::qdrant::{
     Condition, CreateCollectionBuilder, DeletePointsBuilder, Distance, Filter, PointStruct,
     SearchPointsBuilder, UpsertPointsBuilder, VectorParams, VectorsConfig,
 };
 use qdrant_client::{Payload, Qdrant};
+use rullama_core::{ChunkMetadata, DatabaseStats, SearchResult};
 use serde_json::json;
 
 const COLLECTION_NAME: &str = "code_embeddings";

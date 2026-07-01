@@ -136,20 +136,18 @@ pub async fn handle() -> Result<()> {
         }
         let digest_content = digest_parts.join("\n");
         let _ = client
-            .capture_thought(
-                rullama_knowledge::knowledge::types::CaptureThoughtRequest {
-                    content: digest_content,
-                    category: Some("insight".to_string()),
-                    tags: Some(vec![
-                        "session-digest".to_string(),
-                        session_tag.clone(),
-                        "claude-code".to_string(),
-                    ]),
-                    importance: Some(0.9),
-                    source: Some("pre-compact-digest".to_string()),
-                    owner_id: None,
-                },
-            )
+            .capture_thought(rullama_knowledge::knowledge::types::CaptureThoughtRequest {
+                content: digest_content,
+                category: Some("insight".to_string()),
+                tags: Some(vec![
+                    "session-digest".to_string(),
+                    session_tag.clone(),
+                    "claude-code".to_string(),
+                ]),
+                importance: Some(0.9),
+                source: Some("pre-compact-digest".to_string()),
+                owner_id: None,
+            })
             .await;
     }
 

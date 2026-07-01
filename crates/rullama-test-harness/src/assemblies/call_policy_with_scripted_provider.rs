@@ -38,9 +38,10 @@ impl EvaluationCase for CallPolicyWithScriptedProviderAssembly {
             usage: Usage::new(30, 20),
             finish_reason: Some("stop".into()),
         };
-        let inner: Arc<dyn Provider> = Arc::new(
-            ScriptedProvider::always_response("scripted", canned.clone()),
-        );
+        let inner: Arc<dyn Provider> = Arc::new(ScriptedProvider::always_response(
+            "scripted",
+            canned.clone(),
+        ));
         let guard = BudgetGuard::new(BudgetConfig {
             max_tokens: Some(1_000),
             ..BudgetConfig::default()

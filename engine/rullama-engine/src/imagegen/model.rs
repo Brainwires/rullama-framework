@@ -209,15 +209,19 @@ impl<S: BlobSource> ImageBundle<S> {
         #[cfg(not(target_arch = "wasm32"))]
         if std::env::var("DG_IMG_DEBUG").is_ok() {
             let m = latent.iter().sum::<f32>() / latent.len() as f32;
-            let sd = (latent.iter().map(|x| (x - m) * (x - m)).sum::<f32>()
-                / latent.len() as f32)
+            let sd = (latent.iter().map(|x| (x - m) * (x - m)).sum::<f32>() / latent.len() as f32)
                 .sqrt();
             eprintln!("[img-dbg] final latent: mean={m:.4} std={sd:.4}");
         }
 
         // 5. decode
         VaeGpu::new(&self.ctx, &self.pipes, &self.vae_ss, &self.vae_cfg)
-            .decode_reporting(&latent, lh, lw, Some(&|i, n| report("Decoding image", i, n)))
+            .decode_reporting(
+                &latent,
+                lh,
+                lw,
+                Some(&|i, n| report("Decoding image", i, n)),
+            )
             .await
     }
 }
@@ -330,9 +334,12 @@ mod wasm {
         #[wasm_bindgen(js_name = loadFromUrl)]
         pub async fn load_from_url(base_url: String) -> std::result::Result<ImageModel, JsError> {
             let base = base_url.trim_end_matches('/').to_string();
-            let enc: Box<dyn BlobSource> = Box::new(HttpRangeBlobSource::new(format!("{base}/text_encoder")));
-            let dit: Box<dyn BlobSource> = Box::new(HttpRangeBlobSource::new(format!("{base}/transformer")));
-            let vae: Box<dyn BlobSource> = Box::new(HttpRangeBlobSource::new(format!("{base}/vae")));
+            let enc: Box<dyn BlobSource> =
+                Box::new(HttpRangeBlobSource::new(format!("{base}/text_encoder")));
+            let dit: Box<dyn BlobSource> =
+                Box::new(HttpRangeBlobSource::new(format!("{base}/transformer")));
+            let vae: Box<dyn BlobSource> =
+                Box::new(HttpRangeBlobSource::new(format!("{base}/vae")));
             let bundle = ImageBundle::open(enc, dit, vae)
                 .await
                 .map_err(|e| JsError::new(&format!("{e:?}")))?;

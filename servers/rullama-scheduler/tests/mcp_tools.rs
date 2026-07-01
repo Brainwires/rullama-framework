@@ -14,8 +14,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use rullama_scheduler::{JobStore, SchedulerDaemon, SchedulerServer};
 use rmcp::{ServiceExt, model::CallToolRequestParams, service::RunningService};
+use rullama_scheduler::{JobStore, SchedulerDaemon, SchedulerServer};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio::io::DuplexStream;

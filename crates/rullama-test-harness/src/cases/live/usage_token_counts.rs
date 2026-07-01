@@ -15,8 +15,8 @@ use rullama_provider::{
 };
 
 use crate::live::{
-    live_anthropic_key, live_anthropic_model, live_ollama_base, live_ollama_model,
-    live_openai_key, live_openai_model,
+    live_anthropic_key, live_anthropic_model, live_ollama_base, live_ollama_model, live_openai_key,
+    live_openai_model,
 };
 use crate::registry::LiveCase;
 
@@ -92,11 +92,7 @@ impl EvaluationCase for UsageTokenCountsNonzero {
 
         let elapsed = started.elapsed().as_millis() as u64;
         if !failures.is_empty() {
-            return Ok(TrialResult::failure(
-                trial_id,
-                elapsed,
-                failures.join("; "),
-            ));
+            return Ok(TrialResult::failure(trial_id, elapsed, failures.join("; ")));
         }
         let providers_meta: Vec<_> = totals.iter().map(|(p, _)| p.as_str()).collect();
         Ok(TrialResult::success(trial_id, elapsed)

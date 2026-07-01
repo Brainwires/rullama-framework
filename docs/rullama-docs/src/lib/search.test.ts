@@ -13,6 +13,7 @@ import Fuse from "fuse.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FUSE_OPTIONS, type IndexEntry } from "@/components/docs/search-dialog";
+import { CRATE_LIST, EXTRAS_LIST } from "@/lib/crates";
 
 // Matches what `search.ts` exports — declared locally to keep the dynamic
 // import fully typed without coupling the test file to the implementation.
@@ -72,54 +73,45 @@ function seedDocsRoot(tempRoot: string): void {
   }
 
   // Every crate and extra referenced by NAV_TREE needs a README at its
-  // canonical location.
-  const crates = [
-    "rullama",
-    "rullama-core",
-    "rullama-providers",
-    "rullama-agents",
-    "rullama-cognition",
-    "rullama-training",
-    "rullama-storage",
-    "rullama-mcp",
-    "rullama-mcp-server",
-    "rullama-agent-network",
-    "rullama-tool-system",
-    "rullama-skills",
-    "rullama-hardware",
-    "rullama-datasets",
-    "rullama-autonomy",
-    "rullama-permissions",
-    "rullama-a2a",
-    "rullama-channels",
-    "rullama-code-interpreters",
-    "rullama-analytics",
-    "rullama-wasm",
-  ];
-  for (const crate of crates) {
+  // canonical location. Derive the sets from the catalog (`CRATE_LIST` /
+  // `EXTRAS_LIST`) — which NAV_TREE mirrors — so this fixture can't drift out
+  // of sync when the crate roster changes.
+  for (const crate of CRATE_LIST) {
     write(
-      `crates/${crate}/README.md`,
-      `# ${crate}\n\nCrate ${crate} description.\n`,
+      `crates/${crate.name}/README.md`,
+      `# ${crate.name}\n\nCrate ${crate.name} description.\n`,
     );
   }
 
-  // Extras now live in sdks/ servers/ integrations/ examples/ (the flat
-  // extras/ dir was removed). Seed each at its real location so getExtraReadme
-  // — which tries those four dirs in order — resolves it.
-  const extras: Record<string, string> = {
+  // Extras live in sdks/ servers/ integrations/ examples/ (the flat extras/
+  // dir was removed). `getExtraReadme` tries those four dirs in order and
+  // returns the first hit, so seeding each extra under its real dir resolves
+  // it. Map every EXTRAS_LIST entry to its on-disk dir.
+  const extraDir: Record<string, string> = {
+    "rullama-autonomy": "sdks",
+    "rullama-billing": "sdks",
     "rullama-proxy": "sdks",
+    "rullama-wasm": "sdks",
     "rullama-brain-server": "servers",
-    "rullama-rag-server": "servers",
     "rullama-issues": "servers",
+    "rullama-memory-server": "servers",
+    "rullama-rag-server": "servers",
+    "rullama-scheduler": "servers",
+    "claude-brain": "integrations",
+    "reload-daemon": "integrations",
     "agent-chat": "examples",
     "audio-demo": "examples",
     "audio-demo-ffi": "examples",
-    "reload-daemon": "integrations",
+    "rullama-chat-native": "examples",
+    "rullama-web-search-agent": "examples",
+    "rullama-webchat": "examples",
+    "voice-assistant": "examples",
   };
-  for (const [extra, dir] of Object.entries(extras)) {
+  for (const extra of EXTRAS_LIST) {
+    const dir = extraDir[extra.name] ?? "examples";
     write(
-      `${dir}/${extra}/README.md`,
-      `# ${extra}\n\nExtra ${extra} description.\n`,
+      `${dir}/${extra.name}/README.md`,
+      `# ${extra.name}\n\nExtra ${extra.name} description.\n`,
     );
   }
 }

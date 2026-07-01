@@ -309,9 +309,8 @@ impl TaskMetadata {
 // ── TaskStore ───────────────────────────────────────────────────────────
 
 /// Store for managing tasks
-pub struct TaskStore<
-    B: StorageBackend + 'static = rullama_storage::databases::lance::LanceDatabase,
-> {
+pub struct TaskStore<B: StorageBackend + 'static = rullama_storage::databases::lance::LanceDatabase>
+{
     backend: Arc<B>,
 }
 

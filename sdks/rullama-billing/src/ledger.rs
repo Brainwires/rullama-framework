@@ -2,8 +2,8 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use async_trait::async_trait;
-use rullama_telemetry::UsageEvent;
 use chrono::{DateTime, Utc};
+use rullama_telemetry::UsageEvent;
 
 use crate::BillingImplError;
 

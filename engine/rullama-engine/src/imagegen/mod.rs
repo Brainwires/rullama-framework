@@ -56,9 +56,9 @@ pub use sharded::ShardIndex;
 #[cfg(not(target_arch = "wasm32"))]
 pub use sharded::ShardedSafetensors;
 pub use source::BlobSource;
-#[cfg(target_arch = "wasm32")]
-pub use source::{HttpRangeBlobSource, OpfsBlobSource};
 #[cfg(not(target_arch = "wasm32"))]
 pub use source::{FileBlobSource, find_manifest, ollama_models_root};
+#[cfg(target_arch = "wasm32")]
+pub use source::{HttpRangeBlobSource, OpfsBlobSource};
 pub use streaming::StreamingShards;
 pub use timestep::sinusoidal_timestep_embedding;

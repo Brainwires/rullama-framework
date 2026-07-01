@@ -5,8 +5,8 @@
 
 use std::net::SocketAddr;
 
-use rullama_memory_server::{AppState, build_app, build_client};
 use reqwest::StatusCode;
+use rullama_memory_server::{AppState, build_app, build_client};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio::net::TcpListener;

@@ -6,9 +6,7 @@
 
 use std::time::Instant;
 
-use rullama_autonomy::agent_ops::{
-    HealthMonitor, PerformanceMetrics, health::HealthMonitorConfig,
-};
+use rullama_autonomy::agent_ops::{HealthMonitor, PerformanceMetrics, health::HealthMonitorConfig};
 
 fn main() {
     println!("=== Health Monitor Example ===\n");

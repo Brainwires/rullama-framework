@@ -38,6 +38,5 @@ pub fn live_anthropic_key() -> Option<String> {
 
 /// Returns the Anthropic model name, defaulting to `claude-haiku-4-5`.
 pub fn live_anthropic_model() -> String {
-    std::env::var("RULLAMA_LIVE_ANTHROPIC_MODEL")
-        .unwrap_or_else(|_| "claude-haiku-4-5".to_string())
+    std::env::var("RULLAMA_LIVE_ANTHROPIC_MODEL").unwrap_or_else(|_| "claude-haiku-4-5".to_string())
 }

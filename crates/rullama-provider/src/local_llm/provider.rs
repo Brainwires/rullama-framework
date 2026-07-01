@@ -13,13 +13,13 @@ use std::sync::Arc;
 #[cfg(feature = "native")]
 use async_trait::async_trait;
 #[cfg(feature = "native")]
+use futures::stream::BoxStream;
+#[cfg(feature = "native")]
 use rullama_core::message::{ChatResponse, StreamChunk, Usage};
 #[cfg(feature = "native")]
 use rullama_core::provider::{ChatOptions, Provider};
 #[cfg(feature = "native")]
 use rullama_core::tool::Tool;
-#[cfg(feature = "native")]
-use futures::stream::BoxStream;
 
 #[cfg(feature = "llama-cpp-2")]
 use llama_cpp_2::{

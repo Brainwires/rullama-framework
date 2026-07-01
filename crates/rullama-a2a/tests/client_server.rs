@@ -4,8 +4,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rullama_a2a::*;
 use futures::Stream;
+use rullama_a2a::*;
 use tokio::sync::Mutex;
 
 /// Simple test handler that stores tasks in memory.
@@ -274,13 +274,9 @@ async fn test_rest_dispatch_send_message() {
     })
     .unwrap();
 
-    let result = rullama_a2a::server::rest_router::dispatch_rest(
-        &handler,
-        "POST",
-        "/message:send",
-        &body,
-    )
-    .await;
+    let result =
+        rullama_a2a::server::rest_router::dispatch_rest(&handler, "POST", "/message:send", &body)
+            .await;
 
     match result {
         Ok(rullama_a2a::server::rest_router::RestResult::Json(val)) => {
@@ -308,14 +304,10 @@ async fn test_rest_dispatch_get_tasks() {
         metadata: None,
     })
     .unwrap();
-    let _ = rullama_a2a::server::rest_router::dispatch_rest(
-        &handler,
-        "POST",
-        "/message:send",
-        &body,
-    )
-    .await
-    .unwrap();
+    let _ =
+        rullama_a2a::server::rest_router::dispatch_rest(&handler, "POST", "/message:send", &body)
+            .await
+            .unwrap();
 
     // List tasks
     let result =

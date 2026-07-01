@@ -97,7 +97,6 @@ Unified multi-provider AI interface with 18 provider types.
 | **Anyscale** | OpenAI-compatible | Bearer token |
 | **Amazon Bedrock** | Anthropic Messages via AWS SigV4 | AWS SigV4 signing |
 | **Google Vertex AI** | Anthropic Messages via OAuth2 | Google OAuth |
-| **Brainwires HTTP** | Custom relay protocol | Bearer token |
 | **Custom** | User-defined | Configurable |
 
 ### Audio API Clients
@@ -737,7 +736,7 @@ Universal messaging channel contract for adapter implementations (Discord, Teleg
 
 ### WebRTC Real-Time Media (feature: `webrtc`)
 
-Full peer-to-peer audio/video/DataChannel support via the Brainwires `webrtc-rs` fork.
+Full peer-to-peer audio/video/DataChannel support via the rullama `webrtc-rs` fork.
 
 - **`WebRtcSession`** — One `PeerConnection` per call; offer/answer, trickle ICE, DTLS-SRTP
   - `add_audio_track()` / `add_video_track()` — push encoded frames via `write_sample()`

@@ -8,11 +8,11 @@ use std::sync::Mutex;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use futures::stream::{self, BoxStream};
 use rullama_core::{
     ChatOptions, ChatResponse, ContentBlock, Message, MessageContent, Provider, Role, StreamChunk,
     Tool, Usage,
 };
-use futures::stream::{self, BoxStream};
 
 /// A queued response in a [`ScriptedProvider`]. One entry is consumed per
 /// `chat()` or `stream_chat()` call.
@@ -122,10 +122,7 @@ impl ScriptedProvider {
     }
 
     /// Enqueue a tool-call response with multiple parallel tool uses.
-    pub fn then_tool_calls(
-        self,
-        calls: Vec<(String, String, serde_json::Value)>,
-    ) -> Self {
+    pub fn then_tool_calls(self, calls: Vec<(String, String, serde_json::Value)>) -> Self {
         self.queue
             .lock()
             .unwrap()
@@ -429,10 +426,7 @@ mod tests {
     #[tokio::test]
     async fn scripted_text_chat() {
         let p = ScriptedProvider::new("test").then_text("hello");
-        let r = p
-            .chat(&[], None, &ChatOptions::default())
-            .await
-            .unwrap();
+        let r = p.chat(&[], None, &ChatOptions::default()).await.unwrap();
         assert_eq!(r.message.text(), Some("hello"));
     }
 
@@ -441,14 +435,8 @@ mod tests {
         let p = ScriptedProvider::new("test")
             .then_text("one")
             .then_text("two");
-        let r1 = p
-            .chat(&[], None, &ChatOptions::default())
-            .await
-            .unwrap();
-        let r2 = p
-            .chat(&[], None, &ChatOptions::default())
-            .await
-            .unwrap();
+        let r1 = p.chat(&[], None, &ChatOptions::default()).await.unwrap();
+        let r2 = p.chat(&[], None, &ChatOptions::default()).await.unwrap();
         assert_eq!(r1.message.text(), Some("one"));
         assert_eq!(r2.message.text(), Some("two"));
     }
@@ -456,10 +444,7 @@ mod tests {
     #[tokio::test]
     async fn scripted_exhausted_errors() {
         let p = ScriptedProvider::new("test").then_text("once");
-        let _ok = p
-            .chat(&[], None, &ChatOptions::default())
-            .await
-            .unwrap();
+        let _ok = p.chat(&[], None, &ChatOptions::default()).await.unwrap();
         let err = p
             .chat(&[], None, &ChatOptions::default())
             .await
@@ -471,10 +456,7 @@ mod tests {
     async fn scripted_always_text_repeats() {
         let p = ScriptedProvider::always_text("test", "forever");
         for _ in 0..3 {
-            let r = p
-                .chat(&[], None, &ChatOptions::default())
-                .await
-                .unwrap();
+            let r = p.chat(&[], None, &ChatOptions::default()).await.unwrap();
             assert_eq!(r.message.text(), Some("forever"));
         }
     }
@@ -515,11 +497,7 @@ mod tests {
         let inner = ScriptedProvider::always_text("inner", "ok");
         let p = RecordingProvider::new(inner);
         let _ = p
-            .chat(
-                &[Message::user("hi")],
-                None,
-                &ChatOptions::default(),
-            )
+            .chat(&[Message::user("hi")], None, &ChatOptions::default())
             .await
             .unwrap();
         let _ = p

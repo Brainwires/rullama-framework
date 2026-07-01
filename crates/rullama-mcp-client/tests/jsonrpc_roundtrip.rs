@@ -15,11 +15,11 @@
 //!    present and non-null, notification otherwise) is exercised against
 //!    randomized inputs.
 
+use proptest::prelude::*;
 use rullama_mcp_client::types::{
     JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
     McpNotification, ProgressParams,
 };
-use proptest::prelude::*;
 use serde_json::{Value, json};
 
 /// Mirror of the parse logic in `transport.rs:162-180`. Extracted here so

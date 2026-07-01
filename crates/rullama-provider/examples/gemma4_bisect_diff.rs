@@ -246,8 +246,9 @@ fn main() -> ExitCode {
     };
 
     // Index by (step, layer, label).
-    let mut by_key: BTreeMap<(u32, u32, String), (Option<CheckpointFile>, Option<CheckpointFile>)> =
-        BTreeMap::new();
+    type CheckpointKey = (u32, u32, String);
+    type CheckpointPair = (Option<CheckpointFile>, Option<CheckpointFile>);
+    let mut by_key: BTreeMap<CheckpointKey, CheckpointPair> = BTreeMap::new();
     for cf in a {
         let key = (cf.step, cf.layer, cf.label.clone());
         by_key.entry(key).or_insert((None, None)).0 = Some(cf);

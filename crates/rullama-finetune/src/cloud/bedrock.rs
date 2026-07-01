@@ -78,8 +78,7 @@ impl BedrockFineTune {
         use aws_sigv4::sign::v4;
         use std::time::SystemTime;
 
-        let credentials =
-            Credentials::new(access_key, secret_key, None, None, "rullama-training");
+        let credentials = Credentials::new(access_key, secret_key, None, None, "rullama-training");
         let identity = credentials.into();
 
         let mut settings = SigningSettings::default();

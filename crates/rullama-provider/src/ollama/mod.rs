@@ -206,9 +206,7 @@ impl Provider for OllamaProvider {
                 blocks.push(ContentBlock::Text { text });
             }
             for (idx, tc) in ollama_response.message.tool_calls.into_iter().enumerate() {
-                let id = tc
-                    .id
-                    .unwrap_or_else(|| format!("ollama_tool_call_{idx}"));
+                let id = tc.id.unwrap_or_else(|| format!("ollama_tool_call_{idx}"));
                 blocks.push(ContentBlock::ToolUse {
                     id,
                     name: tc.function.name,

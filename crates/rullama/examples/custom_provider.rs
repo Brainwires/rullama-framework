@@ -7,8 +7,8 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use rullama::prelude::*;
 use futures::stream::BoxStream;
+use rullama::prelude::*;
 
 /// A minimal custom provider that echoes input back.
 /// Replace the body of `chat` and `stream_chat` with your own LLM calls.

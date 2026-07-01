@@ -27,10 +27,6 @@ mod tokenizer;
 mod tests_util;
 
 pub use budget::{BudgetConfig, BudgetGuard, BudgetProvider, KeyedBudgetGuard};
-pub use failover::FailoverProvider;
-pub use tokenizer::{HeuristicTokenizer, Tokenizer};
-#[cfg(feature = "tokenizers")]
-pub use tokenizer::{AnthropicTokenizer, OpenAiTokenizer};
 #[cfg(feature = "cache")]
 pub use cache::SqliteCache;
 pub use cache::{
@@ -39,4 +35,8 @@ pub use cache::{
 pub use circuit::{CircuitBreakerConfig, CircuitBreakerProvider, CircuitState};
 pub use classify::{ErrorClass, classify_error};
 pub use error::ResilienceError;
+pub use failover::FailoverProvider;
 pub use retry::{RetryPolicy, RetryProvider};
+#[cfg(feature = "tokenizers")]
+pub use tokenizer::{AnthropicTokenizer, OpenAiTokenizer};
+pub use tokenizer::{HeuristicTokenizer, Tokenizer};

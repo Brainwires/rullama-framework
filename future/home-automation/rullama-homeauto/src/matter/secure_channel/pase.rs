@@ -658,9 +658,7 @@ impl PaseCommissionee {
                 keys, session_id, ..
             } => {
                 let keys = unsafe {
-                    std::ptr::read(
-                        keys as *const crate::matter::crypto::spake2plus::Spake2PlusKeys,
-                    )
+                    std::ptr::read(keys as *const crate::matter::crypto::spake2plus::Spake2PlusKeys)
                 };
                 (keys, *session_id)
             }

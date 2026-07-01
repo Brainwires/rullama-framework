@@ -98,11 +98,7 @@ impl EvaluationCase for PiiRedactionCatchesSsnEmailPhone {
         }
         // Non-external source with redact_pii=true should still redact even
         // though injection-sanitisation doesn't run.
-        let opt_in = wrap_with_content_source_with_pii(
-            PII_HEAVY,
-            ContentSource::UserInput,
-            true,
-        );
+        let opt_in = wrap_with_content_source_with_pii(PII_HEAVY, ContentSource::UserInput, true);
         if opt_in.contains("alice@example.com") {
             return Ok(TrialResult::failure(
                 trial_id,
@@ -111,11 +107,8 @@ impl EvaluationCase for PiiRedactionCatchesSsnEmailPhone {
             ));
         }
         // External-content path with opt-in also redacts.
-        let opt_in_external = wrap_with_content_source_with_pii(
-            PII_HEAVY,
-            ContentSource::ExternalContent,
-            true,
-        );
+        let opt_in_external =
+            wrap_with_content_source_with_pii(PII_HEAVY, ContentSource::ExternalContent, true);
         if opt_in_external.contains("123-45-6789") {
             return Ok(TrialResult::failure(
                 trial_id,

@@ -127,7 +127,11 @@ mod tests {
 
     // --- Method constants ---
 
+    // The method names are compile-time consts, so `is_empty()` is provably
+    // false — that's the point: this test is a guard against a future edit
+    // accidentally blanking one of them.
     #[test]
+    #[allow(clippy::const_is_empty)]
     fn method_constants_are_non_empty() {
         assert!(!METHOD_MESSAGE_SEND.is_empty());
         assert!(!METHOD_MESSAGE_STREAM.is_empty());

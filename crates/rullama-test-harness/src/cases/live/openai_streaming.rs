@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use futures::StreamExt;
 use rullama_core::{ChatOptions, Message, Provider, StreamChunk};
 use rullama_eval::{EvaluationCase, TrialResult};
 use rullama_provider::{OpenAiChatProvider, OpenAiClient};
-use futures::StreamExt;
 
 use crate::live::{live_openai_key, live_openai_model};
 use crate::registry::LiveCase;

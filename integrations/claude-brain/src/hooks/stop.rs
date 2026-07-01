@@ -67,16 +67,14 @@ pub async fn handle() -> Result<()> {
 
             let mut client = ctx.client().lock_owned().await;
             client
-                .capture_thought(
-                    rullama_knowledge::knowledge::types::CaptureThoughtRequest {
-                        content,
-                        category: None,
-                        tags: Some(tags),
-                        importance: None,
-                        source: Some("claude-code-turn".to_string()),
-                        owner_id: None,
-                    },
-                )
+                .capture_thought(rullama_knowledge::knowledge::types::CaptureThoughtRequest {
+                    content,
+                    category: None,
+                    tags: Some(tags),
+                    importance: None,
+                    source: Some("claude-code-turn".to_string()),
+                    owner_id: None,
+                })
                 .await?;
         }
     }
@@ -97,16 +95,14 @@ pub async fn handle() -> Result<()> {
 
         let mut client = ctx.client().lock_owned().await;
         client
-            .capture_thought(
-                rullama_knowledge::knowledge::types::CaptureThoughtRequest {
-                    content,
-                    category: None,
-                    tags: Some(tags),
-                    importance: None,
-                    source: Some("claude-code-turn".to_string()),
-                    owner_id: None,
-                },
-            )
+            .capture_thought(rullama_knowledge::knowledge::types::CaptureThoughtRequest {
+                content,
+                category: None,
+                tags: Some(tags),
+                importance: None,
+                source: Some("claude-code-turn".to_string()),
+                owner_id: None,
+            })
             .await?;
     }
 

@@ -90,10 +90,12 @@ done
 
 #[tokio::test]
 async fn server_eof_surfaces_as_error() {
-    // /bin/true exits immediately, closing stdout.
-    let mut transport = StdioTransport::new("/bin/true", &[])
+    // `true` exits immediately, closing stdout. Resolve it via PATH (like the
+    // `bash` server above) rather than a hardcoded `/bin/true`, which doesn't
+    // exist on macOS (only `/usr/bin/true`).
+    let mut transport = StdioTransport::new("true", &[])
         .await
-        .expect("spawn /bin/true");
+        .expect("spawn true");
 
     let req = JsonRpcRequest::new::<Value>(json!(1), "ping".into(), None).unwrap();
     let _ = transport.send_request(&req).await; // may succeed before EOF reaches us

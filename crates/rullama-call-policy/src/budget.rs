@@ -229,8 +229,7 @@ impl<P: Provider + ?Sized + 'static> Provider for BudgetProvider<P> {
         // token cap. Completion tokens aren't known yet, so we only compare
         // inputs-consumed against the limit.
         if let Some(limit) = self.guard.cfg.max_tokens {
-            let projected =
-                self.guard.tokens_consumed() + self.tokenizer.count(messages) as u64;
+            let projected = self.guard.tokens_consumed() + self.tokenizer.count(messages) as u64;
             if projected > limit {
                 return Err(ResilienceError::BudgetExceeded {
                     kind: "tokens",

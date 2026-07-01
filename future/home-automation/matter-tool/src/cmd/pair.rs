@@ -51,13 +51,12 @@ pub async fn run(action: PairAction, fabric_dir: &Path, out: &Output) -> Result<
             // Remove the device from the local fabric by rewriting devices.json
             // without the target node.  No network interaction is needed.
             let devices_file = fabric_dir.join("devices.json");
-            let mut devices: Vec<rullama_homeauto::MatterDevice> =
-                if devices_file.exists() {
-                    let raw = tokio::fs::read_to_string(&devices_file).await?;
-                    serde_json::from_str(&raw)?
-                } else {
-                    vec![]
-                };
+            let mut devices: Vec<rullama_homeauto::MatterDevice> = if devices_file.exists() {
+                let raw = tokio::fs::read_to_string(&devices_file).await?;
+                serde_json::from_str(&raw)?
+            } else {
+                vec![]
+            };
             let before = devices.len();
             devices.retain(|d| d.node_id != node_id);
             if devices.len() == before {

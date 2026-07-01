@@ -1,8 +1,6 @@
 //! MCP server implementation for the issue tracker.
 
 use anyhow::{Context, Result};
-use rullama_core::paths::PlatformPaths;
-use rullama_storage::{LanceDatabase, bm25_search::BM25Search};
 use rmcp::{
     RoleServer, ServerHandler, ServiceExt,
     handler::server::{router::prompt::PromptRouter, tool::ToolRouter, wrapper::Parameters},
@@ -11,6 +9,8 @@ use rmcp::{
     service::RequestContext,
     tool, tool_handler, tool_router,
 };
+use rullama_core::paths::PlatformPaths;
+use rullama_storage::{LanceDatabase, bm25_search::BM25Search};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

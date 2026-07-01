@@ -4,6 +4,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+use clap::Parser;
 use rullama_agent::personas::StaticPersonaProvider;
 use rullama_call_policy::{BudgetConfig, BudgetGuard};
 use rullama_hardware::audio::{
@@ -17,7 +18,6 @@ use rullama_hardware::audio::{
 };
 use rullama_provider::{OpenAiChatProvider, OpenAiClient};
 use rullama_stores::{ArcSessionStore, InMemorySessionStore, SessionId, SqliteSessionStore};
-use clap::Parser;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -52,9 +52,7 @@ async fn main() -> anyhow::Result<()> {
     // Logging
     let level = if cli.verbose { "debug" } else { "info" };
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new(format!(
-            "voice_assistant={level},rullama_hardware={level}"
-        ))
+        EnvFilter::new(format!("voice_assistant={level},rullama_hardware={level}"))
     });
     tracing_subscriber::fmt().with_env_filter(filter).init();
 

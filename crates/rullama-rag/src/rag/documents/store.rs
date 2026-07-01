@@ -8,10 +8,10 @@ use arrow_array::{
     Array, ArrayRef, FixedSizeListArray, Float32Array, Int64Array, RecordBatch,
     RecordBatchIterator, StringArray, UInt32Array,
 };
-use rullama_core::EmbeddingProvider;
 use futures::TryStreamExt;
 use lancedb::Connection;
 use lancedb::query::{ExecutableQuery, QueryBase};
+use rullama_core::EmbeddingProvider;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;

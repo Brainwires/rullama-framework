@@ -1,6 +1,6 @@
 use anyhow::Result;
-use rullama_issues::mcp_server::IssuesMcpServer;
 use clap::{Parser, Subcommand};
+use rullama_issues::mcp_server::IssuesMcpServer;
 use std::panic;
 
 /// rullama Issues: lightweight project issue tracking MCP server

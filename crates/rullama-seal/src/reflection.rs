@@ -779,8 +779,14 @@ impl Default for ReflectionModule {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query_core::{QueryExpr, QueryResultValue, QuestionType};
+    use crate::query_core::{QueryExpr, QuestionType};
+    // Only the knowledge-gated tests build result values.
+    #[cfg(feature = "knowledge")]
+    use crate::query_core::QueryResultValue;
     use rullama_core::graph::EntityType;
+    // `RelationshipGraph` lives in the optional `rullama-knowledge` dep; the
+    // tests using it are gated behind the `knowledge` feature.
+    #[cfg(feature = "knowledge")]
     use rullama_knowledge::RelationshipGraph;
 
     fn create_test_query() -> QueryCore {
@@ -792,6 +798,7 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "knowledge")]
     #[test]
     fn test_analyze_empty_result() {
         let mut reflection = ReflectionModule::new(ReflectionConfig::default());
@@ -808,6 +815,7 @@ mod tests {
         )));
     }
 
+    #[cfg(feature = "knowledge")]
     #[test]
     fn test_analyze_overflow_result() {
         let mut reflection = ReflectionModule::new(ReflectionConfig {

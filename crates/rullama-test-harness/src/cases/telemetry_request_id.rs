@@ -9,9 +9,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use rullama_eval::{EvaluationCase, TrialResult};
-use rullama_telemetry::{
-    AnalyticsCollector, AnalyticsEvent, AnalyticsQuery, SqliteAnalyticsSink,
-};
+use rullama_telemetry::{AnalyticsCollector, AnalyticsEvent, AnalyticsQuery, SqliteAnalyticsSink};
 
 use crate::registry::TierACase;
 
@@ -49,8 +47,9 @@ impl EvaluationCase for CostByRequestIdIsolatesCalls {
         let db_path: PathBuf = tmp.path().join("analytics.db");
 
         let sink = SqliteAnalyticsSink::new_with_path(&db_path)?;
-        let collector =
-            AnalyticsCollector::new(vec![Box::new(sink) as Box<dyn rullama_telemetry::AnalyticsSink>]);
+        let collector = AnalyticsCollector::new(vec![
+            Box::new(sink) as Box<dyn rullama_telemetry::AnalyticsSink>
+        ]);
 
         // Three events: two share req-A, one is req-B.
         collector.record(make_event("req-a", 100, 50, 0.01));
@@ -72,14 +71,20 @@ impl EvaluationCase for CostByRequestIdIsolatesCalls {
                     return Ok(TrialResult::failure(
                         trial_id,
                         elapsed,
-                        format!("req-a prompt tokens: want 300, got {}", a.total_prompt_tokens),
+                        format!(
+                            "req-a prompt tokens: want 300, got {}",
+                            a.total_prompt_tokens
+                        ),
                     ));
                 }
                 if a.total_completion_tokens != 125 {
                     return Ok(TrialResult::failure(
                         trial_id,
                         elapsed,
-                        format!("req-a completion tokens: want 125, got {}", a.total_completion_tokens),
+                        format!(
+                            "req-a completion tokens: want 125, got {}",
+                            a.total_completion_tokens
+                        ),
                     ));
                 }
                 if (a.total_cost_usd - 0.03).abs() > 1e-6 {

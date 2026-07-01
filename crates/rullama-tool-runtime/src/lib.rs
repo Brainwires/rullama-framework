@@ -93,8 +93,8 @@ pub use error::{ResourceType, RetryStrategy, ToolErrorCategory, ToolOutcome, cla
 pub use executor::{PreHookDecision, ToolExecutor, ToolPreHook};
 pub use registry::{ToolCategory, ToolRegistry};
 pub use sanitization::{
-    contains_pii, contains_sensitive_data, filter_tool_output, is_injection_attempt,
-    redact_pii, redact_sensitive_data, sanitize_external_content, wrap_with_content_source,
+    contains_pii, contains_sensitive_data, filter_tool_output, is_injection_attempt, redact_pii,
+    redact_sensitive_data, sanitize_external_content, wrap_with_content_source,
     wrap_with_content_source_with_pii,
 };
 pub use smart_router::{

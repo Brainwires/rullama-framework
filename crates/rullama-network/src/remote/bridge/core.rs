@@ -54,8 +54,7 @@ pub struct RemoteBridge {
     pub permission_relay: crate::remote::permission_relay::PermissionRelay,
     /// Analytics collector for NetworkMessage events.
     #[cfg(feature = "telemetry")]
-    pub(super) analytics_collector:
-        Option<std::sync::Arc<rullama_telemetry::AnalyticsCollector>>,
+    pub(super) analytics_collector: Option<std::sync::Arc<rullama_telemetry::AnalyticsCollector>>,
 }
 
 impl RemoteBridge {

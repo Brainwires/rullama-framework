@@ -80,7 +80,10 @@ impl<'a, S: BlobSource> VaeGpu<'a, S> {
         let mut stage_total = 1 + 3 + 2; // conv_in, mid×3, norm_out + conv_out
         for bi in 0..n_up {
             stage_total += resnets;
-            if self.st.has(&format!("decoder.up_blocks.{bi}.upsamplers.0.conv.weight")) {
+            if self
+                .st
+                .has(&format!("decoder.up_blocks.{bi}.upsamplers.0.conv.weight"))
+            {
                 stage_total += 1;
             }
         }

@@ -16,10 +16,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use chrono::Utc;
 use rullama_telemetry::{
     AnalyticsCollector, AnalyticsError, AnalyticsEvent, AnalyticsSink, MemoryAnalyticsSink,
 };
-use chrono::Utc;
 
 // ── Shared-sink wrapper ───────────────────────────────────────────────────────
 //
@@ -52,6 +52,7 @@ async fn main() -> anyhow::Result<()> {
     // Provider call (e.g. Anthropic Claude)
     collector.record(AnalyticsEvent::ProviderCall {
         session_id: session.clone(),
+        request_id: None,
         provider: "anthropic".to_string(),
         model: "claude-sonnet-4-6".to_string(),
         prompt_tokens: 512,

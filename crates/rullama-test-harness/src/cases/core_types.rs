@@ -35,7 +35,10 @@ impl EvaluationCase for UsageTotalsCase {
             return Ok(TrialResult::failure(
                 0,
                 0,
-                format!("Usage::new(30,20).total_tokens={} expected 50", u.total_tokens),
+                format!(
+                    "Usage::new(30,20).total_tokens={} expected 50",
+                    u.total_tokens
+                ),
             ));
         }
         let z = Usage::default();
@@ -116,8 +119,7 @@ impl EvaluationCase for ProviderTraitRoundtripCase {
         "feature.core"
     }
     async fn run(&self, _trial: usize) -> Result<TrialResult> {
-        let p: Box<dyn Provider> =
-            Box::new(ScriptedProvider::always_text("test", "echo"));
+        let p: Box<dyn Provider> = Box::new(ScriptedProvider::always_text("test", "echo"));
         let r = p
             .chat(
                 &[Message::user("ping")],

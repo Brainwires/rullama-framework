@@ -57,9 +57,9 @@ impl EvaluationCase for BudgetPrecheckBlocksProviderCase {
         // reach the inner provider, it will surface a recognisable error
         // string. The test then differentiates "blocked-by-budget"
         // (expected) from "inner-was-called" (the security bug).
-        let inner: Arc<dyn Provider> = Arc::new(
-            FailingProvider::new("inner provider must not be called when budget is exhausted"),
-        );
+        let inner: Arc<dyn Provider> = Arc::new(FailingProvider::new(
+            "inner provider must not be called when budget is exhausted",
+        ));
         let budgeted = BudgetProvider::new(inner, guard);
         let result = budgeted
             .chat(&[Message::user("ping")], None, &ChatOptions::default())
@@ -119,7 +119,9 @@ impl EvaluationCase for BudgetRejectsOversizedInputCase {
             "inner provider must not be reached for oversized input",
         ));
         let budgeted = BudgetProvider::new(inner, guard);
-        let result = budgeted.chat(&messages, None, &ChatOptions::default()).await;
+        let result = budgeted
+            .chat(&messages, None, &ChatOptions::default())
+            .await;
         match result {
             Err(e) => {
                 let msg = format!("{e:#}");

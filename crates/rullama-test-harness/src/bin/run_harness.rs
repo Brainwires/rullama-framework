@@ -111,10 +111,7 @@ fn main() -> ExitCode {
         }
     }
 
-    let any_failed = result
-        .stats
-        .values()
-        .any(|s| s.success_rate < 1.0);
+    let any_failed = result.stats.values().any(|s| s.success_rate < 1.0);
     if any_failed {
         ExitCode::FAILURE
     } else {

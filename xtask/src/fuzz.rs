@@ -42,7 +42,11 @@ fn toolchain_installed(name: &str) -> bool {
     Command::new("rustup")
         .args(["toolchain", "list"])
         .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).lines().any(|l| l.starts_with(name)))
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .any(|l| l.starts_with(name))
+        })
         .unwrap_or(false)
 }
 

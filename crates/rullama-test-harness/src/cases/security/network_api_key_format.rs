@@ -100,7 +100,10 @@ impl EvaluationCase for ApiKeyRejectsAdversarialCase {
             ("", "empty string"),
             (" ", "single space"),
             ("bw_staging_00000000000000000000000000000000", "unknown env"),
-            ("BW_PROD_00000000000000000000000000000000", "uppercase prefix"),
+            (
+                "BW_PROD_00000000000000000000000000000000",
+                "uppercase prefix",
+            ),
             (&key_too_short, "31-char body (one short)"),
             (&key_too_long, "33-char body (one long)"),
             (&key_upper, "uppercase body"),

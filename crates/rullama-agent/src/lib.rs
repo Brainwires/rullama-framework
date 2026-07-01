@@ -176,8 +176,8 @@ pub use state_model::{StateModelProposedOperation, StateSnapshot, ThreeStateMode
 pub use wait_queue::WaitQueue;
 
 // Schema + lifecycle (AgentContext re-export moved to rullama-inference in 11f)
-pub use rullama_tool_runtime::{PreHookDecision, ToolPreHook};
 pub use execution_graph::{ExecutionGraph, RunTelemetry, StepNode, ToolCallRecord};
+pub use rullama_tool_runtime::{PreHookDecision, ToolPreHook};
 // pool re-exports moved to rullama-inference in Phase 11f.
 
 // SEAL re-exports — extracted to rullama-seal in Phase 11d.

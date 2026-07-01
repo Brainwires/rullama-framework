@@ -33,10 +33,10 @@
 //! ```
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use rullama_permission::audit::{
     AuditEventType, AuditLogger, AuditQuery, FeedbackPolarity, FeedbackSignal,
 };
-use chrono::{DateTime, Utc};
 
 use super::learning::{LearningCoordinator, PatternHint};
 

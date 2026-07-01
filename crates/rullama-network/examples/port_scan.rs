@@ -18,8 +18,7 @@ async fn main() {
 
     println!("Scanning common ports on {target}...");
 
-    let results =
-        rullama_network::lan::scan_common_ports(target, Duration::from_millis(500)).await;
+    let results = rullama_network::lan::scan_common_ports(target, Duration::from_millis(500)).await;
 
     let open: Vec<_> = results
         .iter()

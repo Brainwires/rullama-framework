@@ -49,9 +49,9 @@ mod types_anthropic;
 mod types_openai;
 
 use adapter_layer::AdapterLayer;
-use rullama_proxy::builder::ProxyBuilder;
 use clap::Parser;
 use config::AdapterConfig;
+use rullama_proxy::builder::ProxyBuilder;
 use std::path::PathBuf;
 use std::time::Duration;
 

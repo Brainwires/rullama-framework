@@ -47,7 +47,9 @@ impl EvaluationCase for BuilderFacadeCase {
     }
     async fn run(&self, _trial: usize) -> Result<TrialResult> {
         // 1. Missing provider → named-field error
-        let r = AgentBuilder::new().tools(fake_executor()).build_chat_agent();
+        let r = AgentBuilder::new()
+            .tools(fake_executor())
+            .build_chat_agent();
         match r {
             Err(e) if e.to_string().contains("`provider` is required") => {}
             Err(e) => {
@@ -67,8 +69,7 @@ impl EvaluationCase for BuilderFacadeCase {
         }
 
         // 2. Missing tools → named-field error
-        let provider: Arc<dyn Provider> =
-            Arc::new(ScriptedProvider::always_text("test", "hi"));
+        let provider: Arc<dyn Provider> = Arc::new(ScriptedProvider::always_text("test", "hi"));
         let r = AgentBuilder::new()
             .provider(provider.clone())
             .build_chat_agent();

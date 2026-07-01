@@ -24,7 +24,12 @@ const DOCS_ROOT_RESOLVED: string = (() => {
   if (!stat.isDirectory()) {
     throw new Error(`DOCS_ROOT is not a directory: "${resolved}"`);
   }
-  return resolved;
+  // Resolve symlinks in the root itself. readMarkdownFile compares child
+  // paths against this root *after* realpathSync'ing them, so the root must
+  // also be fully symlink-resolved or the containment check rejects every
+  // read whenever any root component is a symlink (e.g. macOS's
+  // /var -> /private/var, or a symlinked /workspace in a container).
+  return fs.realpathSync(resolved);
 })();
 
 /** Kept for backward compatibility with api-docs/page.tsx */

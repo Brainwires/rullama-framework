@@ -12,7 +12,9 @@
 
 use std::collections::BTreeMap;
 
-use rullama_engine::imagegen::{BlobSource, FileBlobSource, ImageManifest, find_manifest, read_header};
+use rullama_engine::imagegen::{
+    BlobSource, FileBlobSource, ImageManifest, find_manifest, read_header,
+};
 
 fn fmt_bytes(n: u64) -> String {
     const U: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];

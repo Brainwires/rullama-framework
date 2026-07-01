@@ -9,9 +9,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use rullama_memory::{
-    MemoryTier, MessageMetadata, MessageStore, TieredMemory, TieredMemoryConfig,
-};
+use rullama_memory::{MemoryTier, MessageMetadata, MessageStore, TieredMemory, TieredMemoryConfig};
 use rullama_storage::{CachedEmbeddingProvider, LanceDatabase};
 
 #[tokio::main]

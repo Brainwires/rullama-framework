@@ -97,9 +97,7 @@ impl EvaluationCase for AuthRejectsMissingTokenCase {
         let req = make_request("tools/list", None);
         let mut ctx = RequestContext::new(json!(1));
         match mw.process_request(&req, &mut ctx).await {
-            MiddlewareResult::Reject(err) if err.code == -32003 => {
-                Ok(TrialResult::success(0, 0))
-            }
+            MiddlewareResult::Reject(err) if err.code == -32003 => Ok(TrialResult::success(0, 0)),
             MiddlewareResult::Reject(err) => Ok(TrialResult::failure(
                 0,
                 0,

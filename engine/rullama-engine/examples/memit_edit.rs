@@ -34,7 +34,9 @@ use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 
-use rullama_engine::api::{ChatMessage, ChatRole, MemitEdit, MemitHparams, Model, RomeIterativeHparams};
+use rullama_engine::api::{
+    ChatMessage, ChatRole, MemitEdit, MemitHparams, Model, RomeIterativeHparams,
+};
 
 type BoxError = Box<dyn Error + Send + Sync>;
 

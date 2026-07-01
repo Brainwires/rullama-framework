@@ -85,6 +85,9 @@ fn main() {
     println!("first 8: {:?}", &out[..8.min(n)]);
 
     assert!(finite, "fp8 DiT output has NaN/Inf");
-    assert!(mx.abs() < 1e4 && mn.abs() < 1e4, "fp8 DiT output magnitude exploded");
+    assert!(
+        mx.abs() < 1e4 && mn.abs() < 1e4,
+        "fp8 DiT output magnitude exploded"
+    );
     println!("\nOK — scaled-fp8 DiT executed on the GPU with finite, sane output.");
 }

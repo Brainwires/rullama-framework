@@ -1,11 +1,11 @@
 //! Storage layer for issues and comments using the rullama-storage backend.
 
 use anyhow::{Context, Result};
+use chrono::Utc;
 use rullama_storage::{
     FieldDef, FieldType, FieldValue, Filter, Record, StorageBackend, bm25_search::BM25Search,
     record_get,
 };
-use chrono::Utc;
 use std::sync::Arc;
 
 use crate::types::{Comment, Issue, IssuePatch, IssuePriority, IssueStatus};

@@ -577,9 +577,8 @@ impl CycleOrchestrator {
 
             let now = chrono::Utc::now();
             let graph = rullama_agent::execution_graph::ExecutionGraph::new(String::new(), now);
-            let telemetry = rullama_agent::execution_graph::RunTelemetry::from_graph(
-                &graph, now, false, 0.0,
-            );
+            let telemetry =
+                rullama_agent::execution_graph::RunTelemetry::from_graph(&graph, now, false, 0.0);
             worker_results.push(WorkerResult {
                 task_id: task_id.clone(),
                 task_description: description,

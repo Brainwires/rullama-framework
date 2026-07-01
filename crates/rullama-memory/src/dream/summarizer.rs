@@ -63,8 +63,8 @@ mod tests {
 
     use anyhow::Result;
     use async_trait::async_trait;
-    use rullama_core::{ChatResponse, StreamChunk, Tool, Usage};
     use futures::stream::BoxStream;
+    use rullama_core::{ChatResponse, StreamChunk, Tool, Usage};
 
     /// Captures the prompt the summarizer dispatches and returns a fixed reply.
     struct CapturingProvider {

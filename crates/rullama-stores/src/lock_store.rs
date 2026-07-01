@@ -55,8 +55,7 @@ impl LockStore {
     fn default_db_path() -> Result<PathBuf> {
         let home = dirs::home_dir().context("Could not determine home directory")?;
         let rullama_dir = home.join(".rullama");
-        std::fs::create_dir_all(&rullama_dir)
-            .context("Failed to create ~/.rullama directory")?;
+        std::fs::create_dir_all(&rullama_dir).context("Failed to create ~/.rullama directory")?;
         Ok(rullama_dir.join("locks.db"))
     }
 

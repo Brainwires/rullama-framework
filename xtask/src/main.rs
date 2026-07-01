@@ -86,7 +86,9 @@ fn print_help() {
     println!("  check-stubs             Scan for unfinished code (todo!(), FIXME, etc.)");
     println!("  lint-deps               Enforce framework/extras boundary (ADR-0004)");
     println!("  package-count [--dry-run]  Update crate/extras count references in .md files");
-    println!("  test-harness <sub>      Run the test harness (coverage, run, deny-grep, baselines)");
+    println!(
+        "  test-harness <sub>      Run the test harness (coverage, run, deny-grep, baselines)"
+    );
     println!("  fuzz [args ...]         Run cargo-fuzz on nightly (alias: `cargo fuzz`). e.g.");
     println!("                            cargo fuzz list");
     println!("                            cargo fuzz run <target> -- -max_total_time=60");

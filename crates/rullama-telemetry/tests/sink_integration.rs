@@ -6,9 +6,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 
-use rullama_telemetry::{
-    AnalyticsCollector, AnalyticsEvent, AnalyticsSink, MemoryAnalyticsSink,
-};
+use rullama_telemetry::{AnalyticsCollector, AnalyticsEvent, AnalyticsSink, MemoryAnalyticsSink};
 
 fn custom_event(name: &str) -> AnalyticsEvent {
     AnalyticsEvent::Custom {

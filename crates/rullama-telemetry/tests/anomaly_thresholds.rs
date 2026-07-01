@@ -12,10 +12,10 @@
 //! `ObservedEvent` directly so the test does not depend on
 //! `rullama-permission` (where the canonical `AuditEvent` impl lives).
 
+use chrono::{DateTime, TimeZone, Utc};
 use rullama_telemetry::anomaly::{
     AnomalyConfig, AnomalyDetector, AnomalyKind, EventCategory, ObservedEvent,
 };
-use chrono::{DateTime, TimeZone, Utc};
 
 struct Ev {
     ts: i64,

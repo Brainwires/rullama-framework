@@ -76,8 +76,8 @@ async fn mock_provider_works_behind_arc() {
 
 #[tokio::test]
 async fn mock_provider_stream_chat_emits_text_then_done() {
-    use rullama_core::StreamChunk;
     use futures::StreamExt;
+    use rullama_core::StreamChunk;
 
     let provider = make_provider("stream-mock", "streamed");
     let messages = vec![Message::user("test")];

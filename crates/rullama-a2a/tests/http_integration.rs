@@ -7,8 +7,8 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 
 use async_trait::async_trait;
-use rullama_a2a::*;
 use futures::Stream;
+use rullama_a2a::*;
 
 /// Minimal handler for HTTP integration tests.
 struct HttpTestHandler {

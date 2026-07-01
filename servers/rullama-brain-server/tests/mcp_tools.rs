@@ -8,9 +8,9 @@
 //! parallel safely.
 
 use anyhow::{Context, Result};
+use rmcp::{ServiceExt, model::CallToolRequestParams, service::RunningService};
 use rullama_brain_server::mcp_server::BrainMcpServer;
 use rullama_knowledge::knowledge::brain_client::BrainClient;
-use rmcp::{ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio::io::DuplexStream;

@@ -50,8 +50,7 @@ impl EvaluationCase for AutoCompactCase {
         //    50-message history and confirm message_count stays at 51
         //    (50 + the user message we send) after one round.
         {
-            let provider: Arc<dyn Provider> =
-                Arc::new(ScriptedProvider::always_text("test", "ok"));
+            let provider: Arc<dyn Provider> = Arc::new(ScriptedProvider::always_text("test", "ok"));
             let mut agent: ChatAgent = AgentBuilder::new()
                 .provider(provider)
                 .tools(fake_executor())
@@ -84,8 +83,7 @@ impl EvaluationCase for AutoCompactCase {
         //    compact before issuing the provider call. Without a summarizer
         //    attached, `compact_history` falls back to a 20-message trim.
         {
-            let provider: Arc<dyn Provider> =
-                Arc::new(ScriptedProvider::always_text("test", "ok"));
+            let provider: Arc<dyn Provider> = Arc::new(ScriptedProvider::always_text("test", "ok"));
             let mut agent: ChatAgent = AgentBuilder::new()
                 .provider(provider)
                 .tools(fake_executor())
@@ -120,8 +118,7 @@ impl EvaluationCase for AutoCompactCase {
 
         // 3. With threshold set ABOVE the estimate, compact must NOT fire.
         {
-            let provider: Arc<dyn Provider> =
-                Arc::new(ScriptedProvider::always_text("test", "ok"));
+            let provider: Arc<dyn Provider> = Arc::new(ScriptedProvider::always_text("test", "ok"));
             let mut agent: ChatAgent = AgentBuilder::new()
                 .provider(provider)
                 .tools(fake_executor())

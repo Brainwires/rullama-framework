@@ -3,8 +3,8 @@
 //! Parses structured plan content to extract numbered steps
 //! that can be converted into tasks.
 
-use rullama_core::task::{Task, TaskPriority};
 use regex::Regex;
+use rullama_core::task::{Task, TaskPriority};
 use std::sync::LazyLock;
 
 /// A parsed step from plan content

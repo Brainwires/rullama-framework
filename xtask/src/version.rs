@@ -397,8 +397,7 @@ fn replace_version_in_rs(content: &str, new_version: &str) -> String {
     let mut doc_result = String::with_capacity(result.len());
     for line in result.lines() {
         let trimmed = line.trim_start();
-        if (trimmed.starts_with("///") || trimmed.starts_with("//!"))
-            && trimmed.contains("rullama")
+        if (trimmed.starts_with("///") || trimmed.starts_with("//!")) && trimmed.contains("rullama")
         {
             let leading_ws = &line[..line.len() - trimmed.len()];
             let marker = &trimmed[..3];
@@ -1608,8 +1607,7 @@ mod tests {
 
     #[test]
     fn test_is_in_affected_crate() {
-        let affected: HashSet<String> =
-            ["rullama-core".into(), "rullama-agent".into()].into();
+        let affected: HashSet<String> = ["rullama-core".into(), "rullama-agent".into()].into();
         assert!(is_in_affected_crate(
             "crates/rullama-core/src/lib.rs",
             &affected
@@ -1666,9 +1664,6 @@ mod tests {
     fn test_rs_doc_comment_leaves_non_rullama() {
         let input = "/// tokio = { version = \"1.43\", features = [\"full\"] }\n";
         let result = replace_version_in_rs(input, "0.5.0");
-        assert_eq!(
-            result, input,
-            "should not modify non-rullama doc comments"
-        );
+        assert_eq!(result, input, "should not modify non-rullama doc comments");
     }
 }

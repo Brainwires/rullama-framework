@@ -86,10 +86,8 @@ impl EvaluationCase for KeyedBudgetIsolatesUsers {
             ..Default::default()
         });
         let race_guard = race_kbg.for_key(&"raced".to_string()).await;
-        let race_provider: Arc<dyn Provider> = Arc::new(BudgetProvider::new(
-            scripted.clone(),
-            race_guard.clone(),
-        ));
+        let race_provider: Arc<dyn Provider> =
+            Arc::new(BudgetProvider::new(scripted.clone(), race_guard.clone()));
         let successes = Arc::new(AtomicUsize::new(0));
         let mut handles = Vec::new();
         for _ in 0..8 {

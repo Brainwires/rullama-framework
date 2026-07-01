@@ -333,7 +333,8 @@ impl SkillRegistry {
     /// Format a skill listing for display
     pub fn format_skill_list(&self) -> String {
         if self.skills.is_empty() {
-            return "No skills available. Add skills to ~/.rullama/skills/ or .rullama/skills/".to_string();
+            return "No skills available. Add skills to ~/.rullama/skills/ or .rullama/skills/"
+                .to_string();
         }
 
         let mut output = String::new();

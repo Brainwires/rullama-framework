@@ -26,8 +26,8 @@
 //! assert!(filtered.contains("[REDACTED"));
 //! ```
 
-use rullama_core::ContentSource;
 use regex::Regex;
+use rullama_core::ContentSource;
 use std::sync::OnceLock;
 
 // ── PII patterns ──────────────────────────────────────────────────────────────
@@ -45,10 +45,7 @@ fn pii_patterns() -> &'static Vec<(Regex, &'static str)> {
             // a few SSA-invalid prefixes (000-, 666-) too — that's
             // acceptable for a redaction layer (false positives are cheaper
             // than false negatives here).
-            (
-                r"\b\d{3}[- ]\d{2}[- ]\d{4}\b",
-                "ssn",
-            ),
+            (r"\b\d{3}[- ]\d{2}[- ]\d{4}\b", "ssn"),
             // Email — same pattern as the sensitive-credentials section, kept
             // distinct here so the redaction label reads "pii-email" rather
             // than the generic "email" tag.
@@ -66,10 +63,7 @@ fn pii_patterns() -> &'static Vec<(Regex, &'static str)> {
             // Credit-card-shaped: 13–19 digits in groups of 4 (most common
             // 16-digit cards), separated by spaces or dashes. Doesn't run a
             // Luhn check — false positives are acceptable for redaction.
-            (
-                r"\b(?:\d{4}[ -]){3}\d{3,4}\b",
-                "credit-card",
-            ),
+            (r"\b(?:\d{4}[ -]){3}\d{3,4}\b", "credit-card"),
         ];
         specs
             .iter()

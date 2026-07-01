@@ -638,6 +638,7 @@ mod tests {
     ) -> AnalyticsEvent {
         AnalyticsEvent::ProviderCall {
             session_id: Some(session.to_string()),
+            request_id: None,
             provider: "anthropic".into(),
             model: "claude-sonnet-4-6".into(),
             prompt_tokens: prompt,

@@ -314,6 +314,7 @@ mod tests {
     fn provider_call_event() -> AnalyticsEvent {
         AnalyticsEvent::ProviderCall {
             session_id: Some("sess-1".to_string()),
+            request_id: None,
             provider: "openai".to_string(),
             model: "gpt-4".to_string(),
             prompt_tokens: 100,

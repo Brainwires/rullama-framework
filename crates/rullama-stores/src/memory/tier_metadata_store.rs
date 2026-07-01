@@ -104,9 +104,7 @@ fn string_to_tier(s: &str) -> MemoryTier {
 }
 
 /// Store for tier metadata
-pub struct TierMetadataStore<
-    B: StorageBackend = rullama_storage::databases::lance::LanceDatabase,
-> {
+pub struct TierMetadataStore<B: StorageBackend = rullama_storage::databases::lance::LanceDatabase> {
     backend: Arc<B>,
 }
 

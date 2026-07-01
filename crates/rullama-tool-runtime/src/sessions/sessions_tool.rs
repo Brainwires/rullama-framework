@@ -431,8 +431,8 @@ impl SessionsTool {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use rullama_stores::session::broker::{SessionMessage, SessionSummary, SpawnedSession};
     use chrono::{TimeZone, Utc};
+    use rullama_stores::session::broker::{SessionMessage, SessionSummary, SpawnedSession};
     use std::sync::Mutex;
 
     /// Hand-rolled test double — no mocking framework.

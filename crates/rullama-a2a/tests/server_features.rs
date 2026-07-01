@@ -5,8 +5,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rullama_a2a::*;
 use futures::{Stream, StreamExt};
+use rullama_a2a::*;
 use tokio::sync::Mutex;
 
 /// Test handler with task storage and optional push notification support.
@@ -331,13 +331,9 @@ async fn test_rest_streaming_message() {
     })
     .unwrap();
 
-    let result = rullama_a2a::server::rest_router::dispatch_rest(
-        &handler,
-        "POST",
-        "/message:stream",
-        &body,
-    )
-    .await;
+    let result =
+        rullama_a2a::server::rest_router::dispatch_rest(&handler, "POST", "/message:stream", &body)
+            .await;
 
     match result {
         Ok(rullama_a2a::server::rest_router::RestResult::Stream(stream)) => {
@@ -376,18 +372,12 @@ async fn test_rest_cancel_task() {
         metadata: None,
     })
     .unwrap();
-    let result = rullama_a2a::server::rest_router::dispatch_rest(
-        &handler,
-        "POST",
-        "/message:send",
-        &body,
-    )
-    .await
-    .unwrap();
+    let result =
+        rullama_a2a::server::rest_router::dispatch_rest(&handler, "POST", "/message:send", &body)
+            .await
+            .unwrap();
     let smr: SendMessageResponse = match result {
-        rullama_a2a::server::rest_router::RestResult::Json(v) => {
-            serde_json::from_value(v).unwrap()
-        }
+        rullama_a2a::server::rest_router::RestResult::Json(v) => serde_json::from_value(v).unwrap(),
         _ => panic!("Expected JSON"),
     };
     let task = smr.task.unwrap();
@@ -402,9 +392,7 @@ async fn test_rest_cancel_task() {
     .await
     .unwrap();
     let canceled: Task = match result {
-        rullama_a2a::server::rest_router::RestResult::Json(v) => {
-            serde_json::from_value(v).unwrap()
-        }
+        rullama_a2a::server::rest_router::RestResult::Json(v) => serde_json::from_value(v).unwrap(),
         _ => panic!("Expected JSON"),
     };
     assert_eq!(canceled.status.state, TaskState::Canceled);
@@ -424,18 +412,12 @@ async fn test_rest_get_single_task() {
         metadata: None,
     })
     .unwrap();
-    let result = rullama_a2a::server::rest_router::dispatch_rest(
-        &handler,
-        "POST",
-        "/message:send",
-        &body,
-    )
-    .await
-    .unwrap();
+    let result =
+        rullama_a2a::server::rest_router::dispatch_rest(&handler, "POST", "/message:send", &body)
+            .await
+            .unwrap();
     let smr: SendMessageResponse = match result {
-        rullama_a2a::server::rest_router::RestResult::Json(v) => {
-            serde_json::from_value(v).unwrap()
-        }
+        rullama_a2a::server::rest_router::RestResult::Json(v) => serde_json::from_value(v).unwrap(),
         _ => panic!("Expected JSON"),
     };
     let task = smr.task.unwrap();
@@ -450,9 +432,7 @@ async fn test_rest_get_single_task() {
     .await
     .unwrap();
     let fetched: Task = match result {
-        rullama_a2a::server::rest_router::RestResult::Json(v) => {
-            serde_json::from_value(v).unwrap()
-        }
+        rullama_a2a::server::rest_router::RestResult::Json(v) => serde_json::from_value(v).unwrap(),
         _ => panic!("Expected JSON"),
     };
     assert_eq!(fetched.id, task.id);
@@ -472,18 +452,12 @@ async fn test_rest_subscribe_to_task() {
         metadata: None,
     })
     .unwrap();
-    let result = rullama_a2a::server::rest_router::dispatch_rest(
-        &handler,
-        "POST",
-        "/message:send",
-        &body,
-    )
-    .await
-    .unwrap();
+    let result =
+        rullama_a2a::server::rest_router::dispatch_rest(&handler, "POST", "/message:send", &body)
+            .await
+            .unwrap();
     let smr: SendMessageResponse = match result {
-        rullama_a2a::server::rest_router::RestResult::Json(v) => {
-            serde_json::from_value(v).unwrap()
-        }
+        rullama_a2a::server::rest_router::RestResult::Json(v) => serde_json::from_value(v).unwrap(),
         _ => panic!("Expected JSON"),
     };
     let task = smr.task.unwrap();
@@ -516,13 +490,9 @@ async fn test_rest_tenant_prefix_stripped() {
     let handler = Arc::new(FullTestHandler::new());
 
     // With tenant prefix: /my-tenant/tasks
-    let result = rullama_a2a::server::rest_router::dispatch_rest(
-        &handler,
-        "GET",
-        "/my-tenant/tasks",
-        &[],
-    )
-    .await;
+    let result =
+        rullama_a2a::server::rest_router::dispatch_rest(&handler, "GET", "/my-tenant/tasks", &[])
+            .await;
     // Should work — tenant is stripped, routes to /tasks
     match result {
         Ok(rullama_a2a::server::rest_router::RestResult::Json(_)) => {}
@@ -537,8 +507,7 @@ async fn test_rest_unknown_route() {
     let handler = Arc::new(FullTestHandler::new());
 
     let result =
-        rullama_a2a::server::rest_router::dispatch_rest(&handler, "GET", "/nonexistent", &[])
-            .await;
+        rullama_a2a::server::rest_router::dispatch_rest(&handler, "GET", "/nonexistent", &[]).await;
     match result {
         Err(e) => assert_eq!(e.code, rullama_a2a::error::METHOD_NOT_FOUND),
         Ok(_) => panic!("Expected error for unknown route"),
@@ -551,13 +520,9 @@ async fn test_rest_unknown_route() {
 async fn test_rest_extended_card_not_configured() {
     let handler = Arc::new(FullTestHandler::new());
 
-    let result = rullama_a2a::server::rest_router::dispatch_rest(
-        &handler,
-        "GET",
-        "/extendedAgentCard",
-        &[],
-    )
-    .await;
+    let result =
+        rullama_a2a::server::rest_router::dispatch_rest(&handler, "GET", "/extendedAgentCard", &[])
+            .await;
     match result {
         Err(e) => assert_eq!(e.code, rullama_a2a::error::EXTENDED_CARD_NOT_CONFIGURED),
         Ok(_) => panic!("Expected extended card not configured error"),
@@ -668,10 +633,7 @@ async fn test_sse_response_error_event() {
     let inner = text.trim_start_matches("data: ").trim();
     let resp: JsonRpcResponse = serde_json::from_str(inner).unwrap();
     assert!(resp.error.is_some());
-    assert_eq!(
-        resp.error.unwrap().code,
-        rullama_a2a::error::TASK_NOT_FOUND
-    );
+    assert_eq!(resp.error.unwrap().code, rullama_a2a::error::TASK_NOT_FOUND);
 }
 
 // ---- JSON-RPC push notification CRUD ----

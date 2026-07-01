@@ -14,12 +14,12 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use futures::stream::BoxStream;
 use rullama_core::message::{ChatResponse, Message, StreamChunk};
 use rullama_core::provider::{ChatOptions, Provider};
 use rullama_core::tool::Tool;
 use rullama_eval::{EvaluationCase, TrialResult, ndcg_at_k};
 use rullama_reasoning::ComplexityScorer;
-use futures::stream::BoxStream;
 
 // ── Stub provider ─────────────────────────────────────────────────────────────
 

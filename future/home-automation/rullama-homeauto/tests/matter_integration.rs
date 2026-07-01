@@ -87,10 +87,10 @@ fn pase_handshake_smoke() {
 /// keys when the same fabric root CA signs both sides' NOCs.
 #[tokio::test]
 async fn case_handshake_with_fabric_manager() {
-    use rullama_homeauto::matter::fabric::{FabricIndex, FabricManager};
-    use rullama_homeauto::matter::secure_channel::{CaseInitiator, CaseResponder};
     use p256::{SecretKey, elliptic_curve::sec1::ToEncodedPoint};
     use rand_core::OsRng;
+    use rullama_homeauto::matter::fabric::{FabricIndex, FabricManager};
+    use rullama_homeauto::matter::secure_channel::{CaseInitiator, CaseResponder};
 
     // Build a FabricManager and generate a root CA
     let tmp_dir = TempDir::new();
@@ -187,9 +187,7 @@ async fn case_handshake_with_fabric_manager() {
 #[tokio::test]
 #[ignore]
 async fn matter_e2e_commission_and_invoke() {
-    use rullama_homeauto::matter::{
-        MatterController, MatterDeviceConfig, MatterDeviceServer,
-    };
+    use rullama_homeauto::matter::{MatterController, MatterDeviceConfig, MatterDeviceServer};
     use std::net::UdpSocket;
     use std::sync::{
         Arc,

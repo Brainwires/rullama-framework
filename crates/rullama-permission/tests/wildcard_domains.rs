@@ -12,8 +12,8 @@
 //! These properties sweep randomized inputs to catch prefix-confusion and
 //! suffix-confusion bypass attempts that a hand-written table might miss.
 
-use rullama_permission::{PolicyCondition, PolicyRequest};
 use proptest::prelude::*;
+use rullama_permission::{PolicyCondition, PolicyRequest};
 
 fn matches_wildcard(pattern: &str, domain: &str) -> bool {
     let c = PolicyCondition::Domain(pattern.into());

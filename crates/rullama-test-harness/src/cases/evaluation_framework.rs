@@ -42,8 +42,16 @@ impl EvaluationCase for AlwaysPassFailCase {
                 std::sync::Arc::new(fail) as std::sync::Arc<dyn EvaluationCase>,
             ])
             .await;
-        let pass_rate = r.stats.get("smoke-pass").map(|s| s.success_rate).unwrap_or(0.0);
-        let fail_rate = r.stats.get("smoke-fail").map(|s| s.success_rate).unwrap_or(1.0);
+        let pass_rate = r
+            .stats
+            .get("smoke-pass")
+            .map(|s| s.success_rate)
+            .unwrap_or(0.0);
+        let fail_rate = r
+            .stats
+            .get("smoke-fail")
+            .map(|s| s.success_rate)
+            .unwrap_or(1.0);
         if (pass_rate - 1.0).abs() > 1e-9 {
             return Ok(TrialResult::failure(
                 0,

@@ -60,8 +60,7 @@ impl EvaluationCase for FailoverSkipsDeadPrimary {
         }
 
         // Branch 2: permanent primary failure → chain aborts; secondary NEVER called.
-        let primary_unauth: Arc<dyn Provider> =
-            Arc::new(FailingProvider::new("401 unauthorized"));
+        let primary_unauth: Arc<dyn Provider> = Arc::new(FailingProvider::new("401 unauthorized"));
         let secondary2_scripted = ScriptedProvider::always_text("secondary2", "never");
         let secondary2_recorder = Arc::new(RecordingProvider::new(secondary2_scripted));
         let secondary2: Arc<dyn Provider> = secondary2_recorder.clone();
@@ -83,9 +82,7 @@ impl EvaluationCase for FailoverSkipsDeadPrimary {
             return Ok(TrialResult::failure(
                 trial_id,
                 elapsed,
-                format!(
-                    "secondary invoked {calls2} times on permanent primary error; want 0"
-                ),
+                format!("secondary invoked {calls2} times on permanent primary error; want 0"),
             ));
         }
 

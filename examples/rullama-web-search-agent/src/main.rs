@@ -37,8 +37,7 @@ async fn main() -> Result<()> {
         .ok_or_else(|| anyhow!("usage: rullama-web-search-agent <question>"))?;
 
     let base_url = std::env::var("OLLAMA_BASE_URL").ok();
-    let model =
-        std::env::var("OLLAMA_DEFAULT_MODEL").unwrap_or_else(|_| "gemma4:e2b".to_string());
+    let model = std::env::var("OLLAMA_DEFAULT_MODEL").unwrap_or_else(|_| "gemma4:e2b".to_string());
 
     let ollama = Arc::new(OllamaProvider::new(model.clone(), base_url));
 
@@ -47,15 +46,12 @@ async fn main() -> Result<()> {
         max_usd_cents: Some(5),
         max_rounds: Some(8),
     });
-    let provider: Arc<dyn Provider> =
-        Arc::new(BudgetProvider::new(ollama, guard.clone()));
+    let provider: Arc<dyn Provider> = Arc::new(BudgetProvider::new(ollama, guard.clone()));
 
     let mut registry = ToolRegistry::new();
     registry.register_tools(WebTool::get_tools());
-    let executor: Arc<dyn ToolExecutor> = Arc::new(BuiltinToolExecutor::new(
-        registry,
-        ToolContext::default(),
-    ));
+    let executor: Arc<dyn ToolExecutor> =
+        Arc::new(BuiltinToolExecutor::new(registry, ToolContext::default()));
 
     let mut agent = AgentBuilder::new()
         .provider(provider)

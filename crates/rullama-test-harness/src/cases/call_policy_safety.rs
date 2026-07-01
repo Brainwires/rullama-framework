@@ -68,7 +68,10 @@ impl EvaluationCase for BudgetGuardLifecycleCase {
             return Ok(TrialResult::failure(
                 0,
                 0,
-                format!("expected 600 cents consumed, got {}", guard.usd_cents_consumed()),
+                format!(
+                    "expected 600 cents consumed, got {}",
+                    guard.usd_cents_consumed()
+                ),
             ));
         }
 

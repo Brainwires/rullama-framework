@@ -273,39 +273,36 @@ impl AnthropicClient {
             let approx_tokens: usize = req
                 .messages
                 .iter()
-                .map(|m| crate::anthropic::approx_message_tokens(m))
+                .map(crate::anthropic::approx_message_tokens)
                 .sum();
-            if approx_tokens >= threshold as usize {
-                if let Some(messages_arr) = body
-                    .get_mut("messages")
-                    .and_then(|m| m.as_array_mut())
-                    && let Some(last) = messages_arr.last_mut()
-                {
-                    // Rewrite the last message's `content` to an array of
-                    // blocks with `cache_control` on the final block.
-                    if let Some(obj) = last.as_object_mut() {
-                        let original_content = obj.remove("content").unwrap_or(json!(""));
-                        let blocks: Vec<serde_json::Value> = match original_content {
-                            serde_json::Value::String(s) => vec![json!({
-                                "type": "text",
-                                "text": s,
-                                "cache_control": { "type": "ephemeral" }
-                            })],
-                            serde_json::Value::Array(mut arr) => {
-                                if let Some(last_block) = arr.last_mut()
-                                    && let Some(block_obj) = last_block.as_object_mut()
-                                {
-                                    block_obj.insert(
-                                        "cache_control".to_string(),
-                                        json!({ "type": "ephemeral" }),
-                                    );
-                                }
-                                arr
+            if approx_tokens >= threshold as usize
+                && let Some(messages_arr) = body.get_mut("messages").and_then(|m| m.as_array_mut())
+                && let Some(last) = messages_arr.last_mut()
+            {
+                // Rewrite the last message's `content` to an array of
+                // blocks with `cache_control` on the final block.
+                if let Some(obj) = last.as_object_mut() {
+                    let original_content = obj.remove("content").unwrap_or(json!(""));
+                    let blocks: Vec<serde_json::Value> = match original_content {
+                        serde_json::Value::String(s) => vec![json!({
+                            "type": "text",
+                            "text": s,
+                            "cache_control": { "type": "ephemeral" }
+                        })],
+                        serde_json::Value::Array(mut arr) => {
+                            if let Some(last_block) = arr.last_mut()
+                                && let Some(block_obj) = last_block.as_object_mut()
+                            {
+                                block_obj.insert(
+                                    "cache_control".to_string(),
+                                    json!({ "type": "ephemeral" }),
+                                );
                             }
-                            other => vec![other],
-                        };
-                        obj.insert("content".to_string(), json!(blocks));
-                    }
+                            arr
+                        }
+                        other => vec![other],
+                    };
+                    obj.insert("content".to_string(), json!(blocks));
                 }
             }
         }

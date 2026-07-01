@@ -206,10 +206,7 @@ impl EvaluationCase for DefaultSafeInvariantsCase {
                 "default workspace_mount must be None — workspace must be opt-in",
             ));
         }
-        if p.memory_limit_mb.is_none()
-            || p.cpu_limit.is_none()
-            || p.pid_limit.is_none()
-        {
+        if p.memory_limit_mb.is_none() || p.cpu_limit.is_none() || p.pid_limit.is_none() {
             return Ok(TrialResult::failure(
                 0,
                 0,

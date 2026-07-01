@@ -45,9 +45,8 @@ fn main() {
 
     println!("Async-streaming GPU encode...");
     let t1 = std::time::Instant::now();
-    let gpu =
-        pollster::block_on(Qwen3Gpu::new(&ctx, &pipes, &ss, &cfg).forward(&tokens, None))
-            .expect("gpu");
+    let gpu = pollster::block_on(Qwen3Gpu::new(&ctx, &pipes, &ss, &cfg).forward(&tokens, None))
+        .expect("gpu");
     let gpu_dt = t1.elapsed();
 
     assert_eq!(cpu.len(), gpu.len());

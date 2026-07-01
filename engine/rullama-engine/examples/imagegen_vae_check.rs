@@ -50,7 +50,11 @@ fn main() {
     .expect("open vae");
     let ctx = pollster::block_on(WgpuCtx::new()).expect("wgpu");
     let pipes = Pipelines::new(&ctx.device);
-    println!("decoding smooth {l}×{l} latent → {}×{} image...", l * 8, l * 8);
+    println!(
+        "decoding smooth {l}×{l} latent → {}×{} image...",
+        l * 8,
+        l * 8
+    );
     let rgb = pollster::block_on(VaeGpu::new(&ctx, &pipes, &ss, &cfg).decode(&latent, l, l))
         .expect("decode");
 
@@ -77,7 +81,11 @@ fn main() {
     for y in 0..h {
         for x in 0..w {
             for ch in 0..3 {
-                buf.push((rgb[ch * h * w + y * w + x] * 255.0).round().clamp(0.0, 255.0) as u8);
+                buf.push(
+                    (rgb[ch * h * w + y * w + x] * 255.0)
+                        .round()
+                        .clamp(0.0, 255.0) as u8,
+                );
             }
         }
     }

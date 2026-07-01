@@ -27,10 +27,10 @@ pub mod graph_ops;
 pub mod kernel;
 pub mod linalg;
 
-use rullama_core::SearchResult;
 use kernel::{build_kernel_matrix, cross_column};
 use linalg::{cholesky_extend, log_det_incremental};
 use ndarray::Array2;
+use rullama_core::SearchResult;
 
 /// Configuration for spectral subset selection.
 #[derive(Debug, Clone)]

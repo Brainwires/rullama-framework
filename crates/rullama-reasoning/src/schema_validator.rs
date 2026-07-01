@@ -9,9 +9,8 @@
 //! with a corrective instruction injected into the prompt.
 //!
 //! Only available behind the `schema-validation` feature so the reasoning
-//! crate stays light when callers don't need it.
-
-#![cfg(feature = "schema-validation")]
+//! crate stays light when callers don't need it. The module is gated at its
+//! declaration in `lib.rs`, so no inner `#![cfg]` is needed here.
 
 use std::future::Future;
 
@@ -29,8 +28,8 @@ impl SchemaValidator {
     /// Compile a schema from a `serde_json::Value`. Returns an error if the
     /// schema itself is invalid (unparseable or not a valid draft).
     pub fn new(schema: &Value) -> Result<Self> {
-        let validator = jsonschema::validator_for(schema)
-            .map_err(|e| anyhow!("invalid JSON Schema: {e}"))?;
+        let validator =
+            jsonschema::validator_for(schema).map_err(|e| anyhow!("invalid JSON Schema: {e}"))?;
         Ok(Self {
             validator: std::sync::Arc::new(validator),
         })
@@ -45,7 +44,11 @@ impl SchemaValidator {
             .iter_errors(value)
             .map(|e| format!("{}: {e}", e.instance_path))
             .collect();
-        if errors.is_empty() { Ok(()) } else { Err(errors) }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 }
 
@@ -85,9 +88,7 @@ where
     Err(anyhow!(
         "schema validation failed after {} attempts: {}",
         max_attempts,
-        last_errors
-            .unwrap_or_default()
-            .join("; ")
+        last_errors.unwrap_or_default().join("; ")
     ))
 }
 

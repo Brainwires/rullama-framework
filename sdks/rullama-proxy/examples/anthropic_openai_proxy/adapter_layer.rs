@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use http::StatusCode;
 use rullama_proxy::error::ProxyResult;
 use rullama_proxy::middleware::{LayerAction, ProxyLayer};
 use rullama_proxy::request_id::RequestId;
 use rullama_proxy::types::{ProxyRequest, ProxyResponse};
-use http::StatusCode;
 use tracing::info;
 
 use crate::config::AdapterConfig;

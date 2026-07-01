@@ -41,10 +41,10 @@
 //! 7. If failed: record failure for pattern avoidance
 
 use super::query_core::{QueryCore, QuestionType};
+use chrono::Utc;
 use rullama_core::confidence::ResponseConfidence;
 use rullama_core::graph::EntityType;
 use rullama_tool_runtime::{ToolErrorCategory, ToolOutcome};
-use chrono::Utc;
 use std::collections::HashMap;
 
 /// A tracked entity in local memory
