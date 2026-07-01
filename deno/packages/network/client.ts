@@ -148,7 +148,7 @@ export class AgentNetworkClient {
       protocolVersion: "2024-11-05",
       capabilities: {},
       clientInfo: {
-        name: "brainwires-relay-client",
+        name: "rullama-relay-client",
         version: "0.5.0",
       },
     });

@@ -29,7 +29,7 @@ import { formatValidatorStatus } from "./validator_agent.ts";
 
 import { defaultCycleOrchestratorConfig } from "./cycle_orchestrator.ts";
 
-import { ExecutionGraph, telemetryFromGraph } from "@brainwires/agent";
+import { ExecutionGraph, telemetryFromGraph } from "@rullama/agent";
 
 // ===========================================================================
 // Judge Agent tests

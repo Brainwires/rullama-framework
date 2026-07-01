@@ -1,7 +1,7 @@
 /**
  * Pinecone managed cloud vector database backend implementing VectorDatabase.
  *
- * Port of the Rust `brainwires-storage/src/databases/pinecone/mod.rs`.
+ * Port of the Rust `rullama-storage/src/databases/pinecone/mod.rs`.
  *
  * Uses `fetch()` to Pinecone REST API -- zero npm dependencies.
  * @module
@@ -11,7 +11,7 @@ import type {
   ChunkMetadata,
   DatabaseStats,
   SearchResult,
-} from "@brainwires/core";
+} from "@rullama/core";
 import type { VectorDatabase } from "../traits.ts";
 
 const BATCH_SIZE = 100;

@@ -1,0 +1,65 @@
+[package]
+name = "rullama-test-harness"
+description = "Cross-crate test harness for rullama. Tier A (feature determinism), Tier B (security adversarial), Tier C (golden-path assemblies). Not published; orchestrated via `cargo xtask test-harness`."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+rullama-eval = { workspace = true }
+rullama-test-fixtures = { workspace = true }
+
+# Crates under attack by Tier-B security cases. Add new entries here as the
+# harness expands to cover more invariants.
+rullama-core = { workspace = true }
+rullama-sandbox = { workspace = true, default-features = false }
+rullama-call-policy = { workspace = true, default-features = false, features = ["tokenizers"] }
+rullama-provider-speech = { workspace = true, default-features = false, features = ["native"] }
+rullama-permission = { workspace = true }
+rullama-network = { workspace = true }
+rullama-skills = { workspace = true, features = ["skills-signing"] }
+rullama-tool-runtime = { workspace = true }
+rullama-mdap = { workspace = true }
+rullama-mcp-client = { workspace = true }
+rullama-mcp-server = { workspace = true }
+rullama-agent = { workspace = true }
+rullama-inference = { workspace = true }
+rullama-tool-builtins = { workspace = true }
+rullama-provider = { workspace = true }
+rullama-rag = { workspace = true }
+rullama-reasoning = { workspace = true, features = ["schema-validation"] }
+rullama-telemetry = { workspace = true, features = ["native"] }
+chrono = { workspace = true }
+tempfile = { workspace = true }
+semver = { workspace = true }
+
+async-stream = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+inventory = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+anyhow = { workspace = true }
+tokio = { version = "1.43", features = ["sync", "rt", "rt-multi-thread", "macros"] }
+tokio-util = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+
+[[bin]]
+name = "print-manifest"
+path = "src/bin/print_manifest.rs"
+
+[[bin]]
+name = "run-harness"
+path = "src/bin/run_harness.rs"
+
+# NOTE: if a future workspace-wide change enables LTO in release, this
+# harness binary needs `lto = false` (or `-Clink-dead-code`) so that
+# `inventory::submit!` items survive linking. Workspace-level profile
+# tweaks are the only way — per-crate `[profile.*]` blocks are ignored.

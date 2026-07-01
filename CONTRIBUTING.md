@@ -1,4 +1,4 @@
-# Contributing to Brainwires Framework
+# Contributing to rullama
 
 Thank you for your interest in contributing! This guide will help you get started.
 
@@ -9,15 +9,15 @@ Thank you for your interest in contributing! This guide will help you get starte
 - `cargo` (comes with Rust)
 
 ```bash
-git clone https://github.com/Brainwires/brainwires-framework.git
-cd brainwires-framework
+git clone https://github.com/Brainwires/rullama-framework.git
+cd rullama-framework
 cargo build
 cargo test
 ```
 
 ## Project Structure
 
-The framework is a Cargo workspace organized around a facade pattern. For the full list of crates and architecture details, see the [README](README.md) and [crates overview](crates/README.md). Standalone apps built on the framework live in [`extras/`](extras/README.md).
+The framework is a Cargo workspace organized around a facade pattern. For the full list of crates and architecture details, see the [README](README.md) and [crates overview](crates/README.md). Standalone apps built on the framework live in `sdks/`, `servers/`, `integrations/`, and `examples/` (see the [README](README.md#extras)).
 
 ## Development Workflow
 
@@ -28,7 +28,7 @@ The framework is a Cargo workspace organized around a facade pattern. For the fu
 cargo build
 
 # Single crate
-cargo build -p brainwires-agent
+cargo build -p rullama-agent
 
 # With specific features
 cargo build --features "providers,storage,rag"
@@ -46,16 +46,16 @@ Feature flag bundles: `researcher`, `agent-full`, `learning`, `full`. See the ro
 cargo test
 
 # Single crate
-cargo test -p brainwires-core
+cargo test -p rullama-core
 
 # Specific test
-cargo test -p brainwires-agent test_task_agent
+cargo test -p rullama-agent test_task_agent
 
 # With output
 cargo test -- --nocapture
 ```
 
-See [TESTING.md](TESTING.md) for the evaluation framework (`brainwires-eval`).
+See [TESTING.md](TESTING.md) for the evaluation framework (`rullama-eval`).
 
 ### Local CI
 
@@ -105,7 +105,7 @@ We follow [Keep a Changelog](https://keepachangelog.com/). If your change is use
 
 ```markdown
 ### Added
-#### Agents (`brainwires-agent`)
+#### Agents (`rullama-agent`)
 - New retry strategy for task execution
 ```
 
@@ -123,11 +123,11 @@ This updates all version references across the workspace in one command:
 |---|---|
 | `[workspace.package].version` | `0.2.0` → `0.3.0` |
 | `[workspace.dependencies]` internal crate versions (19 entries) | `version = "0.2.0"` → `version = "0.3.0"` |
-| Member `Cargo.toml` direct path deps with version fields (brainwires-wasm) | `version = "0.11"` |
+| Member `Cargo.toml` direct path deps with version fields (rullama-wasm) | `version = "0.11"` |
 | Hardcoded versions in `*.rs` source files | `"version": "0.2.0"` patterns |
 | Version examples in `*.md` READMEs (skips CHANGELOGs) | `version = "0.2"` → `version = "0.3"` |
 
-> **Why brainwires-wasm uses direct deps:** Cargo doesn't allow `default-features = false` on workspace dep overrides when the workspace dep has defaults enabled. So `brainwires-core` (and any other wasm-specific dep variants) in the wasm crate must stay as direct path deps. The bump script handles these too.
+> **Why rullama-wasm uses direct deps:** Cargo doesn't allow `default-features = false` on workspace dep overrides when the workspace dep has defaults enabled. So `rullama-core` (and any other wasm-specific dep variants) in the wasm crate must stay as direct path deps. The bump script handles these too.
 
 After bumping, review the diff and run `cargo check --workspace` before committing.
 
@@ -145,12 +145,12 @@ Each stub contains:
 ```bash
 # 1. Publish all workspace crates at the new version first
 # 2. Then publish deprecation stubs
-for crate in deprecated/brainwires-*/; do
+for crate in deprecated/rullama-*/; do
   cargo publish --manifest-path "$crate/Cargo.toml"
 done
 
 # 3. Yank old versions of removed crates
-cargo yank --version 0.2.0 brainwires-brain
+cargo yank --version 0.2.0 rullama-brain
 ```
 
 > **Do not yank the deprecation stub version** — it serves as the signpost directing users to the successor.
@@ -172,8 +172,8 @@ The framework is designed for extension via traits. See [docs/EXTENSIBILITY.md](
 - Custom vector stores (`VectorStore` trait)
 - Custom tools (`ToolExecutor` trait)
 - Custom agent runtimes (`AgentRuntime` trait)
-- Working examples in `crates/brainwires/examples/`
+- Working examples in `crates/rullama/examples/`
 
 ## License
 
-Brainwires Framework is dual-licensed under [MIT](LICENSE-MIT) and [Apache 2.0](LICENSE-APACHE). By contributing, you agree that your contributions will be licensed under the same terms.
+rullama is dual-licensed under [MIT](LICENSE-MIT) and [Apache 2.0](LICENSE-APACHE). By contributing, you agree that your contributions will be licensed under the same terms.

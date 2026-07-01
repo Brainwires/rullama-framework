@@ -1,0 +1,22 @@
+services:
+  docs:
+    build:
+      context: ../..
+      dockerfile: docs/rullama-docs/Dockerfile
+    ports:
+      - "17830:3000"
+    restart: unless-stopped
+
+  docs-dev:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - ../../:/workspace:ro
+      - /app/node_modules
+    environment:
+      DOCS_ROOT: /workspace
+      PORT: "3000"
+    ports:
+      - "17830:3000"
+    command: sh -c "npm install && npm run dev"

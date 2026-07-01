@@ -1,6 +1,6 @@
-# Brainwires Framework — Deno Examples
+# rullama — Deno Examples
 
-Runnable examples demonstrating every major package in the Brainwires framework.
+Runnable examples demonstrating every major package in the rullama framework.
 Each file is self-contained and uses in-memory mocks so you can run them without
 external services.
 

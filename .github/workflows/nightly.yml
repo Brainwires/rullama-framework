@@ -71,7 +71,7 @@ jobs:
       - name: Run --ignored tests with ${{ matrix.backend }}
         env:
           TEST_EMBED_NETWORK: "1"
-        run: cargo test -p brainwires-storage --features ${{ matrix.backend }} -- --ignored
+        run: cargo test -p rullama-storage --features ${{ matrix.backend }} -- --ignored
 
   embed-network:
     name: Embed-network CLI tests
@@ -91,4 +91,4 @@ jobs:
       - name: Run tests with embedding network access
         env:
           TEST_EMBED_NETWORK: "1"
-        run: cargo test -p brainwires-cli
+        run: cargo test -p rullama-cli

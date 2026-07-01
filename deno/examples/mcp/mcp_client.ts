@@ -9,7 +9,7 @@ import {
   McpClient,
   McpConfigManager,
   type McpServerConfig,
-} from "@brainwires/mcp-client";
+} from "@rullama/mcp-client";
 
 async function main(): Promise<void> {
   console.log("=== MCP Client Example ===\n");
@@ -57,7 +57,7 @@ async function main(): Promise<void> {
   // -----------------------------------------------------------------------
   console.log("--- 2. Create McpClient ---");
 
-  const client = new McpClient("brainwires-example", "0.1.0");
+  const client = new McpClient("rullama-example", "0.1.0");
   console.log(
     `  Created McpClient (name="${client.clientName}", version="${client.clientVersion}")`,
   );

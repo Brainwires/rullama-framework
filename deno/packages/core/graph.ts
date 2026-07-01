@@ -1,5 +1,5 @@
 /** Types of entities tracked in the knowledge graph.
- * Equivalent to Rust's `EntityType` in brainwires-core. */
+ * Equivalent to Rust's `EntityType` in rullama-core. */
 export type EntityType =
   | "file"
   | "function"
@@ -10,7 +10,7 @@ export type EntityType =
   | "command";
 
 /** Types of edges in the relationship graph.
- * Equivalent to Rust's `EdgeType` in brainwires-core. */
+ * Equivalent to Rust's `EdgeType` in rullama-core. */
 export type EdgeType =
   | "co_occurs"
   | "contains"
@@ -38,7 +38,7 @@ export function edgeTypeWeight(edgeType: EdgeType): number {
 }
 
 /** A node in the relationship graph.
- * Equivalent to Rust's `GraphNode` in brainwires-core. */
+ * Equivalent to Rust's `GraphNode` in rullama-core. */
 export interface GraphNode {
   entity_name: string;
   entity_type: EntityType;
@@ -48,7 +48,7 @@ export interface GraphNode {
 }
 
 /** An edge in the relationship graph.
- * Equivalent to Rust's `GraphEdge` in brainwires-core. */
+ * Equivalent to Rust's `GraphEdge` in rullama-core. */
 export interface GraphEdge {
   from: string;
   to: string;
@@ -58,14 +58,14 @@ export interface GraphEdge {
 }
 
 /** Interface for querying an entity store.
- * Equivalent to Rust's `EntityStoreT` trait in brainwires-core. */
+ * Equivalent to Rust's `EntityStoreT` trait in rullama-core. */
 export interface EntityStoreT {
   entityNamesByType(entityType: EntityType): string[];
   topEntityInfo(limit: number): [string, EntityType][];
 }
 
 /** Interface for querying a relationship graph.
- * Equivalent to Rust's `RelationshipGraphT` trait in brainwires-core. */
+ * Equivalent to Rust's `RelationshipGraphT` trait in rullama-core. */
 export interface RelationshipGraphT {
   getNode(name: string): GraphNode | undefined;
   getNeighbors(name: string): GraphNode[];

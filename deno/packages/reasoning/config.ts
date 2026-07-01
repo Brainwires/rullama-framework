@@ -1,7 +1,7 @@
 /**
  * Configuration for local inference components.
  *
- * Equivalent to Rust's `brainwires_reasoning::LocalInferenceConfig`.
+ * Equivalent to Rust's `rullama_reasoning::LocalInferenceConfig`.
  */
 
 export interface LocalInferenceConfig {

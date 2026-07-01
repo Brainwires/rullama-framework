@@ -6,7 +6,7 @@
  * breaker enters half-open: the next call is a probe; success closes the
  * circuit, failure reopens it.
  *
- * Equivalent to Rust's `brainwires_resilience::circuit` module. Because the
+ * Equivalent to Rust's `rullama_resilience::circuit` module. Because the
  * Deno Provider interface doesn't expose a model name in ChatOptions, the
  * breaker defaults to a single "default" model key. A custom `modelKey`
  * function can be supplied when constructing the breaker.
@@ -19,7 +19,7 @@ import type {
   Provider,
   StreamChunk,
   Tool,
-} from "@brainwires/core";
+} from "@rullama/core";
 import { ResilienceError } from "./error.ts";
 
 /** Circuit state for a single provider/model key. */

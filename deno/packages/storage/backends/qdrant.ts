@@ -1,7 +1,7 @@
 /**
  * Qdrant vector database backend implementing VectorDatabase.
  *
- * Port of the Rust `brainwires-storage/src/databases/qdrant/mod.rs`.
+ * Port of the Rust `rullama-storage/src/databases/qdrant/mod.rs`.
  *
  * Uses the Qdrant REST API via `fetch()` -- no npm dependency required.
  * @module
@@ -11,7 +11,7 @@ import type {
   ChunkMetadata,
   DatabaseStats,
   SearchResult,
-} from "@brainwires/core";
+} from "@rullama/core";
 import type { VectorDatabase } from "../traits.ts";
 
 const COLLECTION_NAME = "code_embeddings";

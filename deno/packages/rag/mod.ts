@@ -301,7 +301,7 @@ export interface RagClient {
   ): Promise<SearchGitHistoryResponse>;
 }
 
-// ── Code analysis (folded into @brainwires/rag in v0.11.0) ──
+// ── Code analysis (folded into @rullama/rag in v0.11.0) ──
 export {
   buildCallGraph,
   CallGraph,

@@ -1,15 +1,15 @@
 /**
  * Semantic query → tool-category router.
  *
- * Categories match the strings used by `@brainwires/tools`' ToolCategory
+ * Categories match the strings used by `@rullama/tools`' ToolCategory
  * enum. Consumers can remap them to their own taxonomy.
  *
- * Equivalent to Rust's `brainwires_reasoning::router` module.
+ * Equivalent to Rust's `rullama_reasoning::router` module.
  */
 
-import { ChatOptions, Message, type Provider } from "@brainwires/core";
+import { ChatOptions, Message, type Provider } from "@rullama/core";
 
-/** Tool category tag — same labels as `@brainwires/tools`' ToolCategory. */
+/** Tool category tag — same labels as `@rullama/tools`' ToolCategory. */
 export type ToolCategory =
   | "FileOps"
   | "Search"

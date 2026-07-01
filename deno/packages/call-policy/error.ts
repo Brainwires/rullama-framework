@@ -1,7 +1,7 @@
 /**
  * Resilience-specific error types.
  *
- * Equivalent to Rust's `brainwires_resilience::error::ResilienceError`.
+ * Equivalent to Rust's `rullama_resilience::error::ResilienceError`.
  */
 
 /** Kind tag discriminating the specific resilience error. */

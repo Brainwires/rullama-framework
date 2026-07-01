@@ -3,14 +3,14 @@
 // with pre-execution validation hooks (safety guards, audit logging).
 // Run: deno run deno/examples/tool-system/tool_execution.ts
 
-import { ToolContext, ToolResult } from "@brainwires/core";
-import type { Tool, ToolUse } from "@brainwires/core";
-import { allow, reject } from "@brainwires/tools";
+import { ToolContext, ToolResult } from "@rullama/core";
+import type { Tool, ToolUse } from "@rullama/core";
+import { allow, reject } from "@rullama/tools";
 import type {
   PreHookDecision,
   ToolExecutor,
   ToolPreHook,
-} from "@brainwires/tools";
+} from "@rullama/tools";
 
 // 1. Define a safety-check hook
 // This hook blocks destructive tools and rejects calls with suspicious input patterns.

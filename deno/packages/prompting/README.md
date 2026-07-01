@@ -1,9 +1,9 @@
-# @brainwires/prompting
+# @rullama/prompting
 
 Adaptive prompting techniques + task clustering + temperature optimization.
 
-Extracted from `@brainwires/knowledge` in v0.11.0 to mirror Rust's
-`brainwires-prompting` crate.
+Extracted from `@rullama/knowledge` in v0.11.0 to mirror Rust's
+`rullama-prompting` crate.
 
 Contents:
 

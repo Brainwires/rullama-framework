@@ -5,8 +5,8 @@
  * Uses pure keyword-based pattern matching (no AI/inference dependencies).
  */
 
-import type { Tool } from "@brainwires/core";
-import type { Message } from "@brainwires/core";
+import type { Tool } from "@rullama/core";
+import type { Message } from "@rullama/core";
 import type { ToolCategory, ToolRegistry } from "./registry.ts";
 
 /** Keyword patterns for each tool category. */

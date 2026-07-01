@@ -7,7 +7,7 @@
  * implements {@link EvaluationCase} and can be fed into an
  * {@link EvaluationSuite}.
  *
- * Equivalent to Rust's `brainwires_agents::eval::fixtures` module.
+ * Equivalent to Rust's `rullama_agents::eval::fixtures` module.
  */
 
 import { parse as parseYaml } from "@std/yaml/parse";

@@ -1,7 +1,7 @@
 /**
  * CalDAV protocol client for calendar CRUD operations.
  *
- * Equivalent to Rust's `brainwires_tools::calendar::caldav` module.
+ * Equivalent to Rust's `rullama_tools::calendar::caldav` module.
  */
 
 import type { CalendarEvent, CalendarInfo } from "./types.ts";

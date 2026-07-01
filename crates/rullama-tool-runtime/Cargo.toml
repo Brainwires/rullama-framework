@@ -1,0 +1,110 @@
+[package]
+name = "rullama-tool-runtime"
+description = "Tool execution runtime for the rullama agent framework — executor trait, registry, error taxonomy, sanitization, validation, transactions, smart router, plus optional orchestrator / OAuth / OpenAPI / sandbox / sessions / RAG-tool-search modules"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme.workspace = true
+documentation = "https://docs.rs/rullama-tool-runtime"
+keywords = ["ai-tools", "tool-runtime", "executor", "registry", "llm"]
+categories = ["development-tools"]
+
+[lib]
+name = "rullama_tool_runtime"
+path = "src/lib.rs"
+
+[dependencies]
+rullama-core.workspace = true
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow.workspace = true
+thiserror = { workspace = true }
+
+# Async
+async-trait.workspace = true
+tokio = { version = "1.43", features = ["time"] }
+
+# Utilities
+regex.workspace = true
+sha2 = { workspace = true }
+hex = { workspace = true }
+uuid = { workspace = true }
+tracing.workspace = true
+
+# Feature-gated deps ──────────────────────────────────────────────────────
+
+# orchestrator / orchestrator-wasm
+rhai = { version = "1.23", default-features = false, features = ["serde", "std"], optional = true }
+web-time = { version = "1.1", optional = true }
+
+# oauth
+zeroize = { version = "1", features = ["derive"], optional = true }
+getrandom = { version = "0.2", optional = true }
+
+# openapi
+openapiv3 = { version = "2", optional = true }
+serde_yml = { version = "0.0.12", optional = true }
+
+# Shared by oauth + openapi
+reqwest = { workspace = true, optional = true }
+
+# sandbox
+rullama-sandbox = { workspace = true, optional = true }
+
+# sessions — pulls the `session` feature of the consolidated stores crate
+rullama-stores = { workspace = true, default-features = false, features = ["session"], optional = true }
+chrono = { workspace = true, optional = true }
+
+# rag (tool_embedding + tool_search RAG path)
+rullama-rag = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+tempfile = "3"
+proptest.workspace = true
+
+[features]
+default = ["native"]
+# Native enables filesystem + process operations that the validation tool /
+# transaction manager / openapi / oauth need.
+native = [
+    "tokio/process", "tokio/fs",
+    "rullama-core/native",
+]
+wasm = ["rullama-core/wasm"]
+
+# Orchestrator (Rhai script execution)
+orchestrator = ["dep:rhai", "rhai/sync"]
+orchestrator-wasm = ["dep:rhai", "dep:web-time"]
+
+# OAuth 2.0 client + PKCE + token store
+oauth = ["native", "dep:getrandom", "dep:zeroize", "dep:reqwest"]
+
+# OpenAPI 3 spec → tool descriptors
+openapi = ["dep:openapiv3", "dep:serde_yml", "dep:reqwest"]
+
+# Container-sandbox executor wrapper
+sandbox = ["native", "dep:rullama-sandbox"]
+
+# Agent-facing session-control tools (depend on rullama-stores `session`
+# feature for the SessionBroker trait + SessionId).
+sessions = ["native", "dep:rullama-stores", "dep:chrono"]
+
+# RAG-powered tool discovery (FastEmbed-backed ToolEmbeddingIndex used by
+# ToolSearchTool's semantic mode).
+rag = ["dep:rullama-rag"]
+
+# Convenience feature pulling in every optional surface.
+full = ["orchestrator", "oauth", "openapi", "sandbox", "sessions", "rag"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

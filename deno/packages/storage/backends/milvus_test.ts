@@ -12,7 +12,7 @@ import {
   escapeFilterValue,
   parseMilvusResult,
 } from "./milvus.ts";
-import type { ChunkMetadata } from "@brainwires/core";
+import type { ChunkMetadata } from "@rullama/core";
 
 // ---------------------------------------------------------------------------
 // escapeFilterValue

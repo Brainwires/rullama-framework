@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { Message } from "@brainwires/core";
+import { Message } from "@rullama/core";
 import {
   buildRequestBody,
   convertUsage,

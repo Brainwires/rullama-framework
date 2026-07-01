@@ -4,7 +4,7 @@
  * Handles loading and parsing of JSON-based permissions configuration.
  * Simplified from the Rust version (which uses TOML) to use JSON natively.
  *
- * Rust equivalent: `brainwires-permissions/src/config.rs`
+ * Rust equivalent: `rullama-permissions/src/config.rs`
  * @module
  */
 

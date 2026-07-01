@@ -5,7 +5,7 @@
  * Equivalent to Rust's `LoggingMiddleware`.
  */
 
-import type { JsonRpcRequest, JsonRpcResponse } from "@brainwires/mcp-client";
+import type { JsonRpcRequest, JsonRpcResponse } from "@rullama/mcp-client";
 import type { RequestContext } from "../server.ts";
 import {
   type Middleware,

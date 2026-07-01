@@ -3,10 +3,10 @@
  *
  * Provides post-execution analysis to detect issues and suggest corrections.
  *
- * Equivalent to Rust's `brainwires_agents::seal::reflection` module.
+ * Equivalent to Rust's `rullama_agents::seal::reflection` module.
  */
 
-import type { RelationshipGraphT } from "@brainwires/core";
+import type { RelationshipGraphT } from "@rullama/core";
 import type { LearningCoordinator } from "./learning.ts";
 import {
   type QueryCore,

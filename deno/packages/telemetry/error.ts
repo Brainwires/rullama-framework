@@ -1,7 +1,7 @@
 /**
  * Errors returned by the analytics subsystem.
  *
- * Equivalent to Rust's `brainwires_telemetry::error::AnalyticsError`.
+ * Equivalent to Rust's `rullama_telemetry::error::AnalyticsError`.
  */
 
 export type AnalyticsErrorKind =

@@ -5,7 +5,7 @@
  * {@link AnalyticsCollector} pipeline and updates counters in real time as
  * events flow through.
  *
- * Equivalent to Rust's `brainwires_telemetry::metrics` module.
+ * Equivalent to Rust's `rullama_telemetry::metrics` module.
  */
 
 import type { AnalyticsEvent } from "./events.ts";
@@ -177,134 +177,134 @@ export class MetricsRegistry implements AnalyticsSink {
       lines.push(`${name}{agent_id="${escape(agent_id)}"} ${fmt(value)}`);
     };
 
-    counter("brainwires_agent_runs_total", "Total agent runs attempted");
+    counter("rullama_agent_runs_total", "Total agent runs attempted");
     for (const m of this.entries.values()) {
-      row("brainwires_agent_runs_total", m.agent_id, m.total_runs);
+      row("rullama_agent_runs_total", m.agent_id, m.total_runs);
     }
 
-    counter("brainwires_agent_runs_success_total", "Agent runs that succeeded");
+    counter("rullama_agent_runs_success_total", "Agent runs that succeeded");
     for (const m of this.entries.values()) {
-      row("brainwires_agent_runs_success_total", m.agent_id, m.success_count);
+      row("rullama_agent_runs_success_total", m.agent_id, m.success_count);
     }
 
-    counter("brainwires_agent_runs_failure_total", "Agent runs that failed");
+    counter("rullama_agent_runs_failure_total", "Agent runs that failed");
     for (const m of this.entries.values()) {
-      row("brainwires_agent_runs_failure_total", m.agent_id, m.failure_count);
+      row("rullama_agent_runs_failure_total", m.agent_id, m.failure_count);
     }
 
-    gauge("brainwires_agent_success_rate", "Agent run success rate (0-1)");
+    gauge("rullama_agent_success_rate", "Agent run success rate (0-1)");
     for (const m of this.entries.values()) {
-      row("brainwires_agent_success_rate", m.agent_id, successRate(m));
+      row("rullama_agent_success_rate", m.agent_id, successRate(m));
     }
 
     counter(
-      "brainwires_agent_tool_calls_total",
+      "rullama_agent_tool_calls_total",
       "Total tool calls made by agent",
     );
     for (const m of this.entries.values()) {
-      row("brainwires_agent_tool_calls_total", m.agent_id, m.total_tool_calls);
+      row("rullama_agent_tool_calls_total", m.agent_id, m.total_tool_calls);
     }
 
     counter(
-      "brainwires_agent_tool_errors_total",
+      "rullama_agent_tool_errors_total",
       "Tool calls that produced an error",
     );
     for (const m of this.entries.values()) {
-      row("brainwires_agent_tool_errors_total", m.agent_id, m.tool_error_count);
+      row("rullama_agent_tool_errors_total", m.agent_id, m.tool_error_count);
     }
 
     counter(
-      "brainwires_agent_provider_calls_total",
+      "rullama_agent_provider_calls_total",
       "Total LLM provider calls",
     );
     for (const m of this.entries.values()) {
       row(
-        "brainwires_agent_provider_calls_total",
+        "rullama_agent_provider_calls_total",
         m.agent_id,
         m.provider_call_count,
       );
     }
 
     counter(
-      "brainwires_agent_tokens_prompt_total",
+      "rullama_agent_tokens_prompt_total",
       "Total prompt tokens consumed",
     );
     for (const m of this.entries.values()) {
       row(
-        "brainwires_agent_tokens_prompt_total",
+        "rullama_agent_tokens_prompt_total",
         m.agent_id,
         m.total_tokens_prompt,
       );
     }
 
     counter(
-      "brainwires_agent_tokens_completion_total",
+      "rullama_agent_tokens_completion_total",
       "Total completion tokens generated",
     );
     for (const m of this.entries.values()) {
       row(
-        "brainwires_agent_tokens_completion_total",
+        "rullama_agent_tokens_completion_total",
         m.agent_id,
         m.total_tokens_completion,
       );
     }
 
-    counter("brainwires_agent_cost_usd_total", "Cumulative LLM cost in USD");
+    counter("rullama_agent_cost_usd_total", "Cumulative LLM cost in USD");
     for (const m of this.entries.values()) {
-      row("brainwires_agent_cost_usd_total", m.agent_id, m.total_cost_usd);
+      row("rullama_agent_cost_usd_total", m.agent_id, m.total_cost_usd);
     }
 
     gauge(
-      "brainwires_agent_avg_run_duration_ms",
+      "rullama_agent_avg_run_duration_ms",
       "Average agent run duration in ms",
     );
     for (const m of this.entries.values()) {
       row(
-        "brainwires_agent_avg_run_duration_ms",
+        "rullama_agent_avg_run_duration_ms",
         m.agent_id,
         avgRunDurationMs(m),
       );
     }
 
     gauge(
-      "brainwires_agent_avg_provider_latency_ms",
+      "rullama_agent_avg_provider_latency_ms",
       "Average LLM provider call latency in ms",
     );
     for (const m of this.entries.values()) {
       row(
-        "brainwires_agent_avg_provider_latency_ms",
+        "rullama_agent_avg_provider_latency_ms",
         m.agent_id,
         avgProviderLatencyMs(m),
       );
     }
 
     counter(
-      "brainwires_agent_cache_read_tokens_total",
+      "rullama_agent_cache_read_tokens_total",
       "Prompt tokens served from the provider's cache",
     );
     for (const m of this.entries.values()) {
       row(
-        "brainwires_agent_cache_read_tokens_total",
+        "rullama_agent_cache_read_tokens_total",
         m.agent_id,
         m.total_cache_read_tokens,
       );
     }
 
     counter(
-      "brainwires_agent_cache_creation_tokens_total",
+      "rullama_agent_cache_creation_tokens_total",
       "Prompt tokens charged to populate the provider's cache",
     );
     for (const m of this.entries.values()) {
       row(
-        "brainwires_agent_cache_creation_tokens_total",
+        "rullama_agent_cache_creation_tokens_total",
         m.agent_id,
         m.total_cache_creation_tokens,
       );
     }
 
-    gauge("brainwires_agent_cache_hit_rate", "Prompt cache hit rate (0-1)");
+    gauge("rullama_agent_cache_hit_rate", "Prompt cache hit rate (0-1)");
     for (const m of this.entries.values()) {
-      row("brainwires_agent_cache_hit_rate", m.agent_id, cacheHitRate(m));
+      row("rullama_agent_cache_hit_rate", m.agent_id, cacheHitRate(m));
     }
 
     return lines.join("\n") + "\n";

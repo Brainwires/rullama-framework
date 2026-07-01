@@ -1,0 +1,72 @@
+[package]
+name = "rullama-core"
+description = "Core types, traits, and error handling for the rullama agent framework"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/rullama-core"
+keywords = ["ai-agents", "llm", "framework", "traits", "multi-agent"]
+categories = ["development-tools"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Needed for Provider trait (lightweight, always available)
+async-trait = { workspace = true }
+futures = { workspace = true }
+
+# Schema generation (optional, for types shared with MCP tooling)
+schemars = { workspace = true, optional = true }
+
+# Native-only deps. The workspace `tokio` declaration enables `features = ["full"]`
+# (which pulls in `mio` and friends) — that breaks the wasm32 build, so tokio and
+# the filesystem-backed `workflow_state` module are only compiled off-wasm.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["fs", "sync"] }
+tokio-util = { workspace = true }
+dirs = { workspace = true }
+# `file_context` (Phase 9 move from rullama-storage) hashes content with sha256.
+sha2 = { workspace = true }
+
+# wasm32 needs the JS-backed `getrandom` so `uuid::Uuid::new_v4()` and any
+# downstream RNG work in the browser. Native targets keep their default RNG.
+# `chrono` needs `wasmbind` to use the browser clock; `uuid` needs `js` so that
+# `getrandom` resolves to its wasm-bindgen backend.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+chrono = { workspace = true, features = ["wasmbind"] }
+uuid = { workspace = true, features = ["v4", "serde", "js"] }
+# `CancellationToken` is sync-only and works on wasm too; we still need the
+# dep there so the `cancel: Option<CancellationToken>` field on
+# `ChatOptions` compiles uniformly across targets.
+tokio-util = { workspace = true }
+
+[features]
+default = ["native"]
+# Kept as an empty stub so downstream crates still referencing
+# `rullama-core/native` resolve. Plan/output parsing moved to
+# `rullama-reasoning` (see 2026-04 arch restoration).
+native = []
+schemars = ["dep:schemars"]
+wasm = ["chrono/wasmbind"]
+# Referenced by src/paths.rs to allow alternate-folder rebrand builds.
+# Empty placeholder so the cfg gates resolve under -Dwarnings.
+alt-folder-name = []
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tempfile = "3"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

@@ -1,0 +1,170 @@
+[package]
+name = "rullama-hardware"
+description = "Hardware I/O for rullama — audio, GPIO, Bluetooth, and network"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/rullama-hardware"
+keywords = ["hardware", "audio", "gpio", "bluetooth", "camera"]
+categories = ["hardware-support", "multimedia::audio"]
+
+[dependencies]
+# Always available
+async-trait.workspace = true
+futures.workspace = true
+tokio = { workspace = true, features = ["sync", "time"] }
+serde = { workspace = true }
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+
+# Audio format (pure Rust, lightweight — always available)
+hound = "3.5"
+
+# Audio hardware I/O (audio feature)
+cpal = { version = "0.15", optional = true }
+tokio-stream = { workspace = true, optional = true }
+
+# Provider API clients (audio feature)
+rullama-provider = { workspace = true, optional = true }
+rullama-provider-speech = { workspace = true, optional = true }
+
+# Base64 decoding (needed for Google TTS response)
+base64 = { workspace = true, optional = true }
+
+# Streaming support (audio feature)
+async-stream = { workspace = true, optional = true }
+
+# FLAC encode/decode (pure Rust)
+flacenc = { version = "0.5", optional = true }
+claxon = { version = "0.4", optional = true }
+
+# Local STT (optional heavy dep)
+whisper-rs = { version = "0.15", optional = true }
+
+# GPIO (Linux-only)
+gpio-cdev = { version = "0.6", optional = true }
+sysfs_gpio = { version = "0.6", optional = true }
+
+# Bluetooth (cross-platform BLE via btleplug)
+btleplug = { version = "0.11", optional = true }
+uuid = { workspace = true, optional = true }
+
+# Camera capture (cross-platform: V4L2 / AVFoundation / Media Foundation)
+nokhwa = { version = "0.10", optional = true, features = ["input-native"] }
+# Frame encode/decode: MJPEG → RGB, save PNG/JPEG (gated on camera feature)
+image = { version = "0.25", optional = true, default-features = false, features = ["png", "jpeg"] }
+
+# Raw USB device access (pure Rust, no libusb system dependency)
+nusb = { version = "0.1", optional = true }
+
+# In-house wake-word detector (DTW over MFCC features). Pure-Rust, no
+# third-party wake-word library, no ML framework. Speaker-dependent —
+# callers enroll 3+ reference recordings before inference.
+rustfft = { version = "6", optional = true }
+
+# Voice Activity Detection — WebRTC VAD (vad feature)
+webrtc-vad = { version = "0.4", optional = true }
+
+[features]
+default = []
+
+# Audio: full hardware + cloud provider integrations
+audio = [
+    "dep:cpal",
+    "dep:tokio-stream",
+    "dep:rullama-provider",
+    "dep:rullama-provider-speech", "rullama-provider-speech/native",
+    "dep:async-stream",
+    "dep:base64",
+    "flac",
+]
+# FLAC codec (also pulled in by audio)
+flac = ["dep:flacenc", "dep:claxon"]
+# Local Whisper STT (heavy, opt-in)
+local-stt = ["dep:whisper-rs"]
+
+# GPIO hardware control (Linux)
+gpio = ["dep:gpio-cdev", "dep:sysfs_gpio"]
+
+# Bluetooth discovery and scanning
+bluetooth = ["dep:btleplug", "dep:uuid"]
+
+# Camera / webcam capture via nokhwa (cross-platform). nokhwa is synchronous
+# so capture.rs wraps calls in `tokio::task::block_in_place`, which requires
+# the multi-thread runtime.
+camera = ["dep:nokhwa", "dep:image", "tokio/rt-multi-thread"]
+
+# Raw USB device access and transfers via nusb
+usb = ["dep:nusb"]
+
+# Voice Activity Detection (WebRTC VAD + energy fallback)
+vad = ["dep:webrtc-vad", "audio"]
+
+# Wake word detection — WakeWordDetector trait + EnergyTriggerDetector (no extra deps)
+wake-word = ["audio"]
+
+# In-house wake-word detector (DTW + MFCC, speaker-dependent). Pure-Rust,
+# no third-party wake-word library or ML framework. Caller enrolls 3+
+# reference recordings via `DtwWakeWordDetector::enroll_template`.
+wake-word-dtw = ["dep:rustfft", "wake-word"]
+
+# Full voice assistant pipeline (capture → wake word → VAD → STT → handler → TTS → playback)
+voice-assistant = ["audio", "vad", "wake-word"]
+
+# Convenience: everything in the published hardware surface
+full = ["audio", "gpio", "bluetooth", "camera", "usb", "vad", "wake-word", "voice-assistant"]
+
+[dev-dependencies]
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing-subscriber = { workspace = true }
+ctrlc = { version = "3", features = ["termination"] }
+wiremock = "0.6"
+
+[[example]]
+name = "speech_to_text"
+required-features = ["audio"]
+
+[[example]]
+name = "text_to_speech"
+required-features = ["audio"]
+
+[[example]]
+name = "bluetooth_scan"
+required-features = ["bluetooth"]
+
+[[example]]
+name = "wake_word_demo"
+required-features = ["wake-word-dtw"]
+
+[[example]]
+name = "voice_assistant"
+required-features = ["voice-assistant"]
+
+[[example]]
+name = "capture_audio"
+required-features = ["audio"]
+
+[[example]]
+name = "play_audio"
+required-features = ["audio"]
+
+[[example]]
+name = "camera_capture"
+required-features = ["camera"]
+
+[[example]]
+name = "usb_devices"
+required-features = ["usb"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+

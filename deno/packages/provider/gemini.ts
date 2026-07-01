@@ -15,7 +15,7 @@ import {
   type StreamChunk,
   type Tool,
   type Usage,
-} from "@brainwires/core";
+} from "@rullama/core";
 import { parseNDJSONStream } from "./sse.ts";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";

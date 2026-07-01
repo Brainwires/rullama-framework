@@ -1,8 +1,8 @@
 /**
- * @module @brainwires/mcp
+ * @module @rullama/mcp
  *
- * Brainwires MCP - Model Context Protocol client and types.
- * Equivalent to Rust's `brainwires-mcp` crate.
+ * rullama MCP - Model Context Protocol client and types.
+ * Equivalent to Rust's `rullama-mcp` crate.
  *
  * - **McpClient**: Connect to external MCP servers, list/call tools, resources, prompts
  * - **Transport**: Stdio-based transport layer for MCP communication

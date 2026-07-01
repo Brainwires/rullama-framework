@@ -1,7 +1,7 @@
 /**
  * SurrealDB backend for StorageBackend.
  *
- * Port of the Rust `brainwires-storage/src/databases/surrealdb/mod.rs`.
+ * Port of the Rust `rullama-storage/src/databases/surrealdb/mod.rs`.
  *
  * Uses the official SurrealDB JavaScript SDK (`npm:surrealdb`).
  * @module

@@ -17,7 +17,7 @@ import {
   parseTechniqueId,
   TECHNIQUE_METADATA,
   techniqueToId,
-} from "@brainwires/knowledge";
+} from "@rullama/knowledge";
 
 import type {
   ComplexityLevel,
@@ -25,7 +25,7 @@ import type {
   TaskCharacteristic,
   TechniqueCategory,
   TechniqueMetadata,
-} from "@brainwires/knowledge";
+} from "@rullama/knowledge";
 
 function categoryLabel(cat: TechniqueCategory): string {
   const labels: Record<TechniqueCategory, string> = {

@@ -3,7 +3,7 @@ Cargo.lock
 *.swp
 *.swo
 .DS_Store
-# Legacy: fastembed now stores models in ~/.brainwires/cache/fastembed/
+# Legacy: fastembed now stores models in ~/.rullama/cache/fastembed/
 .fastembed_cache/
 .cache/.claude/
 .mcp.json

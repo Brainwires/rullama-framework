@@ -3,7 +3,7 @@ import type {
   GraphEdge,
   GraphNode,
   RelationshipGraphT,
-} from "@brainwires/core";
+} from "@rullama/core";
 import {
   errorTypeDescription,
   Issue,

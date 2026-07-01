@@ -1,0 +1,23 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:AudioDemo.ViewModels"
+        xmlns:views="using:AudioDemo.Views"
+        x:Class="AudioDemo.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="Audio Demo"
+        Width="900" Height="700"
+        WindowStartupLocation="CenterScreen">
+
+    <TabControl Margin="8">
+        <TabItem Header="Text-to-Speech">
+            <views:TtsView DataContext="{Binding TtsTab}" />
+        </TabItem>
+        <TabItem Header="Speech-to-Text">
+            <views:SttView DataContext="{Binding SttTab}" />
+        </TabItem>
+        <TabItem Header="Settings">
+            <views:SettingsView DataContext="{Binding SettingsTab}" />
+        </TabItem>
+    </TabControl>
+
+</Window>

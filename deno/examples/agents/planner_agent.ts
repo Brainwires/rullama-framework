@@ -14,7 +14,7 @@ import {
   validateTaskGraph,
   verdictHints,
   verdictType,
-} from "@brainwires/agent";
+} from "@rullama/agent";
 
 async function main() {
   // 1. Parse a planner output from a fenced JSON block

@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "@std/assert";
-import { ToolContext } from "@brainwires/core";
+import { ToolContext } from "@rullama/core";
 import {
   type SessionBroker,
   SessionId,

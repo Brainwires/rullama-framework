@@ -1,7 +1,7 @@
-# @brainwires/mcp-server
+# @rullama/mcp-server
 
-MCP-compliant tool server framework. Extracted from `@brainwires/network` in
-v0.11.0 to mirror Rust's standalone `brainwires-mcp-server` crate.
+MCP-compliant tool server framework. Extracted from `@rullama/network` in
+v0.11.0 to mirror Rust's standalone `rullama-mcp-server` crate.
 
 Contents:
 

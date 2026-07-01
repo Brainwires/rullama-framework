@@ -5,7 +5,7 @@
  * Equivalent to Rust's `McpToolRegistry`, `ToolHandler`, `McpToolDef`.
  */
 
-import type { CallToolResult } from "@brainwires/mcp-client";
+import type { CallToolResult } from "@rullama/mcp-client";
 import type { RequestContext } from "./server.ts";
 import { AgentNetworkError } from "./error.ts";
 

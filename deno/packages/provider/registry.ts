@@ -125,14 +125,6 @@ export const PROVIDER_REGISTRY: readonly ProviderEntry[] = [
     auth: { type: "bearer_token" },
     supports_model_listing: false,
   },
-  {
-    provider_type: "brainwires",
-    chat_protocol: "brainwires_relay",
-    default_base_url: "https://brainwires.studio",
-    default_model: "gpt-5-mini",
-    auth: { type: "bearer_token" },
-    supports_model_listing: false,
-  },
 ] as const;
 
 /** Look up the registry entry for a given provider type. */

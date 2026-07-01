@@ -1,7 +1,7 @@
 /**
  * Shared test utilities: minimal Provider mocks used across decorator tests.
  *
- * Equivalent to Rust's `brainwires_resilience::tests_util` module.
+ * Equivalent to Rust's `rullama_resilience::tests_util` module.
  */
 
 import type {
@@ -11,8 +11,8 @@ import type {
   Provider,
   StreamChunk,
   Tool,
-} from "@brainwires/core";
-import { createUsage, Message as MessageClass } from "@brainwires/core";
+} from "@rullama/core";
+import { createUsage, Message as MessageClass } from "@rullama/core";
 
 type Mode =
   | { kind: "always_ok" }

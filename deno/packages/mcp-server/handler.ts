@@ -10,7 +10,7 @@ import type {
   InitializeParams,
   ServerCapabilities,
   ServerInfo,
-} from "@brainwires/mcp-client";
+} from "@rullama/mcp-client";
 import type { McpToolDef } from "./registry.ts";
 import type { RequestContext } from "./server.ts";
 

@@ -2,7 +2,7 @@
  * @module types
  *
  * MCP Protocol Types and JSON-RPC 2.0 types.
- * Equivalent to Rust's `brainwires-mcp/src/types.rs`.
+ * Equivalent to Rust's `rullama-mcp/src/types.rs`.
  *
  * All MCP types are defined natively as JSON-compatible interfaces
  * matching the MCP specification — no external SDK dependency.

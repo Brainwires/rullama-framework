@@ -1,0 +1,54 @@
+[package]
+name = "rullama-reasoning"
+description = "Layer 3 reasoning — plan/output parsers + provider-agnostic local-inference scorers (router, complexity, relevance, retrieval, strategy, summariser, validator, entity enhancer) for the rullama agent framework"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/rullama-reasoning"
+keywords = ["reasoning", "plan-parsing", "output-parsing", "llm", "prompting"]
+categories = ["development-tools"]
+
+[dependencies]
+rullama-core = { workspace = true }
+rullama-tool-runtime = { workspace = true }
+
+# Async primitives used by scorers
+async-trait = { workspace = true }
+futures = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time", "rt"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Parsing
+regex = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# JSON Schema validation (Tier 2.2 — optional, behind `schema-validation`)
+jsonschema = { version = "0.30", default-features = false, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+proptest.workspace = true
+
+[features]
+default = []
+# Enables `SchemaValidator` (jsonschema-backed). Off by default so the
+# reasoning crate stays light when callers don't need schema validation.
+schema-validation = ["dep:jsonschema"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

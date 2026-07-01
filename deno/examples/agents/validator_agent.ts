@@ -12,13 +12,13 @@ import {
   type ValidationCheck,
   type ValidationConfig,
   ValidatorAgent,
-} from "@brainwires/agent";
+} from "@rullama/agent";
 
 async function main() {
   console.log("=== Validation Loop Demo ===\n");
 
   // 1. Create a temp directory with a file that has issues
-  const tmpDir = await Deno.makeTempDir({ prefix: "brainwires-validation-" });
+  const tmpDir = await Deno.makeTempDir({ prefix: "rullama-validation-" });
 
   const badFile = `${tmpDir}/utils.ts`;
   const badContent = `export function greet(name: string): string {

@@ -1,0 +1,66 @@
+[package]
+name = "rullama-seal"
+description = "Self-Evolving Agentic Learning (SEAL) for rullama — coreference resolution, query-core extraction, learned-pattern store (LanceDB-backed), reflection, knowledge integration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/rullama-seal"
+keywords = ["seal", "self-evolving", "agents", "learning", "lancedb"]
+categories = ["development-tools"]
+
+[dependencies]
+# Internal — confidence (response scoring), graph traits, tool-runtime outcomes
+rullama-core = { workspace = true }
+rullama-tool-runtime = { workspace = true }
+
+# Async runtime
+tokio = { version = "1.43", features = ["sync", "time", "rt", "macros"] }
+async-trait = { workspace = true }
+futures = { workspace = true }
+
+# Serialization + ids + time + errors + logging
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+regex = { workspace = true }
+
+# LanceDB-backed pattern store (always-on; pattern store is the main feature)
+rullama-storage = { workspace = true, default-features = false, features = ["native"] }
+arrow-array = { workspace = true }
+arrow-schema = { workspace = true }
+lancedb = { workspace = true }
+
+# Optional: knowledge integration (BKS / PKS coordinator)
+rullama-knowledge = { workspace = true, optional = true }
+
+# Optional: feedback bridge (audit-log → learning loop)
+rullama-permission = { workspace = true, optional = true }
+
+# Optional: MDAP metrics integration (record_mdap_metrics)
+rullama-mdap = { workspace = true, optional = true }
+
+[features]
+default = []
+# Bridge SEAL learning to rullama-knowledge's BKS/PKS coordinator
+knowledge = ["dep:rullama-knowledge", "rullama-knowledge/knowledge"]
+# Bridge user-feedback signals (audit log) into the SEAL learning loop
+feedback = ["dep:rullama-permission"]
+# Record MDAP execution metrics for learning
+mdap = ["dep:rullama-mdap"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+tempfile = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

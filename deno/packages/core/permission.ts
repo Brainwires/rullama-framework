@@ -1,5 +1,5 @@
 /** Permission mode for tool execution.
- * Equivalent to Rust's `PermissionMode` in brainwires-core. */
+ * Equivalent to Rust's `PermissionMode` in rullama-core. */
 export type PermissionMode = "read-only" | "auto" | "full";
 
 /** Parse a PermissionMode from a string. */

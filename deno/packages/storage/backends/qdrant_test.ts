@@ -11,7 +11,7 @@ import {
   buildUpsertBody,
   parseSearchPoint,
 } from "./qdrant.ts";
-import type { ChunkMetadata } from "@brainwires/core";
+import type { ChunkMetadata } from "@rullama/core";
 
 // ---------------------------------------------------------------------------
 // buildQdrantFilter

@@ -1,15 +1,15 @@
-# @brainwires/network
+# @rullama/network
 
-Agent networking layer for the Brainwires Agent Framework. Provides an MCP
+Agent networking layer for the rullama. Provides an MCP
 server framework with middleware, agent identity, message routing, peer
 discovery, and client connectivity.
 
-Equivalent to the Rust `brainwires-network` crate.
+Equivalent to the Rust `rullama-network` crate.
 
 ## Install
 
 ```sh
-deno add @brainwires/network
+deno add @rullama/network
 ```
 
 ## Quick Example
@@ -20,8 +20,8 @@ import {
   McpServer,
   McpToolRegistry,
   RateLimitMiddleware,
-} from "@brainwires/network";
-import type { McpHandler } from "@brainwires/network";
+} from "@rullama/network";
+import type { McpHandler } from "@rullama/network";
 
 // Define a handler
 const handler: McpHandler = {

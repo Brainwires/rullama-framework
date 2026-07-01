@@ -1,6 +1,6 @@
 # Storage
 
-The `@brainwires/storage` package provides backend-agnostic persistent storage
+The `@rullama/storage` package provides backend-agnostic persistent storage
 with domain-specific stores and tiered memory.
 
 ## StorageBackend Interface
@@ -37,7 +37,7 @@ The `VectorDatabase` interface extends this with vector search capabilities
 | `SurrealDatabase`        | SurrealDB  | Multi-model database                |
 
 ```ts
-import { InMemoryStorageBackend } from "@brainwires/storage";
+import { InMemoryStorageBackend } from "@rullama/storage";
 
 const backend = new InMemoryStorageBackend();
 ```
@@ -55,7 +55,7 @@ Higher-level stores wrap a `StorageBackend` with domain-specific logic:
 | `TemplateStore`     | --                   | Plan templates with variable substitution |
 
 ```ts
-import { InMemoryStorageBackend, MessageStore } from "@brainwires/storage";
+import { InMemoryStorageBackend, MessageStore } from "@rullama/storage";
 
 const backend = new InMemoryStorageBackend();
 const messageStore = new MessageStore(backend);
@@ -78,7 +78,7 @@ See: `../examples/storage/message_store.ts`,
 and demotion based on access patterns.
 
 ```ts
-import { defaultTieredMemoryConfig, TieredMemory } from "@brainwires/storage";
+import { defaultTieredMemoryConfig, TieredMemory } from "@rullama/storage";
 
 const memory = new TieredMemory(defaultTieredMemoryConfig());
 ```
@@ -94,7 +94,7 @@ See: `../examples/storage/tiered_memory.ts`.
 redundant embedding calls.
 
 ```ts
-import { CachedEmbeddingProvider } from "@brainwires/storage";
+import { CachedEmbeddingProvider } from "@rullama/storage";
 
 const cached = new CachedEmbeddingProvider(baseProvider, { maxSize: 1000 });
 ```

@@ -1,3 +1,8 @@
 [alias]
 ci = "run -p xtask --quiet --"
 xtask = "run -p xtask --quiet --"
+# `cargo fuzz` → xtask wrapper that ensures nightly + cargo-fuzz, runs from the
+# workspace root, and forwards to the real cargo-fuzz binary. This intentionally
+# shadows the raw `cargo-fuzz` external subcommand (the wrapper calls it directly
+# under the hood, so there's no recursion). See xtask/src/fuzz.rs.
+fuzz = "run -p xtask --quiet -- fuzz"

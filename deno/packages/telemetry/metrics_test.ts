@@ -111,8 +111,8 @@ Deno.test("prometheusText has expected TYPE lines", async () => {
   const reg = new MetricsRegistry();
   await reg.record(agentRun("a", { success: true }));
   const body = reg.prometheusText();
-  assert(body.includes("# TYPE brainwires_agent_runs_total counter"));
-  assert(body.includes('brainwires_agent_runs_total{agent_id="a"}'));
+  assert(body.includes("# TYPE rullama_agent_runs_total counter"));
+  assert(body.includes('rullama_agent_runs_total{agent_id="a"}'));
 });
 
 Deno.test("empty registry renders empty prometheus body", () => {

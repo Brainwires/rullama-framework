@@ -1,21 +1,21 @@
-# @brainwires/core
+# @rullama/core
 
-Foundation types, traits, and error handling for the Brainwires Agent Framework.
-This is the zero-dependency base that every other `@brainwires/*` package builds
+Foundation types, traits, and error handling for the rullama.
+This is the zero-dependency base that every other `@rullama/*` package builds
 on.
 
-Equivalent to the Rust `brainwires-core` crate.
+Equivalent to the Rust `rullama-core` crate.
 
 ## Install
 
 ```sh
-deno add @brainwires/core
+deno add @rullama/core
 ```
 
 ## Quick Example
 
 ```ts
-import { ChatOptions, FrameworkError, Message } from "@brainwires/core";
+import { ChatOptions, FrameworkError, Message } from "@rullama/core";
 
 // Create messages
 const userMsg = Message.user("Explain Deno in one sentence.");

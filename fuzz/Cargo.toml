@@ -1,5 +1,5 @@
 [package]
-name = "brainwires-fuzz"
+name = "rullama-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
@@ -21,10 +21,10 @@ libfuzzer-sys = "0.4"
 serde_json = "1"
 
 # Crates under attack — each target only depends on the minimum it needs.
-brainwires-skills = { path = "../crates/brainwires-skills" }
-brainwires-mcp-client = { path = "../crates/brainwires-mcp-client" }
+rullama-skills = { path = "../crates/rullama-skills" }
+rullama-mcp-client = { path = "../crates/rullama-mcp-client" }
 # a2a's JSON-RPC types live alongside agent-card types in the same crate.
-brainwires-a2a = { path = "../crates/brainwires-a2a", default-features = false }
+rullama-a2a = { path = "../crates/rullama-a2a", default-features = false }
 
 [workspace]
 # Empty `[workspace]` table makes this a standalone workspace, independent

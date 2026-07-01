@@ -3,7 +3,7 @@
 // Stage files, inspect pending state, then commit or rollback.
 // Run: deno run --allow-read --allow-write --allow-env deno/examples/tool-system/tool_transactions.ts
 
-import { TransactionManager } from "@brainwires/tools";
+import { TransactionManager } from "@rullama/tools";
 
 async function main() {
   console.log("=== Tool Transactions Example ===\n");
@@ -19,7 +19,7 @@ async function main() {
 
   const targetDir = `${
     Deno.env.get("TMPDIR") ?? "/tmp"
-  }/brainwires-txn-example`;
+  }/rullama-txn-example`;
   Deno.mkdirSync(targetDir, { recursive: true });
 
   const writes = [

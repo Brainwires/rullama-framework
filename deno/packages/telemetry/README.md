@@ -1,4 +1,4 @@
-# @brainwires/telemetry
+# @rullama/telemetry
 
 Analytics events, sinks, outcome metrics, and billing hooks.
 
@@ -23,7 +23,7 @@ import {
   MemoryAnalyticsSink,
   MetricsRegistry,
   tokensEvent,
-} from "@brainwires/telemetry";
+} from "@rullama/telemetry";
 
 const memory = new MemoryAnalyticsSink(1024);
 const metrics = new MetricsRegistry();
@@ -68,5 +68,5 @@ const body = metrics.prometheusText();
 
 ## Equivalent Rust crate
 
-`brainwires-telemetry` — same event shape, same semantics. Counters are plain
+`rullama-telemetry` — same event shape, same semantics. Counters are plain
 numbers instead of atomics because JS isolates are single-threaded.

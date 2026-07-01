@@ -4,7 +4,7 @@
  * {@link analyzeSuiteForFaults} inspects a completed {@link SuiteResult} and
  * classifies per-case issues into {@link FaultReport}s sorted by priority.
  *
- * Equivalent to Rust's `brainwires_agents::eval::fault_report` module.
+ * Equivalent to Rust's `rullama_agents::eval::fault_report` module.
  */
 
 import type { SuiteResult } from "./suite.ts";

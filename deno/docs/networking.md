@@ -1,6 +1,6 @@
 # Networking (Agent Network)
 
-The `@brainwires/network` package provides an MCP server framework, middleware
+The `@rullama/network` package provides an MCP server framework, middleware
 pipeline, agent identity, peer discovery, message routing, and a remote bridge.
 
 ## MCP Server Framework
@@ -12,7 +12,7 @@ import {
   McpServer,
   McpToolRegistry,
   StdioServerTransport,
-} from "@brainwires/network";
+} from "@rullama/network";
 
 const toolRegistry = new McpToolRegistry();
 
@@ -53,7 +53,7 @@ import {
   LoggingMiddleware,
   MiddlewareChain,
   RateLimitMiddleware,
-} from "@brainwires/network";
+} from "@rullama/network";
 
 const chain = new MiddlewareChain();
 chain.use(new LoggingMiddleware());
@@ -69,7 +69,7 @@ Custom middleware implements the `Middleware` interface and returns
 Every agent has an `AgentIdentity` with capabilities and protocol support:
 
 ```ts
-import { createAgentIdentity, defaultAgentCard } from "@brainwires/network";
+import { createAgentIdentity, defaultAgentCard } from "@rullama/network";
 
 const identity = createAgentIdentity("agent-1", defaultAgentCard("agent-1"));
 ```
@@ -96,7 +96,7 @@ Use `ManualDiscovery` to register peers, or implement the `Discovery` interface
 for custom protocols (mDNS, service registry, etc.).
 
 ```ts
-import { ManualDiscovery, PeerTable } from "@brainwires/network";
+import { ManualDiscovery, PeerTable } from "@rullama/network";
 
 const discovery = new ManualDiscovery();
 const peerTable = new PeerTable();
@@ -114,7 +114,7 @@ import {
   defaultBridgeConfig,
   RemoteBridge,
   RemoteBridgeManager,
-} from "@brainwires/network";
+} from "@rullama/network";
 
 const bridge = new RemoteBridge(defaultBridgeConfig());
 const manager = new RemoteBridgeManager();

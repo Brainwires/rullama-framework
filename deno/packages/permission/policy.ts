@@ -5,7 +5,7 @@
  * static capabilities. Policies can match on tool names, categories, file paths,
  * domains, git operations, and trust levels.
  *
- * Rust equivalent: `brainwires-permissions/src/policy.rs`
+ * Rust equivalent: `rullama-permissions/src/policy.rs`
  * @module
  */
 

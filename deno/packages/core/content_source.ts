@@ -1,5 +1,5 @@
 /** Trust level / origin of content injected into an agent's context.
- * Equivalent to Rust's `ContentSource` in brainwires-core. */
+ * Equivalent to Rust's `ContentSource` in rullama-core. */
 export type ContentSource =
   | "system_prompt"
   | "user_input"

@@ -4,7 +4,7 @@
  * Tracks which functions call which, building a directed graph of
  * caller/callee relationships from extracted definitions and references.
  *
- * Ported from `brainwires-knowledge/src/code_analysis/repomap/reference_finder.rs`
+ * Ported from `rullama-knowledge/src/code_analysis/repomap/reference_finder.rs`
  * and the call-graph logic in `mod.rs`.
  *
  * @module

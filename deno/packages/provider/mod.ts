@@ -1,11 +1,11 @@
 /**
- * @module @brainwires/providers
+ * @module @rullama/providers
  *
- * Provider layer for the Brainwires Agent Framework.
+ * Provider layer for the rullama.
  * Contains chat provider implementations that wrap AI APIs with the
- * `Provider` interface from `@brainwires/core`.
+ * `Provider` interface from `@rullama/core`.
  *
- * Equivalent to Rust's `brainwires-providers` crate.
+ * Equivalent to Rust's `rullama-providers` crate.
  */
 
 // Types
@@ -35,16 +35,7 @@ export { VertexAiProvider } from "./vertex.ts";
 export { GoogleChatProvider } from "./gemini.ts";
 export { OllamaChatProvider } from "./ollama.ts";
 
-// Brainwires Relay — HTTP-based backend that multiplexes upstream models
-export {
-  BrainwiresRelayProvider,
-  DEFAULT_BACKEND_URL,
-  DEV_BACKEND_URL,
-  getBackendFromApiKey,
-  maxOutputTokensForModel,
-} from "./brainwires_relay.ts";
-
-// Speech providers moved to @brainwires/provider-speech.
+// Speech providers moved to @rullama/provider-speech.
 
 // Factory
 export { ChatProviderFactory } from "./factory.ts";

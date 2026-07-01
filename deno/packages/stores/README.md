@@ -1,11 +1,11 @@
-# @brainwires/stores
+# @rullama/stores
 
-Domain stores built on top of `@brainwires/storage`'s `StorageBackend` trait.
+Domain stores built on top of `@rullama/storage`'s `StorageBackend` trait.
 
-In v0.11.0 these were extracted out of `@brainwires/storage` to mirror the Rust
-restructure (`brainwires-stores`). The schemas live here; the underlying backend
+In v0.11.0 these were extracted out of `@rullama/storage` to mirror the Rust
+restructure (`rullama-stores`). The schemas live here; the underlying backend
 traits (Postgres / Qdrant / SurrealDB / Pinecone / etc.) remain in
-`@brainwires/storage`.
+`@rullama/storage`.
 
 ## Stores
 
@@ -15,4 +15,4 @@ traits (Postgres / Qdrant / SurrealDB / Pinecone / etc.) remain in
 - **Plan store** — saved Plan-Work-Judge plan instances
 - **Template store** — reusable plan templates with variable substitution
 
-Tiered memory orchestration lives in `@brainwires/memory`.
+Tiered memory orchestration lives in `@rullama/memory`.

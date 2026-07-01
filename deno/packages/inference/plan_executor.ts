@@ -6,10 +6,10 @@
  * @module
  */
 
-import type { PlanMetadata, Task } from "@brainwires/core";
+import type { PlanMetadata, Task } from "@rullama/core";
 
-import type { TaskManager } from "@brainwires/agent";
-import { formatDurationSecs } from "@brainwires/agent";
+import type { TaskManager } from "@rullama/agent";
+import { formatDurationSecs } from "@rullama/agent";
 
 // ---------------------------------------------------------------------------
 // Approval mode

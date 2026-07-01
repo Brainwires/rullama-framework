@@ -1,25 +1,25 @@
-# @brainwires/providers
+# @rullama/providers
 
-AI chat provider implementations for the Brainwires Agent Framework. Wraps
+AI chat provider implementations for the rullama. Wraps
 multiple AI APIs behind the unified `Provider` interface from
-`@brainwires/core`.
+`@rullama/core`.
 
-Equivalent to the Rust `brainwires-providers` crate.
+Equivalent to the Rust `rullama-providers` crate.
 
 ## Install
 
 ```sh
-deno add @brainwires/providers
+deno add @rullama/providers
 ```
 
 ## Quick Example
 
 ```ts
-import { ChatOptions, Message } from "@brainwires/core";
+import { ChatOptions, Message } from "@rullama/core";
 import {
   AnthropicChatProvider,
   ChatProviderFactory,
-} from "@brainwires/provider";
+} from "@rullama/provider";
 
 // Direct construction
 const provider = new AnthropicChatProvider(

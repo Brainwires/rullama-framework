@@ -8,7 +8,7 @@ import {
   type SearchResult,
   type VectorSearchResult,
   type VectorStore,
-} from "@brainwires/core";
+} from "@rullama/core";
 
 // 1. Implement a custom embedding provider
 // A toy hash-based embedding (deterministic, not semantic).

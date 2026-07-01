@@ -1,5 +1,5 @@
 {
-  "name": "@brainwires/session",
+  "name": "@rullama/session",
   "license": "MIT",
   "version": "0.11.0",
   "exports": "./mod.ts"

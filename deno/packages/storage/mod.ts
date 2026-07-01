@@ -1,8 +1,8 @@
 /**
- * @module @brainwires/storage
+ * @module @rullama/storage
  *
  * Backend-agnostic persistent storage substrate. Equivalent to Rust's
- * `brainwires-storage` crate.
+ * `rullama-storage` crate.
  *
  * Provides:
  * - `StorageBackend` and `VectorDatabase` interfaces
@@ -11,8 +11,8 @@
  * - Concrete database adapters: Postgres / MySQL / Qdrant / SurrealDB /
  *   Pinecone / Weaviate / Milvus
  *
- * Domain stores moved to `@brainwires/stores`. Tiered memory orchestration
- * moved to `@brainwires/memory`. No transitional re-exports — update imports.
+ * Domain stores moved to `@rullama/stores`. Tiered memory orchestration
+ * moved to `@rullama/memory`. No transitional re-exports — update imports.
  */
 
 // -- Core types -------------------------------------------------------------

@@ -1,6 +1,6 @@
 # Permissions
 
-The `@brainwires/permissions` package provides capability-based access control,
+The `@rullama/permissions` package provides capability-based access control,
 policy enforcement, audit logging, trust management, and anomaly detection.
 
 ## Capability Profiles
@@ -15,7 +15,7 @@ import {
   defaultResourceQuotas,
   parseCapabilityProfile,
   standardGitCapabilities,
-} from "@brainwires/permission";
+} from "@rullama/permission";
 
 // Use a preset profile
 const caps = parseCapabilityProfile("standard_dev");
@@ -41,7 +41,7 @@ import {
   createPolicyRequest,
   PolicyActions,
   PolicyEngine,
-} from "@brainwires/permission";
+} from "@rullama/permission";
 
 const engine = new PolicyEngine();
 
@@ -79,7 +79,7 @@ import {
   createTrustFactor,
   trustLevelFromScore,
   TrustManager,
-} from "@brainwires/permission";
+} from "@rullama/permission";
 
 const manager = new TrustManager();
 manager.registerAgent("worker-1", createTrustFactor("worker-1"));
@@ -105,7 +105,7 @@ import {
   createAuditEvent,
   createAuditQuery,
   withAgent,
-} from "@brainwires/permission";
+} from "@rullama/permission";
 
 const logger = new AuditLogger();
 
@@ -131,7 +131,7 @@ See: `../examples/permissions/trust_audit.ts`.
 action frequencies, time-of-day patterns, and sudden behavior changes.
 
 ```ts
-import { AnomalyDetector, defaultAnomalyConfig } from "@brainwires/permission";
+import { AnomalyDetector, defaultAnomalyConfig } from "@rullama/permission";
 
 const detector = new AnomalyDetector(defaultAnomalyConfig());
 // Feed audit events into the detector
@@ -147,11 +147,11 @@ For sensitive operations, policies can return a "requires approval" decision.
 The approval system provides structured request/response types:
 
 ```ts
-import type { ApprovalRequest, ApprovalResponse } from "@brainwires/permission";
+import type { ApprovalRequest, ApprovalResponse } from "@rullama/permission";
 import {
   approvalActionSeverity,
   isApprovalResponseApproved,
-} from "@brainwires/permission";
+} from "@rullama/permission";
 ```
 
 ## Configuration
@@ -162,7 +162,7 @@ Load permissions from a JSON config file:
 import {
   configToCapabilities,
   loadPermissionsConfig,
-} from "@brainwires/permission";
+} from "@rullama/permission";
 
 const config = loadPermissionsConfig("./permissions.json");
 const caps = configToCapabilities(config);

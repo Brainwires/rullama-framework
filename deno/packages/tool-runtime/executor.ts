@@ -6,8 +6,8 @@
  * without coupling to any concrete implementation.
  */
 
-import type { Tool, ToolContext, ToolUse } from "@brainwires/core";
-import type { ToolResult } from "@brainwires/core";
+import type { Tool, ToolContext, ToolUse } from "@rullama/core";
+import type { ToolResult } from "@rullama/core";
 
 /** Decision returned by a ToolPreHook before a tool call. */
 export type PreHookDecision =

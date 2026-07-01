@@ -129,7 +129,7 @@ export function createThought(content: string): Thought {
 }
 
 // ---------------------------------------------------------------------------
-// EntityType (mirrors brainwires-core graph::EntityType)
+// EntityType (mirrors rullama-core graph::EntityType)
 // ---------------------------------------------------------------------------
 
 /** Entity types for the knowledge graph. */

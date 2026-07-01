@@ -1,10 +1,10 @@
 /**
- * @module @brainwires/inference
+ * @module @rullama/inference
  *
- * LLM-driven agent workhorses for the Brainwires Agent Framework.
+ * LLM-driven agent workhorses for the rullama.
  *
- * Extracted from `@brainwires/agents` in v0.11.0 to mirror Rust's
- * `brainwires-inference` crate. Provides:
+ * Extracted from `@rullama/agents` in v0.11.0 to mirror Rust's
+ * `rullama-inference` crate. Provides:
  *
  * - **AgentRuntime / runAgentLoop** — generic execution loop
  * - **TaskAgent** — concrete agent with provider + tool loop
@@ -18,7 +18,7 @@
  * - **system_prompts** — canonical prompt registry
  *
  * Coordination primitives (communication, locks, task manager/queue,
- * patterns) stay in `@brainwires/agents` / `@brainwires/agent`.
+ * patterns) stay in `@rullama/agents` / `@rullama/agent`.
  */
 
 export * from "./runtime.ts";

@@ -1,8 +1,8 @@
 use crate::cli::OnoffAction;
 use crate::output::Output;
 use anyhow::Result;
-use brainwires_homeauto::matter::clusters::on_off;
-use brainwires_homeauto::{AttributeValue, MatterController};
+use rullama_homeauto::matter::clusters::on_off;
+use rullama_homeauto::{AttributeValue, MatterController};
 use std::path::Path;
 
 pub async fn run(action: OnoffAction, fabric_dir: &Path, out: &Output) -> Result<()> {
@@ -55,10 +55,7 @@ pub async fn run(action: OnoffAction, fabric_dir: &Path, out: &Output) -> Result
 async fn get_ctrl_and_device(
     fabric_dir: &Path,
     node_id: u64,
-) -> Result<(
-    MatterController,
-    brainwires_homeauto::MatterDevice,
-)> {
+) -> Result<(MatterController, rullama_homeauto::MatterDevice)> {
     let ctrl = MatterController::new("matter-tool", fabric_dir).await?;
     let devices = ctrl.devices().await?;
     let device = devices

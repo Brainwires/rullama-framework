@@ -5,7 +5,7 @@
  * loop: iteration boundaries, provider calls, tool execution, completion, and
  * context management.
  *
- * Unlike the observational lifecycle system in `@brainwires/core`, these hooks
+ * Unlike the observational lifecycle system in `@rullama/core`, these hooks
  * can **control** the loop -- skip iterations, override tool results, delegate
  * work to sub-agents, or compress conversation history.
  *
@@ -17,8 +17,8 @@ import type {
   Message,
   ToolResult,
   ToolUse,
-} from "@brainwires/core";
-import { estimateTokensFromSize } from "@brainwires/core";
+} from "@rullama/core";
+import { estimateTokensFromSize } from "@rullama/core";
 
 // Re-export TaskAgentConfig as an opaque type reference for DelegationRequest.
 // The actual definition lives in task_agent.ts; import it there to avoid cycles.

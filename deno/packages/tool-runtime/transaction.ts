@@ -1,7 +1,7 @@
 /**
  * Two-phase commit transaction manager for file write operations.
  *
- * TransactionManager implements StagingBackend from @brainwires/core.
+ * TransactionManager implements StagingBackend from @rullama/core.
  *
  * ## Protocol
  *
@@ -23,7 +23,7 @@ import type {
   CommitResult,
   StagedWrite,
   StagingBackend,
-} from "@brainwires/core";
+} from "@rullama/core";
 
 interface StagedEntry {
   stagedPath: string;
@@ -42,14 +42,14 @@ export class TransactionManager implements StagingBackend {
 
   /**
    * Create a new manager using a temporary directory.
-   * The staging directory is `<tmpdir>/brainwires-txn-<random>` and is created
+   * The staging directory is `<tmpdir>/rullama-txn-<random>` and is created
    * on construction.
    */
   static create(stagingDir?: string): TransactionManager {
     const dir = stagingDir ??
       `${
         Deno.env.get("TMPDIR") ?? "/tmp"
-      }/brainwires-txn-${crypto.randomUUID()}`;
+      }/rullama-txn-${crypto.randomUUID()}`;
     Deno.mkdirSync(dir, { recursive: true });
     return new TransactionManager(dir);
   }

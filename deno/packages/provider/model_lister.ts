@@ -3,7 +3,7 @@
  *
  * Each provider implements {@link ModelLister} to query available models from its API.
  *
- * Equivalent to Rust's `model_listing` module in `brainwires-providers`.
+ * Equivalent to Rust's `model_listing` module in `rullama-providers`.
  */
 
 import type { ProviderType } from "./types.ts";

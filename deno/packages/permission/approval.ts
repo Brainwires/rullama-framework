@@ -4,7 +4,7 @@
  * Provides types for interactive approval workflows where tool execution
  * requires user consent before proceeding.
  *
- * Rust equivalent: `brainwires-permissions/src/approval.rs`
+ * Rust equivalent: `rullama-permissions/src/approval.rs`
  * @module
  */
 

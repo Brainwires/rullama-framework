@@ -13,7 +13,7 @@ import {
   PROVIDER_REGISTRY,
   type ProviderType,
   requiresApiKey,
-} from "@brainwires/provider";
+} from "@rullama/provider";
 
 async function main() {
   console.log("=== Provider Factory & Model Listing Example ===\n");

@@ -11,7 +11,7 @@ import type {
   JsonRpcId,
   JsonRpcRequest,
   JsonRpcResponse,
-} from "@brainwires/mcp-client";
+} from "@rullama/mcp-client";
 import type { McpHandler } from "./handler.ts";
 import type { Middleware } from "./middleware/mod.ts";
 import { MiddlewareChain } from "./middleware/mod.ts";

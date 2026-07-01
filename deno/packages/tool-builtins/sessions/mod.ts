@@ -9,7 +9,7 @@
  * only defines the tool schemas plus a {@link SessionBroker} interface that
  * the host implements over its actual registry.
  *
- * Equivalent to Rust's `brainwires_tools::sessions` module.
+ * Equivalent to Rust's `rullama_tools::sessions` module.
  */
 
 export {

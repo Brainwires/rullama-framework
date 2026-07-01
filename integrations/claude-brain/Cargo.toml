@@ -1,0 +1,57 @@
+[package]
+name = "claude-brain"
+publish = false
+description = "Claude Code context manager — replaces compaction with rullama tiered memory, dream consolidation, and semantic recall"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+name = "claude_brain"
+path = "src/lib.rs"
+
+[[bin]]
+name = "claude-brain"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+# Core rullama subsystems
+rullama-knowledge = { workspace = true, features = ["knowledge"] }
+rullama-memory = { workspace = true, features = ["dream"] }
+rullama-core = { workspace = true }
+rullama-storage = { workspace = true }
+
+# MCP server
+rmcp = { workspace = true, features = ["server", "transport-io", "macros"] }
+schemars.workspace = true
+
+# CLI + serialization
+clap = { version = "4", features = ["derive"] }
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+
+# Async
+tokio = { version = "1.43", features = ["rt", "macros", "time", "io-util"] }
+tokio-util.workspace = true
+
+# Async trait (for DreamSessionStore impl)
+async-trait.workspace = true
+
+# Utilities
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+dirs = "6"
+chrono.workspace = true
+uuid.workspace = true
+
+[build-dependencies]
+# None — we skip build.rs for now; version info comes from CARGO_PKG_VERSION
+
+[dev-dependencies]
+tempfile = { workspace = true }

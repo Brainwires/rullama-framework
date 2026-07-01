@@ -4,7 +4,7 @@
  * RemoteBridge — connects local agents to a cloud relay via WebSocket.
  * Uses the native WebSocket API (not Supabase SDK) for portability.
  *
- * Equivalent to Rust's `brainwires-network::remote::bridge`.
+ * Equivalent to Rust's `rullama-network::remote::bridge`.
  */
 
 import type {

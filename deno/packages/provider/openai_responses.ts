@@ -15,7 +15,7 @@ import {
   type StreamChunk,
   type Tool,
   type Usage,
-} from "@brainwires/core";
+} from "@rullama/core";
 import { parseSSEStream } from "./sse.ts";
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1/responses";

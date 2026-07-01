@@ -3,7 +3,7 @@
 // which tool categories are relevant, using keyword-based pattern matching.
 // Run: deno run deno/examples/tool-system/smart_routing.ts
 
-import { Message } from "@brainwires/core";
+import { Message } from "@rullama/core";
 import {
   analyzeMessages,
   analyzeQuery,
@@ -18,8 +18,8 @@ import {
   ToolRegistry,
   ValidationTool,
   WebTool,
-} from "@brainwires/tools";
-import type { Tool } from "@brainwires/core";
+} from "@rullama/tools";
+import type { Tool } from "@rullama/core";
 
 async function main() {
   console.log("=== Smart Routing Example ===\n");

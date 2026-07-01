@@ -3,7 +3,7 @@
  *
  * Implement this interface for any scenario you want to evaluate N times.
  *
- * Equivalent to Rust's `brainwires_agents::eval::case` module.
+ * Equivalent to Rust's `rullama_agents::eval::case` module.
  */
 
 import { trialFailure, type TrialResult, trialSuccess } from "./trial.ts";

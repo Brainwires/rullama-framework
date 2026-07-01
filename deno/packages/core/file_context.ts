@@ -5,7 +5,7 @@
  * files. Prevents re-injection of files already in context and retrieves
  * relevant portions of large files based on a query.
  *
- * Equivalent to Rust's `brainwires_core::file_context`.
+ * Equivalent to Rust's `rullama_core::file_context`.
  */
 
 const MAX_DIRECT_FILE_CHARS = 50_000;

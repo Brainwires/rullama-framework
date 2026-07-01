@@ -1,7 +1,7 @@
 /**
  * TrainingManager — thin registry + orchestrator over cloud providers.
  *
- * Equivalent to Rust's `brainwires_training::manager::TrainingManager`.
+ * Equivalent to Rust's `rullama_training::manager::TrainingManager`.
  * The local-backend slice (Burn-based) stays in Rust; Deno consumers use
  * cloud fine-tuning only.
  */

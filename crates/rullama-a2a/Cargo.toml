@@ -1,0 +1,79 @@
+[package]
+name = "rullama-a2a"
+description = "Agent-to-Agent (A2A) protocol — JSON-RPC, REST, and gRPC bindings"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/rullama-a2a"
+keywords = ["a2a", "agent-to-agent", "json-rpc", "grpc", "interop"]
+categories = ["network-programming"]
+
+[dependencies]
+# Always needed (types + serde)
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time", "macros"] }
+async-trait = { workspace = true }
+futures = { workspace = true }
+async-stream = { workspace = true }
+tokio-stream = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+url = { workspace = true }
+bytes = { workspace = true }
+
+# HTTP client (JSON-RPC + REST client)
+reqwest = { workspace = true, optional = true }
+
+# HTTP server (JSON-RPC + REST server)
+hyper = { workspace = true, optional = true }
+hyper-util = { workspace = true, optional = true }
+http = { workspace = true, optional = true }
+http-body = { workspace = true, optional = true }
+http-body-util = { workspace = true, optional = true }
+
+# gRPC
+tonic = { version = "0.13", optional = true }
+prost = { version = "0.13", optional = true }
+prost-types = { version = "0.13", optional = true }
+
+[build-dependencies]
+tonic-build = { version = "0.13", optional = true }
+
+[features]
+default = ["native"]
+native = ["client", "server"]
+client = ["dep:reqwest"]
+server = ["dep:hyper", "dep:hyper-util", "dep:http", "dep:http-body", "dep:http-body-util"]
+grpc = ["dep:tonic", "dep:prost", "dep:prost-types", "dep:tonic-build"]
+grpc-client = ["grpc", "client"]
+grpc-server = ["grpc", "server"]
+full = ["native", "grpc-client", "grpc-server"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+tempfile = { workspace = true }
+serde_json = { workspace = true }
+
+[[example]]
+name = "agent_card"
+
+[[example]]
+name = "a2a_client_server"
+required-features = ["full"]
+
+[[example]]
+name = "a2a_streaming"
+required-features = ["client", "server"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

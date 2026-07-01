@@ -1,10 +1,10 @@
 /**
  * Semantic response validator — provider-backed + heuristic fallback.
  *
- * Equivalent to Rust's `brainwires_reasoning::validator` module.
+ * Equivalent to Rust's `rullama_reasoning::validator` module.
  */
 
-import { ChatOptions, Message, type Provider } from "@brainwires/core";
+import { ChatOptions, Message, type Provider } from "@rullama/core";
 
 /** Validation outcome. */
 export type ValidationResult =

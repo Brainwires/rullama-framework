@@ -1,7 +1,7 @@
 /**
  * Type definitions for code analysis — symbol extraction, references, and call graphs.
  *
- * Ported from `brainwires-knowledge/src/code_analysis/types.rs`.
+ * Ported from `rullama-knowledge/src/code_analysis/types.rs`.
  *
  * @module
  */

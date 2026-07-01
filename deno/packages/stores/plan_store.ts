@@ -1,14 +1,14 @@
 /**
  * Plan Store -- persists execution plans with conversation association.
  *
- * Equivalent to Rust's `stores/plan_store.rs` in brainwires-storage.
+ * Equivalent to Rust's `stores/plan_store.rs` in rullama-storage.
  * @module
  */
 
-import type { PlanMetadata, PlanStatus } from "@brainwires/core";
-import { parsePlanStatus } from "@brainwires/core";
-import type { EmbeddingProvider } from "@brainwires/core";
-import type { StorageBackend } from "@brainwires/storage";
+import type { PlanMetadata, PlanStatus } from "@rullama/core";
+import { parsePlanStatus } from "@rullama/core";
+import type { EmbeddingProvider } from "@rullama/core";
+import type { StorageBackend } from "@rullama/storage";
 import {
   type FieldDef,
   FieldTypes,
@@ -23,7 +23,7 @@ import {
   type Record,
   recordGet,
   requiredField,
-} from "@brainwires/storage";
+} from "@rullama/storage";
 
 const TABLE_NAME = "plans";
 

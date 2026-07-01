@@ -5,7 +5,7 @@
  * deferred loading, category filtering, and search.
  */
 
-import type { Tool } from "@brainwires/core";
+import type { Tool } from "@rullama/core";
 
 /** Tool categories for filtering tools by purpose. */
 export type ToolCategory =

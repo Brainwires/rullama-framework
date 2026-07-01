@@ -7,7 +7,7 @@
  * sequentially in a microtask. Consumers can call {@link flush} to wait for
  * in-flight deliveries and then flush each sink.
  *
- * Equivalent to Rust's `brainwires_telemetry::collector::AnalyticsCollector`.
+ * Equivalent to Rust's `rullama_telemetry::collector::AnalyticsCollector`.
  */
 
 import type { AnalyticsEvent } from "./events.ts";

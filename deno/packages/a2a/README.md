@@ -1,23 +1,23 @@
-# @brainwires/a2a
+# @rullama/a2a
 
-Agent-to-Agent (A2A) protocol implementation for the Brainwires Agent Framework.
+Agent-to-Agent (A2A) protocol implementation for the rullama.
 This is one of the first Deno-native implementations of
 [Google's A2A protocol](https://github.com/google/A2A), enabling standardized
 inter-agent communication with JSON-RPC and REST transports.
 
-Equivalent to the Rust `brainwires-a2a` crate.
+Equivalent to the Rust `rullama-a2a` crate.
 
 ## Install
 
 ```sh
-deno add @brainwires/a2a
+deno add @rullama/a2a
 ```
 
 ## Quick Example
 
 ```ts
-import { A2aClient, createUserMessage } from "@brainwires/a2a";
-import type { AgentCard } from "@brainwires/a2a";
+import { A2aClient, createUserMessage } from "@rullama/a2a";
+import type { AgentCard } from "@rullama/a2a";
 
 // Discover an agent
 const client = new A2aClient({ baseUrl: "http://localhost:8080" });
@@ -42,7 +42,7 @@ for await (const event of stream) {
 ## Creating an Agent Card
 
 ```ts
-import type { AgentCard } from "@brainwires/a2a";
+import type { AgentCard } from "@rullama/a2a";
 
 const card: AgentCard = {
   name: "SummaryAgent",

@@ -10,7 +10,7 @@ import {
   type Provider,
   type StreamChunk,
   type Tool,
-} from "@brainwires/core";
+} from "@rullama/core";
 
 // 1. Implement a streaming provider
 // Simulates word-by-word streaming like a real LLM would produce.
@@ -45,7 +45,7 @@ class StreamingDemoProvider implements Provider {
     // Simulate streaming word by word
     const words = [
       "The",
-      "Brainwires",
+      "rullama",
       "framework",
       "provides",
       "a",

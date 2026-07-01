@@ -1,7 +1,7 @@
 /**
  * SKILL.md Parser
  *
- * Parses skill files from .brainwires/skills/ directories.
+ * Parses skill files from .rullama/skills/ directories.
  *
  * ## Format
  *
@@ -303,7 +303,7 @@ export function validateCompatibility(compat: string, path?: string): void {
  *
  * The Agent Skills specification requires that the name field must match the
  * parent directory name. We emit a warning rather than an error since
- * brainwires-skills also supports flat file layout.
+ * rullama-skills also supports flat file layout.
  *
  * @param name - The skill name from frontmatter
  * @param path - The file path

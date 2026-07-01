@@ -1,0 +1,46 @@
+[package]
+name = "rullama-telemetry"
+description = "Unified telemetry for rullama — analytics events, SQLite persistence, cost/usage queries, and a `BillingHook` trait consumed by `rullama-billing`"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["ai-agents", "telemetry", "billing", "observability", "llm"]
+categories = ["development-tools"]
+
+[dependencies]
+serde         = { workspace = true }
+serde_json    = { workspace = true }
+anyhow        = { workspace = true }
+thiserror     = { workspace = true }
+chrono        = { workspace = true }
+uuid          = { workspace = true }
+# Production tokio surface: only the wasm32-compatible features
+# (sync, rt, time, macros) by default. `rt-multi-thread` is required
+# by `sinks/sqlite.rs` for `task::block_in_place`; it's pulled in via
+# the `sqlite` feature below, which is implied by `native` and never
+# enabled on wasm32 (where rt-multi-thread is unsupported by mio).
+tokio         = { workspace = true, features = ["sync", "rt", "time", "macros"] }
+async-trait   = { workspace = true }
+tracing       = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["registry"] }
+rusqlite      = { workspace = true, optional = true }
+dirs          = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio    = { workspace = true, features = ["full", "test-util"] }
+tempfile = { workspace = true }
+
+[features]
+default = ["native"]
+native  = ["sqlite", "dep:dirs"]
+# sqlite sink needs `tokio::task::block_in_place` → pulls in rt-multi-thread.
+sqlite  = ["dep:rusqlite", "tokio/rt-multi-thread"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

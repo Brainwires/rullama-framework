@@ -1,8 +1,8 @@
 use crate::cli::DoorlockAction;
 use crate::output::Output;
 use anyhow::Result;
-use brainwires_homeauto::matter::clusters::door_lock;
-use brainwires_homeauto::{AttributeValue, MatterController, MatterDevice};
+use rullama_homeauto::matter::clusters::door_lock;
+use rullama_homeauto::{AttributeValue, MatterController, MatterDevice};
 use std::path::Path;
 
 pub async fn run(action: DoorlockAction, fabric_dir: &Path, out: &Output) -> Result<()> {

@@ -11,12 +11,12 @@
  * - Reflection — post-execution error detection / correction
  * - FeedbackBridge — AuditLogger user feedback → SEAL learning
  * - SealKnowledgeCoordinator — BKS/PKS wiring (concrete BKS/PKS work lives
- *   Rust-side; the Deno `@brainwires/knowledge` package is interface-only)
+ *   Rust-side; the Deno `@rullama/knowledge` package is interface-only)
  *
- * Equivalent to Rust's `brainwires_agents::seal` module.
+ * Equivalent to Rust's `rullama_agents::seal` module.
  */
 
-import type { EntityStoreT, RelationshipGraphT } from "@brainwires/core";
+import type { EntityStoreT, RelationshipGraphT } from "@rullama/core";
 import {
   CoreferenceResolver,
   type DialogState,

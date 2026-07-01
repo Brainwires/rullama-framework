@@ -1,7 +1,7 @@
 /**
- * @module @brainwires/agent
+ * @module @rullama/agent
  *
- * Agent coordination primitives. Equivalent to Rust's `brainwires-agent` crate.
+ * Agent coordination primitives. Equivalent to Rust's `rullama-agent` crate.
  *
  * Ships only:
  * - `CommunicationHub` — inter-agent messaging bus
@@ -11,8 +11,8 @@
  * - Coordination patterns: ContractNet, Saga, OptimisticConcurrency,
  *   MarketAllocator, ThreeStateModel, WaitQueue
  *
- * LLM workhorses live in `@brainwires/inference`. MDAP / SEAL / Skills / Eval
- * each have their own package. `AgentPool` is in `@brainwires/inference` too.
+ * LLM workhorses live in `@rullama/inference`. MDAP / SEAL / Skills / Eval
+ * each have their own package. `AgentPool` is in `@rullama/inference` too.
  * Import from those directly — this package does not re-export them.
  */
 

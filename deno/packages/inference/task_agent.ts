@@ -17,12 +17,12 @@ import {
   type Tool,
   type ToolResult,
   type ToolUse,
-} from "@brainwires/core";
+} from "@rullama/core";
 
 import type { AgentContext } from "./context.ts";
 import type { AgentRuntime } from "./runtime.ts";
 import { runAgentLoop } from "./runtime.ts";
-import type { LockType } from "@brainwires/agent";
+import type { LockType } from "@rullama/agent";
 import type { AgentLifecycleHooks } from "./hooks.ts";
 import type { ValidationConfig } from "./validation_loop.ts";
 

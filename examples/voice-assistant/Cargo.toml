@@ -1,0 +1,42 @@
+[package]
+name = "voice-assistant"
+description = "Personal voice assistant built on the rullama framework"
+version.workspace = true
+edition.workspace = true
+publish = false
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "voice-assistant"
+path = "src/main.rs"
+
+[features]
+wake-word = ["rullama-hardware/wake-word"]
+wake-word-dtw = ["rullama-hardware/wake-word-dtw"]
+
+[dependencies]
+rullama-hardware = { workspace = true, features = ["voice-assistant"] }
+rullama-provider = { workspace = true }
+rullama-core = { workspace = true }
+rullama-agent = { workspace = true }
+rullama-inference = { workspace = true }
+rullama-tool-runtime = { workspace = true }
+rullama-tool-builtins = { workspace = true }
+rullama-call-policy = { workspace = true }
+rullama-stores = { workspace = true, features = ["session", "sqlite"] }
+
+tokio = { workspace = true, features = ["full"] }
+async-trait.workspace = true
+tracing.workspace = true
+tracing-subscriber = { workspace = true }
+anyhow.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
+toml.workspace = true
+dirs.workspace = true
+clap = { version = "4", features = ["derive"] }
+ctrlc = { version = "3", features = ["termination"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }

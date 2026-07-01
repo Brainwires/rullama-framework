@@ -1,12 +1,12 @@
 /**
  * Types and interface for the host-provided session registry.
  *
- * `@brainwires/tools` is a framework package — it does not know about the
+ * `@rullama/tools` is a framework package — it does not know about the
  * gateway's per-user session map or the concrete agent machinery. The
  * {@link SessionBroker} interface bridges that gap: the host implements it
  * against its real registry and hands an instance to {@link SessionsTool}.
  *
- * Equivalent to Rust's `brainwires_tools::sessions::broker` module.
+ * Equivalent to Rust's `rullama_tools::sessions::broker` module.
  */
 
 /** Opaque identifier for a chat session. */

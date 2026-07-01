@@ -10,12 +10,12 @@ import type {
   RagClient,
   SearchResult,
   StatisticsResponse,
-} from "@brainwires/knowledge";
+} from "@rullama/knowledge";
 import {
   DEFAULT_LIMIT,
   DEFAULT_MAX_FILE_SIZE,
   DEFAULT_MIN_SCORE,
-} from "@brainwires/knowledge";
+} from "@rullama/knowledge";
 
 // ---------------------------------------------------------------------------
 // Mock RagClient — in production, supply a real vector-DB-backed implementation
@@ -108,7 +108,7 @@ class MockRagClient implements RagClient {
   }
 
   async advancedSearch(
-    req: import("@brainwires/knowledge").AdvancedSearchRequest,
+    req: import("@rullama/knowledge").AdvancedSearchRequest,
   ): Promise<QueryResponse> {
     return this.queryCodebase({
       query: req.query,
@@ -118,7 +118,7 @@ class MockRagClient implements RagClient {
   }
 
   async searchGitHistory(
-    req: import("@brainwires/knowledge").SearchGitHistoryRequest,
+    req: import("@rullama/knowledge").SearchGitHistoryRequest,
   ) {
     return {
       results: [],
@@ -134,7 +134,7 @@ class MockRagClient implements RagClient {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.log("=== Brainwires RAG Search Example ===\n");
+  console.log("=== rullama RAG Search Example ===\n");
 
   // 1. Create the RagClient
   console.log("--- Step 1: Initialize RagClient ---\n");

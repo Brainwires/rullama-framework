@@ -3,7 +3,7 @@
 // throughput using the token-bucket algorithm.
 // Run: deno run deno/examples/providers/rate_limiting.ts
 
-import { RateLimitedClient, RateLimiter } from "@brainwires/provider";
+import { RateLimitedClient, RateLimiter } from "@rullama/provider";
 
 async function main() {
   console.log("=== Rate-Limited Client Example ===\n");

@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
-import { ChatOptions } from "@brainwires/core";
+import { ChatOptions } from "@rullama/core";
 import { CircuitBreakerProvider } from "./circuit.ts";
 import { ResilienceError } from "./error.ts";
 import { EchoProvider, ToggleProvider } from "./test_util.ts";

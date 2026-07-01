@@ -16,13 +16,13 @@ import {
   RequestContext,
   ToolFilterMiddleware,
   type ToolHandler,
-} from "@brainwires/network";
+} from "@rullama/network";
 
 import type {
   CallToolResult,
   ServerCapabilities,
   ServerInfo,
-} from "@brainwires/mcp-client";
+} from "@rullama/mcp-client";
 
 async function main(): Promise<void> {
   console.log("=== MCP Server Example ===\n");

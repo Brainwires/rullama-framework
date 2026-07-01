@@ -1,7 +1,7 @@
 /**
  * AnalyticsSink interface and the in-memory default implementation.
  *
- * Equivalent to Rust's `brainwires_telemetry::sink` + `sinks::memory` modules.
+ * Equivalent to Rust's `rullama_telemetry::sink` + `sinks::memory` modules.
  */
 
 import type { AnalyticsEvent } from "./events.ts";

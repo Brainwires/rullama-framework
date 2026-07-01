@@ -136,7 +136,10 @@ pub fn run(_args: &[String]) -> ExitCode {
 
     println!();
     if total_violations == 0 {
-        println!("deny-grep: OK ({} rule(s), no violations)", ruleset.rules.len());
+        println!(
+            "deny-grep: OK ({} rule(s), no violations)",
+            ruleset.rules.len()
+        );
         ExitCode::SUCCESS
     } else {
         println!("deny-grep: {total_violations} violation(s)");
@@ -145,5 +148,7 @@ pub fn run(_args: &[String]) -> ExitCode {
 }
 
 fn relative_to(path: &Path, root: &Path) -> PathBuf {
-    path.strip_prefix(root).map(|p| p.to_path_buf()).unwrap_or_else(|_| path.to_path_buf())
+    path.strip_prefix(root)
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|_| path.to_path_buf())
 }

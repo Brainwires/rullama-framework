@@ -1,6 +1,6 @@
 [package]
 name = "matter-tool"
-description = "Commission and control Matter 1.3 devices using the Brainwires Matter stack"
+description = "Commission and control Matter 1.3 devices using the rullama Matter stack"
 version.workspace = true
 edition.workspace = true
 publish = false
@@ -18,10 +18,10 @@ path = "src/main.rs"
 [features]
 default = []
 # BLE commissioning window (btleplug peripheral, Linux/macOS)
-ble = ["brainwires-homeauto/matter-ble"]
+ble = ["rullama-homeauto/matter-ble"]
 
 [dependencies]
-brainwires-homeauto = { path = "../brainwires-homeauto", features = ["matter"] }
+rullama-homeauto = { path = "../rullama-homeauto", features = ["matter"] }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }

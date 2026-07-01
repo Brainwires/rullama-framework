@@ -8,8 +8,8 @@ import {
   type AgentPoolStats,
   CommunicationHub,
   FileLockManager,
-} from "@brainwires/agent";
-import { Task } from "@brainwires/core";
+} from "@rullama/agent";
+import { Task } from "@rullama/core";
 
 async function main() {
   console.log("=== Agent Pool Demo ===\n");

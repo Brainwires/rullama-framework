@@ -4,7 +4,7 @@
  * Heartbeat collector for agent telemetry and liveness detection.
  * Collects information about running agents and detects state changes.
  *
- * Equivalent to Rust's `brainwires-network::remote::heartbeat`.
+ * Equivalent to Rust's `rullama-network::remote::heartbeat`.
  */
 
 import type { AgentEventType, RemoteAgentInfo } from "./protocol.ts";

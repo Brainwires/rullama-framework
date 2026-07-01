@@ -1,5 +1,5 @@
 //! `cargo xtask test-harness <subcommand>` — orchestration for the
-//! Brainwires test harness.
+//! rullama test harness.
 //!
 //! Subcommands:
 //! - `coverage` — diff FEATURES.md against the feature-inventory manifest,
@@ -19,7 +19,7 @@ use serde::Deserialize;
 const FEATURES_MD: &str = "FEATURES.md";
 
 /// Feature-inventory manifest path, relative to the workspace root.
-const MANIFEST_TOML: &str = "crates/brainwires-test-harness/tests/feature_inventory.toml";
+const MANIFEST_TOML: &str = "crates/rullama-test-harness/tests/feature_inventory.toml";
 
 /// Sections we never expect to cover (matches the awk generator in the
 /// harness `Step 3` notes).
@@ -73,7 +73,7 @@ fn run(args: &[String]) -> ExitCode {
             "run",
             "--quiet",
             "-p",
-            "brainwires-test-harness",
+            "rullama-test-harness",
             "--bin",
             "run-harness",
             "--",
@@ -103,7 +103,7 @@ struct FeatureStub {
     section: String,
     feature_id: String,
     // Reserved for the dangling-Rust-path check (Step 9+) — wired through
-    // brainwires-test-harness's `inventory` registry once Tier-A cases land.
+    // rullama-test-harness's `inventory` registry once Tier-A cases land.
     #[serde(default)]
     #[allow(dead_code)]
     required_cases: Vec<String>,
@@ -149,8 +149,11 @@ fn coverage(args: &[String]) -> ExitCode {
     };
 
     let headings = extract_headings(&raw_features);
-    let manifest_sections: std::collections::HashSet<&str> =
-        manifest.entries.iter().map(|e| e.section.as_str()).collect();
+    let manifest_sections: std::collections::HashSet<&str> = manifest
+        .entries
+        .iter()
+        .map(|e| e.section.as_str())
+        .collect();
 
     let mut missing: Vec<&Heading> = Vec::new();
     for h in &headings {
@@ -218,9 +221,7 @@ fn coverage(args: &[String]) -> ExitCode {
             dangling_alias.len()
         );
         for (from, to) in &dangling_alias {
-            println!(
-                "  - feature_id=\"{from}\" coverage_via=\"{to}\" (no feature_id matches)"
-            );
+            println!("  - feature_id=\"{from}\" coverage_via=\"{to}\" (no feature_id matches)");
         }
     }
 
@@ -347,7 +348,11 @@ content
         let texts: Vec<&str> = h.iter().map(|x| x.text.as_str()).collect();
         assert_eq!(
             texts,
-            vec!["Real Feature", "Another Real Feature", "Sub Under Real Feature"]
+            vec![
+                "Real Feature",
+                "Another Real Feature",
+                "Sub Under Real Feature"
+            ]
         );
     }
 

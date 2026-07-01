@@ -1,7 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
 
 /** Result from a vector similarity search.
- * Equivalent to Rust's `VectorSearchResult` in brainwires-core. */
+ * Equivalent to Rust's `VectorSearchResult` in rullama-core. */
 export interface VectorSearchResult {
   id: string;
   score: number;
@@ -10,7 +10,7 @@ export interface VectorSearchResult {
 }
 
 /** Interface for vector database operations.
- * Equivalent to Rust's `VectorStore` trait in brainwires-core. */
+ * Equivalent to Rust's `VectorStore` trait in rullama-core. */
 export interface VectorStore {
   /** Initialize the store (create tables/collections if needed). */
   initialize(dimension: number): Promise<void>;

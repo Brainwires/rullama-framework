@@ -6,7 +6,7 @@
  * Wire them up with a closure or a concrete {@link EvaluationCase} impl that
  * passes the payload to your agent under test.
  *
- * Equivalent to Rust's `brainwires_agents::eval::adversarial` module.
+ * Equivalent to Rust's `rullama_agents::eval::adversarial` module.
  */
 
 // ─── Adversarial test type ─────────────────────────────────────────────────

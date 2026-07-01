@@ -1,130 +1,113 @@
 [workspace]
 members = [
-    "crates/brainwires-core",
-    "crates/brainwires",
-    "crates/brainwires-tool-runtime",
-    "crates/brainwires-tool-builtins",
-    "crates/brainwires-agent",
-    "crates/brainwires-storage",
-    "crates/brainwires-stores",
-    "crates/brainwires-memory",
-    "crates/brainwires-mdap",
-    "crates/brainwires-skills",
-    "crates/brainwires-seal",
-    "crates/brainwires-eval",
-    "crates/brainwires-inference",
-    "crates/brainwires-mcp-client",
-    "crates/brainwires-permission",
-    "crates/brainwires-sandbox",
-    "crates/brainwires-sandbox-proxy",
-    "crates/brainwires-network",
-    "crates/brainwires-mcp-server",
-    "crates/brainwires-a2a",
-    "crates/brainwires-provider",
-    "crates/brainwires-provider-speech",
-    "crates/brainwires-call-policy",
-    "crates/brainwires-hardware",
-    "crates/brainwires-finetune",
-    "crates/brainwires-test-fixtures",
-    "crates/brainwires-test-harness",
-    "extras/brainwires-autonomy",
-    "extras/brainwires-chat-pwa/home",
-    "extras/brainwires-wasm",
-    "crates/brainwires-knowledge",
-    "crates/brainwires-prompting",
-    "crates/brainwires-rag",
-    "crates/brainwires-reasoning",
+    "crates/rullama-core",
+    "crates/rullama",
+    "crates/rullama-tool-runtime",
+    "crates/rullama-tool-builtins",
+    "crates/rullama-agent",
+    "crates/rullama-storage",
+    "crates/rullama-stores",
+    "crates/rullama-memory",
+    "crates/rullama-mdap",
+    "crates/rullama-skills",
+    "crates/rullama-seal",
+    "crates/rullama-eval",
+    "crates/rullama-inference",
+    "crates/rullama-mcp-client",
+    "crates/rullama-permission",
+    "crates/rullama-sandbox",
+    "crates/rullama-sandbox-proxy",
+    "crates/rullama-network",
+    "crates/rullama-mcp-server",
+    "crates/rullama-a2a",
+    "crates/rullama-provider",
+    "crates/rullama-provider-speech",
+    "crates/rullama-call-policy",
+    "crates/rullama-hardware",
+    "crates/rullama-finetune",
+    "crates/rullama-test-fixtures",
+    "crates/rullama-test-harness",
+    "crates/rullama-datasets",
+    "sdks/rullama-autonomy",
+    "sdks/rullama-wasm",
+    "crates/rullama-knowledge",
+    "crates/rullama-prompting",
+    "crates/rullama-rag",
+    "crates/rullama-reasoning",
 
-    "crates/brainwires-telemetry",
-    "extras/brainwires-billing",
-    "extras/brainwires-memory-server",
-    "extras/brainwires-scheduler",
-    "extras/brainwires-proxy",
-    "extras/brainwires-brain-server",
-    "extras/brainwires-rag-server",
-    "extras/brainwires-issues",
-    "extras/reload-daemon",
-    "extras/agent-chat",
-    "extras/brainwires-cli",
-    "extras/audio-demo-ffi",
-    "extras/brainwires-chat-native/bridge",
-    "extras/voice-assistant",
-    "extras/claude-brain",
-    "extras/brainwires-web-search-agent",
+    "crates/rullama-telemetry",
+    "sdks/rullama-billing",
+    "servers/rullama-memory-server",
+    "servers/rullama-scheduler",
+    "sdks/rullama-proxy",
+    "servers/rullama-brain-server",
+    "servers/rullama-rag-server",
+    "servers/rullama-issues",
+    "integrations/reload-daemon",
+    "examples/agent-chat",
+    "examples/audio-demo-ffi",
+    "examples/rullama-chat-native/bridge",
+    "examples/voice-assistant",
+    "integrations/claude-brain",
+    "examples/rullama-web-search-agent",
     "xtask",
 ]
 exclude = [
-    "deprecated/brainwires-audio",
-    "deprecated/brainwires-brain",
-    "deprecated/brainwires-mesh",
-    "deprecated/brainwires-prompting",
-    "deprecated/brainwires-rag",
-    "deprecated/brainwires-cognition",
-    "deprecated/brainwires-channels",
-    "deprecated/brainwires-system",
-    "deprecated/brainwires-code-interpreters",
-    "deprecated/brainwires-wasm",
-    "deprecated/brainwires-relay",
-    "deprecated/brainwires-tool-system",
-    "deprecated/brainwires-tools",
-    "deprecated/brainwires-permissions",
-    "deprecated/brainwires-providers",
-    "deprecated/brainwires-mcp",
-    "deprecated/brainwires-agent-network",
-    "deprecated/brainwires-agents",
-    "deprecated/brainwires-datasets",
-    "extras/brainclaw",
+    # Isolated engine sub-workspace (wgpu + wasm32). Owns its own Cargo.lock so
+    # the harness's native build never pulls in wgpu. See engine/Cargo.toml.
+    "engine",
     "future",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.11.0"
+version = "0.12.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.91"
-repository = "https://github.com/Brainwires/brainwires-framework"
-homepage = "https://github.com/Brainwires/brainwires-framework"
+repository = "https://github.com/Brainwires/rullama-framework"
+homepage = "https://github.com/Brainwires/rullama-framework"
 authors = ["Brainwires"]
 keywords = ["ai-agents", "llm", "mcp", "multi-agent", "framework"]
 categories = ["development-tools", "science::robotics"]
 readme = "README.md"
-documentation = "https://docs.rs/brainwires"
+documentation = "https://docs.rs/rullama"
 
 [workspace.dependencies]
 # Internal crates
-brainwires-core = { path = "crates/brainwires-core", version = "0.11.0", default-features = false }
-brainwires-tool-runtime = { path = "crates/brainwires-tool-runtime", version = "0.11.0", default-features = false }
-brainwires-tool-builtins = { path = "crates/brainwires-tool-builtins", version = "0.11.0", default-features = false }
-brainwires-agent = { path = "crates/brainwires-agent", version = "0.11.0", default-features = false }
-brainwires-storage = { path = "crates/brainwires-storage", version = "0.11.0", default-features = false }
-brainwires-stores = { path = "crates/brainwires-stores", version = "0.11.0", default-features = false }
-brainwires-memory = { path = "crates/brainwires-memory", version = "0.11.0" }
-brainwires-mdap = { path = "crates/brainwires-mdap", version = "0.11.0" }
-brainwires-skills = { path = "crates/brainwires-skills", version = "0.11.0" }
-brainwires-seal = { path = "crates/brainwires-seal", version = "0.11.0", default-features = false }
-brainwires-eval = { path = "crates/brainwires-eval", version = "0.11.0" }
-brainwires-inference = { path = "crates/brainwires-inference", version = "0.11.0", default-features = false }
-brainwires-mcp-client = { path = "crates/brainwires-mcp-client", version = "0.11.0" }
-brainwires-permission = { path = "crates/brainwires-permission", version = "0.11.0" }
-brainwires-sandbox = { path = "crates/brainwires-sandbox", version = "0.11.0", default-features = false }
-brainwires-network = { path = "crates/brainwires-network", version = "0.11.0" }
-brainwires-mcp-server = { path = "crates/brainwires-mcp-server", version = "0.11.0" }
-brainwires-a2a = { path = "crates/brainwires-a2a", version = "0.11.0", default-features = false }
-brainwires-provider = { path = "crates/brainwires-provider", version = "0.11.0", default-features = false, features = ["native"] }
-brainwires-provider-speech = { path = "crates/brainwires-provider-speech", version = "0.11.0", default-features = false }
-brainwires-call-policy = { path = "crates/brainwires-call-policy", version = "0.11.0", default-features = false }
-brainwires-hardware = { path = "crates/brainwires-hardware", version = "0.11.0" }
-brainwires-finetune = { path = "crates/brainwires-finetune", version = "0.11.0" }
-# `brainwires-finetune-local` and `brainwires-training` were moved out of this
+rullama-core = { path = "crates/rullama-core", version = "0.12.0", default-features = false }
+rullama-tool-runtime = { path = "crates/rullama-tool-runtime", version = "0.12.0", default-features = false }
+rullama-tool-builtins = { path = "crates/rullama-tool-builtins", version = "0.12.0", default-features = false }
+rullama-agent = { path = "crates/rullama-agent", version = "0.12.0", default-features = false }
+rullama-storage = { path = "crates/rullama-storage", version = "0.12.0", default-features = false }
+rullama-stores = { path = "crates/rullama-stores", version = "0.12.0", default-features = false }
+rullama-memory = { path = "crates/rullama-memory", version = "0.12.0" }
+rullama-mdap = { path = "crates/rullama-mdap", version = "0.12.0" }
+rullama-skills = { path = "crates/rullama-skills", version = "0.12.0" }
+rullama-seal = { path = "crates/rullama-seal", version = "0.12.0", default-features = false }
+rullama-eval = { path = "crates/rullama-eval", version = "0.12.0" }
+rullama-inference = { path = "crates/rullama-inference", version = "0.12.0", default-features = false }
+rullama-mcp-client = { path = "crates/rullama-mcp-client", version = "0.12.0" }
+rullama-permission = { path = "crates/rullama-permission", version = "0.12.0" }
+rullama-sandbox = { path = "crates/rullama-sandbox", version = "0.12.0", default-features = false }
+rullama-network = { path = "crates/rullama-network", version = "0.12.0" }
+rullama-mcp-server = { path = "crates/rullama-mcp-server", version = "0.12.0" }
+rullama-a2a = { path = "crates/rullama-a2a", version = "0.12.0", default-features = false }
+rullama-provider = { path = "crates/rullama-provider", version = "0.12.0", default-features = false, features = ["native"] }
+rullama-provider-speech = { path = "crates/rullama-provider-speech", version = "0.12.0", default-features = false }
+rullama-call-policy = { path = "crates/rullama-call-policy", version = "0.12.0", default-features = false }
+rullama-hardware = { path = "crates/rullama-hardware", version = "0.12.0" }
+rullama-finetune = { path = "crates/rullama-finetune", version = "0.12.0" }
+rullama-datasets = { path = "crates/rullama-datasets", version = "0.12.0", default-features = false }
+# `rullama-finetune-local` and `rullama-training` were moved out of this
 # framework into the `rullama` workspace (LoRA/QLoRA/DoRA + future
 # training-from-scratch live there now). See CHANGELOG [Unreleased].
-brainwires-knowledge = { path = "crates/brainwires-knowledge", version = "0.11.0", default-features = false }
-brainwires-rag = { path = "crates/brainwires-rag", version = "0.11.0", default-features = false }
-brainwires-prompting = { path = "crates/brainwires-prompting", version = "0.11.0", default-features = false }
-brainwires-reasoning = { path = "crates/brainwires-reasoning", version = "0.11.0" }
-brainwires-telemetry  = { path = "crates/brainwires-telemetry",  version = "0.11.0", default-features = false }
-# `brainwires-autonomy` and `brainwires-proxy` live in `extras/`. They are
+rullama-knowledge = { path = "crates/rullama-knowledge", version = "0.12.0", default-features = false }
+rullama-rag = { path = "crates/rullama-rag", version = "0.12.0", default-features = false }
+rullama-prompting = { path = "crates/rullama-prompting", version = "0.12.0", default-features = false }
+rullama-reasoning = { path = "crates/rullama-reasoning", version = "0.12.0" }
+rullama-telemetry  = { path = "crates/rullama-telemetry",  version = "0.12.0", default-features = false }
+# `rullama-autonomy` and `rullama-proxy` live in `sdks/`. They are
 # workspace-only (publish = false) and no `crates/` member depends on them, so
 # they intentionally do NOT appear in [workspace.dependencies] — that table is
 # the API surface of the framework. See ADR-0004 (framework / extras boundary)
@@ -133,17 +116,17 @@ brainwires-telemetry  = { path = "crates/brainwires-telemetry",  version = "0.11
 # Internal test fixtures (publish = false). Consumed only as a dev-dependency
 # by `crates/*` test modules; not part of the framework's published API.
 # Centralised here to keep dev-dep versions aligned across consumers.
-brainwires-test-fixtures = { path = "crates/brainwires-test-fixtures", version = "0.11.0" }
+rullama-test-fixtures = { path = "crates/rullama-test-fixtures", version = "0.12.0" }
 # Internal test harness (publish = false). Aggregates Tier-A feature cases,
 # Tier-B security cases, and Tier-C assembly cases. Consumed by `xtask` and
-# by `extras/brainwires-autonomy` (which drives the AutonomousFeedbackLoop).
-brainwires-test-harness = { path = "crates/brainwires-test-harness", version = "0.11.0" }
+# by `sdks/rullama-autonomy` (which drives the AutonomousFeedbackLoop).
+rullama-test-harness = { path = "crates/rullama-test-harness", version = "0.12.0" }
 
 # Tokenizer dependencies
 tokenizers = "0.22"
 tiktoken-rs = "0.9"
 
-# `burn-*` was used by the deleted `brainwires-finetune-local`; the local
+# `burn-*` was used by the deleted `rullama-finetune-local`; the local
 # PEFT crate now lives in the `rullama` workspace, where Burn is pinned
 # directly. No framework crate depends on Burn anymore.
 
@@ -357,7 +340,7 @@ debug = "line-tables-only"
 #   - lto = false → no whole-program optimization
 #   - codegen-units = 256 → parallel codegen across all CPU cores
 # Net effect: ~5× faster cargo/wasm-pack rebuilds; runtime is slower
-# (matmuls won't auto-vectorize), but the chat-pwa is currently
+# (matmuls won't auto-vectorize), but the wasm path is currently
 # bound by GPU work + GPU→CPU readback, not Rust hot loops, so the
 # user-visible perf hit on the WGPU path is small. Crank back to
 # `opt-level = 3 + lto = "fat"` once we ship to production.

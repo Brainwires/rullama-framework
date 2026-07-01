@@ -1,7 +1,7 @@
 /**
- * @module @brainwires/telemetry
+ * @module @rullama/telemetry
  *
- * Unified telemetry for the Brainwires Agent Framework — analytics events,
+ * Unified telemetry for the rullama — analytics events,
  * sinks, Prometheus-formatted outcome metrics, and a billing-hook interface.
  *
  * Deno-port pragmatics vs the Rust crate:
@@ -12,7 +12,7 @@
  *   or any logger themselves.
  * - All counters are plain numbers (JS isolate is single-threaded).
  *
- * Equivalent to Rust's `brainwires-telemetry` crate.
+ * Equivalent to Rust's `rullama-telemetry` crate.
  */
 
 export {
@@ -59,7 +59,7 @@ export {
 } from "./metrics.ts";
 export { hashSessionId, redactSecrets } from "./pii.ts";
 
-// Anomaly detection (moved from @brainwires/permissions in v0.11.0)
+// Anomaly detection (moved from @rullama/permissions in v0.11.0)
 export {
   type AnomalyConfig,
   AnomalyDetector,

@@ -4,14 +4,14 @@
  * Resolves anaphoric references (pronouns, definite NPs, ellipsis) to concrete
  * entities from the conversation history using salience-based ranking.
  *
- * Equivalent to Rust's `brainwires_agents::seal::coreference` module.
+ * Equivalent to Rust's `rullama_agents::seal::coreference` module.
  */
 
 import type {
   EntityStoreT,
   EntityType,
   RelationshipGraphT,
-} from "@brainwires/core";
+} from "@rullama/core";
 
 // ─── Regex statics ──────────────────────────────────────────────────────────
 
@@ -418,7 +418,7 @@ export class CoreferenceResolver {
 
 /**
  * In-memory EntityStore suitable for tests. Equivalent to Rust's
- * `brainwires_knowledge::knowledge::EntityStore` used in the original
+ * `rullama_knowledge::knowledge::EntityStore` used in the original
  * coreference tests.
  */
 export class InMemoryEntityStore implements EntityStoreT {

@@ -1,6 +1,6 @@
 use crate::output::Output;
 use anyhow::Result;
-use brainwires_homeauto::MatterController;
+use rullama_homeauto::MatterController;
 use std::path::Path;
 
 pub async fn run_invoke(

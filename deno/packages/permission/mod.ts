@@ -2,7 +2,7 @@
  * Permission system for agent capability management.
  *
  * This module provides a comprehensive capability-based permission system for
- * brainwires agents, including:
+ * rullama agents, including:
  *
  * - **Capabilities**: Granular control over filesystem, tools, network, git, and spawning
  * - **Profiles**: Pre-defined capability sets (read_only, standard_dev, full_access)
@@ -12,10 +12,10 @@
  * - **Trust**: Trust levels, violation tracking, and trust factor management
  * - **Approval**: Interactive approval workflows for sensitive operations
  *
- * Anomaly detection moved to `@brainwires/telemetry/anomaly` in v0.11.0
+ * Anomaly detection moved to `@rullama/telemetry/anomaly` in v0.11.0
  * to match the Rust restructure.
  *
- * Rust equivalent: `brainwires-permissions` crate
+ * Rust equivalent: `rullama-permissions` crate
  * @module
  */
 

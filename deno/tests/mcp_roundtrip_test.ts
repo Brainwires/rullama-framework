@@ -1,7 +1,7 @@
 /**
  * Cross-package integration test: MCP type serialization roundtrip.
  *
- * Verifies that @brainwires/mcp types (McpTool, McpResource, McpPrompt)
+ * Verifies that @rullama/mcp types (McpTool, McpResource, McpPrompt)
  * can be serialized to JSON and deserialized with all fields preserved.
  * Also tests JSON-RPC request/response creation and parsing.
  */
@@ -23,7 +23,7 @@ import {
   parseJsonRpcMessage,
   parseNotification,
   type PromptArgument,
-} from "@brainwires/mcp-client";
+} from "@rullama/mcp-client";
 
 // ---------------------------------------------------------------------------
 // McpTool roundtrip

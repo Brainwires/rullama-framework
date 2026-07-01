@@ -4,10 +4,10 @@
  * These are pure HTTP clients that accept/return `Uint8Array` audio
  * payloads. Hardware capture (microphone) and playback (speaker) are
  * intentionally not provided in Deno — the Rust framework handles those
- * via the `brainwires-hardware` crate, and Deno consumers should bring
+ * via the `rullama-hardware` crate, and Deno consumers should bring
  * their own audio I/O (Web Audio API, WebRTC, etc.).
  *
- * Equivalent to the audio provider modules in Rust's `brainwires-providers`:
+ * Equivalent to the audio provider modules in Rust's `rullama-providers`:
  * azure_speech, deepgram, elevenlabs, google_tts, murf, cartesia, fish.
  */
 

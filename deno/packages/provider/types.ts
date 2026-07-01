@@ -1,7 +1,7 @@
 /**
- * Provider types and configuration for the Brainwires providers package.
+ * Provider types and configuration for the rullama providers package.
  * Equivalent to Rust's `ProviderType`, `ProviderConfig`, `ChatProtocol`, `AuthScheme`
- * in brainwires-providers.
+ * in rullama-providers.
  */
 
 // ---------------------------------------------------------------------------
@@ -16,7 +16,7 @@ export type ProviderType =
   | "google"
   | "groq"
   | "ollama"
-  | "brainwires"
+  | "rullama"
   | "together"
   | "fireworks"
   | "anyscale"
@@ -39,8 +39,8 @@ export function parseProviderType(s: string): ProviderType | undefined {
       return "groq";
     case "ollama":
       return "ollama";
-    case "brainwires":
-      return "brainwires";
+    case "rullama":
+      return "rullama";
     case "together":
       return "together";
     case "fireworks":
@@ -77,7 +77,7 @@ export function defaultModel(provider: ProviderType): string {
       return "llama-3.3-70b-versatile";
     case "ollama":
       return "llama3.3";
-    case "brainwires":
+    case "rullama":
       return "gpt-5-mini";
     case "together":
       return "meta-llama/Llama-3.1-8B-Instruct";
@@ -113,8 +113,7 @@ export type ChatProtocol =
   | "openai_responses"
   | "anthropic_messages"
   | "gemini_generate_content"
-  | "ollama_chat"
-  | "brainwires_relay";
+  | "ollama_chat";
 
 // ---------------------------------------------------------------------------
 // AuthScheme

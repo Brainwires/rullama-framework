@@ -5,8 +5,8 @@
 
 // deno-lint-ignore-file no-explicit-any
 
-import { objectSchema, type ToolContext, ToolResult } from "@brainwires/core";
-import type { Tool } from "@brainwires/core";
+import { objectSchema, type ToolContext, ToolResult } from "@rullama/core";
+import type { Tool } from "@rullama/core";
 
 const BUILD_TIMEOUT_MS = 600_000;
 const SYNTAX_CHECK_TIMEOUT_MS = 30_000;

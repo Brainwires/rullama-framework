@@ -1,7 +1,7 @@
 /**
- * @module @brainwires/training
+ * @module @rullama/training
  *
- * Cloud fine-tuning orchestration for the Brainwires Agent Framework.
+ * Cloud fine-tuning orchestration for the rullama.
  *
  * Ships OpenAI, Together, and Fireworks providers plus a backoff-based
  * {@link JobPoller}. Bedrock and Vertex require their vendor SDKs and are
@@ -11,7 +11,7 @@
  * Local training (Burn, GPU kernels) stays Rust-side — the Deno package
  * intentionally exposes only the cloud path.
  *
- * Equivalent to the `brainwires-training` crate built with the `cloud`
+ * Equivalent to the `rullama-training` crate built with the `cloud`
  * feature.
  */
 

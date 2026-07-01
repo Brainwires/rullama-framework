@@ -14,7 +14,7 @@ import {
   SkillRegistry,
   SkillRouter,
   type SkillSource,
-} from "@brainwires/agent";
+} from "@rullama/agent";
 
 async function main(): Promise<void> {
   // -----------------------------------------------------------------------
@@ -24,7 +24,7 @@ async function main(): Promise<void> {
 
   const tempDir = `${
     Deno.env.get("TMPDIR") ?? "/tmp"
-  }/brainwires-skills-example`;
+  }/rullama-skills-example`;
   try {
     await Deno.mkdir(tempDir, { recursive: true });
   } catch (e) {

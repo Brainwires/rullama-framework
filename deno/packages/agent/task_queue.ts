@@ -7,7 +7,7 @@
  * @module
  */
 
-import type { Task, TaskPriority, TaskStatus } from "@brainwires/core";
+import type { Task, TaskPriority, TaskStatus } from "@rullama/core";
 
 // ---------------------------------------------------------------------------
 // Queued task

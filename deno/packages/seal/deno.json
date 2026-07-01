@@ -1,5 +1,5 @@
 {
-  "name": "@brainwires/seal",
+  "name": "@rullama/seal",
   "license": "MIT",
   "version": "0.11.0",
   "exports": "./mod.ts"

@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "@std/assert";
-import { Message } from "@brainwires/core";
+import { Message } from "@rullama/core";
 import { DenoKvSessionStore } from "./deno_kv.ts";
 import { SessionId } from "./types.ts";
 

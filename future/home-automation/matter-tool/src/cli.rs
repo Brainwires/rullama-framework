@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 #[command(
     name = "matter-tool",
-    about = "Commission and control Matter 1.3 devices using the Brainwires Matter stack",
+    about = "Commission and control Matter 1.3 devices using the rullama Matter stack",
     version
 )]
 pub struct Cli {
@@ -89,7 +89,7 @@ pub enum Command {
     /// Run as a Matter device server (use another controller to commission us).
     Serve {
         /// Device name broadcast in mDNS.
-        #[arg(long, default_value = "Brainwires Matter Device")]
+        #[arg(long, default_value = "rullama Matter Device")]
         device_name: String,
         /// Vendor ID (hex, e.g. 0xFFF1).
         #[arg(long, default_value = "0xFFF1", value_parser = parse_hex_u16)]
@@ -495,7 +495,7 @@ mod tests {
                 port,
                 storage,
             } => {
-                assert_eq!(device_name, "Brainwires Matter Device");
+                assert_eq!(device_name, "rullama Matter Device");
                 assert_eq!(vendor_id, 0xFFF1);
                 assert_eq!(product_id, 0x8001);
                 assert_eq!(discriminator, 3840);

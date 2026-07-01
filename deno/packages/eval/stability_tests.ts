@@ -8,7 +8,7 @@
  *
  * All cases are pure unit simulations — no live AI provider needed.
  *
- * Equivalent to Rust's `brainwires_agents::eval::stability_tests` module.
+ * Equivalent to Rust's `rullama_agents::eval::stability_tests` module.
  */
 
 import type { EvaluationCase } from "./case.ts";

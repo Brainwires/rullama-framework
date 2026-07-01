@@ -7,7 +7,7 @@
  * @module
  */
 
-import { Task, type TaskPriority } from "@brainwires/core";
+import { Task, type TaskPriority } from "@rullama/core";
 
 // ---------------------------------------------------------------------------
 // Task node (internal)

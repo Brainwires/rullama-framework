@@ -4,7 +4,7 @@
  */
 
 import { assertEquals } from "@std/assert";
-import type { JsonRpcRequest } from "@brainwires/mcp-client";
+import type { JsonRpcRequest } from "@rullama/mcp-client";
 import { RequestContext } from "../server.ts";
 import {
   type Middleware,

@@ -1,7 +1,7 @@
 /**
  * Typed analytics event variants emitted anywhere in the framework.
  *
- * Equivalent to Rust's `brainwires_telemetry::events::AnalyticsEvent`.
+ * Equivalent to Rust's `rullama_telemetry::events::AnalyticsEvent`.
  */
 
 /** Compliance metadata attached to auditable events. */

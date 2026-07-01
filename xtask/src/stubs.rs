@@ -51,7 +51,7 @@ const SKIP_DIRS: &[&str] = &["target", ".git", "node_modules", "test-results"];
 const SKIP_FILES: &[&str] = &[
     "xtask/src/stubs.rs",
     // todo_scanner's purpose is scanning for TODO/FIXME markers — its code necessarily contains them
-    "crates/brainwires-autonomy/src/self_improve/strategies/todo_scanner.rs",
+    "crates/rullama-autonomy/src/self_improve/strategies/todo_scanner.rs",
 ];
 
 /// A single finding in the scan.

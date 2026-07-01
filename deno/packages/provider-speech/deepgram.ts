@@ -1,7 +1,7 @@
 /**
  * Deepgram API client for text-to-speech (Aura) and speech-to-text (Listen).
  *
- * Equivalent to Rust's `brainwires_providers::deepgram` module.
+ * Equivalent to Rust's `rullama_providers::deepgram` module.
  *
  * The Deno client returns/accepts `Uint8Array` for audio payloads; hardware
  * capture/playback (microphone, speaker) must be handled by the consumer.

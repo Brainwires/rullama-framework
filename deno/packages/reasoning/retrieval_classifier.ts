@@ -2,10 +2,10 @@
  * Retrieval-need classifier — decides whether a query likely needs earlier
  * conversation context.
  *
- * Equivalent to Rust's `brainwires_reasoning::retrieval_classifier` module.
+ * Equivalent to Rust's `rullama_reasoning::retrieval_classifier` module.
  */
 
-import { ChatOptions, Message, type Provider } from "@brainwires/core";
+import { ChatOptions, Message, type Provider } from "@rullama/core";
 
 export type RetrievalNeed = "none" | "low" | "medium" | "high";
 

@@ -1,7 +1,7 @@
 /**
  * Cartesia API client for text-to-speech.
  *
- * Equivalent to Rust's `brainwires_providers::cartesia` module.
+ * Equivalent to Rust's `rullama_providers::cartesia` module.
  */
 
 import { RateLimiter } from "./rate_limiter.ts";

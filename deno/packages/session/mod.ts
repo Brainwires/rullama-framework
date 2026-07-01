@@ -1,14 +1,14 @@
 /**
- * @module @brainwires/session
+ * @module @rullama/session
  *
- * Pluggable session-persistence for the Brainwires Agent Framework.
+ * Pluggable session-persistence for the rullama.
  *
  * The {@link SessionStore} interface is the single extension point;
  * {@link InMemorySessionStore} is the default for tests and ephemeral
  * sessions, and {@link DenoKvSessionStore} provides disk-backed
  * persistence via Deno's built-in KV store.
  *
- * Equivalent to Rust's `brainwires-session` crate.
+ * Equivalent to Rust's `rullama-session` crate.
  */
 
 export { SessionError } from "./error.ts";

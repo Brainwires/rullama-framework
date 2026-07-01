@@ -12,7 +12,7 @@
  * @module
  */
 
-import type { Provider, Task } from "@brainwires/core";
+import type { Provider, Task } from "@rullama/core";
 import type { AgentContext } from "./context.ts";
 import {
   TaskAgent,

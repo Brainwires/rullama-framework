@@ -12,14 +12,14 @@ import type {
   TaskArtifactUpdateEvent,
   TaskStatus,
   TaskStatusUpdateEvent,
-} from "@brainwires/a2a";
+} from "@rullama/a2a";
 import {
   createAgentMessage,
   isArtifactUpdate,
   isMessageResponse,
   isStatusUpdate,
   isTaskResponse,
-} from "@brainwires/a2a";
+} from "@rullama/a2a";
 
 async function main(): Promise<void> {
   console.log("=== A2A Streaming Types Example ===\n");

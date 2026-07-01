@@ -6,7 +6,7 @@
 import {
   InMemoryMessageStore,
   type MessageMetadata,
-} from "@brainwires/storage";
+} from "@rullama/storage";
 
 async function main() {
   console.log("=== Message Store Example ===\n");

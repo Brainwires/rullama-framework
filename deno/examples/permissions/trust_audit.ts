@@ -13,7 +13,7 @@ import {
   withAgent,
   withOutcome,
   withTarget,
-} from "@brainwires/permission";
+} from "@rullama/permission";
 
 async function main() {
   console.log("=== Trust & Audit Example ===\n");
@@ -21,7 +21,7 @@ async function main() {
   // 1. Setup
   console.log("--- 1. Setup ---\n");
 
-  const tempDir = Deno.makeTempDirSync({ prefix: "brainwires_trust_audit_" });
+  const tempDir = Deno.makeTempDirSync({ prefix: "rullama_trust_audit_" });
   const trustPath = `${tempDir}/trust_store.json`;
   const auditPath = `${tempDir}/audit.jsonl`;
 

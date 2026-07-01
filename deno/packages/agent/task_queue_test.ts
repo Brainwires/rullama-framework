@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "@std/assert";
-import { Task } from "@brainwires/core";
+import { Task } from "@rullama/core";
 import { TaskQueue } from "./task_queue.ts";
 
 Deno.test("enqueue and dequeue", () => {

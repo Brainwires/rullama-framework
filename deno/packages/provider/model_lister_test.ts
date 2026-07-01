@@ -61,7 +61,7 @@ Deno.test("isChatCapable: returns false for embedding model", () => {
 
 Deno.test("createModelLister: throws for unsupported provider", () => {
   assertThrows(
-    () => createModelLister("brainwires", "key"),
+    () => createModelLister("rullama", "key"),
     Error,
     "not supported",
   );

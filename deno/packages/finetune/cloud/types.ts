@@ -1,7 +1,7 @@
 /**
  * Cloud fine-tuning provider interface.
  *
- * Equivalent to Rust's `brainwires_training::cloud::mod` types.
+ * Equivalent to Rust's `rullama_training::cloud::mod` types.
  */
 
 import type {

@@ -1,11 +1,11 @@
 /**
- * Unified database traits for the Brainwires storage layer.
+ * Unified database traits for the rullama storage layer.
  *
  * Two interfaces define the database capabilities:
  * - StorageBackend -- generic CRUD + vector search for domain stores
  * - VectorDatabase -- RAG-style embedding storage with hybrid search
  *
- * Equivalent to Rust's `databases/traits.rs` in brainwires-storage.
+ * Equivalent to Rust's `databases/traits.rs` in rullama-storage.
  * @module
  */
 
@@ -13,7 +13,7 @@ import type {
   ChunkMetadata,
   DatabaseStats,
   SearchResult,
-} from "@brainwires/core";
+} from "@rullama/core";
 import type { FieldDef, Filter, Record, ScoredRecord } from "./types.ts";
 
 /**

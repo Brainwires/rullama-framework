@@ -13,7 +13,7 @@ Deno.test("parseProviderType - known providers", () => {
   assertEquals(parseProviderType("gemini"), "google");
   assertEquals(parseProviderType("groq"), "groq");
   assertEquals(parseProviderType("ollama"), "ollama");
-  assertEquals(parseProviderType("brainwires"), "brainwires");
+  assertEquals(parseProviderType("rullama"), "rullama");
   assertEquals(parseProviderType("together"), "together");
   assertEquals(parseProviderType("fireworks"), "fireworks");
   assertEquals(parseProviderType("anyscale"), "anyscale");
@@ -39,7 +39,7 @@ Deno.test("defaultModel - returns correct default for each provider", () => {
   assertEquals(defaultModel("google"), "gemini-2.5-flash");
   assertEquals(defaultModel("groq"), "llama-3.3-70b-versatile");
   assertEquals(defaultModel("ollama"), "llama3.3");
-  assertEquals(defaultModel("brainwires"), "gpt-5-mini");
+  assertEquals(defaultModel("rullama"), "gpt-5-mini");
 });
 
 Deno.test("requiresApiKey - ollama does not require key", () => {

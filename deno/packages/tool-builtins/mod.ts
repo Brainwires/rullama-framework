@@ -1,12 +1,12 @@
 /**
- * @module @brainwires/tool-builtins
+ * @module @rullama/tool-builtins
  *
  * Built-in tool implementations: BashTool, FileOpsTool, GitTool, WebTool,
  * SearchTool, SemanticSearchTool, CalendarTool, SessionsTool.
  *
- * Extracted from `@brainwires/tools` in v0.11.0 to mirror Rust's
- * `brainwires-tool-builtins`. The executor / registry / sanitizer
- * framework lives in `@brainwires/tool-runtime`.
+ * Extracted from `@rullama/tools` in v0.11.0 to mirror Rust's
+ * `rullama-tool-builtins`. The executor / registry / sanitizer
+ * framework lives in `@rullama/tool-runtime`.
  */
 
 export { BashTool } from "./bash.ts";

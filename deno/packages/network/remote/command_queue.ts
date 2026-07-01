@@ -2,7 +2,7 @@
  * @module remote/command_queue
  *
  * Priority command queue with deadline tracking and retry logic.
- * Equivalent to Rust's `brainwires-network::remote::command_queue`.
+ * Equivalent to Rust's `rullama-network::remote::command_queue`.
  */
 
 import type { BackendCommand, PrioritizedCommand } from "./protocol.ts";

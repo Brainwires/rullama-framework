@@ -15,7 +15,7 @@ import {
   retentionScore,
   TieredMemory,
   type TieredMemoryConfig,
-} from "@brainwires/storage";
+} from "@rullama/storage";
 
 async function main() {
   console.log("=== Tiered Memory Example ===\n");

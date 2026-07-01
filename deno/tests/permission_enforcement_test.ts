@@ -1,7 +1,7 @@
 /**
  * Cross-package integration test: Permission enforcement.
  *
- * Verifies that @brainwires/permissions PolicyEngine correctly allows
+ * Verifies that @rullama/permissions PolicyEngine correctly allows
  * and denies operations based on configured policies, and that
  * capability profiles enforce expected restrictions.
  */
@@ -23,7 +23,7 @@ import {
   policyRequestForGit,
   policyRequestForNetwork,
   policyRequestForTool,
-} from "@brainwires/permission";
+} from "@rullama/permission";
 
 // ---------------------------------------------------------------------------
 // PolicyEngine with custom policies

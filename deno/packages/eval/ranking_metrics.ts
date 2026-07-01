@@ -10,7 +10,7 @@
  * | {@link mrr}            | Mean Reciprocal Rank |
  * | {@link precisionAtK}   | Fraction of top-K that are relevant |
  *
- * Equivalent to Rust's `brainwires_agents::eval::ranking_metrics` module.
+ * Equivalent to Rust's `rullama_agents::eval::ranking_metrics` module.
  */
 
 function zip(

@@ -1,0 +1,42 @@
+[package]
+name = "rullama-billing-impl"
+description = "Full billing implementation for rullama agents — ledger, wallet, and Stripe integration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish = false
+readme = "README.md"
+
+[lib]
+name = "rullama_billing_impl"
+path = "src/lib.rs"
+
+[dependencies]
+rullama-telemetry = { workspace = true }
+
+serde         = { workspace = true }
+serde_json    = { workspace = true }
+anyhow        = { workspace = true }
+thiserror     = { workspace = true }
+chrono        = { workspace = true }
+uuid          = { workspace = true }
+tokio         = { workspace = true, features = ["sync", "rt", "macros"] }
+async-trait   = { workspace = true }
+tracing       = { workspace = true }
+rusqlite      = { workspace = true, optional = true }
+dirs          = { workspace = true, optional = true }
+reqwest       = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio    = { workspace = true, features = ["full", "test-util"] }
+tempfile = { workspace = true }
+
+[features]
+default  = ["native"]
+native   = ["sqlite", "dep:dirs"]
+sqlite   = ["dep:rusqlite"]
+stripe   = ["dep:reqwest"]

@@ -4,14 +4,14 @@
  * Extracts structured "query cores" (S-expression-inspired) from natural
  * language questions so they can be executed against a relationship graph.
  *
- * Equivalent to Rust's `brainwires_agents::seal::query_core` module.
+ * Equivalent to Rust's `rullama_agents::seal::query_core` module.
  */
 
 import type {
   EdgeType,
   EntityType,
   RelationshipGraphT,
-} from "@brainwires/core";
+} from "@rullama/core";
 
 // ─── Regex statics ──────────────────────────────────────────────────────────
 

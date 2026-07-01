@@ -1,4 +1,4 @@
-# brainwires-fuzz
+# rullama-fuzz
 
 Fuzz targets attacking the most security-relevant parse/decode entry
 points in the framework. Standalone workspace — not a member of the
@@ -9,9 +9,9 @@ main workspace MSRV is 1.91 stable.
 
 | Target                  | Attacks                                         |
 |-------------------------|-------------------------------------------------|
-| `mcp_jsonrpc_parser`    | `brainwires_mcp_client::JsonRpcRequest` decode  |
-| `a2a_envelope_decoder`  | `brainwires_a2a::agent_card::AgentCard` decode  |
-| `skill_manifest`        | `brainwires_skills::SkillManifest` decode       |
+| `mcp_jsonrpc_parser`    | `rullama_mcp_client::JsonRpcRequest` decode  |
+| `a2a_envelope_decoder`  | `rullama_a2a::agent_card::AgentCard` decode  |
+| `skill_manifest`        | `rullama_skills::SkillManifest` decode       |
 | `model_loader_header`   | stub — replace with in-tree loader once landed  |
 
 ## Running

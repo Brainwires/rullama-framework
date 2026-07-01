@@ -14,7 +14,7 @@ import {
   type StreamChunk,
   type Tool,
   type Usage,
-} from "@brainwires/core";
+} from "@rullama/core";
 import { parseNDJSONStream } from "./sse.ts";
 
 const DEFAULT_OLLAMA_URL = "http://localhost:11434";

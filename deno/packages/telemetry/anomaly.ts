@@ -5,13 +5,13 @@
  * and trust level changes. When observed values exceed configurable thresholds,
  * an AnomalyEvent is emitted and held in an in-memory queue.
  *
- * In v0.11.0 this moved from `@brainwires/permissions` to `@brainwires/telemetry`
- * to match the Rust restructuring (`brainwires_telemetry::anomaly`). The detector
+ * In v0.11.0 this moved from `@rullama/permissions` to `@rullama/telemetry`
+ * to match the Rust restructuring (`rullama_telemetry::anomaly`). The detector
  * is decoupled from any specific audit event shape via the `ObservedEvent`
  * interface, so callers can plug in events from any source that exposes the
  * required structural fields.
  *
- * Rust equivalent: `brainwires-telemetry/src/anomaly.rs`
+ * Rust equivalent: `rullama-telemetry/src/anomaly.rs`
  * @module
  */
 
@@ -19,7 +19,7 @@
 
 /**
  * Categories of events the detector cares about. Matches the strings produced
- * by `AuditEvent.event_type` in `@brainwires/permission`, but the detector
+ * by `AuditEvent.event_type` in `@rullama/permission`, but the detector
  * itself only inspects the structural fields, not the producer crate.
  */
 export type ObservedEventCategory =
@@ -30,10 +30,10 @@ export type ObservedEventCategory =
 
 /**
  * Minimal structural contract for events fed into `AnomalyDetector.observe()`.
- * Anything matching this shape (e.g. `AuditEvent` from `@brainwires/permission`)
+ * Anything matching this shape (e.g. `AuditEvent` from `@rullama/permission`)
  * can be observed.
  *
- * Rust equivalent: `ObservedEvent` trait in `brainwires-telemetry/src/anomaly.rs`.
+ * Rust equivalent: `ObservedEvent` trait in `rullama-telemetry/src/anomaly.rs`.
  */
 export interface ObservedEvent {
   /** ISO-8601 timestamp. */

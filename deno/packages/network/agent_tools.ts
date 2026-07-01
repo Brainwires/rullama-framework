@@ -5,7 +5,7 @@
  * Equivalent to Rust's `AgentToolRegistry`.
  */
 
-import type { Tool } from "@brainwires/core";
+import type { Tool } from "@rullama/core";
 
 /**
  * Registry of pre-built agent management tools.

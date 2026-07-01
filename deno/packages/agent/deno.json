@@ -1,5 +1,5 @@
 {
-  "name": "@brainwires/agent",
+  "name": "@rullama/agent",
   "license": "MIT",
   "version": "0.11.0",
   "exports": "./mod.ts"

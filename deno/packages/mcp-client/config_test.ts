@@ -1,6 +1,6 @@
 /**
  * Tests for MCP config types.
- * Mirrors Rust tests in `brainwires-mcp/src/config.rs`.
+ * Mirrors Rust tests in `rullama-mcp/src/config.rs`.
  */
 
 import { assertEquals, assertExists } from "@std/assert";

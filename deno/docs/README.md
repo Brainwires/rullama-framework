@@ -1,6 +1,6 @@
-# Brainwires Framework Documentation
+# rullama Documentation
 
-Guides for the Deno/TypeScript port of the Brainwires Agent Framework.
+Guides for the Deno/TypeScript port of the rullama.
 
 ## Guides
 

@@ -1,8 +1,8 @@
 /**
- * @module @brainwires/a2a
+ * @module @rullama/a2a
  *
- * Brainwires A2A - Agent-to-Agent protocol client and types.
- * TypeScript port of the Rust `brainwires-a2a` crate.
+ * rullama A2A - Agent-to-Agent protocol client and types.
+ * TypeScript port of the Rust `rullama-a2a` crate.
  *
  * Implements Google's A2A protocol (v1.0) for inter-agent communication
  * with JSON-RPC and REST transports.

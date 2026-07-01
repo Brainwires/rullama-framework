@@ -9,7 +9,7 @@ import type {
   JsonRpcError,
   JsonRpcRequest,
   JsonRpcResponse,
-} from "@brainwires/mcp-client";
+} from "@rullama/mcp-client";
 import type { RequestContext } from "../server.ts";
 
 /**

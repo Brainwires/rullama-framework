@@ -1,8 +1,8 @@
 /**
  * Cross-package integration test: Agent loop with mock provider and tools.
  *
- * Verifies that @brainwires/agents runAgentLoop works correctly with
- * @brainwires/core types (Provider, Message, Tool, ToolResult, etc.)
+ * Verifies that @rullama/agents runAgentLoop works correctly with
+ * @rullama/core types (Provider, Message, Tool, ToolResult, etc.)
  * and the CommunicationHub + FileLockManager infrastructure.
  */
 
@@ -20,14 +20,14 @@ import {
   type Tool,
   ToolResult,
   type ToolUse,
-} from "@brainwires/core";
+} from "@rullama/core";
 import {
   type AgentRuntime,
   CommunicationHub,
   FileLockManager,
   runAgentLoop,
-} from "@brainwires/agent";
-import { ToolRegistry } from "@brainwires/tools";
+} from "@rullama/agent";
+import { ToolRegistry } from "@rullama/tools";
 
 // ---------------------------------------------------------------------------
 // Mock provider that returns canned responses

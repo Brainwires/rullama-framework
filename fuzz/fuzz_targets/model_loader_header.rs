@@ -1,9 +1,9 @@
 #![no_main]
 //! Fuzz target stub for safetensors / GGUF model-header parsing.
 //!
-//! The framework's local-inference path (under `brainwires-provider`'s
+//! The framework's local-inference path (under `rullama-provider`'s
 //! `llama-cpp-2` feature and any future safetensors loader in
-//! `brainwires-inference`) reads model files from disk. A malicious model
+//! `rullama-inference`) reads model files from disk. A malicious model
 //! file must not be able to crash or pwn the loader.
 //!
 //! NOTE: this target is currently a stub. We deliberately do not wire it

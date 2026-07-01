@@ -4,10 +4,10 @@
  * Intended for tests, ephemeral sessions, and embedding use-cases. Nothing
  * persists across process restarts.
  *
- * Equivalent to Rust's `InMemorySessionStore` in `brainwires_session`.
+ * Equivalent to Rust's `InMemorySessionStore` in `rullama_session`.
  */
 
-import type { Message } from "@brainwires/core";
+import type { Message } from "@rullama/core";
 import type { SessionStore } from "./store.ts";
 import { defaultListPaginated } from "./store.ts";
 import type { ListOptions, SessionRecord } from "./types.ts";

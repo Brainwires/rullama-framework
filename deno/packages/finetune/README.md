@@ -1,4 +1,4 @@
-# @brainwires/training
+# @rullama/training
 
 Cloud fine-tuning orchestration.
 
@@ -39,7 +39,7 @@ import {
   newCloudFineTuneConfig,
   OpenAiFineTune,
   TrainingManager,
-} from "@brainwires/finetune";
+} from "@rullama/finetune";
 
 const mgr = new TrainingManager();
 mgr.addCloudProvider(new OpenAiFineTune(Deno.env.get("OPENAI_API_KEY")!));
@@ -60,5 +60,5 @@ console.log(final);
 
 ## Equivalent Rust crate
 
-`brainwires-training` with the `cloud` feature enabled. The TrainingJobId /
+`rullama-training` with the `cloud` feature enabled. The TrainingJobId /
 TrainingJobStatus / hyperparameter shapes are semantically 1:1.

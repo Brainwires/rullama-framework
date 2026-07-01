@@ -1,0 +1,213 @@
+// Multi-query flash vision attention Q = 16. Doubles queries-per-workgroup
+// over Q=8 to amortise K/V loads and reduction barriers further.
+//
+// Workgroup storage:
+//   q_shared    (16 × 64)     4 KB
+//   kv_tile     (32 × 64)     8 KB
+//   tile_scores (16 × WG)     4 KB
+//   rbuf, sum_buf             0.5 KB
+//   total                    ~16 KB (right at the WebGPU minimum)
+//
+// Per-thread state: 16 sets of (m, l, o) online-softmax accumulators.
+//
+// **NOT ROUTED BY DEFAULT** — Q=16 measured 1.75 s/iter on Radeon Pro 555 /
+// Metal at the full 2304-patch vision shape, vs 1.26 s for Q=8. The
+// 16 KB workgroup storage drops per-CU occupancy below the threshold
+// where memory latency stays hidden. Kept around as a reference variant;
+// the router stops at Q=8.
+
+struct Params {
+    head_dim:  u32,
+    n_heads:   u32,
+    n_patches: u32,
+    _pad:      u32,
+}
+
+@group(0) @binding(0) var<uniform>             params: Params;
+@group(0) @binding(1) var<storage, read>       q:      array<f32>;
+@group(0) @binding(2) var<storage, read>       k:      array<f32>;
+@group(0) @binding(3) var<storage, read>       v:      array<f32>;
+@group(0) @binding(4) var<storage, read_write> out:    array<f32>;
+
+const WG: u32 = 64u;
+const HEAD_DIM_MAX: u32 = 64u;
+const TILE_T: u32 = 32u;
+const Q_PER_WG: u32 = 16u;
+
+var<workgroup> q_shared:    array<f32, 1024>;     // Q_PER_WG × HEAD_DIM_MAX
+var<workgroup> kv_tile:     array<f32, 2048>;     // TILE_T × HEAD_DIM_MAX
+var<workgroup> tile_scores: array<f32, 1024>;     // Q_PER_WG × WG
+var<workgroup> rbuf:        array<f32, WG>;
+var<workgroup> sum_buf:     array<f32, WG>;
+
+@compute @workgroup_size(64)
+fn main(
+    @builtin(workgroup_id)         wid: vec3<u32>,
+    @builtin(local_invocation_index) tid: u32,
+) {
+    let qh: u32 = wid.y;
+    if (qh >= params.n_heads) { return; }
+
+    let head_dim:  u32 = params.head_dim;
+    let n_patches: u32 = params.n_patches;
+    let n_heads:   u32 = params.n_heads;
+
+    let bq_base: u32 = wid.x * Q_PER_WG;
+    let q_count: u32 = min(Q_PER_WG, n_patches - bq_base);
+    if (q_count == 0u) { return; }
+
+    for (var i: u32 = 0u; i < Q_PER_WG; i = i + 1u) {
+        let bq = bq_base + i;
+        if (bq < n_patches && tid < head_dim) {
+            let q_off = (bq * n_heads + qh) * head_dim + tid;
+            q_shared[i * head_dim + tid] = q[q_off];
+        }
+    }
+    workgroupBarrier();
+
+    var m_arr: array<f32, 16>;
+    var l_arr: array<f32, 16>;
+    var o_arr: array<f32, 16>;
+    for (var i: u32 = 0u; i < Q_PER_WG; i = i + 1u) {
+        m_arr[i] = -1.0e30;
+        l_arr[i] = 0.0;
+        o_arr[i] = 0.0;
+    }
+
+    let n_tiles = (n_patches + TILE_T - 1u) / TILE_T;
+    for (var tile: u32 = 0u; tile < n_tiles; tile = tile + 1u) {
+        let t0 = tile * TILE_T;
+        let tile_size = min(TILE_T, n_patches - t0);
+
+        let total_k = tile_size * head_dim;
+        var lk = tid;
+        loop {
+            if (lk >= total_k) { break; }
+            let t_local = lk / head_dim;
+            let d_local = lk % head_dim;
+            let g_off = ((t0 + t_local) * n_heads + qh) * head_dim + d_local;
+            kv_tile[lk] = k[g_off];
+            lk = lk + WG;
+        }
+        workgroupBarrier();
+
+        for (var q_idx: u32 = 0u; q_idx < Q_PER_WG; q_idx = q_idx + 1u) {
+            if (q_idx >= q_count) { break; }
+
+            var s_t: f32 = -1.0e30;
+            if (tid < tile_size) {
+                var sum: f32 = 0.0;
+                let row_off = tid * head_dim;
+                let q_row_off = q_idx * head_dim;
+                let n_vec = head_dim / 4u;
+                for (var dv: u32 = 0u; dv < n_vec; dv = dv + 1u) {
+                    let dv4 = dv * 4u;
+                    let qv = vec4<f32>(
+                        q_shared[q_row_off + dv4],
+                        q_shared[q_row_off + dv4 + 1u],
+                        q_shared[q_row_off + dv4 + 2u],
+                        q_shared[q_row_off + dv4 + 3u],
+                    );
+                    let kv = vec4<f32>(
+                        kv_tile[row_off + dv4],
+                        kv_tile[row_off + dv4 + 1u],
+                        kv_tile[row_off + dv4 + 2u],
+                        kv_tile[row_off + dv4 + 3u],
+                    );
+                    sum = sum + dot(qv, kv);
+                }
+                for (var d: u32 = n_vec * 4u; d < head_dim; d = d + 1u) {
+                    sum = sum + q_shared[q_row_off + d] * kv_tile[row_off + d];
+                }
+                s_t = sum;
+            }
+
+            rbuf[tid] = s_t;
+            sum_buf[tid] = select(0.0, 1.0, tid < tile_size);
+            workgroupBarrier();
+            var stride: u32 = WG / 2u;
+            loop {
+                if (stride == 0u) { break; }
+                if (tid < stride) {
+                    let m_a = rbuf[tid];
+                    let m_b = rbuf[tid + stride];
+                    let l_a = sum_buf[tid];
+                    let l_b = sum_buf[tid + stride];
+                    let m_n = max(m_a, m_b);
+                    rbuf[tid] = m_n;
+                    sum_buf[tid] = l_a * exp(m_a - m_n) + l_b * exp(m_b - m_n);
+                }
+                workgroupBarrier();
+                stride = stride / 2u;
+            }
+            let tile_m = rbuf[0];
+            let tile_l = sum_buf[0];
+
+            let m_cur = m_arr[q_idx];
+            let l_cur = l_arr[q_idx];
+            let o_cur = o_arr[q_idx];
+            let m_new = max(m_cur, tile_m);
+            let alpha = exp(m_cur - m_new);
+
+            var p_t: f32 = 0.0;
+            if (tid < tile_size) {
+                p_t = exp(s_t - m_new);
+            }
+            tile_scores[q_idx * WG + tid] = p_t;
+
+            m_arr[q_idx] = m_new;
+            l_arr[q_idx] = l_cur * alpha + tile_l * exp(tile_m - m_new);
+            o_arr[q_idx] = o_cur * alpha;
+        }
+
+        workgroupBarrier();
+
+        var lv = tid;
+        loop {
+            if (lv >= total_k) { break; }
+            let t_local = lv / head_dim;
+            let d_local = lv % head_dim;
+            let g_off = ((t0 + t_local) * n_heads + qh) * head_dim + d_local;
+            kv_tile[lv] = v[g_off];
+            lv = lv + WG;
+        }
+        workgroupBarrier();
+
+        if (tid < head_dim) {
+            for (var q_idx: u32 = 0u; q_idx < Q_PER_WG; q_idx = q_idx + 1u) {
+                if (q_idx >= q_count) { break; }
+                let s_off = q_idx * WG;
+                var contrib: f32 = 0.0;
+                let n_vec = tile_size / 4u;
+                for (var tv: u32 = 0u; tv < n_vec; tv = tv + 1u) {
+                    let t0_l = tv * 4u;
+                    let sv = vec4<f32>(
+                        tile_scores[s_off + t0_l],      tile_scores[s_off + t0_l + 1u],
+                        tile_scores[s_off + t0_l + 2u], tile_scores[s_off + t0_l + 3u],
+                    );
+                    let vv = vec4<f32>(
+                        kv_tile[t0_l * head_dim + tid],
+                        kv_tile[(t0_l + 1u) * head_dim + tid],
+                        kv_tile[(t0_l + 2u) * head_dim + tid],
+                        kv_tile[(t0_l + 3u) * head_dim + tid],
+                    );
+                    contrib = contrib + dot(sv, vv);
+                }
+                for (var t_local: u32 = n_vec * 4u; t_local < tile_size; t_local = t_local + 1u) {
+                    contrib = contrib + tile_scores[s_off + t_local] * kv_tile[t_local * head_dim + tid];
+                }
+                o_arr[q_idx] = o_arr[q_idx] + contrib;
+            }
+        }
+        workgroupBarrier();
+    }
+
+    if (tid < head_dim) {
+        for (var q_idx: u32 = 0u; q_idx < Q_PER_WG; q_idx = q_idx + 1u) {
+            if (q_idx >= q_count) { break; }
+            let bq = bq_base + q_idx;
+            let out_off = (bq * n_heads + qh) * head_dim + tid;
+            out[out_off] = o_arr[q_idx] / l_arr[q_idx];
+        }
+    }
+}

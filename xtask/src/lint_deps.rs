@@ -1,4 +1,5 @@
-//! `cargo xtask lint-deps` — enforce the framework / extras boundary.
+//! `cargo xtask lint-deps` — enforce the framework / consumer ("extras") boundary.
+//! The consumer tier now lives in sdks/ servers/ integrations/ examples/.
 //!
 //! The rule (see `docs/adr/ADR-0004-framework-extras-boundary.md`):
 //!
@@ -68,10 +69,12 @@ pub fn lint_deps(_args: &[String]) -> ExitCode {
     };
 
     let crates_dir = workspace_root.join("crates");
-    let extras_dir = workspace_root.join("extras");
     let workspace_cargo = workspace_root.join("Cargo.toml");
+    // The consumer ("extras") tier was reorganized out of a single `extras/`
+    // dir into these four. Any that exist are scanned as Tier::Extras.
+    let consumer_dirs = ["sdks", "servers", "integrations", "examples"];
 
-    if !crates_dir.is_dir() || !extras_dir.is_dir() || !workspace_cargo.is_file() {
+    if !crates_dir.is_dir() || !workspace_cargo.is_file() {
         eprintln!(
             "xtask lint-deps: expected to be run from the workspace root (saw {})",
             workspace_root.display()
@@ -85,9 +88,15 @@ pub fn lint_deps(_args: &[String]) -> ExitCode {
         eprintln!("xtask lint-deps: failed to scan crates/: {e}");
         return ExitCode::FAILURE;
     }
-    if let Err(e) = collect_packages(&extras_dir, Tier::Extras, &mut packages) {
-        eprintln!("xtask lint-deps: failed to scan extras/: {e}");
-        return ExitCode::FAILURE;
+    for d in consumer_dirs {
+        let dir = workspace_root.join(d);
+        if !dir.is_dir() {
+            continue;
+        }
+        if let Err(e) = collect_packages(&dir, Tier::Extras, &mut packages) {
+            eprintln!("xtask lint-deps: failed to scan {d}/: {e}");
+            return ExitCode::FAILURE;
+        }
     }
 
     // Step 2: Parse workspace.dependencies for the workspace = true lookups.
@@ -327,7 +336,11 @@ fn tier_of_path(path: &Path) -> Option<Tier> {
     let s = canon.to_string_lossy();
     if s.contains("/crates/") {
         Some(Tier::Crates)
-    } else if s.contains("/extras/") {
+    } else if s.contains("/sdks/")
+        || s.contains("/servers/")
+        || s.contains("/integrations/")
+        || s.contains("/examples/")
+    {
         Some(Tier::Extras)
     } else {
         None

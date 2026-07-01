@@ -1,7 +1,7 @@
 /**
  * Together AI fine-tuning provider.
  *
- * Equivalent to Rust's `brainwires_training::cloud::together` module.
+ * Equivalent to Rust's `rullama_training::cloud::together` module.
  * Implements the same FineTuneProvider contract as OpenAI over Together's
  * `/v1/files` + `/v1/fine-tunes` endpoints.
  */

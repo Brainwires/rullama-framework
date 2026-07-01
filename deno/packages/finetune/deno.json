@@ -1,5 +1,5 @@
 {
-  "name": "@brainwires/finetune",
+  "name": "@rullama/finetune",
   "license": "MIT",
   "version": "0.11.0",
   "exports": "./mod.ts"

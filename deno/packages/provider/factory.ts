@@ -5,7 +5,7 @@
  * Equivalent to Rust's `chat_factory.rs`.
  */
 
-import type { Provider } from "@brainwires/core";
+import type { Provider } from "@rullama/core";
 import type { ProviderConfig } from "./types.ts";
 import { lookup } from "./registry.ts";
 import { AnthropicChatProvider } from "./anthropic.ts";
@@ -48,10 +48,6 @@ export class ChatProviderFactory {
         return ChatProviderFactory.createOllama(config);
       case "openai_responses":
         return ChatProviderFactory.createOpenAiResponses(config);
-      case "brainwires_relay":
-        throw new Error(
-          "Brainwires relay provider is not yet implemented in the Deno port",
-        );
       default:
         throw new Error(
           `Unsupported chat protocol: ${entry.chat_protocol}`,

@@ -1,0 +1,11 @@
+# Configuration for uniffi binding generation across target languages.
+# Used by `cargo run --bin uniffi-bindgen -- generate ...`.
+
+[bindings.kotlin]
+package_name = "com.rullama.chatbridge"
+cdylib_name = "rullama_chat_native_bridge"
+
+[bindings.swift]
+ffi_module_name = "RullamaChatNativeBridgeFFI"
+module_name = "RullamaChatNativeBridge"
+generate_module_map = true

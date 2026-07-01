@@ -1,7 +1,7 @@
 /**
- * @brainwires/agents — evaluation harness.
+ * @rullama/agents — evaluation harness.
  *
- * Full port of Rust's `brainwires-agents::eval` subsystem:
+ * Full port of Rust's `rullama-agents::eval` subsystem:
  *
  * | Module | Purpose |
  * |---|---|

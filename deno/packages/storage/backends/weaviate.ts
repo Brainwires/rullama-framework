@@ -1,7 +1,7 @@
 /**
  * Weaviate vector database backend implementing VectorDatabase.
  *
- * Port of the Rust `brainwires-storage/src/databases/weaviate/mod.rs`.
+ * Port of the Rust `rullama-storage/src/databases/weaviate/mod.rs`.
  *
  * Uses `fetch()` to Weaviate REST + GraphQL APIs -- zero npm dependencies.
  * @module
@@ -11,7 +11,7 @@ import type {
   ChunkMetadata,
   DatabaseStats,
   SearchResult,
-} from "@brainwires/core";
+} from "@rullama/core";
 import type { VectorDatabase } from "../traits.ts";
 
 const DEFAULT_URL = "http://localhost:8080";

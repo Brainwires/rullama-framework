@@ -10,7 +10,7 @@ import {
   type Provider,
   type StreamChunk,
   type Tool,
-} from "@brainwires/core";
+} from "@rullama/core";
 
 // 1. Implement a custom provider
 // In a real app you would call an LLM API (OpenAI, Anthropic, Ollama, etc.).
@@ -52,7 +52,7 @@ class EchoProvider implements Provider {
 
 // 2. Use the provider
 async function main() {
-  console.log("=== Brainwires Quickstart ===");
+  console.log("=== rullama Quickstart ===");
 
   const provider = new EchoProvider();
   console.log(`Provider: ${provider.name}`);

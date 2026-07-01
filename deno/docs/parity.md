@@ -11,37 +11,37 @@ package diff from the actual filesystem.
 
 | Rust crate                              | Deno package                                              | Status                                 |
 | --------------------------------------- | --------------------------------------------------------- | -------------------------------------- |
-| `brainwires` (meta)                     | —                                                         | n/a — JSR packages are independent.    |
-| `brainwires-core`                       | [`@brainwires/core`](../packages/core/)                   | Faithful.                              |
-| `brainwires-providers`                  | [`@brainwires/providers`](../packages/providers/)         | Partial — see §Providers.              |
-| `brainwires-agent`                      | [`@brainwires/agents`](../packages/agents/)               | Faithful.                              |
-| `brainwires-mcp`                        | [`@brainwires/mcp`](../packages/mcp/)                     | Faithful.                              |
-| `brainwires-mcp-server`                 | folded into [`@brainwires/network`](../packages/network/) | Faithful.                              |
-| `brainwires-a2a`                        | [`@brainwires/a2a`](../packages/a2a/)                     | Faithful (no gRPC, by design).         |
-| `brainwires-storage`                    | [`@brainwires/storage`](../packages/storage/)             | Faithful.                              |
-| `brainwires-permissions`                | [`@brainwires/permissions`](../packages/permissions/)     | Faithful.                              |
-| `brainwires-tools`                      | [`@brainwires/tools`](../packages/tools/)                 | Partial — see §Tools.                  |
-| `brainwires-knowledge`                  | [`@brainwires/knowledge`](../packages/knowledge/)         | Partial — RAG/BKS/PKS are client-only. |
-| `brainwires-network`                    | [`@brainwires/network`](../packages/network/)             | Faithful.                              |
-| `brainwires-session`                    | [`@brainwires/session`](../packages/session/)             | Faithful (SQLite → Deno KV).           |
-| `brainwires-resilience`                 | [`@brainwires/resilience`](../packages/resilience/)       | Faithful.                              |
-| `brainwires-telemetry`                  | [`@brainwires/telemetry`](../packages/telemetry/)         | Partial — see §Telemetry.              |
-| `brainwires-reasoning`                  | [`@brainwires/reasoning`](../packages/reasoning/)         | Partial — Tier 1 only.                 |
-| `brainwires-training`                   | [`@brainwires/training`](../packages/training/)           | Partial — cloud slice only.            |
-| `brainwires-hardware`                   | —                                                         | Runtime boundary.                      |
-| `brainwires-sandbox` · `-sandbox-proxy` | —                                                         | Runtime boundary.                      |
+| `rullama` (meta)                     | —                                                         | n/a — JSR packages are independent.    |
+| `rullama-core`                       | [`@rullama/core`](../packages/core/)                   | Faithful.                              |
+| `rullama-providers`                  | [`@rullama/providers`](../packages/providers/)         | Partial — see §Providers.              |
+| `rullama-agent`                      | [`@rullama/agents`](../packages/agents/)               | Faithful.                              |
+| `rullama-mcp`                        | [`@rullama/mcp`](../packages/mcp/)                     | Faithful.                              |
+| `rullama-mcp-server`                 | folded into [`@rullama/network`](../packages/network/) | Faithful.                              |
+| `rullama-a2a`                        | [`@rullama/a2a`](../packages/a2a/)                     | Faithful (no gRPC, by design).         |
+| `rullama-storage`                    | [`@rullama/storage`](../packages/storage/)             | Faithful.                              |
+| `rullama-permissions`                | [`@rullama/permissions`](../packages/permissions/)     | Faithful.                              |
+| `rullama-tools`                      | [`@rullama/tools`](../packages/tools/)                 | Partial — see §Tools.                  |
+| `rullama-knowledge`                  | [`@rullama/knowledge`](../packages/knowledge/)         | Partial — RAG/BKS/PKS are client-only. |
+| `rullama-network`                    | [`@rullama/network`](../packages/network/)             | Faithful.                              |
+| `rullama-session`                    | [`@rullama/session`](../packages/session/)             | Faithful (SQLite → Deno KV).           |
+| `rullama-resilience`                 | [`@rullama/resilience`](../packages/resilience/)       | Faithful.                              |
+| `rullama-telemetry`                  | [`@rullama/telemetry`](../packages/telemetry/)         | Partial — see §Telemetry.              |
+| `rullama-reasoning`                  | [`@rullama/reasoning`](../packages/reasoning/)         | Partial — Tier 1 only.                 |
+| `rullama-training`                   | [`@rullama/training`](../packages/training/)           | Partial — cloud slice only.            |
+| `rullama-hardware`                   | —                                                         | Runtime boundary.                      |
+| `rullama-sandbox` · `-sandbox-proxy` | —                                                         | Runtime boundary.                      |
 
 ## Runtime boundary — not ported on purpose
 
 These are marked off-limits at the package layer. The Deno port does not try to
 approximate any of them; drive the Rust binary from Deno instead and communicate
-over `@brainwires/network` or `@brainwires/a2a`.
+over `@rullama/network` or `@rullama/a2a`.
 
-- **`brainwires-hardware`** — needs kernel access (ALSA/PulseAudio, libusb,
+- **`rullama-hardware`** — needs kernel access (ALSA/PulseAudio, libusb,
   bluez, GPIO sysfs, Zigbee, Z-Wave, Matter). Not portable.
-- **`brainwires-sandbox`** — Bollard Docker client driving container
+- **`rullama-sandbox`** — Bollard Docker client driving container
   orchestration. Run the Rust sidecar.
-- **`brainwires-sandbox-proxy`** — Hyper-based HTTP egress proxy. Run the Rust
+- **`rullama-sandbox-proxy`** — Hyper-based HTTP egress proxy. Run the Rust
   sidecar.
 - **`local_llm` provider** — llama-cpp FFI. Use `OllamaChatProvider` for local
   inference from Deno.
@@ -63,7 +63,6 @@ Ported:
 - `AnthropicChatProvider`, `OpenAiChatProvider`, `OpenAiResponsesProvider`,
   `BedrockProvider`, `VertexAiProvider`, `GoogleChatProvider`,
   `OllamaChatProvider`
-- `BrainwiresRelayProvider` — Studio backend, SSE streaming, tool-call threading
   via response_id metadata
 - Audio clients: `AzureSpeechClient`, `DeepgramClient`, `ElevenLabsClient`,
   `GoogleTtsClient`, `MurfClient`, `CartesiaClient`, `FishClient` — all
@@ -133,7 +132,7 @@ Not ported:
 
 ## Knowledge — client-interface only
 
-`@brainwires/knowledge` ships the full prompting-technique catalog, code
+`@rullama/knowledge` ships the full prompting-technique catalog, code
 analysis helpers, and the client interfaces (`BrainClient`, `RagClient`, plus
 request/response types). The concrete RAG / BKS / PKS implementations stay in
 Rust because they depend on LanceDB + tantivy + ONNX which are not portable to

@@ -5,7 +5,7 @@
  * Provides WebSocket-based communication with priority command queuing,
  * heartbeat telemetry, and protocol negotiation.
  *
- * Equivalent to Rust's `brainwires-network::remote` module.
+ * Equivalent to Rust's `rullama-network::remote` module.
  */
 
 // Protocol types

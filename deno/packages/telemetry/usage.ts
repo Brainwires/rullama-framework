@@ -1,7 +1,7 @@
 /**
  * UsageEvent — the payload handed to a BillingHook.
  *
- * Equivalent to Rust's `brainwires_telemetry::usage::UsageEvent`.
+ * Equivalent to Rust's `rullama_telemetry::usage::UsageEvent`.
  */
 
 export type UsageEvent =

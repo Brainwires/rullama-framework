@@ -1,8 +1,8 @@
 use crate::cli::ThermostatAction;
 use crate::output::Output;
 use anyhow::Result;
-use brainwires_homeauto::matter::clusters::thermostat;
-use brainwires_homeauto::{AttributeValue, MatterController, MatterDevice};
+use rullama_homeauto::matter::clusters::thermostat;
+use rullama_homeauto::{AttributeValue, MatterController, MatterDevice};
 use std::path::Path;
 
 pub async fn run(action: ThermostatAction, fabric_dir: &Path, out: &Output) -> Result<()> {

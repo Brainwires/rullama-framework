@@ -1,10 +1,10 @@
 /**
  * Complexity scoring — provider-backed 0.0–1.0 assessment with heuristic fallback.
  *
- * Equivalent to Rust's `brainwires_reasoning::complexity` module.
+ * Equivalent to Rust's `rullama_reasoning::complexity` module.
  */
 
-import { ChatOptions, Message, type Provider } from "@brainwires/core";
+import { ChatOptions, Message, type Provider } from "@rullama/core";
 
 /** Result of complexity scoring. */
 export interface ComplexityResult {

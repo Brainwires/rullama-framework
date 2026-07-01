@@ -23,10 +23,10 @@ import {
   type Message,
   ToolResult,
   type ToolUse,
-} from "@brainwires/core";
+} from "@rullama/core";
 
-import type { CommunicationHub } from "@brainwires/agent";
-import type { FileLockManager, LockType } from "@brainwires/agent";
+import type { CommunicationHub } from "@rullama/agent";
+import type { FileLockManager, LockType } from "@rullama/agent";
 import type { AgentLifecycleHooks, IterationContext } from "./hooks.ts";
 
 // ---------------------------------------------------------------------------

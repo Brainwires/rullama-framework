@@ -5,16 +5,16 @@
  * executions, file access, network requests, policy evaluations, trust
  * level changes, and human interventions.
  *
- * Rust equivalent: `brainwires-permissions/src/audit.rs`
+ * Rust equivalent: `rullama-permissions/src/audit.rs`
  * @module
  */
 
 import type { PolicyDecision } from "./policy.ts";
 
-// Anomaly detection lives in `@brainwires/telemetry`. AuditLogger no longer
+// Anomaly detection lives in `@rullama/telemetry`. AuditLogger no longer
 // wires it up internally — callers observe events with their own detector:
 //
-//   import { AnomalyDetector, defaultAnomalyConfig } from "@brainwires/telemetry";
+//   import { AnomalyDetector, defaultAnomalyConfig } from "@rullama/telemetry";
 //   const detector = new AnomalyDetector(defaultAnomalyConfig());
 //   auditLogger.log(event);
 //   detector.observe(event);
@@ -336,13 +336,13 @@ export class AuditLogger {
   }
 
   /**
-   * Create a new audit logger with the default path (~/.brainwires/audit/audit.jsonl).
+   * Create a new audit logger with the default path (~/.rullama/audit/audit.jsonl).
    *
    * Rust equivalent: `AuditLogger::new()`
    */
   static create(): AuditLogger {
     const home = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? ".";
-    const logDir = `${home}/.brainwires/audit`;
+    const logDir = `${home}/.rullama/audit`;
     try {
       Deno.mkdirSync(logDir, { recursive: true });
     } catch { /* ignore */ }

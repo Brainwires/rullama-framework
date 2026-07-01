@@ -11,7 +11,7 @@ import {
   SagaExecutor,
   type SagaOperationType,
   successResult,
-} from "@brainwires/agent";
+} from "@rullama/agent";
 
 // -- Mock Operations --
 

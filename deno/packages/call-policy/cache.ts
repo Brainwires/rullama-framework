@@ -10,7 +10,7 @@
  * from a single recorded response would fabricate data a caller cannot
  * distinguish from real model output.
  *
- * Equivalent to Rust's `brainwires_resilience::cache` module.
+ * Equivalent to Rust's `rullama_resilience::cache` module.
  */
 
 import type {
@@ -22,8 +22,8 @@ import type {
   StreamChunk,
   Tool,
   Usage,
-} from "@brainwires/core";
-import { Message as MessageClass } from "@brainwires/core";
+} from "@rullama/core";
+import { Message as MessageClass } from "@rullama/core";
 
 /** Key used to address a cached response. */
 export interface CacheKey {

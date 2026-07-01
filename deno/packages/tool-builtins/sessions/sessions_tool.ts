@@ -2,7 +2,7 @@
  * {@link SessionsTool} — bundles `sessions_list`, `sessions_history`,
  * `sessions_send`, and `sessions_spawn` over a {@link SessionBroker}.
  *
- * Equivalent to Rust's `brainwires_tools::sessions::sessions_tool` module.
+ * Equivalent to Rust's `rullama_tools::sessions::sessions_tool` module.
  */
 
 import {
@@ -10,7 +10,7 @@ import {
   type Tool,
   type ToolContext,
   ToolResult,
-} from "@brainwires/core";
+} from "@rullama/core";
 
 import {
   defaultSpawnRequest,

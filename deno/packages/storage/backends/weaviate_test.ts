@@ -13,7 +13,7 @@ import {
   deterministicUuid,
   parseWeaviateResult,
 } from "./weaviate.ts";
-import type { ChunkMetadata } from "@brainwires/core";
+import type { ChunkMetadata } from "@rullama/core";
 
 // ---------------------------------------------------------------------------
 // buildWhereFilter
