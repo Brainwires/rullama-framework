@@ -12,9 +12,10 @@ Get from zero to a running agent in about 5 minutes.
 
 ```sh
 deno add @rullama/core
-deno add @rullama/providers
-deno add @rullama/agents
-deno add @rullama/tools
+deno add @rullama/provider
+deno add @rullama/inference
+deno add @rullama/tool-runtime
+deno add @rullama/tool-builtins
 ```
 
 ## 2. Create a provider
@@ -44,7 +45,8 @@ Tools give agents the ability to interact with the world. The `ToolRegistry`
 holds them.
 
 ```ts
-import { BashTool, FileOpsTool, ToolRegistry } from "@rullama/tools";
+import { ToolRegistry } from "@rullama/tool-runtime";
+import { BashTool, FileOpsTool } from "@rullama/tool-builtins";
 
 const registry = new ToolRegistry();
 registry.registerTools(BashTool.getTools());
@@ -56,7 +58,7 @@ registry.registerTools(FileOpsTool.getTools());
 Combine a provider, tools, and a task description to spawn an autonomous agent.
 
 ```ts
-import { AgentContext, spawnTaskAgent } from "@rullama/agent";
+import { AgentContext, spawnTaskAgent } from "@rullama/inference";
 
 const context = new AgentContext({ tools: registry.allTools() });
 

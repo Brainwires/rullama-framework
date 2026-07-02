@@ -1,6 +1,6 @@
 # Permissions
 
-The `@rullama/permissions` package provides capability-based access control,
+The `@rullama/permission` package provides capability-based access control,
 policy enforcement, audit logging, trust management, and anomaly detection.
 
 ## Capability Profiles

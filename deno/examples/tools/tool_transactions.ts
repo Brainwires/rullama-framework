@@ -3,7 +3,7 @@
 // Stage files, inspect pending state, then commit or rollback.
 // Run: deno run --allow-read --allow-write --allow-env deno/examples/tool-system/tool_transactions.ts
 
-import { TransactionManager } from "@rullama/tools";
+import { TransactionManager } from "@rullama/tool-runtime";
 
 async function main() {
   console.log("=== Tool Transactions Example ===\n");

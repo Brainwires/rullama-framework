@@ -40,16 +40,20 @@ agent-network    cognition
 | Package                   | Install                            | Description                                                                 |
 | ------------------------- | ---------------------------------- | --------------------------------------------------------------------------- |
 | `@rullama/core`        | `deno add @rullama/core`        | Messages, tools, errors, lifecycle hooks, output parsers, working set       |
-| `@rullama/providers`   | `deno add @rullama/providers`   | AI chat providers (Anthropic, OpenAI, Google, Ollama, Bedrock, Vertex)      |
-| `@rullama/agents`      | `deno add @rullama/agents`      | Agent runtime, task agents, coordination patterns, MDAP voting              |
-| `@rullama/tools`       | `deno add @rullama/tools`       | Tool registry, built-in tools (bash, file, git, web, search, OpenAPI)       |
-| `@rullama/storage`     | `deno add @rullama/storage`     | Backend-agnostic storage, domain stores, tiered memory                      |
-| `@rullama/knowledge`   | `deno add @rullama/knowledge`   | Prompting techniques, knowledge graph, RAG interfaces, code analysis        |
-| `@rullama/mcp`         | `deno add @rullama/mcp`         | Model Context Protocol client (stdio transport)                             |
-| `@rullama/network`     | `deno add @rullama/network`     | MCP server framework, middleware, routing, discovery, remote bridge         |
-| `@rullama/a2a`         | `deno add @rullama/a2a`         | Google A2A protocol (JSON-RPC + REST, SSE streaming)                        |
-| `@rullama/permissions` | `deno add @rullama/permissions` | Capability profiles, policy engine, audit logging, trust, anomaly detection |
-| `@rullama/agents`      | `deno add @rullama/agents`      | SKILL.md parsing, skill registry, routing, execution                        |
+| `@rullama/provider`      | `deno add @rullama/provider`      | AI chat providers (Anthropic, OpenAI, Google, Ollama, Bedrock, Vertex)      |
+| `@rullama/agent`         | `deno add @rullama/agent`         | Agent coordination: comms, locks, task manager, contract-net, saga, market  |
+| `@rullama/inference`     | `deno add @rullama/inference`     | Agent runtime, task agents (TaskAgent, ChatAgent, Judge, Planner, Validator)|
+| `@rullama/mdap`          | `deno add @rullama/mdap`          | MDAP / MAKER voting                                                          |
+| `@rullama/tool-runtime`  | `deno add @rullama/tool-runtime`  | Tool registry, executor, sanitization, smart routing, OpenAPI/OAuth         |
+| `@rullama/tool-builtins` | `deno add @rullama/tool-builtins` | Built-in tools (bash, file, git, web, search, calendar, sessions)           |
+| `@rullama/storage`       | `deno add @rullama/storage`       | Backend-agnostic storage, domain stores, tiered memory                      |
+| `@rullama/knowledge`     | `deno add @rullama/knowledge`     | Prompting techniques, knowledge graph, RAG interfaces, code analysis        |
+| `@rullama/mcp-client`    | `deno add @rullama/mcp-client`    | Model Context Protocol client (stdio transport)                             |
+| `@rullama/mcp-server`    | `deno add @rullama/mcp-server`    | MCP server framework (its own package since v0.11.0)                        |
+| `@rullama/network`       | `deno add @rullama/network`       | Middleware, routing, discovery, remote bridge                               |
+| `@rullama/a2a`           | `deno add @rullama/a2a`           | Google A2A protocol (JSON-RPC + REST, SSE streaming)                        |
+| `@rullama/permission`    | `deno add @rullama/permission`    | Capability profiles, policy engine, audit logging, trust, anomaly detection |
+| `@rullama/skills`        | `deno add @rullama/skills`        | SKILL.md parsing, skill registry, routing, execution                        |
 
 ## Key Types from Core
 
@@ -85,11 +89,12 @@ binary for those concerns instead of trying to approximate them:
 - **LanceDB / ONNX / tantivy RAG** — native indexing and embedding stays in
   Rust. The Deno `@rullama/knowledge` package keeps its client role and talks
   to a Rust RAG service over the existing `RagClient` interface.
-- **Burn-based local training** — Deno ships `@rullama/training` with cloud
+- **Burn-based local training** — Deno ships `@rullama/finetune` with cloud
   backends only (OpenAI, Together, Fireworks).
 
-Communication across the boundary goes through `@rullama/network` (MCP
-server, IPC transport) or `@rullama/a2a` (Google A2A protocol).
+Communication across the boundary goes through `@rullama/network` /
+`@rullama/mcp-server` (MCP server, IPC transport) or `@rullama/a2a`
+(Google A2A protocol).
 
 For per-file detail, see [parity.md](./parity.md) — it links to each
 `SKIPPED.md` under the corresponding package.

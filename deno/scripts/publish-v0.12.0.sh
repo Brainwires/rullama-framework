@@ -2,10 +2,10 @@
 # Publish all 27 @rullama/* packages to JSR in dependency order.
 #
 # Usage:
-#   ! ./deno/scripts/publish-v0.11.0.sh           # interactive (browser auth)
-#   ! ./deno/scripts/publish-v0.11.0.sh --dry-run # dry run all packages
-#   ! JSR_TOKEN=jsrp_... ./deno/scripts/publish-v0.11.0.sh
-#   ! ./deno/scripts/publish-v0.11.0.sh --token jsrp_...
+#   ! ./deno/scripts/publish-v0.12.0.sh           # interactive (browser auth)
+#   ! ./deno/scripts/publish-v0.12.0.sh --dry-run # dry run all packages
+#   ! JSR_TOKEN=jsrp_... ./deno/scripts/publish-v0.12.0.sh
+#   ! ./deno/scripts/publish-v0.12.0.sh --token jsrp_...
 
 set -euo pipefail
 
@@ -81,5 +81,5 @@ publish_tier "2  (depends on tier 1)"              "${TIER_2[@]}"
 publish_tier "3  (depends on tier 2)"              "${TIER_3[@]}"
 
 echo ""
-echo "=== all 27 packages published. tag deno-v0.11.0 next. ==="
-echo "  git tag -a deno-v0.11.0 -m 'Deno port v0.11.0' && git push origin deno-v0.11.0"
+echo "=== all 27 packages published. tag deno-v0.12.0 next. ==="
+echo "  git tag -a deno-v0.12.0 -m 'Deno port v0.12.0' && git push origin deno-v0.12.0"

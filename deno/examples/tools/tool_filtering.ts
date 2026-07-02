@@ -22,7 +22,7 @@ import {
   sanitizeExternalContent,
   successOutcome,
   wrapWithContentSource,
-} from "@rullama/tools";
+} from "@rullama/tool-runtime";
 
 async function main() {
   console.log("=== Tool Filtering Example ===\n");

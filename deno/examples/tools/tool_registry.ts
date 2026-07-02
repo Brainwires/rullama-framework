@@ -10,11 +10,10 @@ import {
   FileOpsTool,
   GitTool,
   SearchTool,
-  ToolRegistry,
-  ValidationTool,
   WebTool,
-} from "@rullama/tools";
-import type { ToolCategory } from "@rullama/tools";
+} from "@rullama/tool-builtins";
+import { ToolRegistry, ValidationTool } from "@rullama/tool-runtime";
+import type { ToolCategory } from "@rullama/tool-runtime";
 
 /** Helper: create a custom tool definition with the given name and description. */
 function makeCustomTool(name: string, description: string): Tool {

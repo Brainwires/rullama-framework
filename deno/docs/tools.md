@@ -1,7 +1,9 @@
 # Tools
 
-The `@rullama/tools` package provides a tool registry, built-in tool
-implementations, smart routing, transactions, and pre-execution hooks.
+The tool system lives in two packages: `@rullama/tool-runtime` (the tool
+registry, executor, smart routing, transactions, sanitization, OpenAPI/OAuth,
+and pre-execution hooks) and `@rullama/tool-builtins` (the concrete built-in
+tool implementations: bash, file ops, git, web, search, calendar, sessions).
 
 ## ToolRegistry
 
@@ -9,12 +11,8 @@ The registry holds tool definitions and their execution handlers. Register
 tools, then pass them to an `AgentContext`.
 
 ```ts
-import {
-  BashTool,
-  FileOpsTool,
-  GitTool,
-  ToolRegistry,
-} from "@rullama/tools";
+import { ToolRegistry } from "@rullama/tool-runtime";
+import { BashTool, FileOpsTool, GitTool } from "@rullama/tool-builtins";
 
 const registry = new ToolRegistry();
 registry.registerTools(BashTool.getTools());
@@ -36,16 +34,21 @@ const tool = registry.get("bash"); // single lookup
 | `SearchTool`     | `search`                                                                                                | Regex-based code search (respects .gitignore)            |
 | `ValidationTool` | `validate`                                                                                              | Content validation checks                                |
 
-See: `../examples/tool-system/tool_registry.ts`,
-`../examples/tool-system/tool_execution.ts`.
+See: `../examples/tools/tool_registry.ts`,
+`../examples/tools/tool_execution.ts`.
 
 ## Custom Tool Creation
 
 Define a `Tool` with an input schema and implement execution via `ToolExecutor`:
 
 ```ts
-import { type Tool, type ToolExecutor } from "@rullama/tools";
-import { objectSchema, ToolResult, type ToolUse } from "@rullama/core";
+import { type ToolExecutor } from "@rullama/tool-runtime";
+import {
+  objectSchema,
+  type Tool,
+  ToolResult,
+  type ToolUse,
+} from "@rullama/core";
 
 const myTool: Tool = {
   name: "weather",
@@ -69,7 +72,7 @@ const executor: ToolExecutor = {
 Automatically generate tools from an OpenAPI spec:
 
 ```ts
-import { executeOpenApiTool, openApiToTools } from "@rullama/tools";
+import { executeOpenApiTool, openApiToTools } from "@rullama/tool-runtime";
 
 const tools = openApiToTools(openApiSpec);
 ```
@@ -80,32 +83,32 @@ Smart routing analyzes the conversation and selects only relevant tools,
 reducing token usage:
 
 ```ts
-import { analyzeQuery, getSmartTools } from "@rullama/tools";
+import { analyzeQuery, getSmartTools } from "@rullama/tool-runtime";
 
 const relevantTools = getSmartTools(messages, allTools);
 ```
 
-See: `../examples/tool-system/smart_routing.ts`.
+See: `../examples/tools/smart_routing.ts`.
 
 ## Transaction Manager
 
 `TransactionManager` provides atomic multi-step tool operations with rollback:
 
 ```ts
-import { TransactionManager } from "@rullama/tools";
+import { TransactionManager } from "@rullama/tool-runtime";
 
 const tx = new TransactionManager();
 // Operations within the transaction can be committed or rolled back
 ```
 
-See: `../examples/tool-system/tool_transactions.ts`.
+See: `../examples/tools/tool_transactions.ts`.
 
 ## Pre-execution Hooks
 
 Use `ToolPreHook` to gate or modify tool calls before execution:
 
 ```ts
-import { allow, reject, type ToolPreHook } from "@rullama/tools";
+import { allow, reject, type ToolPreHook } from "@rullama/tool-runtime";
 
 const safetyHook: ToolPreHook = {
   beforeExecute: (toolUse) => {
@@ -126,7 +129,7 @@ The package includes utilities for input/output sanitization:
 - `isInjectionAttempt` -- detect prompt injection in external content
 - `sanitizeExternalContent` -- wrap content with source metadata
 
-See: `../examples/tool-system/tool_filtering.ts`.
+See: `../examples/tools/tool_filtering.ts`.
 
 ## Further Reading
 

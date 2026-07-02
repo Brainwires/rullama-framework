@@ -9,40 +9,66 @@ package diff from the actual filesystem.
 
 ## Summary
 
-| Rust crate                              | Deno package                                              | Status                                 |
-| --------------------------------------- | --------------------------------------------------------- | -------------------------------------- |
-| `rullama` (meta)                     | —                                                         | n/a — JSR packages are independent.    |
-| `rullama-core`                       | [`@rullama/core`](../packages/core/)                   | Faithful.                              |
-| `rullama-providers`                  | [`@rullama/providers`](../packages/providers/)         | Partial — see §Providers.              |
-| `rullama-agent`                      | [`@rullama/agents`](../packages/agents/)               | Faithful.                              |
-| `rullama-mcp`                        | [`@rullama/mcp`](../packages/mcp/)                     | Faithful.                              |
-| `rullama-mcp-server`                 | folded into [`@rullama/network`](../packages/network/) | Faithful.                              |
-| `rullama-a2a`                        | [`@rullama/a2a`](../packages/a2a/)                     | Faithful (no gRPC, by design).         |
-| `rullama-storage`                    | [`@rullama/storage`](../packages/storage/)             | Faithful.                              |
-| `rullama-permissions`                | [`@rullama/permissions`](../packages/permissions/)     | Faithful.                              |
-| `rullama-tools`                      | [`@rullama/tools`](../packages/tools/)                 | Partial — see §Tools.                  |
-| `rullama-knowledge`                  | [`@rullama/knowledge`](../packages/knowledge/)         | Partial — RAG/BKS/PKS are client-only. |
-| `rullama-network`                    | [`@rullama/network`](../packages/network/)             | Faithful.                              |
-| `rullama-session`                    | [`@rullama/session`](../packages/session/)             | Faithful (SQLite → Deno KV).           |
-| `rullama-resilience`                 | [`@rullama/resilience`](../packages/resilience/)       | Faithful.                              |
-| `rullama-telemetry`                  | [`@rullama/telemetry`](../packages/telemetry/)         | Partial — see §Telemetry.              |
-| `rullama-reasoning`                  | [`@rullama/reasoning`](../packages/reasoning/)         | Partial — Tier 1 only.                 |
-| `rullama-training`                   | [`@rullama/training`](../packages/training/)           | Partial — cloud slice only.            |
-| `rullama-hardware`                   | —                                                         | Runtime boundary.                      |
-| `rullama-sandbox` · `-sandbox-proxy` | —                                                         | Runtime boundary.                      |
+The v0.11.0 restructure split the old monolithic crates
+(`rullama-providers`, `rullama-agents`, `rullama-tools`) into focused
+packages and renamed several others. The current package set is 27 packages,
+each 1:1 with a Rust crate under `crates/`. Run `deno task parity` to
+regenerate this diff.
+
+| Rust crate                | Deno package                                                       | Status                                 |
+| ------------------------- | ------------------------------------------------------------------ | -------------------------------------- |
+| `rullama-a2a`             | [`@rullama/a2a`](../packages/a2a/)                                 | Faithful (no gRPC, by design).         |
+| `rullama-agent`           | [`@rullama/agent`](../packages/agent/)                             | Faithful — coordination primitives.    |
+| `rullama-call-policy`     | [`@rullama/call-policy`](../packages/call-policy/)                 | Faithful (was `resilience`).           |
+| `rullama-core`            | [`@rullama/core`](../packages/core/)                               | Faithful.                              |
+| `rullama-eval`            | [`@rullama/eval`](../packages/eval/)                               | Faithful — evaluation harness.         |
+| `rullama-finetune`        | [`@rullama/finetune`](../packages/finetune/)                       | Partial — cloud slice only (was `training`). |
+| `rullama-inference`       | [`@rullama/inference`](../packages/inference/)                     | Faithful — TaskAgent/Chat/Planner/etc. |
+| `rullama-knowledge`       | [`@rullama/knowledge`](../packages/knowledge/)                     | Partial — RAG/BKS/PKS are client-only. |
+| `rullama-mcp-client`      | [`@rullama/mcp-client`](../packages/mcp-client/)                   | Faithful (was `mcp`).                  |
+| `rullama-mcp-server`      | [`@rullama/mcp-server`](../packages/mcp-server/)                   | Faithful — own package (unfolded in v0.11.0). |
+| `rullama-mdap`            | [`@rullama/mdap`](../packages/mdap/)                               | Faithful — MDAP/MAKER voting.          |
+| `rullama-memory`          | [`@rullama/memory`](../packages/memory/)                           | Faithful.                              |
+| `rullama-network`         | [`@rullama/network`](../packages/network/)                         | Faithful.                              |
+| `rullama-permission`      | [`@rullama/permission`](../packages/permission/)                   | Faithful (was `permissions`).          |
+| `rullama-prompting`       | [`@rullama/prompting`](../packages/prompting/)                     | Faithful.                              |
+| `rullama-provider`        | [`@rullama/provider`](../packages/provider/)                       | Partial — see §Providers (was `providers`). |
+| `rullama-provider-speech` | [`@rullama/provider-speech`](../packages/provider-speech/)         | Faithful — HTTP audio clients only.    |
+| `rullama-rag`             | [`@rullama/rag`](../packages/rag/)                                 | Partial — client-only.                 |
+| `rullama-reasoning`       | [`@rullama/reasoning`](../packages/reasoning/)                     | Partial — Tier 1 only.                 |
+| `rullama-seal`            | [`@rullama/seal`](../packages/seal/)                               | Faithful — SEAL learning loop.         |
+| `rullama-session`         | [`@rullama/session`](../packages/session/)                         | Faithful (SQLite → Deno KV).           |
+| `rullama-skills`          | [`@rullama/skills`](../packages/skills/)                           | Faithful — SKILL.md system.            |
+| `rullama-storage`         | [`@rullama/storage`](../packages/storage/)                         | Faithful.                              |
+| `rullama-stores`          | [`@rullama/stores`](../packages/stores/)                           | Faithful.                              |
+| `rullama-telemetry`       | [`@rullama/telemetry`](../packages/telemetry/)                     | Partial — see §Telemetry.              |
+| `rullama-tool-builtins`   | [`@rullama/tool-builtins`](../packages/tool-builtins/)             | Partial — see §Tools.                  |
+| `rullama-tool-runtime`    | [`@rullama/tool-runtime`](../packages/tool-runtime/)               | Partial — see §Tools.                  |
+
+Rust-only crates on the runtime boundary (no Deno package, intentional):
+`rullama` (meta), `rullama-hardware`, `rullama-sandbox`,
+`rullama-sandbox-proxy`, `rullama-datasets`, `rullama-test-fixtures`,
+`rullama-test-harness`. See below.
 
 ## Runtime boundary — not ported on purpose
 
 These are marked off-limits at the package layer. The Deno port does not try to
 approximate any of them; drive the Rust binary from Deno instead and communicate
-over `@rullama/network` or `@rullama/a2a`.
+over `@rullama/network` or `@rullama/a2a`. This set is kept in sync with the
+`RUST_ONLY` list in `scripts/parity.ts`.
 
+- **`rullama`** — the meta-crate. No Deno equivalent; the JSR packages are
+  independent.
 - **`rullama-hardware`** — needs kernel access (ALSA/PulseAudio, libusb,
   bluez, GPIO sysfs, Zigbee, Z-Wave, Matter). Not portable.
 - **`rullama-sandbox`** — Bollard Docker client driving container
   orchestration. Run the Rust sidecar.
 - **`rullama-sandbox-proxy`** — Hyper-based HTTP egress proxy. Run the Rust
   sidecar.
+- **`rullama-datasets`** — local training-data pipeline (GPU/disk). Not a Deno
+  concern; callers construct JSONL themselves and upload via the finetune API.
+- **`rullama-test-fixtures`** — internal test infrastructure, unpublished.
+- **`rullama-test-harness`** — internal test infrastructure, unpublished.
 - **`local_llm` provider** — llama-cpp FFI. Use `OllamaChatProvider` for local
   inference from Deno.
 - **`interpreters` / `orchestrator` tools** — Rhai, Boa, RustPython embedded
@@ -53,7 +79,7 @@ over `@rullama/network` or `@rullama/a2a`.
 - **LanceDB / ONNX / tantivy RAG** — native indexing stays Rust-side. The Deno
   `knowledge` package keeps its client role and talks to a Rust RAG service over
   the existing `RagClient` interface.
-- **Burn-based local training** — the Deno `training` package exposes cloud
+- **Burn-based local training** — the Deno `finetune` package exposes cloud
   fine-tuning only.
 
 ## Providers — partial
@@ -74,14 +100,21 @@ Not ported:
 
 ## Tools — partial
 
-Ported (see [packages/tools/tools/](../packages/tools/tools/) for files):
+The old `rullama-tools` crate was split in v0.11.0 into
+[`@rullama/tool-runtime`](../packages/tool-runtime/) (registry, executor,
+error taxonomy, sanitization, smart routing, transactions, OpenAPI/OAuth,
+validation, tool-search/-embedding) and
+[`@rullama/tool-builtins`](../packages/tool-builtins/) (the concrete built-in
+tools). Ported:
 
-- `bash`, `file_ops`, `git`, `web`, `search`, `validation`, `openapi`
-- `oauth`, `calendar/{types,google,caldav,mod}`, `tool_search`,
-  `tool_embedding`, `semantic_search`, `sessions/{broker,sessions_tool}`
+- runtime: `registry`, `executor`, `error`, `sanitization`, `smart_router`,
+  `transaction`, `validation`, `openapi`, `oauth`, `tool_search`,
+  `tool_embedding`
+- builtins: `bash`, `file_ops`, `git`, `web`, `search`, `semantic_search`,
+  `calendar/{types,google,caldav,mod}`, `sessions/{broker,sessions_tool}`
 
 Skipped (runtime boundary) — documented in
-[packages/tools/tools/SKIPPED.md](../packages/tools/tools/SKIPPED.md):
+[packages/tool-builtins/SKIPPED.md](../packages/tool-builtins/SKIPPED.md):
 
 - `email/` (IMAP/SMTP/Gmail-push)
 - `system/services/` (systemd, docker shell, process)
@@ -115,7 +148,10 @@ Ported: `parsePlanSteps`, `stepsToTasks`, `ComplexityScorer`, `LocalRouter`,
 Deferred (planned follow-up): `strategies` (CoT/ReAct/Reflexion/ToT),
 `strategy_selector`, `summarizer`, `relevance_scorer`, `entity_enhancer`.
 
-## Training — cloud only
+## Finetune — cloud only
+
+The `@rullama/finetune` package (was `@rullama/training` pre-0.11.0) ports the
+cloud fine-tuning slice.
 
 Ported: shared types / hyperparams / LoRA / alignment config, `TrainingError`,
 `FineTuneProvider` interface, `OpenAiFineTune`, `TogetherFineTune`,

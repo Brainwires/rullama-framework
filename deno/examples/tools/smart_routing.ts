@@ -7,18 +7,20 @@ import { Message } from "@rullama/core";
 import {
   analyzeMessages,
   analyzeQuery,
-  BashTool,
-  FileOpsTool,
   getContextForAnalysis,
   getSmartTools,
   getSmartToolsWithMcp,
   getToolsForCategories,
-  GitTool,
-  SearchTool,
   ToolRegistry,
   ValidationTool,
+} from "@rullama/tool-runtime";
+import {
+  BashTool,
+  FileOpsTool,
+  GitTool,
+  SearchTool,
   WebTool,
-} from "@rullama/tools";
+} from "@rullama/tool-builtins";
 import type { Tool } from "@rullama/core";
 
 async function main() {

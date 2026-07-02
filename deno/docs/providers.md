@@ -1,6 +1,6 @@
 # Providers
 
-The `@rullama/providers` package implements AI chat providers that conform to
+The `@rullama/provider` package implements AI chat providers that conform to
 the `Provider` interface from `@rullama/core`.
 
 ## Provider Interface

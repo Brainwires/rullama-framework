@@ -13,9 +13,9 @@ to the component, done.
 | `VectorStore`       | `@rullama/core`      | Embedding storage and search   |
 | `StorageBackend`    | `@rullama/storage`   | Record persistence backend     |
 | `VectorDatabase`    | `@rullama/storage`   | Storage + vector search        |
-| `ToolExecutor`      | `@rullama/tools`     | Custom tool execution backend  |
-| `ToolPreHook`       | `@rullama/tools`     | Pre-execution tool gate        |
-| `AgentRuntime`      | `@rullama/agents`    | Custom agent execution loop    |
+| `ToolExecutor`      | `@rullama/tool-runtime` | Custom tool execution backend  |
+| `ToolPreHook`       | `@rullama/tool-runtime` | Pre-execution tool gate        |
+| `AgentRuntime`      | `@rullama/inference` | Custom agent execution loop    |
 | `LifecycleHook`     | `@rullama/core`      | Framework event interception   |
 | `OutputParser`      | `@rullama/core`      | Structured LLM output parsing  |
 | `BrainClient`       | `@rullama/knowledge` | Knowledge storage interface    |
@@ -104,10 +104,10 @@ Pass it to any domain store: `new MessageStore(new RedisBackend())`.
 
 ## Custom Tools
 
-Implement `ToolExecutor` from `@rullama/tools`:
+Implement `ToolExecutor` from `@rullama/tool-runtime`:
 
 ```ts
-import type { ToolExecutor } from "@rullama/tools";
+import type { ToolExecutor } from "@rullama/tool-runtime";
 import {
   objectSchema,
   type Tool,
@@ -217,8 +217,8 @@ throw FrameworkError.storageSchema("my-store", "Missing table");
 ## Where to Define Extensions
 
 - **Types and interfaces** -- `@rullama/core`
-- **Tool implementations** -- `@rullama/tools`
-- **Agent coordination** -- `@rullama/agents`
+- **Tool implementations** -- `@rullama/tool-builtins` (runtime in `@rullama/tool-runtime`)
+- **Agent coordination** -- `@rullama/agent` (runtime in `@rullama/inference`)
 - **Storage backends** -- `@rullama/storage`
 - **Network components** -- `@rullama/network`
 

@@ -5,12 +5,12 @@
 
 import { ToolContext, ToolResult } from "@rullama/core";
 import type { Tool, ToolUse } from "@rullama/core";
-import { allow, reject } from "@rullama/tools";
+import { allow, reject } from "@rullama/tool-runtime";
 import type {
   PreHookDecision,
   ToolExecutor,
   ToolPreHook,
-} from "@rullama/tools";
+} from "@rullama/tool-runtime";
 
 // 1. Define a safety-check hook
 // This hook blocks destructive tools and rejects calls with suspicious input patterns.

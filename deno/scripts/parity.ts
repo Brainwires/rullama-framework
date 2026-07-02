@@ -17,6 +17,9 @@ const RUST_ONLY = new Set([
   "rullama-hardware",
   "rullama-sandbox",
   "rullama-sandbox-proxy",
+  "rullama-datasets", // local training-data pipeline (GPU/disk) — not a Deno concern
+  "rullama-test-fixtures", // internal test infra, unpublished
+  "rullama-test-harness", // internal test infra, unpublished
 ]);
 
 /** Crates that live inside another Deno package (folded rather than 1:1). */

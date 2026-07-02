@@ -1,7 +1,8 @@
 # Agents
 
-The `@rullama/agents` package provides the agent runtime, task agents,
-coordination patterns, specialized agents, and the MDAP voting framework.
+The agent system spans three packages: `@rullama/inference` (agent runtime,
+task agents, and specialized agents), `@rullama/agent` (multi-agent
+coordination patterns), and `@rullama/mdap` (the MDAP/MAKER voting framework).
 
 ## Agent Loop
 
@@ -10,7 +11,7 @@ implementation through an iterate-until-done loop with tool calling,
 communication, and file locking.
 
 ```ts
-import { type AgentRuntime, runAgentLoop } from "@rullama/agent";
+import { type AgentRuntime, runAgentLoop } from "@rullama/inference";
 
 const result = await runAgentLoop(myRuntime, hub, lockManager);
 ```
@@ -26,7 +27,7 @@ system prompt into a working runtime. The `spawnTaskAgent` helper creates and
 runs one in a single call.
 
 ```ts
-import { AgentContext, spawnTaskAgent } from "@rullama/agent";
+import { AgentContext, spawnTaskAgent } from "@rullama/inference";
 import { AnthropicChatProvider } from "@rullama/provider";
 
 const provider = new AnthropicChatProvider(
@@ -111,7 +112,7 @@ import {
   FirstToAheadByKVoter,
   StandardRedFlagValidator,
   VoterBuilder,
-} from "@rullama/agent";
+} from "@rullama/mdap";
 
 const voter = new VoterBuilder()
   .kAdvantage(2)
