@@ -112,7 +112,7 @@ export class AzureSpeechClient {
         "Ocp-Apim-Subscription-Key": this.subscription_key,
         "Content-Type": content_type,
       },
-      body: audio_data,
+      body: audio_data as BodyInit,
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");

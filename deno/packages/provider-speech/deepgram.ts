@@ -128,7 +128,7 @@ export class DeepgramClient {
         "Authorization": `Token ${this.api_key}`,
         "Content-Type": req.content_type ?? "audio/wav",
       },
-      body: audio_data,
+      body: audio_data as BodyInit,
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
