@@ -180,12 +180,11 @@ jobs:
       qdrant:
         image: ${{ matrix.service == 'qdrant' && 'qdrant/qdrant:latest' || '' }}
         ports: ['6333:6333', '6334:6334']
-      surrealdb:
-        image: ${{ matrix.service == 'surrealdb' && 'surrealdb/surrealdb:latest' || '' }}
-        ports: ['8000:8000']
-        options: >-
-          --entrypoint /surreal
-        # surrealdb needs the start command passed via args; keep minimal for now.
+      # No surrealdb service: GitHub service containers cannot pass the required
+      # `start` command, so the container only ever failed to boot. The surrealdb
+      # integration tests are `#[ignore]` and skip when no server is reachable;
+      # run them locally with `surreal start memory` + `cargo test --features
+      # surrealdb-backend -- --ignored`.
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space
