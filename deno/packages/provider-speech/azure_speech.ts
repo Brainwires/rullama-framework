@@ -4,6 +4,8 @@
  * Equivalent to Rust's `rullama_providers::azure_speech` module.
  */
 
+import { vendorBytes, vendorJson } from "./http.ts";
+
 import { RateLimiter } from "./rate_limiter.ts";
 
 /** STT request parameters. */
@@ -67,7 +69,7 @@ export class AzureSpeechClient {
   /** Synthesize speech from SSML. Returns raw audio bytes. */
   async synthesize(ssml: string, output_format: string): Promise<Uint8Array> {
     await this.acquire();
-    const res = await fetch(this.ttsEndpoint(), {
+    return vendorBytes("Azure TTS", this.ttsEndpoint(), {
       method: "POST",
       headers: {
         "Ocp-Apim-Subscription-Key": this.subscription_key,
@@ -76,11 +78,6 @@ export class AzureSpeechClient {
       },
       body: ssml,
     });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Azure TTS API error (${res.status}): ${body}`);
-    }
-    return new Uint8Array(await res.arrayBuffer());
   }
 
   /** Synthesize from plain text by wrapping in SSML. */
@@ -106,7 +103,7 @@ export class AzureSpeechClient {
     const content_type = req.content_type ??
       "audio/wav; codecs=audio/pcm; samplerate=16000";
     const url = `${this.sttEndpoint()}?language=${encodeURIComponent(lang)}`;
-    const res = await fetch(url, {
+    return vendorJson<AzureSttResponse>("Azure STT", url, {
       method: "POST",
       headers: {
         "Ocp-Apim-Subscription-Key": this.subscription_key,
@@ -114,24 +111,14 @@ export class AzureSpeechClient {
       },
       body: audio_data as BodyInit,
     });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Azure STT API error (${res.status}): ${body}`);
-    }
-    return await res.json() as AzureSttResponse;
   }
 
   /** List available voices. */
   async listVoices(): Promise<AzureVoice[]> {
     await this.acquire();
-    const res = await fetch(this.voicesEndpoint(), {
+    return vendorJson<AzureVoice[]>("Azure voices", this.voicesEndpoint(), {
       method: "GET",
       headers: { "Ocp-Apim-Subscription-Key": this.subscription_key },
     });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Azure voices API error (${res.status}): ${body}`);
-    }
-    return await res.json() as AzureVoice[];
   }
 }

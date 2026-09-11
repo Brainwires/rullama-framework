@@ -7,6 +7,8 @@
  * capture/playback (microphone, speaker) must be handled by the consumer.
  */
 
+import { vendorBytes, vendorJson } from "./http.ts";
+
 import { RateLimiter } from "./rate_limiter.ts";
 
 export const DEEPGRAM_API_BASE = "https://api.deepgram.com/v1";
@@ -94,7 +96,7 @@ export class DeepgramClient {
     }
     const qs = params.toString();
     const url = `${this.base_url}/speak${qs ? `?${qs}` : ""}`;
-    const res = await fetch(url, {
+    return vendorBytes("Deepgram speak", url, {
       method: "POST",
       headers: {
         "Authorization": `Token ${this.api_key}`,
@@ -102,11 +104,6 @@ export class DeepgramClient {
       },
       body: JSON.stringify({ text: req.text }),
     });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Deepgram speak API error (${res.status}): ${body}`);
-    }
-    return new Uint8Array(await res.arrayBuffer());
   }
 
   /** Speech-to-text (Listen). Transcribes audio data. */
@@ -122,7 +119,7 @@ export class DeepgramClient {
     if (req.diarize) params.set("diarize", "true");
     const qs = params.toString();
     const url = `${this.base_url}/listen${qs ? `?${qs}` : ""}`;
-    const res = await fetch(url, {
+    return vendorJson<DeepgramListenResponse>("Deepgram listen", url, {
       method: "POST",
       headers: {
         "Authorization": `Token ${this.api_key}`,
@@ -130,10 +127,5 @@ export class DeepgramClient {
       },
       body: audio_data as BodyInit,
     });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Deepgram listen API error (${res.status}): ${body}`);
-    }
-    return await res.json() as DeepgramListenResponse;
   }
 }

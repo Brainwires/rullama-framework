@@ -4,6 +4,8 @@
  * Equivalent to Rust's `rullama_providers::elevenlabs` module.
  */
 
+import { vendorBytes, vendorJson } from "./http.ts";
+
 import { RateLimiter } from "./rate_limiter.ts";
 
 export const ELEVENLABS_API_BASE = "https://api.elevenlabs.io/v1";
@@ -99,7 +101,7 @@ export class ElevenLabsClient {
   ): Promise<Uint8Array> {
     await this.acquire();
     const url = `${this.base_url}/text-to-speech/${voice_id}`;
-    const res = await fetch(url, {
+    return vendorBytes("ElevenLabs TTS", url, {
       method: "POST",
       headers: {
         "xi-api-key": this.api_key,
@@ -107,11 +109,6 @@ export class ElevenLabsClient {
       },
       body: JSON.stringify(serializeTtsRequest(req)),
     });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`ElevenLabs TTS API error (${res.status}): ${body}`);
-    }
-    return new Uint8Array(await res.arrayBuffer());
   }
 
   /** Speech-to-text transcription (multipart upload). */
@@ -128,29 +125,27 @@ export class ElevenLabsClient {
     );
     if (req.model) form.append("model_id", req.model);
     if (req.language_code) form.append("language_code", req.language_code);
-    const res = await fetch(`${this.base_url}/speech-to-text`, {
-      method: "POST",
-      headers: { "xi-api-key": this.api_key },
-      body: form,
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`ElevenLabs STT API error (${res.status}): ${body}`);
-    }
-    return await res.json() as ElevenLabsSttResponse;
+    return vendorJson<ElevenLabsSttResponse>(
+      "ElevenLabs STT",
+      `${this.base_url}/speech-to-text`,
+      {
+        method: "POST",
+        headers: { "xi-api-key": this.api_key },
+        body: form,
+      },
+    );
   }
 
   /** List available voices. */
   async listVoices(): Promise<ElevenLabsVoicesResponse> {
     await this.acquire();
-    const res = await fetch(`${this.base_url}/voices`, {
-      method: "GET",
-      headers: { "xi-api-key": this.api_key },
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`ElevenLabs voices API error (${res.status}): ${body}`);
-    }
-    return await res.json() as ElevenLabsVoicesResponse;
+    return vendorJson<ElevenLabsVoicesResponse>(
+      "ElevenLabs voices",
+      `${this.base_url}/voices`,
+      {
+        method: "GET",
+        headers: { "xi-api-key": this.api_key },
+      },
+    );
   }
 }

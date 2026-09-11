@@ -4,6 +4,8 @@
  * Equivalent to Rust's `rullama_providers::cartesia` module.
  */
 
+import { vendorBytes } from "./http.ts";
+
 import { RateLimiter } from "./rate_limiter.ts";
 
 export const CARTESIA_API_BASE = "https://api.cartesia.ai";
@@ -78,7 +80,7 @@ export class CartesiaClient {
   /** Text-to-speech synthesis. Returns raw audio bytes. */
   async ttsBytes(req: CartesiaTtsRequest): Promise<Uint8Array> {
     await this.acquire();
-    const res = await fetch(`${this.base_url}/tts/bytes`, {
+    return vendorBytes("Cartesia TTS", `${this.base_url}/tts/bytes`, {
       method: "POST",
       headers: {
         "X-API-Key": this.api_key,
@@ -87,10 +89,5 @@ export class CartesiaClient {
       },
       body: JSON.stringify(serializeTts(req)),
     });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Cartesia TTS API error (${res.status}): ${body}`);
-    }
-    return new Uint8Array(await res.arrayBuffer());
   }
 }

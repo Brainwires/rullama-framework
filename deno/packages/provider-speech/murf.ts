@@ -7,6 +7,8 @@
  * use {@link MurfClient.downloadAudio} to fetch the payload.
  */
 
+import { vendorBytes, vendorJson } from "./http.ts";
+
 import { RateLimiter } from "./rate_limiter.ts";
 
 export const MURF_API_BASE = "https://api.murf.ai/v1";
@@ -81,41 +83,35 @@ export class MurfClient {
     req: MurfGenerateRequest,
   ): Promise<MurfGenerateResponse> {
     await this.acquire();
-    const res = await fetch(`${this.base_url}/speech/generate`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${this.api_key}`,
-        "Content-Type": "application/json",
+    return vendorJson<MurfGenerateResponse>(
+      "Murf",
+      `${this.base_url}/speech/generate`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.api_key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(serializeGenerate(req)),
       },
-      body: JSON.stringify(serializeGenerate(req)),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Murf API error (${res.status}): ${body}`);
-    }
-    return await res.json() as MurfGenerateResponse;
+    );
   }
 
   /** Download audio from a URL returned by {@link generateSpeech}. */
-  async downloadAudio(audio_url: string): Promise<Uint8Array> {
-    const res = await fetch(audio_url, { method: "GET" });
-    if (!res.ok) {
-      throw new Error(`Murf download error (${res.status})`);
-    }
-    return new Uint8Array(await res.arrayBuffer());
+  downloadAudio(audio_url: string): Promise<Uint8Array> {
+    return vendorBytes("Murf download", audio_url, { method: "GET" });
   }
 
   /** List available voices. */
   async listVoices(): Promise<MurfVoicesResponse> {
     await this.acquire();
-    const res = await fetch(`${this.base_url}/speech/voices`, {
-      method: "GET",
-      headers: { "Authorization": `Bearer ${this.api_key}` },
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Murf voices API error (${res.status}): ${body}`);
-    }
-    return await res.json() as MurfVoicesResponse;
+    return vendorJson<MurfVoicesResponse>(
+      "Murf voices",
+      `${this.base_url}/speech/voices`,
+      {
+        method: "GET",
+        headers: { "Authorization": `Bearer ${this.api_key}` },
+      },
+    );
   }
 }

@@ -7,6 +7,8 @@
  * consumers can decode with `atob` + TextEncoder or Uint8Array conversion.
  */
 
+import { vendorJson } from "./http.ts";
+
 import { RateLimiter } from "./rate_limiter.ts";
 
 export const GOOGLE_TTS_API_BASE = "https://texttospeech.googleapis.com/v1";
@@ -119,19 +121,18 @@ export class GoogleTtsClient {
     req: GoogleTtsSynthesizeRequest,
   ): Promise<GoogleTtsSynthesizeResponse> {
     await this.acquire();
-    const res = await fetch(`${this.base_url}/text:synthesize`, {
-      method: "POST",
-      headers: {
-        "X-Goog-Api-Key": this.api_key,
-        "Content-Type": "application/json",
+    return vendorJson<GoogleTtsSynthesizeResponse>(
+      "Google TTS",
+      `${this.base_url}/text:synthesize`,
+      {
+        method: "POST",
+        headers: {
+          "X-Goog-Api-Key": this.api_key,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(serializeRequest(req)),
       },
-      body: JSON.stringify(serializeRequest(req)),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Google TTS API error (${res.status}): ${body}`);
-    }
-    return await res.json() as GoogleTtsSynthesizeResponse;
+    );
   }
 
   /** List available voices. */
@@ -142,14 +143,9 @@ export class GoogleTtsClient {
         encodeURIComponent(language_code)
       }`
       : `${this.base_url}/voices`;
-    const res = await fetch(url, {
+    return vendorJson<GoogleTtsVoicesResponse>("Google TTS voices", url, {
       method: "GET",
       headers: { "X-Goog-Api-Key": this.api_key },
     });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Google TTS voices API error (${res.status}): ${body}`);
-    }
-    return await res.json() as GoogleTtsVoicesResponse;
   }
 }

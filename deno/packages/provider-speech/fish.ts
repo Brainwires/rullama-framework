@@ -4,6 +4,8 @@
  * Equivalent to Rust's `rullama_providers::fish` module.
  */
 
+import { vendorBytes, vendorJson } from "./http.ts";
+
 import { RateLimiter } from "./rate_limiter.ts";
 
 export const FISH_API_BASE = "https://api.fish.audio/v1";
@@ -64,7 +66,7 @@ export class FishClient {
   /** Text-to-speech. Returns raw audio bytes. */
   async tts(req: FishTtsRequest): Promise<Uint8Array> {
     await this.acquire();
-    const res = await fetch(`${this.base_url}/tts`, {
+    return vendorBytes("Fish TTS", `${this.base_url}/tts`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${this.api_key}`,
@@ -72,11 +74,6 @@ export class FishClient {
       },
       body: JSON.stringify(serializeTts(req)),
     });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Fish TTS API error (${res.status}): ${body}`);
-    }
-    return new Uint8Array(await res.arrayBuffer());
   }
 
   /** Automatic speech recognition (multipart upload). */
@@ -92,15 +89,10 @@ export class FishClient {
       "audio.wav",
     );
     if (req.language) form.append("language", req.language);
-    const res = await fetch(`${this.base_url}/asr`, {
+    return vendorJson<FishAsrResponse>("Fish ASR", `${this.base_url}/asr`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${this.api_key}` },
       body: form,
     });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Fish ASR API error (${res.status}): ${body}`);
-    }
-    return await res.json() as FishAsrResponse;
   }
 }
