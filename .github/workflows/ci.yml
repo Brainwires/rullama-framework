@@ -214,6 +214,29 @@ jobs:
         run: brew install protobuf pkg-config
       - run: cargo check --workspace --exclude rullama-hardware
 
+  fallow:
+    name: Fallow gate (Deno)
+    runs-on: ubuntu-latest
+    # The same gate the pre-commit hook runs (.githooks/pre-commit): dead code, complexity
+    # and duplication scoped to what this change INTRODUCES (audit gate = new-only), over
+    # the Deno tree per fallow.toml. Hard gate from day one — inherited findings on touched
+    # files are annotated but do not fail the job.
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # audit diffs against the PR base / merge-base
+      - uses: fallow-rs/fallow@v3
+        with:
+          command: audit
+          config: fallow.toml
+          fail-on-issues: true
+          annotations: true
+          comment: true
+
   deno:
     name: Deno
     runs-on: ubuntu-latest

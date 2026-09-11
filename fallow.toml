@@ -1,0 +1,53 @@
+# fallow configuration for rullama-framework.
+#
+# fallow analyzes the Deno/TypeScript port under `deno/` (the Rust crates are invisible to
+# it). The config lives at the repo root so one gate covers the whole monorepo; every path
+# below is relative to this file. See AGENTS.md → "Fallow local gate" for how it is
+# run (pre-commit hook, Claude Code PreToolUse gate, and the CI action).
+#
+# CRAP scoring uses MEASURED coverage when `deno/coverage/coverage-final.json` exists
+# (`cd deno && deno task coverage:fallow`). It is passed on the command line by the hook,
+# not configured here: a `[health] coverage` path that is missing is a hard error, which
+# would silently skip the gate.
+
+# The Deno workspace declares its dependencies in deno/deno.json's import map as
+# `npm:`/`jsr:` specifiers, NOT in a package.json. fallow's dependency analysis is
+# package.json-oriented, so it reports these real, declared dependencies as "unlisted".
+# Each entry IS declared in deno/deno.json — verify against its `imports` before adding.
+ignoreDependencies = [
+  "pg", # deno/deno.json: npm:pg@8 — Postgres storage backend
+  "mysql2", # deno/deno.json: npm:mysql2@3 — MySQL storage backend
+  "surrealdb", # deno/deno.json: npm:surrealdb@1 — SurrealDB storage backend
+  "@std/assert", # deno/deno.json: jsr:@std/assert@^1.0.0
+  "@std/path", # deno/deno.json: jsr:@std/path@^1.0.0
+  "@std/yaml", # deno/deno.json: jsr:@std/yaml@^1.0.0
+]
+
+# Files fallow's reachability graph cannot see because nothing imports them:
+#   - each package's `exports` (deno/packages/*/deno.json) — the published entrypoints;
+#   - deno/examples: `deno run` targets, documented in deno/examples/README.md;
+#   - deno/scripts and the top-level integration tests: run via `deno task` / `deno test`.
+entry = [
+  "deno/packages/*/mod.ts",
+  "deno/packages/*/*.ts",
+  "deno/packages/*/*/mod.ts",
+  "deno/examples/**/*.ts",
+  "deno/scripts/*.ts",
+  "deno/tests/*.ts",
+]
+
+# Out of scope for this gate: the other JS/TS trees in the monorepo each have their own
+# toolchain and package.json (the docs site, the two example apps, the engine's data
+# script) and are not part of the published Deno packages. Scope fallow to deno/.
+ignorePatterns = [
+  "docs/**",
+  "examples/**",
+  "engine/**",
+  # Rust↔Deno wire-format goldens, read as text by deno/tests/fixture_test.ts (never imported).
+  "deno/fixtures/**",
+]
+
+[rules]
+# Exported signatures that reference a same-file private type break consumers and fail the
+# JSR "has docs" gate (`deno doc --lint` private-type-ref); surface them early.
+private-type-leaks = "warn"

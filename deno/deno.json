@@ -3,7 +3,9 @@
     "check": "deno fmt --check && deno lint && deno check packages/*/mod.ts tests/*.ts && deno test -A packages/ tests/",
     "check:fix": "deno fmt && deno lint --fix; deno lint",
     "test": "deno test -A packages/ tests/",
-    "parity": "deno run --allow-read scripts/parity.ts"
+    "parity": "deno run --allow-read scripts/parity.ts",
+    "coverage:fallow": "rm -rf coverage && deno test -A packages/ tests/ --coverage=coverage/profile && deno coverage coverage/profile --include=/packages/ --lcov --output=coverage/lcov.info && deno run --allow-read --allow-write scripts/coverage-to-istanbul.ts coverage/lcov.info coverage/coverage-final.json",
+    "hooks:install": "git -C .. config core.hooksPath .githooks"
   },
   "unstable": [
     "kv"

@@ -22,3 +22,9 @@ fuzz/Cargo.lock
 # Ignore libfuzzer-discovered corpus entries (hex-named hashes); keep the
 # human-named seed files (e.g. canonical.json, minimal_card.json) checked in.
 fuzz/corpus/**/[0-9a-f]*
+.fallow/
+
+# fallow (analysis cache) + measured coverage for its CRAP score (`deno task coverage:fallow`)
+deno/coverage/
+# Claude Code per-user settings (fallow's MCP approval lands here)
+.claude/settings.local.json
