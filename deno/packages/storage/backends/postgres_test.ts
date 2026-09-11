@@ -13,6 +13,7 @@ import {
   buildSelect,
   fieldValueToParam,
   filterToSql,
+  parseVectorText,
 } from "./postgres.ts";
 import {
   type FieldDef,
@@ -252,4 +253,10 @@ Deno.test("fieldValueToParam - boolean", () => {
 
 Deno.test("fieldValueToParam - vector becomes pg text format", () => {
   assertEquals(fieldValueToParam(FieldValues.Vector([1, 2, 3])), "[1,2,3]");
+});
+
+Deno.test("parseVectorText - pgvector text form", () => {
+  assertEquals(parseVectorText("[1,2.5,-3]"), [1, 2.5, -3]);
+  assertEquals(parseVectorText(""), []);
+  assertEquals(parseVectorText("not a vector"), []);
 });

@@ -1,20 +1,20 @@
 /**
- * @rullama/agents — evaluation harness.
+ * @module @rullama/eval
  *
- * Full port of Rust's `rullama-agents::eval` subsystem:
+ * Evaluation harness for LLM agents (port of Rust's `rullama-eval` crate):
  *
  * | Module | Purpose |
  * |---|---|
- * | {@link trial}          | Per-trial results + Wilson-score 95% CI |
- * | {@link case}           | {@link EvaluationCase} interface + built-in helpers |
- * | {@link suite}          | N-trial Monte Carlo runner |
- * | {@link recorder}       | Record + diff tool call sequences |
- * | {@link ranking_metrics}| NDCG@K, MRR, Precision@K pure helpers |
- * | {@link adversarial}    | Prompt injection, ambiguity, budget stress templates |
- * | {@link regression}     | Baseline comparison for CI gating |
- * | {@link fault_report}   | Classify suite results into priority-sorted faults |
- * | {@link fixtures}       | YAML golden-prompt fixtures |
- * | {@link stability_tests}| Long-horizon loop / goal preservation sims |
+ * | `trial.ts`          | Per-trial results + Wilson-score 95% CI |
+ * | `case.ts`           | {@link EvaluationCase} interface + built-in helpers |
+ * | `suite.ts`          | N-trial Monte Carlo runner |
+ * | `recorder.ts`       | Record + diff tool call sequences |
+ * | `ranking_metrics.ts`| NDCG@K, MRR, Precision@K pure helpers |
+ * | `adversarial.ts`    | Prompt injection, ambiguity, budget stress templates |
+ * | `regression.ts`     | Baseline comparison for CI gating |
+ * | `fault_report.ts`   | Classify suite results into priority-sorted faults |
+ * | `fixtures.ts`       | YAML golden-prompt fixtures |
+ * | `stability_tests.ts`| Long-horizon loop / goal preservation sims |
  */
 
 // Trial + stats

@@ -290,8 +290,8 @@ export class SurrealDatabase implements StorageBackend {
     let ddl = `DEFINE TABLE IF NOT EXISTS ${tableName} SCHEMAFULL;\n`;
 
     for (const field of schema) {
-      const surealType = fieldTypeToSurrealQL(field.fieldType);
-      const typeExpr = field.nullable ? `option<${surealType}>` : surealType;
+      const surrealType = fieldTypeToSurrealQL(field.fieldType);
+      const typeExpr = field.nullable ? `option<${surrealType}>` : surrealType;
       assertIdentifier(field.name, "field");
       ddl += `DEFINE FIELD ${field.name} ON ${tableName} TYPE ${typeExpr};\n`;
 

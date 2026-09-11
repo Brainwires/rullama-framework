@@ -27,7 +27,31 @@ import type {
   ServerCapabilities,
   ServerInfo,
 } from "./types.ts";
-import { createJsonRpcRequest } from "./types.ts";
+import { createJsonRpcNotification, createJsonRpcRequest } from "./types.ts";
+
+/** The `notifications/cancelled` notification for `requestId` (MCP cancellation). */
+export function cancellationNotification(
+  requestId: number,
+  reason?: string,
+): JsonRpcNotification {
+  return createJsonRpcNotification("notifications/cancelled", {
+    requestId,
+    ...(reason !== undefined ? { reason } : {}),
+  });
+}
+
+/** The MCP protocol revision this client offers in `initialize`. */
+export const LATEST_PROTOCOL_VERSION = "2025-06-18";
+
+/**
+ * Protocol revisions this client can talk to. The server answers `initialize`
+ * with the revision it wants to use; anything outside this list is rejected.
+ */
+export const SUPPORTED_PROTOCOL_VERSIONS: readonly string[] = [
+  "2025-06-18",
+  "2025-03-26",
+  "2024-11-05",
+];
 
 /**
  * Active connection to an MCP server.
@@ -348,21 +372,22 @@ export class McpClient {
   }
 
   /**
-   * Send a cancellation request to the MCP server.
-   * Follows the JSON-RPC 2.0 cancellation protocol using `$/cancelRequest`.
-   * Equivalent to Rust `McpClient::cancel_request`.
+   * Tell the server to stop working on an in-flight request.
+   *
+   * MCP cancellation is the `notifications/cancelled` notification (no `id`,
+   * never answered) carrying the `requestId` to cancel. The previous
+   * implementation sent `$/cancelRequest`, which is an LSP method that no MCP
+   * server recognises.
    */
-  async cancelRequest(serverName: string, requestId: number): Promise<void> {
+  async cancelRequest(
+    serverName: string,
+    requestId: number,
+    reason?: string,
+  ): Promise<void> {
     const connection = this.#getConnection(serverName);
-
-    const request: JsonRpcRequest = {
-      jsonrpc: "2.0",
-      id: null,
-      method: "$/cancelRequest",
-      params: { id: requestId },
-    };
-
-    await connection.transport.sendRequest(request);
+    await connection.transport.sendRequest(
+      cancellationNotification(requestId, reason),
+    );
   }
 
   /**
@@ -390,7 +415,7 @@ export class McpClient {
    */
   async #initialize(transport: Transport): Promise<InitializeResult> {
     const params: InitializeParams = {
-      protocolVersion: "2024-11-05",
+      protocolVersion: LATEST_PROTOCOL_VERSION,
       capabilities: {},
       clientInfo: {
         name: this.#clientName,
@@ -418,6 +443,13 @@ export class McpClient {
     }
 
     const result = response.result as InitializeResult;
+    if (!SUPPORTED_PROTOCOL_VERSIONS.includes(result.protocolVersion)) {
+      throw new Error(
+        `Server protocol version ${result.protocolVersion} is not supported (client supports ${
+          SUPPORTED_PROTOCOL_VERSIONS.join(", ")
+        })`,
+      );
+    }
 
     // Send initialized notification
     const notification: JsonRpcRequest = {

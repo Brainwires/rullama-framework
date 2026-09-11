@@ -1,5 +1,5 @@
 /**
- * @module @rullama/mcp
+ * @module @rullama/mcp-client
  *
  * rullama MCP - Model Context Protocol client and types.
  * Equivalent to Rust's `rullama-mcp` crate.
@@ -11,7 +11,11 @@
  */
 
 // Client
-export { McpClient } from "./client.ts";
+export {
+  LATEST_PROTOCOL_VERSION,
+  McpClient,
+  SUPPORTED_PROTOCOL_VERSIONS,
+} from "./client.ts";
 
 // Config
 export { McpConfigManager, type McpServerConfig } from "./config.ts";

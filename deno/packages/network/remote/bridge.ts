@@ -46,7 +46,9 @@ export interface BridgeConfig {
 /** Create a default BridgeConfig. */
 export function defaultBridgeConfig(): BridgeConfig {
   return {
-    backendUrl: "https://brainwires.studio",
+    // No default backend: the bridge talks to whatever relay YOU run. An empty
+    // value is rejected by the RemoteBridge constructor.
+    backendUrl: "",
     apiKey: "",
     heartbeatIntervalSecs: 5,
     reconnectDelaySecs: 5,
@@ -109,6 +111,13 @@ export class RemoteBridge {
   private onStateChange: StateChangeHandler | undefined;
 
   constructor(config: BridgeConfig) {
+    if (!/^https?:\/\//.test(config.backendUrl)) {
+      throw new Error(
+        `RemoteBridge: backendUrl must be an http(s) URL (got ${
+          JSON.stringify(config.backendUrl)
+        })`,
+      );
+    }
     this.config = config;
     this.negotiatedProtocol = NegotiatedProtocolClass.default();
     this.heartbeatCollector = new HeartbeatCollector({

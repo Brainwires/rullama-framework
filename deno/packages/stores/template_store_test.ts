@@ -222,3 +222,11 @@ Deno.test("TemplateStore - JSON round-trip", () => {
   assertEquals(got?.name, "Test");
   assertEquals(got?.variables, ["var"]);
 });
+
+Deno.test("instantiateTemplate: a value containing its own placeholder does not loop", () => {
+  const template = createTemplate("t", "self", "Hello {{name}}!");
+  assertEquals(
+    instantiateTemplate(template, { name: "{{name}} again" }),
+    "Hello {{name}} again!",
+  );
+});

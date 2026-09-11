@@ -106,9 +106,9 @@ function _isSourceFile(path: string): boolean {
 /**
  * Run validation checks on changed files.
  *
- * Note: In the Deno environment, only file existence checks and custom
- * command checks (via Deno.Command) are supported. The duplicate/syntax
- * checks are stubs that pass by default.
+ * Only file-existence checks and `custom_command` checks run here; a
+ * `no_duplicates` or `syntax_valid` check yields a warning issue saying it is
+ * not implemented (it used to pass silently). `passed` reflects errors only.
  */
 export async function runValidation(
   config: ValidationConfig,
@@ -116,16 +116,24 @@ export async function runValidation(
   if (!config.enabled) {
     return { passed: true, issues: [] };
   }
+  const issues: ValidationIssue[] = [
+    ...(await missingFileIssues(config)),
+  ];
+  for (const check of config.checks) {
+    issues.push(...(await runCheck(check, config)));
+  }
+  return { passed: !issues.some((i) => i.severity === "error"), issues };
+}
 
+/** An error issue for every working-set file that is not on disk. */
+async function missingFileIssues(
+  config: ValidationConfig,
+): Promise<ValidationIssue[]> {
   const issues: ValidationIssue[] = [];
-  const changedFiles = config.workingSetFiles;
-
-  // Verify files in working set actually exist
-  for (const file of changedFiles) {
+  for (const file of config.workingSetFiles) {
     const filePath = config.workingDirectory === "."
       ? file
       : `${config.workingDirectory}/${file}`;
-
     try {
       await Deno.stat(filePath);
     } catch {
@@ -138,37 +146,59 @@ export async function runValidation(
       });
     }
   }
+  return issues;
+}
 
-  for (const check of config.checks) {
-    if (check.kind === "custom_command") {
-      try {
-        const cmd = new Deno.Command(check.command, {
-          args: check.args,
-          cwd: config.workingDirectory,
-          stdout: "piped",
-          stderr: "piped",
-        });
-        const output = await cmd.output();
-        if (!output.success) {
-          const stderr = new TextDecoder().decode(output.stderr);
-          issues.push({
-            check: "custom_command",
-            severity: "error",
-            message: `Command '${check.command}' failed: ${stderr}`,
-          });
-        }
-      } catch (e) {
-        issues.push({
-          check: "custom_command",
-          severity: "error",
-          message: `Failed to run command '${check.command}': ${e}`,
-        });
-      }
-    }
-    // no_duplicates and syntax_valid are stubs in TS -- they pass by default
+/** Run one configured check; unsupported kinds yield a warning, never a silent pass. */
+async function runCheck(
+  check: ValidationCheck,
+  config: ValidationConfig,
+): Promise<ValidationIssue[]> {
+  if (check.kind === "custom_command") {
+    return await runCustomCommand(
+      check.command,
+      check.args,
+      config.workingDirectory,
+    );
   }
+  if (check.kind === "no_duplicates" || check.kind === "syntax_valid") {
+    return [{
+      check: check.kind,
+      severity: "warning",
+      message:
+        `validation check '${check.kind}' is not implemented in the Deno port; configure a custom_command check instead`,
+    }];
+  }
+  return [];
+}
 
-  return { passed: issues.length === 0, issues };
+/** Run a shell-free command; a non-zero exit or spawn failure is an error issue. */
+async function runCustomCommand(
+  command: string,
+  args: string[],
+  cwd: string,
+): Promise<ValidationIssue[]> {
+  try {
+    const output = await new Deno.Command(command, {
+      args,
+      cwd,
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    if (output.success) return [];
+    const stderr = new TextDecoder().decode(output.stderr);
+    return [{
+      check: "custom_command",
+      severity: "error",
+      message: `Command '${command}' failed: ${stderr}`,
+    }];
+  } catch (e) {
+    return [{
+      check: "custom_command",
+      severity: "error",
+      message: `Failed to run command '${command}': ${e}`,
+    }];
+  }
 }
 
 // ---------------------------------------------------------------------------

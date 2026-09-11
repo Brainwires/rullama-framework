@@ -182,6 +182,32 @@ sanitizer, were **advisory** — no execution path called any of them.
   throws `TrainingError("timeout")` instead of returning a non-terminal
   status; `TrainingJobId` is exported as a value.
 
+#### Correctness
+
+- **`@rullama/mcp-client`**: cancellation sends MCP's `notifications/cancelled`
+  (it sent `$/cancelRequest`, an LSP method no MCP server knows —
+  `cancellationNotification` builds it); `initialize` offers protocol
+  `2025-06-18` and accepts the server's choice among `2025-06-18`,
+  `2025-03-26`, `2024-11-05` (`SUPPORTED_PROTOCOL_VERSIONS`), rejecting
+  anything else instead of pinning the first revision; the stdio line
+  framing is a tested, exported `lineSplitter()`.
+- **`@rullama/inference`**: `judgeAgentPrompt` / `plannerAgentPrompt` have one
+  implementation (the drifted copies in `judge_agent.ts` / `planner_agent.ts`
+  are gone; those modules re-export the canonical one — the `canonical*`
+  aliases are deprecated). `runValidation` reports a `no_duplicates` /
+  `syntax_valid` check as a warning issue instead of silently passing it, and
+  `passed` reflects errors only.
+- **`@rullama/stores`**: `instantiateTemplate` no longer loops forever when a
+  value contains its own placeholder.
+- **`@rullama/storage`**: `PostgresDatabase.searchWithEmbeddings` returns the
+  hits' stored embeddings (it returned empty arrays); `surealType` typo.
+- **`@rullama/network`**: `defaultBridgeConfig()` no longer points at a
+  vendor's hosted relay; `backendUrl` is required and validated by
+  `RemoteBridge`.
+- **`@rullama/mdap`**: `MdapResult<T>` (an alias of `T`) is deprecated.
+- **`@rullama/eval`**: the module doc names the right package and no longer
+  `{@link}`s file names.
+
 #### Fixed
 
 - **CI**: the Deno job had failed on every run since 2026-07-01 — `tests/`

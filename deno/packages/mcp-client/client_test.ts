@@ -3,8 +3,13 @@
  * Mirrors Rust tests in `rullama-mcp/src/client.rs`.
  */
 
-import { assertEquals } from "@std/assert";
-import { McpClient } from "./client.ts";
+import { assert, assertEquals } from "@std/assert";
+import {
+  cancellationNotification,
+  LATEST_PROTOCOL_VERSION,
+  McpClient,
+  SUPPORTED_PROTOCOL_VERSIONS,
+} from "./client.ts";
 
 // =============================================================================
 // Client creation tests — mirrors Rust test_client_creation
@@ -74,4 +79,14 @@ Deno.test("McpClient - getCapabilities throws for unconnected server", () => {
     assertEquals((e as Error).message, "Not connected to server: nonexistent");
   }
   assertEquals(threw, true);
+});
+
+Deno.test("cancellation is the MCP notifications/cancelled notification (no id, never answered)", () => {
+  assertEquals(cancellationNotification(7, "user aborted"), {
+    jsonrpc: "2.0",
+    method: "notifications/cancelled",
+    params: { requestId: 7, reason: "user aborted" },
+  });
+  assertEquals(cancellationNotification(8).params, { requestId: 8 });
+  assert(SUPPORTED_PROTOCOL_VERSIONS.includes(LATEST_PROTOCOL_VERSION));
 });

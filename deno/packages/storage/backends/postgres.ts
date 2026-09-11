@@ -195,6 +195,14 @@ function rowToRecord(
   return record;
 }
 
+/** Parse pgvector's text form `[1,2,3]` into numbers (empty on anything else). */
+export function parseVectorText(text: string): number[] {
+  if (!text.startsWith("[") || !text.endsWith("]")) return [];
+  return text.slice(1, -1).split(",").map(Number).filter((n) =>
+    Number.isFinite(n)
+  );
+}
+
 /**
  * PostgreSQL + pgvector backed database implementing both StorageBackend
  * and VectorDatabase.
@@ -408,28 +416,21 @@ export class PostgresDatabase implements StorageBackend, VectorDatabase {
     return embeddings.length;
   }
 
-  // deno-lint-ignore require-await
-  async search(
-    queryVector: number[],
-    queryText: string,
-    limit: number,
-    minScore: number,
-    project?: string,
-    rootPath?: string,
-    _hybrid?: boolean,
+  search(
+    ...args: Parameters<VectorDatabase["searchFiltered"]>
   ): Promise<SearchResult[]> {
-    return this.searchFiltered(
-      queryVector,
-      queryText,
-      limit,
-      minScore,
-      project,
-      rootPath,
-      _hybrid,
-    );
+    return this.searchFiltered(...args);
   }
 
   async searchFiltered(
+    ...args: Parameters<VectorDatabase["searchFiltered"]>
+  ): Promise<SearchResult[]> {
+    const [results] = await this.searchFilteredWithEmbeddings(...args);
+    return results;
+  }
+
+  /** {@link searchFiltered}, also returning each hit's stored embedding. */
+  async searchFilteredWithEmbeddings(
     queryVector: number[],
     _queryText: string,
     limit: number,
@@ -440,12 +441,13 @@ export class PostgresDatabase implements StorageBackend, VectorDatabase {
     fileExtensions?: string[],
     languages?: string[],
     pathPatterns?: string[],
-  ): Promise<SearchResult[]> {
+  ): Promise<[SearchResult[], number[][]]> {
     const vecStr = `[${queryVector.join(",")}]`;
     const sql = `
       SELECT
         file_path, root_path, project, start_line, end_line,
         language, extension, indexed_at, content,
+        embedding::text AS embedding_text,
         1.0 - (embedding <=> $1::vector) AS vector_score
       FROM ${this.tableName}
       WHERE 1=1
@@ -465,10 +467,19 @@ export class PostgresDatabase implements StorageBackend, VectorDatabase {
       limit,
     ]);
 
-    let results: SearchResult[] = result.rows
-      .filter((r: { [key: string]: unknown }) =>
-        Number(r.vector_score) >= minScore
-      )
+    let rows: { [key: string]: unknown }[] = result.rows.filter((
+      r: { [key: string]: unknown },
+    ) => Number(r.vector_score) >= minScore);
+    // Post-filter by path patterns (simple substring match fallback).
+    if (pathPatterns && pathPatterns.length > 0) {
+      rows = rows.filter((r) =>
+        pathPatterns.some((p) => String(r.file_path).includes(p))
+      );
+    }
+    const embeddings = rows.map((r) =>
+      parseVectorText(String(r.embedding_text ?? ""))
+    );
+    const results: SearchResult[] = rows
       .map((r: { [key: string]: unknown }) => ({
         file_path: String(r.file_path),
         root_path: r.root_path != null ? String(r.root_path) : undefined,
@@ -483,14 +494,7 @@ export class PostgresDatabase implements StorageBackend, VectorDatabase {
         indexed_at: Number(r.indexed_at),
       }));
 
-    // Post-filter by path patterns (simple substring match fallback).
-    if (pathPatterns && pathPatterns.length > 0) {
-      results = results.filter((r) =>
-        pathPatterns.some((p) => r.file_path.includes(p))
-      );
-    }
-
-    return results;
+    return [results, embeddings];
   }
 
   async deleteByFile(filePath: string): Promise<number> {
@@ -550,7 +554,7 @@ export class PostgresDatabase implements StorageBackend, VectorDatabase {
     );
   }
 
-  async searchWithEmbeddings(
+  searchWithEmbeddings(
     queryVector: number[],
     queryText: string,
     limit: number,
@@ -559,7 +563,7 @@ export class PostgresDatabase implements StorageBackend, VectorDatabase {
     rootPath?: string,
     hybrid?: boolean,
   ): Promise<[SearchResult[], number[][]]> {
-    const results = await this.search(
+    return this.searchFilteredWithEmbeddings(
       queryVector,
       queryText,
       limit,
@@ -568,7 +572,5 @@ export class PostgresDatabase implements StorageBackend, VectorDatabase {
       rootPath,
       hybrid,
     );
-    const emptyEmbeddings = results.map(() => [] as number[]);
-    return [results, emptyEmbeddings];
   }
 }

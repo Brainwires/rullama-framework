@@ -34,16 +34,16 @@ export * from "./validation_loop.ts";
 export * from "./roles.ts";
 export * from "./agent_pool.ts";
 
-// System prompt registry. `judgeAgentPrompt` and `plannerAgentPrompt` exist in
-// two places (judge_agent.ts / planner_agent.ts with drifted wording vs the
-// canonical system_prompts/agents.ts version). We export the canonical
-// versions aliased — consumers wanting strict Rust↔Deno parity should use
-// `canonicalJudgeAgentPrompt` / `canonicalPlannerAgentPrompt`.
+// System prompt registry. `judgeAgentPrompt` / `plannerAgentPrompt` have one
+// implementation (system_prompts/agents.ts); the `canonical*` aliases are kept
+// for 0.12 compatibility and are removed in 0.13.
 export {
   type AgentPromptKind,
   buildAgentPrompt,
+  /** @deprecated Use `judgeAgentPrompt`. */
   judgeAgentPrompt as canonicalJudgeAgentPrompt,
   mdapMicroagentPrompt,
+  /** @deprecated Use `plannerAgentPrompt`. */
   plannerAgentPrompt as canonicalPlannerAgentPrompt,
   reasoningAgentPrompt,
   simpleAgentPrompt,

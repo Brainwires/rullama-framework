@@ -136,7 +136,10 @@ export class MdapError extends Error {
   }
 }
 
-/** Result type alias. */
+/**
+ * @deprecated A leftover of the Rust `Result<T>` port: it is just `T`. Use `T`
+ * directly; removed in 0.13.
+ */
 export type MdapResult<T> = T;
 
 // ---------------------------------------------------------------------------
