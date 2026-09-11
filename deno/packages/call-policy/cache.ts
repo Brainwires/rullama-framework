@@ -13,6 +13,7 @@
  * Equivalent to Rust's `rullama_resilience::cache` module.
  */
 
+import { ProviderDecorator } from "./decorator.ts";
 import type {
   ChatOptions,
   ChatResponse,
@@ -134,9 +135,14 @@ export async function cacheKeyFor(
   messages: Message[],
   tools: Tool[] | undefined,
   options: ChatOptions,
+  scope?: string,
 ): Promise<CacheKey> {
   const enc = new TextEncoder();
   const parts: Uint8Array[] = [];
+
+  // A scope (tenant, user, session) keeps one caller's cached completions
+  // from being served to another who sends the same prompt.
+  if (scope !== undefined) parts.push(enc.encode(`\x00scope:${scope}`));
 
   // Serialise messages via Message.toJSON (skips undefined fields).
   const msgs_json = JSON.stringify(messages.map((m) => m.toJSON()));
@@ -166,13 +172,20 @@ export async function cacheKeyFor(
 }
 
 /** A Provider decorator that deduplicates identical chat() calls. */
-export class CachedProvider implements Provider {
-  readonly inner: Provider;
+export class CachedProvider extends ProviderDecorator {
   readonly backend: CacheBackend;
+  /** Cache-key scope (tenant / user / session); see {@link cacheKeyFor}. */
+  readonly scope: string | undefined;
 
-  constructor(inner: Provider, backend: CacheBackend) {
-    this.inner = inner;
+  /**
+   * @param scope Partition the cache: entries written under one scope are
+   *   never returned for another. Set it per tenant or per user whenever one
+   *   provider instance serves more than one principal.
+   */
+  constructor(inner: Provider, backend: CacheBackend, scope?: string) {
+    super(inner);
     this.backend = backend;
+    this.scope = scope;
   }
 
   /** Convenience constructor using an in-memory backend. */
@@ -183,20 +196,12 @@ export class CachedProvider implements Provider {
     return { provider: new CachedProvider(inner, cache), cache };
   }
 
-  get name(): string {
-    return this.inner.name;
-  }
-
-  maxOutputTokens(): number {
-    return this.inner.maxOutputTokens?.() ?? Infinity;
-  }
-
   async chat(
     messages: Message[],
     tools: Tool[] | undefined,
     options: ChatOptions,
   ): Promise<ChatResponse> {
-    const key = await cacheKeyFor(messages, tools, options);
+    const key = await cacheKeyFor(messages, tools, options, this.scope);
     const hit = await this.backend.get(key);
     if (hit !== null) {
       return cachedResponseToChat(hit);

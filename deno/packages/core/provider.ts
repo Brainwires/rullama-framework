@@ -8,7 +8,7 @@ export interface Provider {
   readonly name: string;
 
   /** Get the model's maximum output tokens. Returns undefined if no specific limit. */
-  maxOutputTokens?(): number;
+  maxOutputTokens?(): number | undefined;
 
   /** Chat completion (non-streaming). */
   chat(
@@ -33,6 +33,12 @@ export class ChatOptions {
   top_p?: number;
   stop?: string[];
   system?: string;
+  /**
+   * Model to use for this call, when the provider serves several. Providers
+   * bound to one model ignore it; decorators (circuit breaker, cache) key
+   * their state per model with it.
+   */
+  model?: string;
 
   constructor(opts?: Partial<ChatOptions>) {
     this.temperature = opts?.temperature ?? 0.7;
@@ -40,6 +46,13 @@ export class ChatOptions {
     this.top_p = opts?.top_p;
     this.stop = opts?.stop;
     this.system = opts?.system;
+    this.model = opts?.model;
+  }
+
+  /** Set the model (builder). */
+  setModel(model: string): this {
+    this.model = model;
+    return this;
   }
 
   /** Create new chat options with defaults. */
@@ -98,6 +111,7 @@ export class ChatOptions {
     if (this.top_p !== undefined) obj.top_p = this.top_p;
     if (this.stop !== undefined) obj.stop = this.stop;
     if (this.system !== undefined) obj.system = this.system;
+    if (this.model !== undefined) obj.model = this.model;
     return obj;
   }
 }

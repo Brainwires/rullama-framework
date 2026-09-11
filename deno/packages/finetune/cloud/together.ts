@@ -142,6 +142,15 @@ export class TogetherFineTune implements FineTuneProvider {
       body.lora_alpha = config.lora.alpha;
       body.lora_dropout = config.lora.dropout;
     }
+    const alignment = config.alignment;
+    if (alignment.kind === "dpo") {
+      // https://docs.together.ai/docs/fine-tuning-preference
+      body.training_method = { method: "dpo", dpo_beta: alignment.beta };
+    } else if (alignment.kind !== "none") {
+      throw TrainingError.validation(
+        `${this.name} does not support ${alignment.kind} alignment`,
+      );
+    }
 
     const res = await fetch(`${this.base_url}/fine-tunes`, {
       method: "POST",

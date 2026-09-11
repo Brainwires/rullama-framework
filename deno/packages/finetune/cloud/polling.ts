@@ -4,6 +4,7 @@
  * Equivalent to Rust's `rullama_training::cloud::polling` module.
  */
 
+import { TrainingError } from "../error.ts";
 import type { TrainingJobId, TrainingJobStatus } from "../types.ts";
 import { isTerminal } from "../types.ts";
 import type { FineTuneProvider } from "./types.ts";
@@ -57,7 +58,10 @@ export class JobPoller {
         this.config.timeout_ms !== null &&
         Date.now() - started >= this.config.timeout_ms
       ) {
-        return status;
+        // Returning the last non-terminal status hid the timeout from callers.
+        throw TrainingError.timeout(
+          `job ${job_id.value} still ${status.status} after ${this.config.timeout_ms} ms`,
+        );
       }
 
       await new Promise((resolve) => setTimeout(resolve, interval));

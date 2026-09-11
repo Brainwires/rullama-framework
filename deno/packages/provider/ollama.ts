@@ -13,6 +13,7 @@ import {
   type Provider,
   type StreamChunk,
   type Tool,
+  toolInputJsonSchema,
   type Usage,
 } from "@rullama/core";
 import { parseNDJSONStream } from "./sse.ts";
@@ -238,11 +239,7 @@ export function convertTools(tools: Tool[]): OllamaTool[] {
     function: {
       name: t.name,
       description: t.description,
-      parameters: {
-        type: "object" as const,
-        properties: t.input_schema.properties ?? {},
-        required: t.input_schema.required ?? [],
-      },
+      parameters: toolInputJsonSchema(t.input_schema),
     },
   }));
 }

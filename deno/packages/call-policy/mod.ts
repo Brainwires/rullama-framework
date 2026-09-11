@@ -60,3 +60,6 @@ export {
   type RetryPolicy,
   RetryProvider,
 } from "./retry.ts";
+
+// Base class for custom Provider decorators
+export { ProviderDecorator } from "./decorator.ts";

@@ -12,6 +12,7 @@
  * function can be supplied when constructing the breaker.
  */
 
+import { ProviderDecorator } from "./decorator.ts";
 import type {
   ChatOptions,
   ChatResponse,
@@ -45,8 +46,7 @@ interface Entry {
 }
 
 /** Circuit-breaker decorator. */
-export class CircuitBreakerProvider implements Provider {
-  readonly inner: Provider;
+export class CircuitBreakerProvider extends ProviderDecorator {
   private readonly cfg: CircuitBreakerConfig;
   private readonly entries = new Map<string, Entry>();
   private readonly modelKey: (options: ChatOptions) => string;
@@ -55,19 +55,11 @@ export class CircuitBreakerProvider implements Provider {
   constructor(
     inner: Provider,
     cfg: CircuitBreakerConfig = defaultCircuitBreakerConfig(),
-    modelKey: (options: ChatOptions) => string = () => "default",
+    modelKey: (options: ChatOptions) => string = (o) => o.model ?? "default",
   ) {
-    this.inner = inner;
+    super(inner);
     this.cfg = cfg;
     this.modelKey = modelKey;
-  }
-
-  get name(): string {
-    return this.inner.name;
-  }
-
-  maxOutputTokens(): number {
-    return this.inner.maxOutputTokens?.() ?? Infinity;
   }
 
   /** Attach a fallback provider used when the circuit is open. */
@@ -97,7 +89,11 @@ export class CircuitBreakerProvider implements Provider {
         entry.state = "half_open";
         this.entries.set(key, entry);
       } else {
-        throw ResilienceError.circuitOpen(this.inner.name, key, entry.failures);
+        throw ResilienceError.circuitOpen(
+          this.inner.name,
+          key.slice(this.inner.name.length + 2),
+          entry.failures,
+        );
       }
     } else {
       this.entries.set(key, entry);

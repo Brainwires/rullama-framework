@@ -68,7 +68,7 @@ Deno.test("convertMessages - text message", () => {
   assertEquals(converted[0].role, "user");
   assertEquals(converted[0].content.length, 1);
   assertEquals(converted[0].content[0].type, "text");
-  assertEquals(converted[0].content[0].text, "Hello");
+  assertEquals((converted[0].content[0] as { text: string }).text, "Hello");
 });
 
 Deno.test("convertMessages - filters system messages", () => {
@@ -106,7 +106,7 @@ Deno.test("convertMessages - tool use blocks", () => {
   const converted = convertMessages(messages);
   assertEquals(converted[0].content.length, 2);
   assertEquals(converted[0].content[1].type, "tool_use");
-  assertEquals(converted[0].content[1].name, "search");
+  assertEquals((converted[0].content[1] as { name: string }).name, "search");
 });
 
 Deno.test("convertMessages - tool result blocks", () => {
@@ -121,7 +121,10 @@ Deno.test("convertMessages - tool result blocks", () => {
   const converted = convertMessages(messages);
   assertEquals(converted[0].content.length, 1);
   assertEquals(converted[0].content[0].type, "tool_result");
-  assertEquals(converted[0].content[0].tool_use_id, "call_1");
+  assertEquals(
+    (converted[0].content[0] as { tool_use_id: string }).tool_use_id,
+    "call_1",
+  );
 });
 
 Deno.test("convertMessages - empty list", () => {

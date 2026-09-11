@@ -24,7 +24,8 @@ export {
   isRunning,
   isSucceeded,
   isTerminal,
-  type TrainingJobId,
+  TrainingJobId,
+  /** @deprecated `TrainingJobId` is now exported as a value; alias kept for 0.12. */
   TrainingJobId as TrainingJobIdClass,
   type TrainingJobStatus,
   type TrainingJobSummary,

@@ -12,6 +12,7 @@ import {
   type TrainingJobStatus,
   type TrainingJobSummary,
 } from "../types.ts";
+import { datasetFile } from "./types.ts";
 import type {
   CloudFineTuneConfig,
   DataFormat,
@@ -48,6 +49,7 @@ export class OpenAiFineTune implements FineTuneProvider {
     ];
   }
 
+  /** OpenAI supports DPO (`method.type = "dpo"`); ORPO is not offered. */
   supportsDpo(): boolean {
     return true;
   }
@@ -99,15 +101,12 @@ export class OpenAiFineTune implements FineTuneProvider {
 
   async uploadDataset(
     data: Uint8Array,
-    _format: DataFormat,
+    format: DataFormat,
   ): Promise<DatasetId> {
     const form = new FormData();
     form.append("purpose", "fine-tune");
-    form.append(
-      "file",
-      new Blob([data as BlobPart], { type: "application/json" }),
-      "training_data.jsonl",
-    );
+    const { mime, name } = datasetFile(format);
+    form.append("file", new Blob([data as BlobPart], { type: mime }), name);
     const res = await fetch(this.filesUrl(), {
       method: "POST",
       headers: { Authorization: `Bearer ${this.api_key}` },
@@ -133,6 +132,8 @@ export class OpenAiFineTune implements FineTuneProvider {
       hyperparameters: {
         n_epochs: config.hyperparams.epochs,
         batch_size: config.hyperparams.batch_size,
+        // OpenAI takes a multiplier over its own base rate, not an absolute LR;
+        // 2e-5 is that base, so the default hyperparams map to 1.0.
         learning_rate_multiplier: config.hyperparams.learning_rate / 2e-5,
       },
     };
@@ -140,6 +141,18 @@ export class OpenAiFineTune implements FineTuneProvider {
       body.validation_file = config.validation_dataset.value;
     }
     if (config.suffix) body.suffix = config.suffix;
+    const alignment = config.alignment;
+    if (alignment.kind === "dpo") {
+      // https://platform.openai.com/docs/guides/direct-preference-optimization
+      body.method = {
+        type: "dpo",
+        dpo: { hyperparameters: { beta: alignment.beta } },
+      };
+    } else if (alignment.kind !== "none") {
+      throw TrainingError.validation(
+        `${this.name} does not support ${alignment.kind} alignment`,
+      );
+    }
 
     const res = await fetch(this.finetuneUrl(), {
       method: "POST",

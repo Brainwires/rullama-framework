@@ -15,9 +15,10 @@ import {
   type Provider,
   type StreamChunk,
   type Tool,
+  toolInputJsonSchema,
   type Usage,
 } from "@rullama/core";
-import { parseNDJSONStream } from "./sse.ts";
+import { parseSSEStream } from "./sse.ts";
 
 // ---------------------------------------------------------------------------
 // JWT / Google OAuth2 service account auth
@@ -234,9 +235,7 @@ export function convertTools(tools: Tool[]): VertexTool {
     functionDeclarations: tools.map((t) => ({
       name: t.name,
       description: t.description,
-      parameters: t.input_schema.properties
-        ? { type: "object", properties: t.input_schema.properties }
-        : { type: "object" },
+      parameters: toolInputJsonSchema(t.input_schema),
     })),
   };
 }
@@ -444,7 +443,7 @@ export class VertexAiProvider implements Provider {
       throw new Error("Vertex AI streaming response has no body");
     }
 
-    for await (const data of parseNDJSONStream(response.body)) {
+    for await (const data of parseSSEStream(response.body)) {
       let chunk: VertexResponse;
       try {
         chunk = JSON.parse(data);

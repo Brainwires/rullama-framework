@@ -5,15 +5,17 @@
  * Equivalent to Rust's `gemini/mod.rs` + `gemini/chat.rs`.
  */
 
+import { postJson } from "./http.ts";
+import { mapBlocks, textBlock, toolUseBlock } from "./content.ts";
 import {
   type ChatOptions,
   type ChatResponse,
-  type ContentBlock,
   Message,
   type MessageContent,
   type Provider,
   type StreamChunk,
   type Tool,
+  toolInputJsonSchema,
   type Usage,
 } from "@rullama/core";
 import { parseNDJSONStream } from "./sse.ts";
@@ -31,6 +33,7 @@ interface GeminiRequest {
     temperature?: number;
     maxOutputTokens?: number;
     topP?: number;
+    stopSequences?: string[];
   };
   tools?: Array<{
     function_declarations: GeminiFunctionDeclaration[];
@@ -94,6 +97,16 @@ export class GoogleChatProvider implements Provider {
     this.model = model;
   }
 
+  /** POST a Gemini request; throws with the response body on a non-2xx status. */
+  private post(url: string, request: GeminiRequest): Promise<Response> {
+    return postJson(
+      "Google Gemini",
+      url,
+      { "x-goog-api-key": this.apiKey },
+      request,
+    );
+  }
+
   // -----------------------------------------------------------------------
   // Provider interface
   // -----------------------------------------------------------------------
@@ -104,21 +117,9 @@ export class GoogleChatProvider implements Provider {
     options: ChatOptions,
   ): Promise<ChatResponse> {
     const request = buildGeminiRequest(messages, tools, options);
-    const url =
-      `${GEMINI_API_BASE}/models/${this.model}:generateContent?key=${this.apiKey}`;
+    const url = `${GEMINI_API_BASE}/models/${this.model}:generateContent`;
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `Google Gemini API error (${response.status}): ${errorText}`,
-      );
-    }
+    const response = await this.post(url, request);
 
     const geminiResponse: GeminiResponse = await response.json();
     return parseGeminiResponse(geminiResponse);
@@ -130,21 +131,9 @@ export class GoogleChatProvider implements Provider {
     options: ChatOptions,
   ): AsyncIterable<StreamChunk> {
     const request = buildGeminiRequest(messages, tools, options);
-    const url =
-      `${GEMINI_API_BASE}/models/${this.model}:streamGenerateContent?key=${this.apiKey}`;
+    const url = `${GEMINI_API_BASE}/models/${this.model}:streamGenerateContent`;
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `Google Gemini API error (${response.status}): ${errorText}`,
-      );
-    }
+    const response = await this.post(url, request);
 
     if (!response.body) {
       throw new Error("Google Gemini streaming response has no body");
@@ -170,14 +159,6 @@ export class GoogleChatProvider implements Provider {
               name: part.function_call.name,
             };
           }
-        }
-
-        if (
-          candidate.finishReason &&
-          candidate.finishReason !== "STOP" &&
-          candidate.finishReason !== ""
-        ) {
-          yield { type: "done" };
         }
       }
 
@@ -254,7 +235,7 @@ export function convertTools(tools: Tool[]): GeminiFunctionDeclaration[] {
   return tools.map((t) => ({
     name: t.name,
     description: t.description,
-    parameters: t.input_schema.properties ?? {},
+    parameters: toolInputJsonSchema(t.input_schema),
   }));
 }
 
@@ -284,7 +265,7 @@ export function buildGeminiRequest(
 
   const hasConfig = options.temperature !== undefined ||
     options.max_tokens !== undefined ||
-    options.top_p !== undefined;
+    options.top_p !== undefined || options.stop !== undefined;
 
   if (hasConfig) {
     request.generationConfig = {};
@@ -296,6 +277,9 @@ export function buildGeminiRequest(
     }
     if (options.top_p !== undefined) {
       request.generationConfig.topP = options.top_p;
+    }
+    if (options.stop !== undefined) {
+      request.generationConfig.stopSequences = options.stop;
     }
   }
 
@@ -310,26 +294,19 @@ export function buildGeminiRequest(
 export function convertCandidateContent(
   parts: GeminiPart[],
 ): MessageContent {
-  if (parts.length === 1 && "text" in parts[0]) {
-    return parts[0].text;
-  }
-
-  return parts
-    .map((part): ContentBlock | null => {
-      if ("text" in part) {
-        return { type: "text", text: part.text };
-      }
-      if ("function_call" in part) {
-        return {
-          type: "tool_use",
-          id: crypto.randomUUID(),
-          name: part.function_call.name,
-          input: part.function_call.args,
-        };
-      }
-      return null;
-    })
-    .filter((b): b is ContentBlock => b !== null);
+  return mapBlocks(
+    parts,
+    (part) =>
+      "text" in part
+        ? textBlock(part.text)
+        : "function_call" in part
+        ? toolUseBlock(
+          crypto.randomUUID(),
+          part.function_call.name,
+          part.function_call.args,
+        )
+        : null,
+  );
 }
 
 /** Parse a GeminiResponse into a core ChatResponse. */

@@ -6,7 +6,7 @@
 
 import { vendorBytes } from "./http.ts";
 
-import { RateLimiter } from "./rate_limiter.ts";
+import { RateLimiter } from "@rullama/core";
 
 export const CARTESIA_API_BASE = "https://api.cartesia.ai";
 export const CARTESIA_VERSION = "2024-06-10";

@@ -4,6 +4,7 @@
  * Equivalent to Rust's `rullama_resilience::retry` module.
  */
 
+import { ProviderDecorator } from "./decorator.ts";
 import type {
   ChatOptions,
   ChatResponse,
@@ -74,21 +75,12 @@ function sleep(ms: number): Promise<void> {
  * backoff and optional jitter. Only non-streaming `chat` requests are
  * retried — streaming passes through unchanged.
  */
-export class RetryProvider implements Provider {
-  readonly inner: Provider;
+export class RetryProvider extends ProviderDecorator {
   private readonly policy: RetryPolicy;
 
   constructor(inner: Provider, policy: RetryPolicy = defaultRetryPolicy()) {
-    this.inner = inner;
+    super(inner);
     this.policy = policy;
-  }
-
-  get name(): string {
-    return this.inner.name;
-  }
-
-  maxOutputTokens(): number {
-    return this.inner.maxOutputTokens?.() ?? Infinity;
   }
 
   async chat(

@@ -29,6 +29,22 @@ export function defaultToolInputSchema(): ToolInputSchema {
   return { type: "object" };
 }
 
+/**
+ * The JSON Schema object a provider must send for a tool's input: always
+ * `type: "object"` with `properties` and `required` present. Five of the six
+ * providers used to send `input_schema.properties` alone, dropping `type` and
+ * `required`, so models were never told which arguments were mandatory.
+ */
+export function toolInputJsonSchema(
+  schema: ToolInputSchema,
+): { type: "object"; properties: Record<string, any>; required: string[] } {
+  return {
+    type: "object",
+    properties: schema.properties ?? {},
+    required: schema.required ?? [],
+  };
+}
+
 /** Create an object schema with properties and required fields. */
 export function objectSchema(
   properties: Record<string, any>,

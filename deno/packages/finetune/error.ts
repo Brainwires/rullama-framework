@@ -10,7 +10,8 @@ export type TrainingErrorKind =
   | "upload"
   | "backend"
   | "job_not_found"
-  | "validation";
+  | "validation"
+  | "timeout";
 
 export class TrainingError extends Error {
   readonly kind: TrainingErrorKind;
@@ -45,6 +46,11 @@ export class TrainingError extends Error {
 
   static jobNotFound(job_id: string): TrainingError {
     return new TrainingError("job_not_found", `Job not found: ${job_id}`);
+  }
+
+  /** A poll deadline passed before the job reached a terminal state. */
+  static timeout(message: string): TrainingError {
+    return new TrainingError("timeout", message);
   }
 
   static validation(message: string): TrainingError {

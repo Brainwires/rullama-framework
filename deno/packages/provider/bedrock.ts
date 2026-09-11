@@ -6,18 +6,22 @@
  * Equivalent to Rust's `anthropic/bedrock.rs` + Bedrock-specific auth.
  */
 
-import {
-  type ChatOptions,
-  type ChatResponse,
-  type ContentBlock,
+import type {
+  ChatOptions,
+  ChatResponse,
   Message,
-  type MessageContent,
-  type Provider,
-  type StreamChunk,
-  type Tool,
-  type Usage,
+  Provider,
+  StreamChunk,
+  Tool,
 } from "@rullama/core";
-import { parseSSEStream } from "./sse.ts";
+import { parseBedrockEvents } from "./eventstream.ts";
+import {
+  type AnthropicStreamEvent,
+  type AnthropicStreamState,
+  buildAnthropicBody,
+  parseAnthropicResponse as parseBedrockResponse,
+  streamEventToChunks,
+} from "./anthropic_format.ts";
 
 const ANTHROPIC_BEDROCK_VERSION = "bedrock-2023-05-31";
 
@@ -197,118 +201,18 @@ interface BedrockResponse {
   usage: { input_tokens: number; output_tokens: number };
 }
 
-interface BedrockStreamEvent {
-  type: string;
-  delta?: { text?: string; stop_reason?: string };
-  usage?: { input_tokens?: number; output_tokens?: number };
-  content_block?: BedrockContentBlock;
-  index?: number;
-}
-
 // ---------------------------------------------------------------------------
 // Conversion helpers (exported for testing)
 // ---------------------------------------------------------------------------
 
-/** Convert core Messages to Bedrock/Anthropic wire format. */
-export function convertMessages(
-  messages: Message[],
-): { role: string; content: BedrockContentBlock[] }[] {
-  return messages
-    .filter((m) => m.role !== "system")
-    .map((m) => {
-      const role = m.role === "assistant" ? "assistant" : "user";
-      let content: BedrockContentBlock[];
-
-      if (typeof m.content === "string") {
-        content = [{ type: "text", text: m.content }];
-      } else {
-        content = m.content
-          .map((block): BedrockContentBlock | null => {
-            switch (block.type) {
-              case "text":
-                return { type: "text", text: block.text };
-              case "tool_use":
-                return {
-                  type: "tool_use",
-                  id: block.id,
-                  name: block.name,
-                  input: block.input,
-                };
-              case "tool_result":
-                return {
-                  type: "tool_result",
-                  tool_use_id: block.tool_use_id,
-                  content: block.content,
-                };
-              default:
-                return null;
-            }
-          })
-          .filter((b): b is BedrockContentBlock => b !== null);
-      }
-
-      return { role, content };
-    });
-}
-
-/** Convert core Tools to Bedrock/Anthropic wire format. */
-export function convertTools(
-  tools: Tool[],
-): { name: string; description: string; input_schema: any }[] {
-  return tools.map((t) => ({
-    name: t.name,
-    description: t.description,
-    input_schema: t.input_schema.properties ?? {},
-  }));
-}
-
-/** Extract the system message text. */
-export function getSystemMessage(messages: Message[]): string | undefined {
-  const sys = messages.find((m) => m.role === "system");
-  if (!sys) return undefined;
-  return typeof sys.content === "string" ? sys.content : undefined;
-}
-
-/** Parse a Bedrock response into a core ChatResponse. */
-export function parseBedrockResponse(
-  response: BedrockResponse,
-): ChatResponse {
-  let content: MessageContent;
-
-  if (response.content.length === 1 && response.content[0].type === "text") {
-    content = response.content[0].text ?? "";
-  } else {
-    content = response.content
-      .map((block): ContentBlock | null => {
-        switch (block.type) {
-          case "text":
-            return { type: "text", text: block.text ?? "" };
-          case "tool_use":
-            return {
-              type: "tool_use",
-              id: block.id ?? "",
-              name: block.name ?? "",
-              input: block.input ?? {},
-            };
-          default:
-            return null;
-        }
-      })
-      .filter((b): b is ContentBlock => b !== null);
-  }
-
-  const usage: Usage = {
-    prompt_tokens: response.usage.input_tokens,
-    completion_tokens: response.usage.output_tokens,
-    total_tokens: response.usage.input_tokens + response.usage.output_tokens,
-  };
-
-  return {
-    message: new Message({ role: "assistant", content }),
-    usage,
-    finish_reason: response.stop_reason,
-  };
-}
+// Message/tool conversion and response parsing are the Anthropic Messages
+// format, shared with anthropic.ts via anthropic_format.ts.
+export {
+  convertMessages,
+  convertTools,
+  getSystemMessage,
+  parseAnthropicResponse as parseBedrockResponse,
+} from "./anthropic_format.ts";
 
 /** Build the Bedrock invoke URL. */
 export function bedrockInvokeUrl(region: string, modelId: string): string {
@@ -460,36 +364,11 @@ export class BedrockProvider implements Provider {
       throw new Error("Bedrock streaming response has no body");
     }
 
-    for await (const data of parseSSEStream(response.body)) {
-      let event: BedrockStreamEvent;
-      try {
-        event = JSON.parse(data);
-      } catch {
-        continue;
-      }
-
-      switch (event.type) {
-        case "content_block_delta":
-          if (event.delta?.text) {
-            yield { type: "text", text: event.delta.text };
-          }
-          break;
-        case "message_delta":
-          if (event.usage) {
-            yield {
-              type: "usage",
-              usage: {
-                prompt_tokens: 0,
-                completion_tokens: event.usage.output_tokens ?? 0,
-                total_tokens: event.usage.output_tokens ?? 0,
-              },
-            };
-          }
-          break;
-        case "message_stop":
-          yield { type: "done" };
-          break;
-      }
+    // Bedrock streams AWS event-stream frames, not SSE; each chunk wraps an
+    // Anthropic-format event as base64 JSON.
+    const state: AnthropicStreamState = { promptTokens: 0 };
+    for await (const raw of parseBedrockEvents(response.body)) {
+      yield* streamEventToChunks(raw as unknown as AnthropicStreamEvent, state);
     }
   }
 
@@ -501,26 +380,10 @@ export class BedrockProvider implements Provider {
     messages: Message[],
     tools: Tool[] | undefined,
     options: ChatOptions,
-  ): Record<string, any> {
-    const bedrockMessages = convertMessages(messages);
-    const system = options.system ?? getSystemMessage(messages);
-
-    const body: Record<string, any> = {
+  ): Record<string, unknown> {
+    return buildAnthropicBody(messages, tools, options, {
       anthropic_version: ANTHROPIC_BEDROCK_VERSION,
-      messages: bedrockMessages,
-      max_tokens: options.max_tokens ?? 4096,
-    };
-
-    if (system) body.system = system;
-    if (options.temperature !== undefined) {
-      body.temperature = options.temperature;
-    }
-    if (options.top_p !== undefined) body.top_p = options.top_p;
-    if (tools && tools.length > 0) {
-      body.tools = convertTools(tools);
-    }
-
-    return body;
+    });
   }
 }
 

@@ -27,6 +27,16 @@ export class ChatProviderFactory {
   /** Create a chat provider from a fully-resolved config.
    * All fields (api_key, base_url, model) must already be populated. */
   static create(config: ProviderConfig): Provider {
+    // Bedrock and Vertex speak the Anthropic / Gemini wire formats but with
+    // their own signing and endpoints; dispatching on chat_protocol alone used
+    // to hand them to the api.anthropic.com / generativelanguage providers.
+    if (config.provider === "bedrock") {
+      return ChatProviderFactory.createBedrock(config);
+    }
+    if (config.provider === "vertex-ai") {
+      return ChatProviderFactory.createVertexAi(config);
+    }
+
     const entry = lookup(config.provider);
     if (!entry) {
       throw new Error(
@@ -85,7 +95,12 @@ export class ChatProviderFactory {
         `${config.provider} provider requires an API key`,
       );
     }
-    return new AnthropicChatProvider(apiKey, config.model, config.provider);
+    return new AnthropicChatProvider(
+      apiKey,
+      config.model,
+      config.provider,
+      config.base_url,
+    );
   }
 
   private static createGemini(config: ProviderConfig): Provider {

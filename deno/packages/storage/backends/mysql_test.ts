@@ -170,17 +170,17 @@ Deno.test("filterToSql - Raw expression", () => {
   assertEquals(vals.length, 0);
 });
 
-Deno.test("filterToSql - nested And/Or", () => {
-  const filter = Filters.And([
-    Filters.Eq("a", FieldValues.Int32(1)),
-    Filters.Or([
-      Filters.Eq("b", FieldValues.Int32(2)),
-      Filters.Eq("c", FieldValues.Int32(3)),
+Deno.test("filterToSql - nested Or/And/In uses positional placeholders throughout", () => {
+  const filter = Filters.Or([
+    Filters.And([
+      Filters.Eq("a", FieldValues.Int32(1)),
+      Filters.In("b", [FieldValues.Int32(2), FieldValues.Int32(3)]),
     ]),
+    Filters.IsNull("c"),
   ]);
   const [sql, vals] = filterToSql(filter);
-  assertEquals(sql, "(`a` = ? AND (`b` = ? OR `c` = ?))");
-  assertEquals(vals.length, 3);
+  assertEquals(sql, "((`a` = ? AND `b` IN (?, ?)) OR `c` IS NULL)");
+  assertEquals(vals.map((v) => v.value), [1, 2, 3]);
 });
 
 // ---------------------------------------------------------------------------

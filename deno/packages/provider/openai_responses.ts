@@ -5,6 +5,7 @@
  * Equivalent to Rust's `openai_responses/` module.
  */
 
+import { postJson } from "./http.ts";
 import {
   type ChatOptions,
   type ChatResponse,
@@ -14,6 +15,7 @@ import {
   type Provider,
   type StreamChunk,
   type Tool,
+  toolInputJsonSchema,
   type Usage,
 } from "@rullama/core";
 import { parseSSEStream } from "./sse.ts";
@@ -176,7 +178,7 @@ export function toolsToResponseTools(tools: Tool[]): ResponseTool[] {
     type: "function" as const,
     name: t.name,
     description: t.description,
-    parameters: t.input_schema.properties ?? {},
+    parameters: toolInputJsonSchema(t.input_schema),
   }));
 }
 
@@ -322,25 +324,34 @@ export function buildRequestBody(
 // ---------------------------------------------------------------------------
 
 /** Chat provider backed by the OpenAI Responses API.
- * Tracks the last response ID for automatic conversation chaining.
+ * Stateless by default; chain explicitly with `withPreviousResponseId()`.
  * Equivalent to Rust's `OpenAiResponsesProvider`. */
 export class OpenAiResponsesProvider implements Provider {
   readonly name: string;
   private readonly apiKey: string;
   private readonly model: string;
   private readonly baseUrl: string;
+  private readonly previousResponseId: string | undefined;
   private lastResponseId: string | undefined;
 
+  /**
+   * @param previousResponseId Sent as `previous_response_id` on every request
+   *   from this instance. The provider is otherwise stateless: it never feeds
+   *   its own last response id back automatically, because an instance shared
+   *   by several conversations (a server) would cross-link them.
+   */
   constructor(
     apiKey: string,
     model: string,
     baseUrl?: string,
     providerName?: string,
+    previousResponseId?: string,
   ) {
     this.apiKey = apiKey;
     this.model = model;
     this.baseUrl = baseUrl ?? DEFAULT_BASE_URL;
     this.name = providerName ?? "openai-responses";
+    this.previousResponseId = previousResponseId;
   }
 
   /** Create a copy with a different provider name. */
@@ -350,12 +361,57 @@ export class OpenAiResponsesProvider implements Provider {
       this.model,
       this.baseUrl,
       name,
+      this.previousResponseId,
     );
   }
 
-  /** Get the last response ID (for manual chaining). */
+  /**
+   * Create a copy that chains from `responseId` (typically
+   * {@link getLastResponseId} of a previous call in the SAME conversation).
+   */
+  withPreviousResponseId(
+    responseId: string | undefined,
+  ): OpenAiResponsesProvider {
+    return new OpenAiResponsesProvider(
+      this.apiKey,
+      this.model,
+      this.baseUrl,
+      this.name,
+      responseId,
+    );
+  }
+
+  /** ID of the most recent response this instance received (for explicit chaining). */
   getLastResponseId(): string | undefined {
     return this.lastResponseId;
+  }
+
+  /** POST a Responses request; throws with the response body on a non-2xx status. */
+  private post(body: Record<string, unknown>): Promise<Response> {
+    return postJson("Responses", this.baseUrl, {
+      Authorization: `Bearer ${this.apiKey}`,
+    }, body);
+  }
+
+  /** Build the request body for chat / streamChat. */
+  private request(
+    messages: Message[],
+    tools: Tool[] | undefined,
+    options: ChatOptions,
+    stream: boolean,
+  ): Record<string, unknown> {
+    const [input, system] = messagesToInput(messages);
+    const responseTools = tools ? toolsToResponseTools(tools) : undefined;
+    const body = buildRequestBody(
+      this.model,
+      input,
+      system ?? options.system,
+      responseTools,
+      options,
+      this.previousResponseId,
+    );
+    if (stream) body.stream = true;
+    return body;
   }
 
   // -----------------------------------------------------------------------
@@ -367,34 +423,9 @@ export class OpenAiResponsesProvider implements Provider {
     tools: Tool[] | undefined,
     options: ChatOptions,
   ): Promise<ChatResponse> {
-    const [input, system] = messagesToInput(messages);
-    const responseTools = tools ? toolsToResponseTools(tools) : undefined;
-    const instructions = system ?? options.system;
+    const body = this.request(messages, tools, options, false);
 
-    const body = buildRequestBody(
-      this.model,
-      input,
-      instructions,
-      responseTools,
-      options,
-      this.lastResponseId,
-    );
-
-    const response = await fetch(this.baseUrl, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `Responses API error (${response.status}): ${errorText}`,
-      );
-    }
+    const response = await this.post(body);
 
     const resp: ResponseObject = await response.json();
     this.lastResponseId = resp.id;
@@ -407,35 +438,9 @@ export class OpenAiResponsesProvider implements Provider {
     tools: Tool[] | undefined,
     options: ChatOptions,
   ): AsyncIterable<StreamChunk> {
-    const [input, system] = messagesToInput(messages);
-    const responseTools = tools ? toolsToResponseTools(tools) : undefined;
-    const instructions = system ?? options.system;
+    const body = this.request(messages, tools, options, true);
 
-    const body = buildRequestBody(
-      this.model,
-      input,
-      instructions,
-      responseTools,
-      options,
-      this.lastResponseId,
-    );
-    body.stream = true;
-
-    const response = await fetch(this.baseUrl, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `Responses API error (${response.status}): ${errorText}`,
-      );
-    }
+    const response = await this.post(body);
 
     if (!response.body) {
       throw new Error("Responses API streaming response has no body");

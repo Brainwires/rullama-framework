@@ -7,6 +7,7 @@
  */
 
 import type { ProviderType } from "./types.ts";
+import { lookup, type ProviderEntry } from "./registry.ts";
 
 // ---------------------------------------------------------------------------
 // ModelCapability
@@ -125,66 +126,134 @@ export function inferOpenaiCapabilities(modelId: string): ModelCapability[] {
 // Factory
 // ---------------------------------------------------------------------------
 
-/**
- * Supported provider types for model listing.
- *
- * Providers not listed here will cause `createModelLister()` to throw.
- */
-const LISTING_SUPPORTED: ReadonlySet<ProviderType> = new Set<ProviderType>([
-  "anthropic",
-  "openai",
-  "google",
-  "groq",
-  "together",
-  "fireworks",
-  "anyscale",
-  "ollama",
-  "openai-responses",
-]);
+/** Vendor endpoints answer in three shapes; `models_url` in the registry picks one. */
+type ListingShape = "openai" | "anthropic" | "google" | "ollama";
+
+function listingShape(providerType: ProviderType): ListingShape {
+  switch (providerType) {
+    case "anthropic":
+      return "anthropic";
+    case "google":
+      return "google";
+    case "ollama":
+      return "ollama";
+    default:
+      return "openai";
+  }
+}
+
+/** Headers for the listing request per the registry's `auth` scheme. */
+function listingHeaders(
+  entry: ProviderEntry,
+  apiKey: string | undefined,
+): HeadersInit {
+  switch (entry.auth.type) {
+    case "bearer_token":
+      return { Authorization: `Bearer ${apiKey ?? ""}` };
+    case "custom_header":
+      return {
+        [entry.auth.header]: apiKey ?? "",
+        ...(entry.provider_type === "anthropic"
+          ? { "anthropic-version": "2023-06-01" }
+          : {}),
+      };
+    default:
+      return {};
+  }
+}
+
+/** Parse a listing response body into models, per vendor shape. */
+export function parseModelListing(
+  providerType: ProviderType,
+  body: unknown,
+): AvailableModel[] {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const shape = listingShape(providerType);
+  if (shape === "google") {
+    const models = (b.models ?? []) as {
+      name: string;
+      displayName?: string;
+      supportedGenerationMethods?: string[];
+    }[];
+    return models.map((m) => ({
+      id: m.name.replace(/^models\//, ""),
+      displayName: m.displayName,
+      provider: providerType,
+      capabilities: m.supportedGenerationMethods?.includes("generateContent")
+        ? ["chat", "tool_use", "vision"]
+        : ["embedding"],
+    }));
+  }
+  if (shape === "ollama") {
+    const models = (b.models ?? []) as { name: string; modified_at?: string }[];
+    return models.map((m) => ({
+      id: m.name,
+      provider: providerType,
+      capabilities: ["chat", "tool_use"],
+    }));
+  }
+  const data = (b.data ?? []) as {
+    id: string;
+    display_name?: string;
+    owned_by?: string;
+    created?: number;
+    created_at?: string;
+  }[];
+  return data.map((m) => ({
+    id: m.id,
+    displayName: m.display_name,
+    provider: providerType,
+    capabilities: shape === "anthropic"
+      ? ["chat", "tool_use", "vision"]
+      : inferOpenaiCapabilities(m.id),
+    ownedBy: m.owned_by,
+    createdAt: m.created ??
+      (m.created_at ? Date.parse(m.created_at) / 1000 : undefined),
+  }));
+}
 
 /**
- * Create a {@link ModelLister} for the given provider.
+ * Create a {@link ModelLister} for the given provider: one `GET` of the
+ * registry's `models_url` (or `baseUrl`), authenticated per the registry's
+ * auth scheme, parsed per vendor shape.
  *
- * This is a lightweight factory that returns a generic HTTP-based lister.
- * In a full implementation each provider would have its own lister class;
- * this factory validates inputs and returns a minimal stub that callers
- * can replace with a concrete implementation.
- *
- * Equivalent to Rust's `create_model_lister()`.
- *
- * @param providerType - The provider to create a lister for.
- * @param apiKey - Required for cloud providers, ignored for Ollama.
- * @param baseUrl - Optional URL override (for Ollama or custom endpoints).
- * @returns A ModelLister instance.
- * @throws If the provider is unsupported or a required API key is missing.
+ * @param providerType The provider to list models for.
+ * @param apiKey Required for cloud providers, ignored for Ollama.
+ * @param baseUrl Optional URL override (for Ollama or custom endpoints).
+ * @throws If the provider does not support listing or a required API key is missing.
  */
 export function createModelLister(
   providerType: ProviderType,
   apiKey?: string,
   baseUrl?: string,
 ): ModelLister {
-  if (!LISTING_SUPPORTED.has(providerType)) {
+  const entry = lookup(providerType);
+  if (!entry?.supports_model_listing || !entry.models_url) {
     throw new Error(
       `Model listing is not supported for ${providerType} provider via this interface`,
     );
   }
-
-  // Ollama does not require an API key
   if (providerType !== "ollama" && !apiKey) {
     throw new Error(`${providerType} requires an API key`);
   }
-
-  // Return a stub lister — concrete HTTP-based implementations can be added
-  // per-provider in future PRs, matching the Rust provider modules.
+  const url = baseUrl ?? entry.models_url;
+  const headers = listingHeaders(entry, apiKey);
   return {
-    // deno-lint-ignore require-await
     async listModels(): Promise<AvailableModel[]> {
-      void baseUrl; // reserved for future use
-      void apiKey;
-      throw new Error(
-        `listModels() not yet implemented for ${providerType}. ` +
-          `Provide a concrete ModelLister implementation.`,
-      );
+      const res = await fetch(url, {
+        headers,
+        signal: AbortSignal.timeout(LISTING_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(
+          `${providerType} model listing failed (${res.status}): ${text}`,
+        );
+      }
+      return parseModelListing(providerType, await res.json());
     },
   };
 }
+
+/** Deadline for a model-listing request. */
+export const LISTING_TIMEOUT_MS = 15_000;

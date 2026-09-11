@@ -9,7 +9,7 @@
 
 import { vendorBytes, vendorJson } from "./http.ts";
 
-import { RateLimiter } from "./rate_limiter.ts";
+import { RateLimiter } from "@rullama/core";
 
 export const DEEPGRAM_API_BASE = "https://api.deepgram.com/v1";
 

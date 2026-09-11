@@ -126,7 +126,9 @@ Deno.test("convertTools - basic tool", () => {
   assertEquals(converted.length, 1);
   assertEquals(converted[0].name, "test_tool");
   assertEquals(converted[0].description, "A test tool");
-  assertEquals(converted[0].input_schema.arg1.type, "string");
+  assertEquals(converted[0].input_schema.type, "object");
+  assertEquals(converted[0].input_schema.properties.arg1.type, "string");
+  assertEquals(converted[0].input_schema.required, ["arg1"]);
 });
 
 Deno.test("convertTools - empty list", () => {

@@ -175,15 +175,17 @@ Deno.test("convertTools - empty list", () => {
   assertEquals(converted.length, 0);
 });
 
-Deno.test("convertTools - multiple tools", () => {
+Deno.test("convertTools - multiple tools keep order and get an empty required list", () => {
   const tools = [
     { name: "tool1", description: "First", input_schema: { type: "object" } },
     { name: "tool2", description: "Second", input_schema: { type: "object" } },
   ];
-  const converted = convertTools(tools);
-  assertEquals(converted.length, 2);
-  assertEquals(converted[0].function.name, "tool1");
-  assertEquals(converted[1].function.name, "tool2");
+  assertEquals(
+    convertTools(tools).map((
+      t,
+    ) => [t.function.name, t.function.parameters.required]),
+    [["tool1", []], ["tool2", []]],
+  );
 });
 
 // ---------------------------------------------------------------------------

@@ -38,8 +38,9 @@ export class FireworksFineTune implements FineTuneProvider {
     ];
   }
 
+  /** Fireworks' fine-tuning API has no preference-optimisation mode. */
   supportsDpo(): boolean {
-    return true;
+    return false;
   }
 
   /** Map Fireworks' status into the neutral enum. Exposed for tests. */

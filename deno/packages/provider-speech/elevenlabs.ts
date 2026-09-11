@@ -6,7 +6,7 @@
 
 import { vendorBytes, vendorJson } from "./http.ts";
 
-import { RateLimiter } from "./rate_limiter.ts";
+import { RateLimiter } from "@rullama/core";
 
 export const ELEVENLABS_API_BASE = "https://api.elevenlabs.io/v1";
 

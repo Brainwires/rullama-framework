@@ -20,6 +20,23 @@ import type {
 /** Dataset format for uploads. */
 export type DataFormat = "jsonl" | "parquet" | "csv";
 
+/** Upload MIME type and file name for a dataset format. */
+export function datasetFile(
+  format: DataFormat,
+): { mime: string; name: string } {
+  switch (format) {
+    case "parquet":
+      return {
+        mime: "application/vnd.apache.parquet",
+        name: "training_data.parquet",
+      };
+    case "csv":
+      return { mime: "text/csv", name: "training_data.csv" };
+    default:
+      return { mime: "application/jsonl", name: "training_data.jsonl" };
+  }
+}
+
 /** Configuration for a cloud fine-tuning job. */
 export interface CloudFineTuneConfig {
   base_model: string;

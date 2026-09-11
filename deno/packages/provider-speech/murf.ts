@@ -9,7 +9,7 @@
 
 import { vendorBytes, vendorJson } from "./http.ts";
 
-import { RateLimiter } from "./rate_limiter.ts";
+import { RateLimiter } from "@rullama/core";
 
 export const MURF_API_BASE = "https://api.murf.ai/v1";
 

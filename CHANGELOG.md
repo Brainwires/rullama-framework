@@ -124,6 +124,64 @@ sanitizer, were **advisory** — no execution path called any of them.
   (`backends/sql_builder.ts`); the per-backend exports and their SQL output
   are unchanged.
 
+#### Providers (`@rullama/provider`, `@rullama/call-policy`, `@rullama/finetune`)
+
+- **Tool schemas were truncated** in five of six chat providers: Anthropic,
+  OpenAI (Chat + Responses), Gemini and Bedrock sent `input_schema.properties`
+  alone, so models never saw `type: "object"` or `required`. All providers now
+  send the full object via `toolInputJsonSchema` (new in `@rullama/core`).
+- **`ChatProviderFactory.create()`** returned an Anthropic provider aimed at
+  `api.anthropic.com` for `provider: "bedrock"` and a Gemini provider for
+  `"vertex-ai"` (it dispatched on wire protocol alone). Both now go to their
+  own signers. Anthropic accepts a `baseUrl` (4th constructor argument /
+  `base_url` in the config) for gateways.
+- **OpenAI Chat Completions tool calling** works in all three directions:
+  assistant `tool_use` blocks → `tool_calls`, `tool_result` blocks →
+  `role: "tool"` messages, response `tool_calls` → `tool_use` blocks, and
+  streamed argument fragments → `tool_input_delta`. Reasoning models
+  (`o1`/`o3`/`o4`/`gpt-5` families, `isReasoningModel`) get
+  `max_completion_tokens` and no `temperature`/`top_p`; `isO1Model` is a
+  deprecated alias. `stop` is honoured by every provider.
+- **Bedrock streaming** parses the real AWS event-stream framing
+  (`eventstream.ts`) instead of SSE, so it yields chunks at all; **Vertex
+  streaming** parses the SSE it asks for (`?alt=sse`) instead of NDJSON.
+- **Streamed usage** from Anthropic and Bedrock reports the prompt tokens
+  (from `message_start`) instead of 0.
+- **`OpenAiResponsesProvider` is stateless**: it no longer feeds its own last
+  response id back as `previous_response_id` (a shared instance cross-linked
+  conversations). Chain explicitly with `withPreviousResponseId(id)`.
+- **Gemini** sends the API key in the `x-goog-api-key` header, not the query
+  string, and emits one terminal `done` chunk.
+- **`createModelLister`** is implemented (it threw "not yet implemented"):
+  one authenticated `GET` of the registry's `models_url`, parsed per vendor
+  shape (`parseModelListing`), with a 15 s deadline. The registry's `auth`
+  scheme, previously never read, drives the request headers.
+- The registry's `default_model` values and `defaultModel()` agreed on
+  nothing for four providers; they are now identical and a test keeps them so.
+- `ChatOptions.model` (new, optional) names the model for multi-model
+  providers and keys decorator state; the circuit breaker's default model key
+  uses it (it was always `"default"`, so one model's failures opened the
+  circuit for all). `ResilienceError.circuitOpen` no longer receives the
+  composite key as the model. `maxOutputTokens()` on every decorator returns
+  `undefined` for "no limit" as `Provider` documents, instead of `Infinity`.
+- **`CachedProvider`** takes a `scope` (tenant / user / session) that
+  partitions cache keys, so one principal's cached completion is never served
+  to another sending the same prompt.
+- **`RateLimiter`** lives in `@rullama/core` (re-exported by
+  `@rullama/provider`; `@rullama/provider-speech` used a byte-identical copy);
+  a zero budget is rejected at construction instead of spinning.
+- Internals: the Anthropic Messages format (conversion, parsing, body,
+  stream mapping) is one module shared by the Anthropic and Bedrock providers
+  (`anthropic_format.ts`); every provider POSTs through `postJson`; response
+  content collapsing is shared (`content.ts`); the four `@rullama/call-policy`
+  decorators extend a `ProviderDecorator` base (exported for custom
+  decorators).
+- **`@rullama/finetune`**: DPO alignment is actually sent (`method.type =
+  "dpo"` for OpenAI, `training_method` for Together; ORPO and Fireworks
+  refuse honestly); `uploadDataset` honours `DataFormat`; `JobPoller.poll`
+  throws `TrainingError("timeout")` instead of returning a non-terminal
+  status; `TrainingJobId` is exported as a value.
+
 #### Fixed
 
 - **CI**: the Deno job had failed on every run since 2026-07-01 — `tests/`

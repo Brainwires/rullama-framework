@@ -9,7 +9,7 @@
 
 import { vendorJson } from "./http.ts";
 
-import { RateLimiter } from "./rate_limiter.ts";
+import { RateLimiter } from "@rullama/core";
 
 export const GOOGLE_TTS_API_BASE = "https://texttospeech.googleapis.com/v1";
 

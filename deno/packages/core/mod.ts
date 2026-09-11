@@ -126,6 +126,7 @@ export {
   type Tool,
   type ToolCaller,
   ToolContext,
+  toolInputJsonSchema,
   type ToolInputSchema,
   type ToolMode,
   toolModeDisplayName,
@@ -188,3 +189,10 @@ export {
   SENSITIVE_PATTERNS,
   type SensitivePattern,
 } from "./secrets.ts";
+
+// Token-bucket rate limiter (shared by provider + provider-speech)
+export {
+  RateLimitedClient,
+  type RateLimitedClientOptions,
+  RateLimiter,
+} from "./rate_limiter.ts";

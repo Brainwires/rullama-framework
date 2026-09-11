@@ -160,12 +160,13 @@ Deno.test("convertTools - empty list", () => {
   assertEquals(converted.length, 0);
 });
 
-Deno.test("convertTools - multiple tools", () => {
+Deno.test("convertTools - multiple tools become function tools in order", () => {
   const tools = [
     { name: "tool1", description: "First", input_schema: { type: "object" } },
     { name: "tool2", description: "Second", input_schema: { type: "object" } },
   ];
   const converted = convertTools(tools);
+  assertEquals(converted.map((t) => t.type), ["function", "function"]);
   assertEquals(converted.length, 2);
   assertEquals(converted[0].function.name, "tool1");
   assertEquals(converted[1].function.name, "tool2");
@@ -262,10 +263,16 @@ Deno.test("convertStreamChunk - tool calls", () => {
     }],
   };
   const converted = convertStreamChunk(chunk);
-  assertEquals(converted.length, 1);
+  // The fragment carries both the call header and its arguments: two chunks.
+  assertEquals(converted.length, 2);
   assertEquals(converted[0].type, "tool_use");
   if (converted[0].type === "tool_use") {
     assertEquals(converted[0].id, "call_123");
     assertEquals(converted[0].name, "get_weather");
   }
+  assertEquals(converted[1], {
+    type: "tool_input_delta",
+    id: "call_123",
+    partial_json: '{"city":"London"}',
+  });
 });

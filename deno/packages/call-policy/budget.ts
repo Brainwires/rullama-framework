@@ -7,6 +7,7 @@
  * Equivalent to Rust's `rullama_resilience::budget` module.
  */
 
+import { ProviderDecorator } from "./decorator.ts";
 import type {
   ChatOptions,
   ChatResponse,
@@ -145,21 +146,12 @@ function approxBlockLen(b: ContentBlock): number {
 }
 
 /** A Provider decorator that enforces a {@link BudgetGuard} around every call. */
-export class BudgetProvider implements Provider {
-  readonly inner: Provider;
+export class BudgetProvider extends ProviderDecorator {
   readonly guard: BudgetGuard;
 
   constructor(inner: Provider, guard: BudgetGuard) {
-    this.inner = inner;
+    super(inner);
     this.guard = guard;
-  }
-
-  get name(): string {
-    return this.inner.name;
-  }
-
-  maxOutputTokens(): number {
-    return this.inner.maxOutputTokens?.() ?? Infinity;
   }
 
   async chat(
