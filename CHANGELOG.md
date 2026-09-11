@@ -40,6 +40,49 @@ sanitizer, were **advisory** — no execution path called any of them.
   it previously passed `{ workingDirectory }`, so relative paths never
   resolved inside an agent.
 
+#### Security (built-in tools and the tool runtime)
+
+- **`execute_command`** (`@rullama/tool-builtins`): the advertised timeout
+  never fired — an `AbortController` was created but not passed to
+  `Deno.Command`. It now kills the whole process tree (children first, so a
+  forked `sleep`/`curl` cannot keep the output pipe open); credential-looking
+  environment variables (`*KEY*`, `*SECRET*`, `*TOKEN*`, `AWS_*`, …) are
+  withheld from the child (`scrubEnv`, `SECRET_ENV_PATTERN`); stdout/stderr
+  are capped at 256 KiB each.
+- **`read_file` / `write_file` / `edit_file` / `delete_file` /
+  `list_directory` / `search_files` / `create_directory`**: paths are confined
+  to the working directory — `../`, foreign absolute paths and symlinks that
+  point outside it are refused (`PathEscapeError`); `read_file` returns at
+  most 1 MiB; `search_files` converts its glob with `globToRegExp` instead of
+  a hand-rolled replace that let regex metacharacters through.
+- **`git_push` / `git_pull` / `git_fetch` / `git_branch`**: remote, branch
+  and name arguments must match `SAFE_REF_PATTERN` (no leading `-`, no `..`,
+  no `ext::sh -c …` remote helpers); file lists cannot contain option-like
+  entries and are passed after `--`; git runs with
+  `GIT_ALLOW_PROTOCOL=https:ssh:file:git`, `GIT_PROTOCOL_FROM_USER=0`,
+  `GIT_TERMINAL_PROMPT=0`.
+- **`fetch_url`**: goes through the new `safeFetch` — `http(s)` only, the
+  host is resolved and loopback / link-local (cloud metadata) / private /
+  CGNAT / multicast addresses are refused, every redirect hop is re-checked,
+  30 s deadline, 1 MiB body cap (`readCappedText`).
+- **`search_code`**: model-supplied regexes are capped at 200 characters
+  (`compileBoundedRegex`), the search root is confined to the working
+  directory, files over 1 MiB are skipped.
+- **`TransactionManager`** (`@rullama/tool-runtime`): the staging file name
+  is percent-encoded so a key like `../../x` cannot leave the staging
+  directory; `create(stagingDir, projectRoot)` optionally refuses targets
+  outside `projectRoot`.
+- **`pkceAuthorizationUrl`**: built with `URLSearchParams`, so `state`,
+  `scope` and `redirect_uri` are percent-encoded (a `state` containing
+  `&redirect_uri=` could inject a second parameter). New `newState()` helper.
+- **OpenAPI-generated tools**: requests have a 30 s deadline and a capped
+  body.
+- **`@rullama/provider-speech`** `MurfClient.downloadAudio`: only public
+  `https` URLs (the URL comes from the vendor's response).
+- New shared guards in `@rullama/tool-runtime`: `confinePath` /
+  `confinePathLexical` / `isWithin`, `compileBoundedRegex`, `safeFileName`,
+  `safeFetch` / `checkUrl` / `isPrivateAddress` / `readCappedText`.
+
 #### Fixed
 
 - **CI**: the Deno job had failed on every run since 2026-07-01 — `tests/`

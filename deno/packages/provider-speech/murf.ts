@@ -99,6 +99,21 @@ export class MurfClient {
 
   /** Download audio from a URL returned by {@link generateSpeech}. */
   downloadAudio(audio_url: string): Promise<Uint8Array> {
+    // The URL comes from the vendor's response; refuse anything that is not a
+    // public https URL so a spoofed response cannot point us at localhost or
+    // a metadata endpoint.
+    const parsed = new URL(audio_url);
+    const host = parsed.hostname;
+    if (
+      parsed.protocol !== "https:" || host === "localhost" ||
+      /^[\d.]+$|^\[/.test(host)
+    ) {
+      return Promise.reject(
+        new Error(
+          `Murf download refused: not a public https URL (${audio_url})`,
+        ),
+      );
+    }
     return vendorBytes("Murf download", audio_url, { method: "GET" });
   }
 

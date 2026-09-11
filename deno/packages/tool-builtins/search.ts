@@ -6,6 +6,10 @@
 // deno-lint-ignore-file no-explicit-any
 
 import { objectSchema, type ToolContext, ToolResult } from "@rullama/core";
+import { compileBoundedRegex, confinePath } from "@rullama/tool-runtime";
+
+/** Files larger than this are skipped by `search_code`. */
+export const MAX_SEARCH_FILE_BYTES = 1024 * 1024;
 import type { Tool } from "@rullama/core";
 
 /** Regex-based code search tool. */
@@ -67,11 +71,12 @@ export class SearchTool {
     context: ToolContext,
   ): Promise<string> {
     const pattern: string = input.pattern;
-    const searchPath = input.path === "." || !input.path
-      ? context.working_directory
-      : input.path;
+    const searchPath = await confinePath(
+      context.working_directory,
+      input.path === "." || !input.path ? "." : String(input.path),
+    );
 
-    const regex = new RegExp(pattern);
+    const regex = compileBoundedRegex(pattern);
     const matches: string[] = [];
     const MAX_MATCHES = 100;
 
@@ -125,6 +130,7 @@ async function searchDir(
 
       const filePath = `${dir}/${entry.name}`;
       try {
+        if ((await Deno.stat(filePath)).size > MAX_SEARCH_FILE_BYTES) continue;
         const content = await Deno.readTextFile(filePath);
         const lines = content.split("\n");
         for (let i = 0; i < lines.length; i++) {

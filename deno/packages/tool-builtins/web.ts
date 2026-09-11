@@ -1,12 +1,13 @@
 /**
  * Web fetching tool implementation.
- * Uses the global fetch() API.
+ * Uses `safeFetch` from `@rullama/tool-runtime` (SSRF checks, deadline, body cap).
  */
 
 // deno-lint-ignore-file no-explicit-any
 
 import { objectSchema, type ToolContext, ToolResult } from "@rullama/core";
 import type { Tool } from "@rullama/core";
+import { readCappedText, safeFetch } from "@rullama/tool-runtime";
 
 /** Web fetching tool. */
 export class WebTool {
@@ -57,17 +58,18 @@ export class WebTool {
     }
   }
 
-  private static async fetchUrl(input: any): Promise<string> {
-    const url: string = input.url;
-    const response = await fetch(url);
-    const text = await response.text();
-    return `URL: ${url}\nContent length: ${text.length} bytes\n\n${text}`;
+  private static fetchUrl(input: any): Promise<string> {
+    return WebTool.fetchUrlContent(String(input.url));
   }
 
-  /** Fetch URL content (helper for orchestrator integration). */
+  /**
+   * Fetch URL content (helper for orchestrator integration). Only public
+   * `http(s)` destinations are reachable (every redirect hop is re-checked),
+   * the request has a 30 s deadline and the body is capped at 1 MiB.
+   */
   static async fetchUrlContent(url: string): Promise<string> {
-    const response = await fetch(url);
-    const text = await response.text();
-    return `URL: ${url}\nContent length: ${text.length} bytes\n\n${text}`;
+    const response = await safeFetch(url);
+    const text = await readCappedText(response);
+    return `URL: ${url}\nStatus: ${response.status}\nContent length: ${text.length} bytes\n\n${text}`;
   }
 }

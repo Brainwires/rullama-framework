@@ -58,6 +58,27 @@ export {
 // Tool registry
 export { type ToolCategory, ToolRegistry } from "./registry.ts";
 
+// Guards shared with the built-in tools (path confinement, bounded regex, safe names)
+export {
+  compileBoundedRegex,
+  confinePath,
+  confinePathLexical,
+  isWithin,
+  MAX_REGEX_LENGTH,
+  PathEscapeError,
+  safeFileName,
+} from "./guards.ts";
+
+// SSRF-resistant fetch for model-chosen URLs
+export {
+  checkUrl,
+  DEFAULT_MAX_BODY_BYTES,
+  isPrivateAddress,
+  readCappedText,
+  safeFetch,
+  type SafeFetchOptions,
+} from "./safe_fetch.ts";
+
 // Sanitization
 export {
   containsSensitiveData,
@@ -94,6 +115,7 @@ export {
   executeOpenApiTool,
   executeOpenApiToolWithEndpoint,
   type HttpMethod,
+  OPENAPI_TIMEOUT_MS,
   type OpenApiEndpoint,
   type OpenApiParam,
   type OpenApiToolDef,
@@ -109,6 +131,7 @@ export {
   InMemoryTokenStore,
   isTokenExpired,
   newPkceChallenge,
+  newState,
   OAuthClient,
   type OAuthConfig,
   type OAuthFlow,

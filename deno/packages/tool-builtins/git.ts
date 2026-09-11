@@ -8,6 +8,37 @@
 import { objectSchema, type ToolContext, ToolResult } from "@rullama/core";
 import type { Tool } from "@rullama/core";
 
+/**
+ * A git ref, remote or branch name a model may pass: letters, digits, `.`,
+ * `_`, `/`, `-`; no leading `-` (would be parsed as an option), no `..`.
+ * Rejects `ext::sh -c …` style remote helpers outright.
+ */
+export const SAFE_REF_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$/;
+
+/** Throw unless `value` is a {@link SAFE_REF_PATTERN} name. `what` names the field. */
+export function assertSafeRef(value: unknown, what: string): string {
+  if (
+    typeof value !== "string" || !SAFE_REF_PATTERN.test(value) ||
+    value.includes("..") || value.endsWith("/") || value.endsWith(".lock")
+  ) {
+    throw new Error(`invalid ${what}: ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
+/** Throw unless `files` is a non-empty list of paths that cannot be read as options. */
+export function assertSafeFiles(files: unknown): string[] {
+  if (!Array.isArray(files) || files.length === 0) {
+    throw new Error("files must be a non-empty array of paths");
+  }
+  for (const f of files) {
+    if (typeof f !== "string" || f.length === 0 || f.startsWith("-")) {
+      throw new Error(`invalid file path: ${JSON.stringify(f)}`);
+    }
+  }
+  return files as string[];
+}
+
 /** Git operations tool. */
 export class GitTool {
   /** Get all git tool definitions. */
@@ -307,6 +338,18 @@ export class GitTool {
     }
   }
 
+  /** Validated `remote` (default `origin`) and optional `branch` from a tool input. */
+  private static remoteArgs(
+    input: any,
+  ): { remote: string; branch: string | undefined } {
+    return {
+      remote: assertSafeRef(input.remote ?? "origin", "remote"),
+      branch: input.branch === undefined
+        ? undefined
+        : assertSafeRef(input.branch, "branch"),
+    };
+  }
+
   /** Run a git command and return stdout. */
   private static async runGit(
     args: string[],
@@ -317,6 +360,13 @@ export class GitTool {
       cwd,
       stdout: "piped",
       stderr: "piped",
+      env: {
+        // No remote-helper transports (`ext::`), no prompts, no pager.
+        GIT_ALLOW_PROTOCOL: "https:ssh:file:git",
+        GIT_PROTOCOL_FROM_USER: "0",
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_PAGER: "cat",
+      },
     });
     const output = await cmd.output();
     return {
@@ -367,9 +417,9 @@ export class GitTool {
     input: any,
     context: ToolContext,
   ): Promise<string> {
-    const files: string[] = input.files;
+    const files = assertSafeFiles(input.files);
     const result = await GitTool.runGit(
-      ["add", ...files],
+      ["add", "--", ...files],
       context.working_directory,
     );
     if (!result.success) {
@@ -382,7 +432,7 @@ export class GitTool {
     input: any,
     context: ToolContext,
   ): Promise<string> {
-    const files: string[] = input.files;
+    const files = assertSafeFiles(input.files);
     const result = await GitTool.runGit(
       ["reset", "HEAD", "--", ...files],
       context.working_directory,
@@ -412,11 +462,11 @@ export class GitTool {
     input: any,
     context: ToolContext,
   ): Promise<string> {
-    const remote = input.remote ?? "origin";
+    const { remote, branch } = GitTool.remoteArgs(input);
     const args = ["push"];
     if (input.set_upstream) args.push("-u");
     args.push(remote);
-    if (input.branch) args.push(input.branch);
+    if (branch) args.push(branch);
 
     const result = await GitTool.runGit(args, context.working_directory);
     if (!result.success) {
@@ -429,11 +479,11 @@ export class GitTool {
     input: any,
     context: ToolContext,
   ): Promise<string> {
-    const remote = input.remote ?? "origin";
+    const { remote, branch } = GitTool.remoteArgs(input);
     const args = ["pull"];
     if (input.rebase) args.push("--rebase");
     args.push(remote);
-    if (input.branch) args.push(input.branch);
+    if (branch) args.push(branch);
 
     const result = await GitTool.runGit(args, context.working_directory);
     if (!result.success) {
@@ -446,7 +496,7 @@ export class GitTool {
     input: any,
     context: ToolContext,
   ): Promise<string> {
-    const remote = input.remote ?? "origin";
+    const { remote } = GitTool.remoteArgs(input);
     const args = ["fetch"];
     if (input.all) {
       args.push("--all");
@@ -469,7 +519,7 @@ export class GitTool {
     input: any,
     context: ToolContext,
   ): Promise<string> {
-    const files: string[] = input.files;
+    const files = assertSafeFiles(input.files);
     const result = await GitTool.runGit(
       ["checkout", "--", ...files],
       context.working_directory,
@@ -485,7 +535,9 @@ export class GitTool {
     context: ToolContext,
   ): Promise<string> {
     const action = input.action ?? "list";
-    const name: string | undefined = input.name;
+    const name: string | undefined = input.name === undefined
+      ? undefined
+      : assertSafeRef(input.name, "branch name");
     const force = input.force ?? false;
 
     let args: string[];

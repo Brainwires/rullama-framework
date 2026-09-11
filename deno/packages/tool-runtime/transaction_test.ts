@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { assert, assertEquals, assertThrows } from "@std/assert";
 import { TransactionManager } from "./transaction.ts";
 
 // ── stage and commit ────────────────────────────────────────────────────────
@@ -196,4 +196,45 @@ Deno.test("TransactionManager - dispose cleans staging dir", () => {
     exists = true;
   } catch { /* expected */ }
   assertEquals(exists, false);
+});
+
+Deno.test("TransactionManager - a traversal key stays inside the staging dir", () => {
+  const staging = Deno.makeTempDirSync();
+  const target = Deno.makeTempDirSync();
+  try {
+    const tm = TransactionManager.create(staging);
+    assert(tm.stage({
+      key: "../../escape",
+      target_path: `${target}/out.txt`,
+      content: "x",
+    }));
+    const staged = [...Deno.readDirSync(staging)].map((e) => e.name);
+    assertEquals(staged.length, 1);
+    assert(staged[0].startsWith("..%2F..%2Fescape"));
+    assert(!staged[0].includes("/"));
+    tm.rollback();
+  } finally {
+    Deno.removeSync(staging, { recursive: true });
+    Deno.removeSync(target, { recursive: true });
+  }
+});
+
+Deno.test("TransactionManager - projectRoot rejects targets outside it", () => {
+  const staging = Deno.makeTempDirSync();
+  const root = Deno.makeTempDirSync();
+  try {
+    const tm = TransactionManager.create(staging, root);
+    assert(
+      tm.stage({ key: "in", target_path: `${root}/ok.txt`, content: "x" }),
+    );
+    assertThrows(
+      () => tm.stage({ key: "out", target_path: "/etc/evil", content: "x" }),
+      Error,
+      "outside",
+    );
+    tm.rollback();
+  } finally {
+    Deno.removeSync(staging, { recursive: true });
+    Deno.removeSync(root, { recursive: true });
+  }
 });

@@ -11,6 +11,10 @@
 
 import type { Tool } from "@rullama/core";
 import { ToolResult } from "@rullama/core";
+import { readCappedText } from "./safe_fetch.ts";
+
+/** Deadline for a request issued by an OpenAPI-generated tool. */
+export const OPENAPI_TIMEOUT_MS = 30_000;
 
 // -- Public types -------------------------------------------------------------
 
@@ -375,8 +379,14 @@ export async function executeOpenApiToolWithEndpoint(
   }
 
   try {
-    const response = await fetch(url.toString(), fetchOpts);
-    const body = await response.text();
+    // Deadline + body cap: a slow or chatty upstream cannot stall the agent or
+    // flood its context. The base URL comes from the spec (operator-controlled),
+    // so private destinations stay reachable here.
+    const response = await fetch(url.toString(), {
+      ...fetchOpts,
+      signal: AbortSignal.timeout(OPENAPI_TIMEOUT_MS),
+    });
+    const body = await readCappedText(response);
 
     if (response.ok) {
       return ToolResult.success("", body);
