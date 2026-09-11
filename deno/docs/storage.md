@@ -121,7 +121,7 @@ interface VectorDatabase {
 
 ### Raw filters and identifier validation
 
-Since v0.12.0 the SQL/SurrealQL backends treat model- or user-supplied strings
+Since v0.12.1 the SQL/SurrealQL backends treat model- or user-supplied strings
 defensively:
 
 - **`Raw` filters are disabled by default.** A `Filter` of kind `"Raw"` is

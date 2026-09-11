@@ -1,7 +1,7 @@
 # Permissions
 
 The `@rullama/permission` package provides capability-based access control,
-policy rules, audit logging, trust management and approval types. Since v0.12.0
+policy rules, audit logging, trust management and approval types. Since v0.12.1
 these are **enforced**: `@rullama/tool-runtime`'s `EnforcingExecutor` consults
 the permission mode, the capability profile and the policy engine before every
 tool call, and `@rullama/inference`'s `AgentContext` applies it by default. See

@@ -32,7 +32,7 @@ are optional.
 `ToolExecutor`, the `CommunicationHub`, the `FileLockManager`, a `WorkingSet`,
 metadata, and optional pre-execute / lifecycle hooks. Arguments are positional.
 
-**Since v0.12.0 the context enforces permissions by default:** the executor you
+**Since v0.12.1 the context enforces permissions by default:** the executor you
 pass is wrapped in `@rullama/tool-runtime`'s `EnforcingExecutor` (permission
 mode, capability profile, `PolicyEngine.withDefaults()`, pre-execute hooks,
 output filtering). The optional sixth argument tunes that wrapper, or

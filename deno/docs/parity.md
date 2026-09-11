@@ -185,7 +185,7 @@ Since v0.11.0 these are three packages, each 1:1 with a Rust crate:
 ## Inference — partial
 
 `@rullama/inference` ports `runtime` (`runAgentLoop`), `context`
-(`AgentContext`, enforcing by default since v0.12.0), `task_agent`, `pool`
+(`AgentContext`, enforcing by default since v0.12.1), `task_agent`, `pool`
 (`AgentPool`), `validator_agent`, `validation_loop`, `plan_executor`,
 `agent_hooks`, `roles` and `system_prompts`, plus the judge / planner **prompt
 builders and parsers** (`judgeAgentPrompt`, `parseVerdict`,

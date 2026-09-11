@@ -13,7 +13,7 @@ manager) lives in `@rullama/tool-runtime`, which this package depends on.
 Native-only tools (`code_exec` / `interpreters`, `sandbox_executor`, `browser`,
 `email`, `system`) are intentionally Rust-only -- see `SKIPPED.md`.
 
-## Safety limits (v0.12.0)
+## Safety limits (v0.12.1)
 
 - `execute_command`: timeout (default 30 s) kills the whole process tree; child
   env scrubbed of credential-like variables (`scrubEnv`); stdout / stderr capped

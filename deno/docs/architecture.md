@@ -18,7 +18,7 @@ installable and has a clear role in the dependency graph.
 ## Package Dependency Graph
 
 Edges are the actual `@rullama/*` imports in each package's non-test sources
-(v0.12.0). Arrows point from a package to what it depends on.
+(v0.12.1). Arrows point from a package to what it depends on.
 
 ```
                                core
@@ -66,7 +66,7 @@ Per-package edges:
 | `@rullama/tool-runtime`    | core, permission                                                                |
 | all others                 | none (a2a, eval, finetune, knowledge, mcp-client, mdap, prompting, rag, skills) |
 
-Two edges are new in v0.12.0: `tool-runtime → permission` (the enforcing
+Two edges are new in v0.12.1: `tool-runtime → permission` (the enforcing
 executor consults the policy engine and capability profiles) and
 `tool-builtins → tool-runtime` (the built-in executor wraps itself in that
 enforcement).

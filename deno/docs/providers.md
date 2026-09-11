@@ -27,7 +27,7 @@ interface Provider {
 
 `ChatResponse` is `{ message: Message; usage: Usage; finish_reason?: string }`
 -- read the text with `response.message.text()`. `ChatOptions` carries
-`temperature`, `max_tokens`, `top_p`, `stop`, `system` and (new in v0.12.0)
+`temperature`, `max_tokens`, `top_p`, `stop`, `system` and (new in v0.12.1)
 `model`, which overrides the provider's configured model for one call; build it
 with `new ChatOptions({...})`, `ChatOptions.create().setModel(...)`, or the
 presets `ChatOptions.deterministic(n)` / `.factual(n)` / `.creative(n)`.

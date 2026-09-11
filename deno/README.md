@@ -38,7 +38,7 @@ was a clean break from 0.10.x.
 | `@rullama/rag`             | RAG client interface + code analysis (symbol extraction, repo maps, call graphs) under `@rullama/rag/code-analysis`                                            |
 | `@rullama/tool-runtime`    | Tool execution framework: registry, `ToolExecutor`, `EnforcingExecutor` / `enforce()`, guards + `safeFetch`, sanitization, router, transaction, OpenAPI, OAuth |
 | `@rullama/tool-builtins`   | Built-in tools (bash, file ops, git, web, search, semantic search, calendar, sessions) + `createBuiltinExecutor()`                                             |
-| `@rullama/permission`      | Capability profiles, policy engine, audit, trust — enforced by `tool-runtime` since v0.12.0                                                                    |
+| `@rullama/permission`      | Capability profiles, policy engine, audit, trust — enforced by `tool-runtime` since v0.12.1                                                                    |
 | `@rullama/telemetry`       | Analytics events, sinks, Prometheus metrics, billing hooks, anomaly detection                                                                                  |
 | `@rullama/reasoning`       | Plan parser, complexity/router/validator/retrieval scorers                                                                                                     |
 | `@rullama/finetune`        | Cloud fine-tuning (OpenAI, Together, Fireworks)                                                                                                                |
@@ -80,7 +80,7 @@ Edges are the real `@rullama/*` imports in each package (non-test files):
   prompting, rag, skills
 ```
 
-New in v0.12.0: `tool-runtime → permission` (the enforcing executor applies the
+New in v0.12.1: `tool-runtime → permission` (the enforcing executor applies the
 policy engine and capability profiles) and `tool-builtins → tool-runtime` (the
 built-in executor wraps itself in that enforcement). `inference` uses `core`,
 `agent` and `tool-runtime`; the provider is passed in by the caller.
