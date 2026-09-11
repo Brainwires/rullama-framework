@@ -5,6 +5,63 @@ All notable changes to the rullama framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Deno/TypeScript port (`deno/`, `@rullama/*` 0.12.1)
+
+Security and correctness patch driven by the 2026-09-11 production-readiness
+audit. No renames; the one behaviour change is called out first.
+
+#### Behaviour change: tool permissions are now enforced
+
+`@rullama/permission`'s policy engine, capability profiles and the
+`requires_approval` tool flag, and `@rullama/tool-runtime`'s output
+sanitizer, were **advisory** — no execution path called any of them.
+
+- **`@rullama/tool-runtime`**: new `EnforcingExecutor` / `enforce()` wraps any
+  `ToolExecutor` and applies, in order: permission mode (`read-only` admits
+  only read/search/planning tools), an optional `AgentCapabilities` profile,
+  the `PolicyEngine` (default `PolicyEngine.withDefaults()`: denies `.env`,
+  `*secret*` and `credentials*` files, asks before `git reset`/`git rebase`),
+  every `ToolPreHook`, and output filtering (secret redaction on every result;
+  web-fetch results wrapped as untrusted external content). An
+  `ApprovalHandler` decides `require_approval` outcomes and, in `auto` mode,
+  gates tools flagged `requires_approval`; with no handler configured a policy
+  approval request is a rejection while flagged tools still run.
+  `policyRequestForToolUse` derives the file path / domain / git operation a
+  call targets from its input.
+- **`@rullama/tool-builtins`**: new `BuiltinToolExecutor` (dispatches to the
+  built-in tool classes by name) and `createBuiltinExecutor()` — the built-in
+  tool set behind the enforcing executor, the recommended default.
+- **`@rullama/inference`**: `AgentContext` wraps the executor it is given with
+  `enforce()` **by default**; pass `enforcement: false` (6th constructor
+  argument) to opt out. `preExecuteHook` is finally consulted. `TaskAgent`
+  now hands tools a real `ToolContext` (`working_directory`, `metadata`) —
+  it previously passed `{ workingDirectory }`, so relative paths never
+  resolved inside an agent.
+
+#### Fixed
+
+- **CI**: the Deno job had failed on every run since 2026-07-01 — `tests/`
+  imported the pre-0.11 package names and the package suites never ran in
+  CI. `deno task check` (fmt, lint, type-check, 1600+ tests) is now the
+  single gate, run locally and in CI.
+- **`@rullama/provider`**: the discontinued relay provider is gone from
+  `ProviderType`, `parseProviderType` and `defaultModel`.
+- **`@rullama/provider-speech`**: one `vendorFetch` helper replaces fifteen
+  copies of the fetch/`res.ok`/throw block, and every vendor request now has
+  a 60 s timeout (`AbortSignal.timeout`).
+- Lint: `RegressionSuite.new()` → `create()`, `SessionId.new()` → `from()`
+  (the old names remain, deprecated, until 0.13); six `async` methods that
+  never awaited now return promises directly.
+
+#### Tooling
+
+- **fallow** adopted at the repo root (scoped to `deno/`): `fallow.toml`,
+  versioned `.githooks/pre-commit` (`deno task hooks:install`), Claude Code
+  PreToolUse gate, `AGENTS.md`/`CLAUDE.md`, a `fallow` CI job, and
+  `deno task coverage:fallow` for measured CRAP coverage.
+
 ## [0.11.0] - 2026-05-15
 
 ### Refactored (BREAKING)

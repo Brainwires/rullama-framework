@@ -9,7 +9,13 @@
  */
 
 import { WorkingSet } from "@rullama/core";
-import type { ToolExecutor, ToolPreHook } from "@rullama/tool-runtime";
+import {
+  allow,
+  enforce,
+  type EnforcementOptions,
+  type ToolExecutor,
+  type ToolPreHook,
+} from "@rullama/tool-runtime";
 
 import type { AgentLifecycleHooks } from "./hooks.ts";
 import type { CommunicationHub } from "@rullama/agent";
@@ -18,12 +24,18 @@ import type { FileLockManager } from "@rullama/agent";
 // Re-export for convenience
 export type { ToolPreHook } from "@rullama/tool-runtime";
 
-/** Environment context for a task agent. */
+/**
+ * Environment context for a task agent.
+ *
+ * The tool executor is wrapped in `@rullama/tool-runtime`'s enforcing executor
+ * by default (permission mode, capabilities, policy, `preExecuteHook`, output
+ * filtering) — pass `enforcement: false` to run tools unchecked.
+ */
 export class AgentContext {
   /** Working directory used for resolving relative file paths. */
   workingDirectory: string;
 
-  /** Executes tools on behalf of the agent. */
+  /** Executes tools on behalf of the agent (enforcing, unless opted out). */
   toolExecutor: ToolExecutor;
 
   /** Inter-agent message bus. */
@@ -44,15 +56,34 @@ export class AgentContext {
   /** Optional lifecycle hooks for granular loop control. */
   lifecycleHooks?: AgentLifecycleHooks;
 
+  /**
+   * @param enforcement Options for the enforcing executor that wraps
+   *   `toolExecutor`, or `false` to disable enforcement entirely. The context's
+   *   {@link preExecuteHook} is always consulted (it is read at call time, so it
+   *   may be set later with {@link withPreExecuteHook}).
+   */
   constructor(
     workingDirectory: string,
     toolExecutor: ToolExecutor,
     communicationHub: CommunicationHub,
     fileLockManager: FileLockManager,
     workingSet?: WorkingSet,
+    enforcement: EnforcementOptions | false = {},
   ) {
     this.workingDirectory = workingDirectory;
-    this.toolExecutor = toolExecutor;
+    this.toolExecutor = enforcement === false
+      ? toolExecutor
+      : enforce(toolExecutor, {
+        ...enforcement,
+        preHooks: [
+          ...(enforcement.preHooks ?? []),
+          {
+            beforeExecute: (toolUse, context) =>
+              this.preExecuteHook?.beforeExecute(toolUse, context) ??
+                Promise.resolve(allow()),
+          },
+        ],
+      });
     this.communicationHub = communicationHub;
     this.fileLockManager = fileLockManager;
     this.workingSet = workingSet ?? new WorkingSet();

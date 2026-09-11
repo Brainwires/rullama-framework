@@ -4,7 +4,8 @@
  * Tool execution framework for the rullama.
  * Equivalent to Rust's `rullama-tool-runtime` crate (post-0.11.0 split).
  *
- * Provides the registry, executor trait, error taxonomy, sanitization,
+ * Provides the registry, executor trait, the enforcing executor (permission
+ * mode, capabilities, policy, pre-hooks, output filtering), error taxonomy, sanitization,
  * smart routing, transaction manager, plus OpenAPI / OAuth / validation /
  * tool-search / tool-embedding building blocks. Concrete built-in tools
  * (Bash, FileOps, Git, Web, Search, SemanticSearch, Calendar) live in
@@ -38,6 +39,21 @@ export {
   type ToolExecutor,
   type ToolPreHook,
 } from "./executor.ts";
+
+// Enforcement (permission mode, capabilities, policy, pre-hooks, output filtering)
+export {
+  type ApprovalHandler,
+  DEFAULT_EXTERNAL_CONTENT_TOOLS,
+  domainForToolUse,
+  enforce,
+  type EnforcementEvent,
+  type EnforcementOptions,
+  type EnforcementOutcome,
+  EnforcingExecutor,
+  filePathForToolUse,
+  gitOperationForToolUse,
+  policyRequestForToolUse,
+} from "./enforcement.ts";
 
 // Tool registry
 export { type ToolCategory, ToolRegistry } from "./registry.ts";
