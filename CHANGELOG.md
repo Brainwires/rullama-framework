@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-09-11
+
 ### Deno/TypeScript port (`deno/`, `@rullama/*` 0.12.1)
 
-Security and correctness patch driven by the 2026-09-11 production-readiness
+Deno-only release (the Rust crates are unchanged). Security and correctness patch driven by the 2026-09-11 production-readiness
 audit. No renames; the one behaviour change is called out first.
 
 #### Behaviour change: tool permissions are now enforced

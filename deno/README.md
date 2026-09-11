@@ -5,10 +5,10 @@ A modular, Deno-native TypeScript port of the
 agents with tool use, multi-provider support, inter-agent communication, and
 fine-grained permissions — all running on Deno.
 
-## Packages (v0.12.0)
+## Packages (v0.12.1)
 
 All 27 packages publish to JSR under the `@rullama/*` scope, versioned in
-lockstep with the Rust crates (`0.12.0`). The shape mirrors the Rust workspace
+lockstep with the Rust crates (`0.12.1`). The shape mirrors the Rust workspace
 1:1 (the singular-crate-name restructure landed in v0.11.0): mcp-client /
 mcp-server split, finetune-not-training, etc. No transitional shims — v0.11.0
 was a clean break from 0.10.x.
