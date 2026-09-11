@@ -1,8 +1,8 @@
 # @rullama/network
 
-Agent networking layer for the rullama. Provides an MCP
-server framework with middleware, agent identity, message routing, peer
-discovery, and client connectivity.
+Agent networking layer for the rullama. Provides an MCP server framework with
+middleware, agent identity, message routing, peer discovery, and client
+connectivity.
 
 Equivalent to the Rust `rullama-network` crate.
 

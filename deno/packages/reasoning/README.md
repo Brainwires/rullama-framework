@@ -7,7 +7,7 @@ scorers (routing, validation, complexity, retrieval gating).
 
 | Module                            | Purpose                                                                               |
 | --------------------------------- | ------------------------------------------------------------------------------------- |
-| `OutputParser` + friends          | Re-exported from `@rullama/core` so consumers import one symbol from reasoning.    |
+| `OutputParser` + friends          | Re-exported from `@rullama/core` so consumers import one symbol from reasoning.       |
 | `parsePlanSteps` / `stepsToTasks` | Turn LLM plan output into `Task` objects.                                             |
 | `ComplexityScorer`                | 0.0–1.0 task complexity score. LLM-backed with a keyword + length heuristic fallback. |
 | `LocalRouter`                     | Semantic query → `ToolCategory` classification.                                       |
@@ -16,10 +16,9 @@ scorers (routing, validation, complexity, retrieval gating).
 | `LocalInferenceConfig`            | Feature flags + per-task model selection.                                             |
 | `InferenceTimer`                  | Lightweight latency measurement.                                                      |
 
-Every scorer takes a `Provider` (from `@rullama/core`) in its constructor.
-The LLM-backed methods (`score`, `classify`, `validate`) return `null` on
-failure so callers can fall through to the heuristic variant without a
-try/catch.
+Every scorer takes a `Provider` (from `@rullama/core`) in its constructor. The
+LLM-backed methods (`score`, `classify`, `validate`) return `null` on failure so
+callers can fall through to the heuristic variant without a try/catch.
 
 ## Not yet ported
 

@@ -1,8 +1,8 @@
 # @rullama/knowledge
 
-Unified intelligence layer for the rullama. Provides
-prompting technique selection, knowledge graph interfaces, and RAG
-(Retrieval-Augmented Generation) client types.
+Unified intelligence layer for the rullama. Provides prompting technique
+selection, knowledge graph interfaces, and RAG (Retrieval-Augmented Generation)
+client types.
 
 Equivalent to the Rust `rullama-knowledge` crate.
 

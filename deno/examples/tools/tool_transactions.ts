@@ -17,9 +17,7 @@ async function main() {
   // 2. Stage multiple file writes
   console.log("=== Staging Writes ===\n");
 
-  const targetDir = `${
-    Deno.env.get("TMPDIR") ?? "/tmp"
-  }/rullama-txn-example`;
+  const targetDir = `${Deno.env.get("TMPDIR") ?? "/tmp"}/rullama-txn-example`;
   Deno.mkdirSync(targetDir, { recursive: true });
 
   const writes = [

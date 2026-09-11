@@ -1,9 +1,9 @@
 # rullama — Deno/TypeScript Port
 
 A modular, Deno-native TypeScript port of the
-[rullama](https://github.com/Brainwires/rullama-framework).
-Build autonomous AI agents with tool use, multi-provider support, inter-agent
-communication, and fine-grained permissions — all running on Deno.
+[rullama](https://github.com/Brainwires/rullama-framework). Build autonomous AI
+agents with tool use, multi-provider support, inter-agent communication, and
+fine-grained permissions — all running on Deno.
 
 ## Packages (v0.12.0)
 
@@ -13,8 +13,8 @@ lockstep with the Rust crates (`0.12.0`). The shape mirrors the Rust workspace
 mcp-server split, finetune-not-training, etc. No transitional shims — v0.11.0
 was a clean break from 0.10.x.
 
-| Package                       | Description                                                                                                      |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Package                    | Description                                                                                                      |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `@rullama/core`            | Foundation types — messages, tools, errors, lifecycle, confidence, paths, file_context                           |
 | `@rullama/a2a`             | Agent-to-Agent protocol (Google A2A) — JSON-RPC + REST                                                           |
 | `@rullama/agent`           | Coordination primitives: communication, locks, task manager, contract-net, saga, market, three-state, wait-queue |
@@ -23,7 +23,7 @@ was a clean break from 0.10.x.
 | `@rullama/seal`            | Self-Evolving Agentic Learning loop                                                                              |
 | `@rullama/skills`          | SKILL.md skills system (parser, registry, executor, router)                                                      |
 | `@rullama/eval`            | Evaluation harness (trial runner, regression, adversarial, ranking metrics)                                      |
-| `@rullama/provider`        | LLM chat providers (Anthropic, OpenAI, Google, Bedrock, Vertex, Ollama)                        |
+| `@rullama/provider`        | LLM chat providers (Anthropic, OpenAI, Google, Bedrock, Vertex, Ollama)                                          |
 | `@rullama/provider-speech` | TTS/STT/ASR clients (Azure, Cartesia, Deepgram, ElevenLabs, Fish, Google TTS, Murf)                              |
 | `@rullama/call-policy`     | Provider decorators — retry / budget / circuit-breaker / cache                                                   |
 | `@rullama/mcp-client`      | Model Context Protocol client                                                                                    |

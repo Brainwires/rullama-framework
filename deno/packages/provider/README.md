@@ -1,8 +1,7 @@
 # @rullama/providers
 
-AI chat provider implementations for the rullama. Wraps
-multiple AI APIs behind the unified `Provider` interface from
-`@rullama/core`.
+AI chat provider implementations for the rullama. Wraps multiple AI APIs behind
+the unified `Provider` interface from `@rullama/core`.
 
 Equivalent to the Rust `rullama-providers` crate.
 
@@ -16,10 +15,7 @@ deno add @rullama/providers
 
 ```ts
 import { ChatOptions, Message } from "@rullama/core";
-import {
-  AnthropicChatProvider,
-  ChatProviderFactory,
-} from "@rullama/provider";
+import { AnthropicChatProvider, ChatProviderFactory } from "@rullama/provider";
 
 // Direct construction
 const provider = new AnthropicChatProvider(

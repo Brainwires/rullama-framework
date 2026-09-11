@@ -1,7 +1,8 @@
 # @rullama/agents
 
-Agent orchestration, coordination, and lifecycle management for the rullama. Provides the core agentic execution loop, task agents,
-inter-agent communication, and distributed coordination patterns.
+Agent orchestration, coordination, and lifecycle management for the rullama.
+Provides the core agentic execution loop, task agents, inter-agent
+communication, and distributed coordination patterns.
 
 Equivalent to the Rust `rullama-agent` crate.
 

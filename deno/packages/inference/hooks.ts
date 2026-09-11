@@ -12,12 +12,7 @@
  * @module
  */
 
-import type {
-  ChatResponse,
-  Message,
-  ToolResult,
-  ToolUse,
-} from "@rullama/core";
+import type { ChatResponse, Message, ToolResult, ToolUse } from "@rullama/core";
 import { estimateTokensFromSize } from "@rullama/core";
 
 // Re-export TaskAgentConfig as an opaque type reference for DelegationRequest.

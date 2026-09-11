@@ -1,8 +1,7 @@
 # @rullama/mcp
 
-Model Context Protocol (MCP) client for the rullama. Connect
-to external MCP servers, discover and call tools, read resources, and fetch
-prompts.
+Model Context Protocol (MCP) client for the rullama. Connect to external MCP
+servers, discover and call tools, read resources, and fetch prompts.
 
 Equivalent to the Rust `rullama-mcp` crate.
 

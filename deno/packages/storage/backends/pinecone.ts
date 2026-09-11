@@ -7,11 +7,7 @@
  * @module
  */
 
-import type {
-  ChunkMetadata,
-  DatabaseStats,
-  SearchResult,
-} from "@rullama/core";
+import type { ChunkMetadata, DatabaseStats, SearchResult } from "@rullama/core";
 import type { VectorDatabase } from "../traits.ts";
 
 const BATCH_SIZE = 100;

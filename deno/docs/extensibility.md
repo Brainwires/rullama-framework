@@ -8,33 +8,28 @@ to the component, done.
 
 | Interface           | Package                 | Purpose                        |
 | ------------------- | ----------------------- | ------------------------------ |
-| `Provider`          | `@rullama/core`      | AI chat completion backend     |
-| `EmbeddingProvider` | `@rullama/core`      | Text embedding generation      |
-| `VectorStore`       | `@rullama/core`      | Embedding storage and search   |
-| `StorageBackend`    | `@rullama/storage`   | Record persistence backend     |
-| `VectorDatabase`    | `@rullama/storage`   | Storage + vector search        |
+| `Provider`          | `@rullama/core`         | AI chat completion backend     |
+| `EmbeddingProvider` | `@rullama/core`         | Text embedding generation      |
+| `VectorStore`       | `@rullama/core`         | Embedding storage and search   |
+| `StorageBackend`    | `@rullama/storage`      | Record persistence backend     |
+| `VectorDatabase`    | `@rullama/storage`      | Storage + vector search        |
 | `ToolExecutor`      | `@rullama/tool-runtime` | Custom tool execution backend  |
 | `ToolPreHook`       | `@rullama/tool-runtime` | Pre-execution tool gate        |
-| `AgentRuntime`      | `@rullama/inference` | Custom agent execution loop    |
-| `LifecycleHook`     | `@rullama/core`      | Framework event interception   |
-| `OutputParser`      | `@rullama/core`      | Structured LLM output parsing  |
-| `BrainClient`       | `@rullama/knowledge` | Knowledge storage interface    |
-| `RagClient`         | `@rullama/knowledge` | Semantic code search interface |
-| `Middleware`        | `@rullama/network`   | MCP server request processing  |
-| `Discovery`         | `@rullama/network`   | Peer discovery protocol        |
-| `A2aHandler`        | `@rullama/a2a`       | A2A agent server handler       |
+| `AgentRuntime`      | `@rullama/inference`    | Custom agent execution loop    |
+| `LifecycleHook`     | `@rullama/core`         | Framework event interception   |
+| `OutputParser`      | `@rullama/core`         | Structured LLM output parsing  |
+| `BrainClient`       | `@rullama/knowledge`    | Knowledge storage interface    |
+| `RagClient`         | `@rullama/knowledge`    | Semantic code search interface |
+| `Middleware`        | `@rullama/network`      | MCP server request processing  |
+| `Discovery`         | `@rullama/network`      | Peer discovery protocol        |
+| `A2aHandler`        | `@rullama/a2a`          | A2A agent server handler       |
 
 ## Custom Provider
 
 Implement `Provider` from `@rullama/core`:
 
 ```ts
-import type {
-  ChatResponse,
-  Provider,
-  StreamChunk,
-  Tool,
-} from "@rullama/core";
+import type { ChatResponse, Provider, StreamChunk, Tool } from "@rullama/core";
 import { ChatOptions, createUsage, Message } from "@rullama/core";
 
 class MyProvider implements Provider {
@@ -186,11 +181,7 @@ class MetricsMiddleware implements Middleware {
 Intercept framework events with `LifecycleHook`:
 
 ```ts
-import type {
-  HookResult,
-  LifecycleEvent,
-  LifecycleHook,
-} from "@rullama/core";
+import type { HookResult, LifecycleEvent, LifecycleHook } from "@rullama/core";
 
 const loggingHook: LifecycleHook = {
   name: () => "logging",
@@ -217,7 +208,8 @@ throw FrameworkError.storageSchema("my-store", "Missing table");
 ## Where to Define Extensions
 
 - **Types and interfaces** -- `@rullama/core`
-- **Tool implementations** -- `@rullama/tool-builtins` (runtime in `@rullama/tool-runtime`)
+- **Tool implementations** -- `@rullama/tool-builtins` (runtime in
+  `@rullama/tool-runtime`)
 - **Agent coordination** -- `@rullama/agent` (runtime in `@rullama/inference`)
 - **Storage backends** -- `@rullama/storage`
 - **Network components** -- `@rullama/network`

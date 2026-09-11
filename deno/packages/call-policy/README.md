@@ -49,6 +49,6 @@ Outermost first: `CircuitBreaker → Retry → Budget → Cache → base`.
 
 ## Equivalent Rust crate
 
-`rullama-resilience` — same decorator shapes, same semantics. The Rust
-crate's optional SQLite cache backend is intentionally not ported; implement
+`rullama-resilience` — same decorator shapes, same semantics. The Rust crate's
+optional SQLite cache backend is intentionally not ported; implement
 `CacheBackend` directly against Deno KV (or any other store) for persistence.

@@ -1,8 +1,8 @@
 # @rullama/storage
 
-Backend-agnostic persistent storage for the rullama. Provides
-storage interfaces, an in-memory backend, domain-specific stores, and a tiered
-memory hierarchy.
+Backend-agnostic persistent storage for the rullama. Provides storage
+interfaces, an in-memory backend, domain-specific stores, and a tiered memory
+hierarchy.
 
 Equivalent to the Rust `rullama-storage` crate.
 

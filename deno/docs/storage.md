@@ -1,7 +1,7 @@
 # Storage
 
-The `@rullama/storage` package provides backend-agnostic persistent storage
-with domain-specific stores and tiered memory.
+The `@rullama/storage` package provides backend-agnostic persistent storage with
+domain-specific stores and tiered memory.
 
 ## StorageBackend Interface
 

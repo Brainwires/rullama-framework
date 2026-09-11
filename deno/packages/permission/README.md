@@ -1,8 +1,8 @@
 # @rullama/permissions
 
-Capability-based permission system for the rullama. Controls
-what agents can do across filesystem, tools, network, git, and spawning — with
-policy-based enforcement, audit logging, trust tracking, and anomaly detection.
+Capability-based permission system for the rullama. Controls what agents can do
+across filesystem, tools, network, git, and spawning — with policy-based
+enforcement, audit logging, trust tracking, and anomaly detection.
 
 Equivalent to the Rust `rullama-permissions` crate.
 

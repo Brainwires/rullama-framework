@@ -9,11 +9,7 @@
  */
 
 import pg from "pg";
-import type {
-  ChunkMetadata,
-  DatabaseStats,
-  SearchResult,
-} from "@rullama/core";
+import type { ChunkMetadata, DatabaseStats, SearchResult } from "@rullama/core";
 import type { StorageBackend, VectorDatabase } from "../traits.ts";
 import type {
   FieldDef,

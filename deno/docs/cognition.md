@@ -77,11 +77,7 @@ The `RagClient` interface defines semantic code search operations: index, query,
 advanced search, and statistics.
 
 ```ts
-import type {
-  IndexRequest,
-  QueryRequest,
-  RagClient,
-} from "@rullama/knowledge";
+import type { IndexRequest, QueryRequest, RagClient } from "@rullama/knowledge";
 
 // Index a codebase
 const indexReq: IndexRequest = { path: "/path/to/project", mode: "full" };

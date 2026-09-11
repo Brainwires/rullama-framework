@@ -1,8 +1,8 @@
 # Agents
 
-The agent system spans three packages: `@rullama/inference` (agent runtime,
-task agents, and specialized agents), `@rullama/agent` (multi-agent
-coordination patterns), and `@rullama/mdap` (the MDAP/MAKER voting framework).
+The agent system spans three packages: `@rullama/inference` (agent runtime, task
+agents, and specialized agents), `@rullama/agent` (multi-agent coordination
+patterns), and `@rullama/mdap` (the MDAP/MAKER voting framework).
 
 ## Agent Loop
 

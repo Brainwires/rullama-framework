@@ -1,9 +1,5 @@
 import { assert, assertEquals } from "@std/assert";
-import type {
-  GraphEdge,
-  GraphNode,
-  RelationshipGraphT,
-} from "@rullama/core";
+import type { GraphEdge, GraphNode, RelationshipGraphT } from "@rullama/core";
 import {
   errorTypeDescription,
   Issue,

@@ -9,11 +9,7 @@
  * @module
  */
 
-import type {
-  ChunkMetadata,
-  DatabaseStats,
-  SearchResult,
-} from "@rullama/core";
+import type { ChunkMetadata, DatabaseStats, SearchResult } from "@rullama/core";
 import type { FieldDef, Filter, Record, ScoredRecord } from "./types.ts";
 
 /**

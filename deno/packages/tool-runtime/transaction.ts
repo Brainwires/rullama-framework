@@ -19,11 +19,7 @@
  * rollback() the queue is empty and new stages can be accepted.
  */
 
-import type {
-  CommitResult,
-  StagedWrite,
-  StagingBackend,
-} from "@rullama/core";
+import type { CommitResult, StagedWrite, StagingBackend } from "@rullama/core";
 
 interface StagedEntry {
   stagedPath: string;
@@ -47,9 +43,7 @@ export class TransactionManager implements StagingBackend {
    */
   static create(stagingDir?: string): TransactionManager {
     const dir = stagingDir ??
-      `${
-        Deno.env.get("TMPDIR") ?? "/tmp"
-      }/rullama-txn-${crypto.randomUUID()}`;
+      `${Deno.env.get("TMPDIR") ?? "/tmp"}/rullama-txn-${crypto.randomUUID()}`;
     Deno.mkdirSync(dir, { recursive: true });
     return new TransactionManager(dir);
   }

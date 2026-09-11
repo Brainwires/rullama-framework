@@ -22,9 +22,7 @@ async function main(): Promise<void> {
   // -----------------------------------------------------------------------
   console.log("=== 1. Setup: Creating SKILL.md files ===\n");
 
-  const tempDir = `${
-    Deno.env.get("TMPDIR") ?? "/tmp"
-  }/rullama-skills-example`;
+  const tempDir = `${Deno.env.get("TMPDIR") ?? "/tmp"}/rullama-skills-example`;
   try {
     await Deno.mkdir(tempDir, { recursive: true });
   } catch (e) {

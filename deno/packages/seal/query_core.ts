@@ -7,11 +7,7 @@
  * Equivalent to Rust's `rullama_agents::seal::query_core` module.
  */
 
-import type {
-  EdgeType,
-  EntityType,
-  RelationshipGraphT,
-} from "@rullama/core";
+import type { EdgeType, EntityType, RelationshipGraphT } from "@rullama/core";
 
 // ─── Regex statics ──────────────────────────────────────────────────────────
 

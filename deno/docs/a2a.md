@@ -73,11 +73,7 @@ The client supports task operations: `sendMessage`, `getTask`, `listTasks`,
 Stream responses in real-time using Server-Sent Events:
 
 ```ts
-import {
-  isArtifactUpdate,
-  isStatusUpdate,
-  parseSseStream,
-} from "@rullama/a2a";
+import { isArtifactUpdate, isStatusUpdate, parseSseStream } from "@rullama/a2a";
 
 // Stream a message send
 const stream = await client.sendMessageStream({
