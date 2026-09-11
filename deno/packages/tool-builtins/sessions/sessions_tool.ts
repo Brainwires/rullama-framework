@@ -167,7 +167,7 @@ export class SessionsTool {
   // ── Execution ────────────────────────────────────────────────────────────
 
   /** Dispatch a tool call by name. Never throws — broker errors become ToolResult.error. */
-  async execute(
+  execute(
     tool_use_id: string,
     tool_name: string,
     input: Record<string, unknown>,
@@ -183,9 +183,8 @@ export class SessionsTool {
       case TOOL_SESSIONS_SPAWN:
         return this.execSpawn(tool_use_id, input, context);
       default:
-        return ToolResult.error(
-          tool_use_id,
-          `Unknown sessions tool: ${tool_name}`,
+        return Promise.resolve(
+          ToolResult.error(tool_use_id, `Unknown sessions tool: ${tool_name}`),
         );
     }
   }

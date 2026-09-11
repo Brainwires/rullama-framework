@@ -61,7 +61,7 @@ Deno.test("isChatCapable: returns false for embedding model", () => {
 
 Deno.test("createModelLister: throws for unsupported provider", () => {
   assertThrows(
-    () => createModelLister("rullama", "key"),
+    () => createModelLister("bedrock", "key"),
     Error,
     "not supported",
   );

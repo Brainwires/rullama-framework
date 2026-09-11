@@ -1,22 +1,17 @@
 /**
  * Cross-package integration test: MCP type serialization roundtrip.
  *
- * Verifies that @rullama/mcp types (McpTool, McpResource, McpPrompt)
+ * Verifies that @rullama/mcp-client types (McpTool, McpResource, McpPrompt)
  * can be serialized to JSON and deserialized with all fields preserved.
  * Also tests JSON-RPC request/response creation and parsing.
  */
 
-import {
-  assert,
-  assertEquals,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals } from "@std/assert";
 import {
   createJsonRpcNotification,
   createJsonRpcRequest,
   isJsonRpcNotification,
   isJsonRpcResponse,
-  type JsonRpcRequest,
-  type JsonRpcResponse,
   type McpPrompt,
   type McpResource,
   type McpTool,

@@ -114,6 +114,12 @@ export class RegressionSuite {
   }
 
   /** Create with default config. */
+  static create(): RegressionSuite {
+    return new RegressionSuite();
+  }
+
+  /** @deprecated Use {@link RegressionSuite.create}; removed in 0.13. */
+  // deno-lint-ignore no-misused-new
   static new(): RegressionSuite {
     return new RegressionSuite();
   }

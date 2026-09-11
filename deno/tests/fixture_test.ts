@@ -8,11 +8,8 @@
  * Run with: deno test deno/tests/fixture_test.ts
  */
 
-import {
-  assertEquals,
-  assertExists,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
+import { assertEquals, assertExists } from "@std/assert";
+import { join } from "@std/path";
 
 const FIXTURES_DIR = join(
   new URL(".", import.meta.url).pathname,

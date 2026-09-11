@@ -1,23 +1,19 @@
 /**
  * Cross-package integration test: Tool registry and smart router.
  *
- * Verifies that @rullama/tools ToolRegistry correctly registers
+ * Verifies that @rullama/tool-runtime ToolRegistry correctly registers
+ * @rullama/tool-builtins
  * built-in tools (WebTool, SearchTool) and that the smart router detects
  * appropriate categories for various queries.
  */
 
-import {
-  assert,
-  assertEquals,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals } from "@std/assert";
 import {
   analyzeQuery,
   getToolsForCategories,
-  SearchTool,
-  type ToolCategory,
   ToolRegistry,
-  WebTool,
-} from "@rullama/tools";
+} from "@rullama/tool-runtime";
+import { SearchTool, WebTool } from "@rullama/tool-builtins";
 
 // ---------------------------------------------------------------------------
 // Tool registration tests

@@ -206,7 +206,7 @@ export class CalendarTool {
     }
   }
 
-  private static async dispatch(
+  private static dispatch(
     tool_name: string,
     input: Record<string, unknown>,
     context: ToolContext,
@@ -223,7 +223,9 @@ export class CalendarTool {
       case "calendar_find_free_time":
         return CalendarTool.handleFindFreeTime(input, context);
       default:
-        throw new Error(`Unknown calendar tool: ${tool_name}`);
+        return Promise.reject(
+          new Error(`Unknown calendar tool: ${tool_name}`),
+        );
     }
   }
 

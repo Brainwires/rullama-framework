@@ -17,11 +17,7 @@
  */
 
 import type { EntityStoreT, RelationshipGraphT } from "@rullama/core";
-import {
-  CoreferenceResolver,
-  type DialogState,
-  type ResolvedReference,
-} from "./coreference.ts";
+import { CoreferenceResolver, type DialogState } from "./coreference.ts";
 import { LearningCoordinator } from "./learning.ts";
 import {
   type QueryCore,
@@ -30,7 +26,6 @@ import {
 } from "./query_core.ts";
 import {
   defaultReflectionConfig,
-  type Issue,
   ReflectionModule,
   type ReflectionReport,
 } from "./reflection.ts";

@@ -1,15 +1,12 @@
 /**
  * Cross-package integration test: Agent loop with mock provider and tools.
  *
- * Verifies that @rullama/agents runAgentLoop works correctly with
+ * Verifies that @rullama/inference runAgentLoop works correctly with
  * @rullama/core types (Provider, Message, Tool, ToolResult, etc.)
  * and the CommunicationHub + FileLockManager infrastructure.
  */
 
-import {
-  assert,
-  assertEquals,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals } from "@std/assert";
 import {
   ChatOptions,
   type ChatResponse,
@@ -21,13 +18,9 @@ import {
   ToolResult,
   type ToolUse,
 } from "@rullama/core";
-import {
-  type AgentRuntime,
-  CommunicationHub,
-  FileLockManager,
-  runAgentLoop,
-} from "@rullama/agent";
-import { ToolRegistry } from "@rullama/tools";
+import { CommunicationHub, FileLockManager } from "@rullama/agent";
+import { type AgentRuntime, runAgentLoop } from "@rullama/inference";
+import { ToolRegistry } from "@rullama/tool-runtime";
 
 // ---------------------------------------------------------------------------
 // Mock provider that returns canned responses
@@ -85,7 +78,7 @@ class MockAgentRuntime implements AgentRuntime {
     return this.maxIter;
   }
 
-  async callProvider(): Promise<ChatResponse> {
+  callProvider(): Promise<ChatResponse> {
     return this.provider.chat(
       this.conversationMessages,
       undefined,
@@ -110,9 +103,11 @@ class MockAgentRuntime implements AgentRuntime {
       response.finish_reason === "stop";
   }
 
-  async executeTool(toolUse: ToolUse): Promise<ToolResult> {
+  executeTool(toolUse: ToolUse): Promise<ToolResult> {
     this.toolCallLog.push(toolUse.name);
-    return ToolResult.success(toolUse.id, `result-of-${toolUse.name}`);
+    return Promise.resolve(
+      ToolResult.success(toolUse.id, `result-of-${toolUse.name}`),
+    );
   }
 
   getLockRequirement(
@@ -129,9 +124,9 @@ class MockAgentRuntime implements AgentRuntime {
     // no-op
   }
 
-  async onCompletion(response: ChatResponse): Promise<string | undefined> {
+  onCompletion(response: ChatResponse): Promise<string | undefined> {
     const text = response.message.text();
-    return text ?? "done";
+    return Promise.resolve(text ?? "done");
   }
 
   onIterationLimit(iterations: number): string {

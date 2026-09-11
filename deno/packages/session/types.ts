@@ -13,6 +13,12 @@ export class SessionId {
   }
 
   /** Build a SessionId from any string. */
+  static from(s: string): SessionId {
+    return new SessionId(s);
+  }
+
+  /** @deprecated Use {@link SessionId.from}; removed in 0.13. */
+  // deno-lint-ignore no-misused-new
   static new(s: string): SessionId {
     return new SessionId(s);
   }

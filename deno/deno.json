@@ -1,6 +1,17 @@
 {
   "tasks": {
+    "check": "deno fmt --check && deno lint && deno check packages/*/mod.ts tests/*.ts && deno test -A packages/ tests/",
+    "check:fix": "deno fmt && deno lint --fix; deno lint",
+    "test": "deno test -A packages/ tests/",
     "parity": "deno run --allow-read scripts/parity.ts"
+  },
+  "unstable": [
+    "kv"
+  ],
+  "lint": {
+    "exclude": [
+      "examples/"
+    ]
   },
   "workspace": [
     "./packages/a2a",
@@ -40,7 +51,6 @@
     "pg": "npm:pg@8",
     "mysql2/promise": "npm:mysql2@3/promise",
     "surrealdb": "npm:surrealdb@1",
-
     "@rullama/a2a": "jsr:@rullama/a2a@^0.12.0",
     "@rullama/agent": "jsr:@rullama/agent@^0.12.0",
     "@rullama/call-policy": "jsr:@rullama/call-policy@^0.12.0",

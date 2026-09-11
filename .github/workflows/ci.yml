@@ -222,12 +222,8 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Type-check all Deno packages
+      # `deno task check` is the single source of truth for the Deno gate (fmt, lint,
+      # type-check, package + integration tests) so local == CI.
+      - name: Check (fmt, lint, type-check, tests)
         working-directory: deno
-        run: deno check packages/**/*.ts
-      - name: Lint
-        working-directory: deno
-        run: deno lint packages/
-      - name: Run tests
-        working-directory: deno
-        run: deno test --allow-all tests/
+        run: deno task check
