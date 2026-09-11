@@ -1,24 +1,62 @@
-# Publish the 27 @rullama/* Deno packages to JSR.
+# Publish @rullama/* Deno packages to JSR — one package per tag, like denext.
 #
-# Trigger: push a tag `deno-v<version>` (e.g. `deno-v0.12.1`) whose version matches every
-# package's deno.json — or run the workflow by hand with dry_run for a rehearsal.
-# Publishing from Actions with `id-token: write` gives every package JSR provenance
-# (the "hasProvenance" score factor); a laptop publish never can.
+# Publishing from GitHub Actions with `id-token: write` lets JSR record build
+# provenance (the "hasProvenance" score factor); no token secret is needed once
+# each package is linked to this repo on jsr.io (OIDC trust).
 #
-# `deno publish` at the workspace root publishes every workspace member in dependency
-# order, so the hand-maintained tier lists in deno/scripts/*.sh are not needed here.
+# deno/ is a Deno WORKSPACE of 27 members. Each package publishes INDEPENDENTLY,
+# keyed by its tag prefix, so a release never re-cuts every package — only the
+# one you tagged. `deno publish --config deno/packages/<name>/deno.json` scopes
+# the publish to exactly that member.
+#
+#   git tag core-v0.12.2 && git push origin core-v0.12.2
+#   git tag tool-runtime-v0.12.2 && git push origin tool-runtime-v0.12.2
+#   git tag provider-v0.12.2 && git push origin provider-v0.12.2
+#
+# Bump the version in that package's deno.json first (JSR rejects re-publishing
+# a version); the job fails if the tag's version and the deno.json disagree.
+# Publish in dependency order when several packages change together — a member
+# whose sibling dependency is not yet on JSR at that version fails to publish:
+#   core → (call-policy, permission, storage, telemetry, mcp-client, …)
+#        → tool-runtime → tool-builtins → inference → skills/seal/network …
+#
+# Lockstep releases (every package at the same version, e.g. 0.12.1) use the
+# `deno-v<version>` tag, which publishes the whole workspace in one job (Deno
+# orders the members itself).
+
 name: Publish Deno packages
 
 on:
   push:
     tags:
-      - "deno-v*"
-  workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Only run `deno publish --dry-run`"
-        type: boolean
-        default: true
+      - "deno-v*" # every @rullama/* package (lockstep)
+      - "a2a-v*" # @rullama/a2a
+      - "agent-v*" # @rullama/agent
+      - "call-policy-v*" # @rullama/call-policy
+      - "core-v*" # @rullama/core
+      - "eval-v*" # @rullama/eval
+      - "finetune-v*" # @rullama/finetune
+      - "inference-v*" # @rullama/inference
+      - "knowledge-v*" # @rullama/knowledge
+      - "mcp-client-v*" # @rullama/mcp-client
+      - "mcp-server-v*" # @rullama/mcp-server
+      - "mdap-v*" # @rullama/mdap
+      - "memory-v*" # @rullama/memory
+      - "network-v*" # @rullama/network
+      - "permission-v*" # @rullama/permission
+      - "prompting-v*" # @rullama/prompting
+      - "provider-v*" # @rullama/provider
+      - "provider-speech-v*" # @rullama/provider-speech
+      - "rag-v*" # @rullama/rag
+      - "reasoning-v*" # @rullama/reasoning
+      - "seal-v*" # @rullama/seal
+      - "session-v*" # @rullama/session
+      - "skills-v*" # @rullama/skills
+      - "storage-v*" # @rullama/storage
+      - "stores-v*" # @rullama/stores
+      - "telemetry-v*" # @rullama/telemetry
+      - "tool-builtins-v*" # @rullama/tool-builtins
+      - "tool-runtime-v*" # @rullama/tool-runtime
 
 permissions:
   contents: read
@@ -36,19 +74,69 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Version tag matches package versions
-        if: github.event_name == 'push'
+      - name: Cache Deno dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/deno
+          key: ${{ runner.os }}-deno-${{ hashFiles('deno/deno.lock') }}
+          restore-keys: ${{ runner.os }}-deno-
+
+      - name: Resolve package config from the tag
+        id: pkg
         run: |
-          tag="${GITHUB_REF_NAME#deno-v}"
-          for f in packages/*/deno.json; do
-            v=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('$f')).version)")
-            if [ "$v" != "$tag" ]; then echo "::error::$f is $v, tag is $tag"; exit 1; fi
-          done
+          case "$GITHUB_REF_NAME" in
+            a2a-v*) pkg=a2a ;;
+            agent-v*) pkg=agent ;;
+            call-policy-v*) pkg=call-policy ;;
+            core-v*) pkg=core ;;
+            eval-v*) pkg=eval ;;
+            finetune-v*) pkg=finetune ;;
+            inference-v*) pkg=inference ;;
+            knowledge-v*) pkg=knowledge ;;
+            mcp-client-v*) pkg=mcp-client ;;
+            mcp-server-v*) pkg=mcp-server ;;
+            mdap-v*) pkg=mdap ;;
+            memory-v*) pkg=memory ;;
+            network-v*) pkg=network ;;
+            permission-v*) pkg=permission ;;
+            prompting-v*) pkg=prompting ;;
+            provider-v*) pkg=provider ;;
+            provider-speech-v*) pkg=provider-speech ;;
+            rag-v*) pkg=rag ;;
+            reasoning-v*) pkg=reasoning ;;
+            seal-v*) pkg=seal ;;
+            session-v*) pkg=session ;;
+            skills-v*) pkg=skills ;;
+            storage-v*) pkg=storage ;;
+            stores-v*) pkg=stores ;;
+            telemetry-v*) pkg=telemetry ;;
+            tool-builtins-v*) pkg=tool-builtins ;;
+            tool-runtime-v*) pkg=tool-runtime ;;
+            deno-v*) pkg="" ;;
+            *) echo "::error::unrecognized tag '$GITHUB_REF_NAME'"; exit 1 ;;
+          esac
+          version="${GITHUB_REF_NAME#*-v}"
+          if [ -n "$pkg" ]; then
+            cfg="packages/$pkg/deno.json"
+            v=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('$cfg')).version)")
+            if [ "$v" != "$version" ]; then
+              echo "::error::$cfg is version $v but the tag says $version — bump it first"; exit 1
+            fi
+            echo "config=--config $cfg" >> "$GITHUB_OUTPUT"
+            echo "Publishing @rullama/$pkg@$version ($cfg)"
+          else
+            for f in packages/*/deno.json; do
+              v=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('$f')).version)")
+              if [ "$v" != "$version" ]; then
+                echo "::error::$f is version $v but the lockstep tag says $version"; exit 1
+              fi
+            done
+            echo "config=" >> "$GITHUB_OUTPUT"
+            echo "Publishing every @rullama/* package at $version"
+          fi
+
       - name: Gate (fmt, lint, type-check, doc-lint, tests)
         run: deno task check
-      - name: Publish (dry run)
-        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
-        run: deno publish --dry-run
-      - name: Publish
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
-        run: deno publish
+
+      - name: Publish to JSR (with provenance)
+        run: deno publish ${{ steps.pkg.outputs.config }}

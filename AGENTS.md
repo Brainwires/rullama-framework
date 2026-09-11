@@ -33,9 +33,11 @@ This file gives coding agents project-specific context. Keep it short and update
 - Typecheck or lint: `deno task check` = fmt --check + lint + type-check (packages, tests,
   examples) + `deno task doc-lint` (JSDoc on every export of the 74 published entrypoints)
   + tests — what CI runs; `deno task check:fix` auto-fixes formatting and fixable lint.
-- Publishing: push a `deno-v<version>` tag (all 27 packages must carry that version) — the
-  `publish-deno.yml` workflow publishes with OIDC provenance; `deno/scripts/publish.sh` is the
-  manual fallback. `deno task jsr:scores` refreshes `deno/docs/jsr-scores.md`.
+- Publishing (like denext): bump the package's `deno.json` version, then push
+  `<package>-v<version>` (e.g. `tool-runtime-v0.12.2`) — `publish-deno.yml` publishes THAT
+  package with OIDC provenance; dependencies first (core → … → tool-runtime → tool-builtins
+  → inference). A lockstep release of all 27 uses `deno-v<version>`. `deno/scripts/publish.sh
+  [--package <name>]` is the manual fallback. `deno task jsr:scores` refreshes `deno/docs/jsr-scores.md`.
 - Coverage for fallow's CRAP score: `deno task coverage:fallow` (writes
   `deno/coverage/coverage-final.json`, which the pre-commit hook passes to `fallow audit`).
 

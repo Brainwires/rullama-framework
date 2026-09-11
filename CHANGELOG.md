@@ -237,10 +237,12 @@ sanitizer, were **advisory** — no execution path called any of them.
   entrypoints and is part of `deno task check`; every entrypoint starts with
   a `@module` doc block and every exported symbol is documented (the JSR
   "has docs" score factors).
-- `.github/workflows/publish-deno.yml`: a `deno-v<version>` tag publishes all
-  27 packages from GitHub Actions with OIDC provenance (workspace `deno
-  publish`, dependency order handled by Deno). `deno/scripts/publish.sh` is
-  the manual fallback; the two 0.12.0-era scripts are gone.
+- `.github/workflows/publish-deno.yml`: per-package tags — pushing
+  `<package>-v<version>` (e.g. `tool-runtime-v0.12.2`) publishes that one
+  package from GitHub Actions with OIDC provenance, exactly like denext; a
+  `deno-v<version>` tag publishes all 27 in lockstep. `deno/scripts/publish.sh
+  [--package <name>]` is the manual fallback; the two 0.12.0-era scripts are
+  gone.
 - `deno task jsr:scores` writes `docs/jsr-scores.md` from JSR's score API.
 - Root `deno.json` no longer pins `@rullama/*` to `jsr:` (workspace members
   resolve locally; the pins only put unhashed entries in `deno.lock`); the
