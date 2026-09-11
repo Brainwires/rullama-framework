@@ -3,16 +3,9 @@
 // security schemes, and JSON serialization with round-trip verification.
 // Run: deno run deno/examples/a2a/agent_card.ts
 
-import type {
-  AgentCapabilities,
-  AgentCard,
-  AgentProvider,
-  AgentSkill,
-  HttpAuthSecurityScheme,
-  SecurityScheme,
-} from "@rullama/a2a";
+import type { AgentCard, SecurityScheme } from "@rullama/a2a";
 
-async function main(): Promise<void> {
+function main(): void {
   // -----------------------------------------------------------------------
   // 1. Build a full AgentCard with all fields populated
   // -----------------------------------------------------------------------
@@ -161,4 +154,4 @@ async function main(): Promise<void> {
   console.log("\nDone.");
 }
 
-await main();
+main();

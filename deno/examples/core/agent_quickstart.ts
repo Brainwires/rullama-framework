@@ -88,9 +88,9 @@ async function main() {
   const loggingHook: LifecycleHook = {
     name: "logger",
     priority: () => 0,
-    async onEvent(event: LifecycleEvent): Promise<HookResult> {
+    onEvent(event: LifecycleEvent): Promise<HookResult> {
       console.log(`  [hook:logger] Event: ${event.type}`);
-      return { type: "continue" };
+      return Promise.resolve({ type: "continue" });
     },
   };
 
@@ -98,17 +98,17 @@ async function main() {
   const guardHook: LifecycleHook = {
     name: "safety-guard",
     priority: () => 10,
-    async onEvent(event: LifecycleEvent): Promise<HookResult> {
+    onEvent(event: LifecycleEvent): Promise<HookResult> {
       if (event.type === "tool_before_execute" && event.tool_name === "rm_rf") {
         console.log(
           `  [hook:guard] BLOCKED dangerous tool: ${event.tool_name}`,
         );
-        return {
+        return Promise.resolve({
           type: "cancel",
           reason: "Dangerous tool blocked by safety guard",
-        };
+        });
       }
-      return { type: "continue" };
+      return Promise.resolve({ type: "continue" });
     },
   };
 

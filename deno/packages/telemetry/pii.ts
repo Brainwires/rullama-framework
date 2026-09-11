@@ -10,9 +10,12 @@
  * request is made to port them).
  */
 
-/** Deterministic, irreversible hash of a session id (lower 12 hex chars). */
 import { redactSecrets as coreRedactSecrets } from "@rullama/core";
 
+/**
+ * Deterministic, irreversible hash of a session id: the first 6 bytes (12 hex
+ * chars) of SHA-256 over `"rullama-session:" + session_id`.
+ */
 export async function hashSessionId(session_id: string): Promise<string> {
   const bytes = new TextEncoder().encode(`rullama-session:${session_id}`);
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));

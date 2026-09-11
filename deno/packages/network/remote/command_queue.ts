@@ -27,6 +27,14 @@ export class QueueEntry {
   /** Sequence number for FIFO within same priority. */
   sequence: number;
 
+  /**
+   * Wrap a command for queueing; stamps `enqueuedAt = now` and resolves
+   * `command.deadline_ms` (relative) into an absolute `deadline`.
+   *
+   * @param command The prioritized command.
+   * @param sequence Monotonic sequence number used to keep FIFO order among
+   *   entries of equal priority.
+   */
   constructor(command: PrioritizedCommand, sequence: number) {
     this.command = command;
     this.enqueuedAt = Date.now();
@@ -76,6 +84,13 @@ export class QueueEntry {
 
 /** Queue errors. */
 export class QueueError extends Error {
+  /**
+   * Create a queue error.
+   *
+   * @param kind `"QueueFull"` (depth limit hit by a non-critical command) or
+   *   `"MaxRetriesExceeded"` (requeue attempted past the retry policy).
+   * @param message Human-readable detail.
+   */
   constructor(
     readonly kind: "QueueFull" | "MaxRetriesExceeded",
     message: string,
@@ -84,10 +99,12 @@ export class QueueError extends Error {
     this.name = "QueueError";
   }
 
+  /** Error thrown by {@link CommandQueue.enqueue} when the queue is at `maxDepth`. */
   static queueFull(): QueueError {
     return new QueueError("QueueFull", "Queue is full");
   }
 
+  /** Error thrown by {@link CommandQueue.requeueForRetry} when the entry's retry policy is exhausted. */
   static maxRetriesExceeded(): QueueError {
     return new QueueError("MaxRetriesExceeded", "Maximum retries exceeded");
   }
@@ -99,10 +116,15 @@ export class QueueError extends Error {
 
 /** Queue statistics. */
 export interface QueueStats {
+  /** Number of entries currently queued (sum of the four priority buckets). */
   total: number;
+  /** Entries with `"critical"` priority. */
   critical: number;
+  /** Entries with `"high"` priority. */
   high: number;
+  /** Entries with `"normal"` priority. */
   normal: number;
+  /** Entries with `"low"` priority. */
   low: number;
 }
 
@@ -132,6 +154,13 @@ export class CommandQueue {
   private sequenceCounter = 0;
   private readonly maxDepth: number;
 
+  /**
+   * Create an empty queue.
+   *
+   * @param maxDepth Maximum number of queued entries before non-critical
+   *   enqueues throw {@link QueueError.queueFull} (default 1000). Critical
+   *   commands always bypass the limit.
+   */
   constructor(maxDepth: number = DEFAULT_QUEUE_MAX_DEPTH) {
     this.maxDepth = maxDepth;
   }

@@ -1,20 +1,17 @@
 {
   "tasks": {
-    "check": "deno fmt --check && deno lint && deno check packages/*/mod.ts tests/*.ts && deno test -A packages/ tests/",
+    "check": "deno fmt --check && deno lint && deno check packages/*/mod.ts tests/*.ts examples/**/*.ts && deno task doc-lint && deno test -A packages/ tests/",
     "check:fix": "deno fmt && deno lint --fix; deno lint",
     "test": "deno test -A packages/ tests/",
     "parity": "deno run --allow-read scripts/parity.ts",
     "coverage:fallow": "rm -rf coverage && deno test -A packages/ tests/ --coverage=coverage/profile && deno coverage coverage/profile --include=/packages/ --lcov --output=coverage/lcov.info && deno run --allow-read --allow-write scripts/coverage-to-istanbul.ts coverage/lcov.info coverage/coverage-final.json",
-    "hooks:install": "git -C .. config core.hooksPath .githooks"
+    "hooks:install": "git -C .. config core.hooksPath .githooks",
+    "doc-lint": "deno doc --lint packages/a2a/mod.ts packages/agent/mod.ts packages/call-policy/mod.ts packages/core/mod.ts packages/core/confidence.ts packages/core/paths.ts packages/core/file_context.ts packages/eval/mod.ts packages/eval/adversarial.ts packages/eval/regression.ts packages/eval/ranking_metrics.ts packages/eval/stability_tests.ts packages/finetune/mod.ts packages/inference/mod.ts packages/inference/task_agent.ts packages/inference/judge_agent.ts packages/inference/planner_agent.ts packages/inference/validator_agent.ts packages/inference/cycle_orchestrator.ts packages/inference/runtime.ts packages/knowledge/mod.ts packages/mcp-client/mod.ts packages/mcp-server/mod.ts packages/mcp-server/middleware/mod.ts packages/mcp-server/transport/mod.ts packages/mdap/mod.ts packages/memory/mod.ts packages/network/mod.ts packages/permission/mod.ts packages/prompting/mod.ts packages/prompting/techniques.ts packages/prompting/cluster.ts packages/prompting/generator.ts packages/prompting/temperature.ts packages/provider/mod.ts packages/provider-speech/mod.ts packages/provider-speech/azure_speech.ts packages/provider-speech/cartesia.ts packages/provider-speech/deepgram.ts packages/provider-speech/elevenlabs.ts packages/provider-speech/fish.ts packages/provider-speech/google_tts.ts packages/provider-speech/murf.ts packages/rag/mod.ts packages/rag/code_analysis/mod.ts packages/reasoning/mod.ts packages/seal/mod.ts packages/session/mod.ts packages/skills/mod.ts packages/storage/mod.ts packages/stores/mod.ts packages/stores/conversation_store.ts packages/stores/message_store.ts packages/stores/plan_store.ts packages/stores/task_store.ts packages/stores/template_store.ts packages/telemetry/mod.ts packages/telemetry/anomaly.ts packages/tool-builtins/mod.ts packages/tool-builtins/bash.ts packages/tool-builtins/file_ops.ts packages/tool-builtins/git.ts packages/tool-builtins/web.ts packages/tool-builtins/search.ts packages/tool-builtins/semantic_search.ts packages/tool-runtime/mod.ts packages/tool-runtime/registry.ts packages/tool-runtime/executor.ts packages/tool-runtime/smart_router.ts packages/tool-runtime/oauth.ts packages/tool-runtime/openapi.ts packages/tool-runtime/tool_search.ts packages/tool-runtime/transaction.ts packages/tool-runtime/validation.ts",
+    "jsr:scores": "deno run --allow-net=jsr.io --allow-write=docs scripts/jsr-scores.ts"
   },
   "unstable": [
     "kv"
   ],
-  "lint": {
-    "exclude": [
-      "examples/"
-    ]
-  },
   "workspace": [
     "./packages/a2a",
     "./packages/agent",
@@ -52,33 +49,6 @@
     "@std/yaml/parse": "jsr:@std/yaml@^1.0.0/parse",
     "pg": "npm:pg@8",
     "mysql2/promise": "npm:mysql2@3/promise",
-    "surrealdb": "npm:surrealdb@1",
-    "@rullama/a2a": "jsr:@rullama/a2a@^0.12.0",
-    "@rullama/agent": "jsr:@rullama/agent@^0.12.0",
-    "@rullama/call-policy": "jsr:@rullama/call-policy@^0.12.0",
-    "@rullama/core": "jsr:@rullama/core@^0.12.0",
-    "@rullama/eval": "jsr:@rullama/eval@^0.12.0",
-    "@rullama/finetune": "jsr:@rullama/finetune@^0.12.0",
-    "@rullama/inference": "jsr:@rullama/inference@^0.12.0",
-    "@rullama/knowledge": "jsr:@rullama/knowledge@^0.12.0",
-    "@rullama/mcp-client": "jsr:@rullama/mcp-client@^0.12.0",
-    "@rullama/mcp-server": "jsr:@rullama/mcp-server@^0.12.0",
-    "@rullama/mdap": "jsr:@rullama/mdap@^0.12.0",
-    "@rullama/memory": "jsr:@rullama/memory@^0.12.0",
-    "@rullama/network": "jsr:@rullama/network@^0.12.0",
-    "@rullama/permission": "jsr:@rullama/permission@^0.12.0",
-    "@rullama/prompting": "jsr:@rullama/prompting@^0.12.0",
-    "@rullama/provider": "jsr:@rullama/provider@^0.12.0",
-    "@rullama/provider-speech": "jsr:@rullama/provider-speech@^0.12.0",
-    "@rullama/rag": "jsr:@rullama/rag@^0.12.0",
-    "@rullama/reasoning": "jsr:@rullama/reasoning@^0.12.0",
-    "@rullama/seal": "jsr:@rullama/seal@^0.12.0",
-    "@rullama/session": "jsr:@rullama/session@^0.12.0",
-    "@rullama/skills": "jsr:@rullama/skills@^0.12.0",
-    "@rullama/storage": "jsr:@rullama/storage@^0.12.0",
-    "@rullama/stores": "jsr:@rullama/stores@^0.12.0",
-    "@rullama/telemetry": "jsr:@rullama/telemetry@^0.12.0",
-    "@rullama/tool-builtins": "jsr:@rullama/tool-builtins@^0.12.0",
-    "@rullama/tool-runtime": "jsr:@rullama/tool-runtime@^0.12.0"
+    "surrealdb": "npm:surrealdb@1"
   }
 }

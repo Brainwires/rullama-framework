@@ -7,5 +7,12 @@
     "./confidence": "./confidence.ts",
     "./paths": "./paths.ts",
     "./file_context": "./file_context.ts"
+  },
+  "publish": {
+    "exclude": [
+      "**/*_test.ts",
+      "test_util.ts",
+      "__readme_check.ts"
+    ]
   }
 }

@@ -1,6 +1,6 @@
 // Example: Knowledge Graph
 // Demonstrates entity extraction, relationship modeling, thought creation, and the BrainClient interface.
-// Run: deno run deno/examples/cognition/knowledge_graph.ts
+// Run: deno run deno/examples/knowledge/knowledge_graph.ts
 
 import {
   ALL_THOUGHT_CATEGORIES,
@@ -10,18 +10,10 @@ import {
 } from "@rullama/knowledge";
 
 import type {
-  BrainClient,
-  CaptureThoughtRequest,
-  CaptureThoughtResponse,
   ContradictionEvent,
-  Entity,
   EntityType,
   ExtractionResult,
   Relationship,
-  SearchMemoryRequest,
-  SearchMemoryResponse,
-  Thought,
-  ThoughtCategory,
 } from "@rullama/knowledge";
 
 // ---------------------------------------------------------------------------
@@ -158,7 +150,7 @@ class SimpleEntityStore {
 // Main
 // ---------------------------------------------------------------------------
 
-async function main() {
+function main(): void {
   console.log("=== rullama Knowledge Graph Example ===\n");
 
   // 1. Build an entity store from extracted entities
@@ -393,4 +385,4 @@ async function main() {
   console.log("\n=== Done ===");
 }
 
-await main();
+main();

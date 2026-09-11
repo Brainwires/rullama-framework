@@ -18,18 +18,32 @@ import type {
   FineTuneProvider,
 } from "./types.ts";
 
+/** Default Fireworks AI API root used when no `base_url` is passed. */
 export const FIREWORKS_API_BASE = "https://api.fireworks.ai/inference/v1";
 
+/**
+ * Fireworks AI implementation of {@link FineTuneProvider} over `/files` + `/fine_tuning/jobs`.
+ */
 export class FireworksFineTune implements FineTuneProvider {
+  /** Provider key used by `TrainingManager`. */
   readonly name = "fireworks";
+  /** API root every request URL is built from. */
   readonly base_url: string;
+  /** Bearer token sent in the `Authorization` header of every request. */
   private readonly api_key: string;
 
+  /**
+   * Create a provider bound to one API key.
+   *
+   * @param api_key Fireworks AI API key.
+   * @param base_url Override the API root (e.g. a proxy or a test server).
+   */
   constructor(api_key: string, base_url: string = FIREWORKS_API_BASE) {
     this.api_key = api_key;
     this.base_url = base_url;
   }
 
+  /** Fireworks-hosted models accepted for fine-tuning (Llama-v3 8B/70B, Mixtral-8x7B). */
   supportedBaseModels(): string[] {
     return [
       "accounts/fireworks/models/llama-v3-8b-instruct",
@@ -98,6 +112,13 @@ export class FireworksFineTune implements FineTuneProvider {
     }
   }
 
+  /**
+   * Multipart-upload the bytes to `/files` with `purpose=fine-tune`. The `format` argument is ignored — the file is always sent as `training_data.jsonl` with type `application/json`.
+   *
+   * @returns The Fireworks file id.
+   *
+   * @throws `TrainingError` (`api`) on a non-2xx response, (`upload`) if the response has no `id`.
+   */
   async uploadDataset(
     data: Uint8Array,
     _format: DataFormat,
@@ -126,6 +147,11 @@ export class FireworksFineTune implements FineTuneProvider {
     return new DatasetId(id);
   }
 
+  /**
+   * POST `/fine_tuning/jobs`. Sends `epochs`, `learning_rate`, `batch_size`, plus `validation_dataset`, `output_model` (from `suffix`), and `lora_rank` when set. `config.alignment` is not forwarded — Fireworks has no DPO/ORPO mode (and, unlike the other providers, a non-`none` alignment is silently ignored rather than rejected).
+   *
+   * @throws `TrainingError` (`api`) on a non-2xx response, (`provider`) if the response has no `id`.
+   */
   async createJob(config: CloudFineTuneConfig): Promise<TrainingJobId> {
     const body: Record<string, unknown> = {
       base_model: config.base_model,
@@ -160,6 +186,11 @@ export class FireworksFineTune implements FineTuneProvider {
     return new TrainingJobIdClass(id);
   }
 
+  /**
+   * GET `/fine_tuning/jobs/{id}` and map `state` (falling back to `status`) via {@link FireworksFineTune.parseJobStatus}.
+   *
+   * @throws `TrainingError` (`job_not_found`) on 404, (`api`) on other non-2xx responses.
+   */
   async getJobStatus(job_id: TrainingJobId): Promise<TrainingJobStatus> {
     const res = await fetch(
       `${this.base_url}/fine_tuning/jobs/${job_id.value}`,
@@ -180,6 +211,7 @@ export class FireworksFineTune implements FineTuneProvider {
     return FireworksFineTune.parseJobStatus(state, body);
   }
 
+  /** POST `/fine_tuning/jobs/{id}:cancel`; throws `TrainingError` (`api`) on a non-2xx response. */
   async cancelJob(job_id: TrainingJobId): Promise<void> {
     const res = await fetch(
       `${this.base_url}/fine_tuning/jobs/${job_id.value}:cancel`,
@@ -200,6 +232,9 @@ export class FireworksFineTune implements FineTuneProvider {
     }
   }
 
+  /**
+   * GET `/fine_tuning/jobs` (reads `jobs`, else `data`) and map each entry to a summary, accepting `id`/`name`, `base_model`/`model`, and `state`/`status`. `created_at` is set to now — the endpoint's timestamp is not read; `metrics` is always `null`.
+   */
   async listJobs(): Promise<TrainingJobSummary[]> {
     const res = await fetch(`${this.base_url}/fine_tuning/jobs`, {
       headers: { Authorization: `Bearer ${this.api_key}` },
@@ -238,6 +273,7 @@ export class FireworksFineTune implements FineTuneProvider {
     return out;
   }
 
+  /** DELETE `/models/{model_id}`; throws `TrainingError` (`api`) on a non-2xx response. */
   async deleteModel(model_id: string): Promise<void> {
     const res = await fetch(`${this.base_url}/models/${model_id}`, {
       method: "DELETE",

@@ -1,21 +1,25 @@
 /**
- * Murf AI API client for text-to-speech.
+ * Murf AI text-to-speech client. `MurfClient.generateSpeech` returns a
+ * `MurfGenerateResponse` carrying a URL to the rendered audio rather than the
+ * bytes; fetch the payload with `downloadAudio`. `listVoices` enumerates voices
+ * and `withRateLimit` caps requests per minute.
+ * Equivalent to Rust's `rullama_provider_speech::murf`.
  *
- * Equivalent to Rust's `rullama_providers::murf` module.
- *
- * Murf returns a URL to the generated audio rather than bytes directly;
- * use {@link MurfClient.downloadAudio} to fetch the payload.
+ * @module
  */
 
 import { vendorBytes, vendorJson } from "./http.ts";
 
 import { RateLimiter } from "@rullama/core";
 
+/** Default Murf API base URL. */
 export const MURF_API_BASE = "https://api.murf.ai/v1";
 
 /** Generate-speech request (wire format uses camelCase). */
 export interface MurfGenerateRequest {
+  /** Murf voice ID. */
   voiceId: string;
+  /** Text to synthesize. */
   text: string;
   /** "WAV" | "MP3" | "FLAC". */
   format?: string;
@@ -29,20 +33,27 @@ export interface MurfGenerateRequest {
 
 /** Generate-speech response. */
 export interface MurfGenerateResponse {
+  /** URL of the generated audio (fetch it with `downloadAudio`). */
   audioFile?: string;
+  /** Audio duration in seconds. */
   audioDuration?: number;
 }
 
 /** A single Murf voice. */
 export interface MurfVoice {
+  /** Voice ID to pass to `generateSpeech`. */
   voiceId: string;
+  /** Voice name. */
   name: string;
+  /** Voice gender, when reported. */
   gender?: string;
+  /** BCP-47 language code of the voice. */
   languageCode?: string;
 }
 
 /** Voices list response. */
 export interface MurfVoicesResponse {
+  /** Available voices. */
   voices: MurfVoice[];
 }
 
@@ -60,20 +71,24 @@ export const _serializeGenerate = serializeGenerate;
 
 /** Murf AI API client. */
 export class MurfClient {
+  /** API base URL. */
   readonly base_url: string;
   private readonly api_key: string;
   private rate_limiter: RateLimiter | null = null;
 
+  /** Create a client with the given API key and base URL. */
   constructor(api_key: string, base_url: string = MURF_API_BASE) {
     this.api_key = api_key;
     this.base_url = base_url;
   }
 
+  /** Cap requests per minute with a token bucket. Returns `this`. */
   withRateLimit(requests_per_minute: number): this {
     this.rate_limiter = new RateLimiter(requests_per_minute);
     return this;
   }
 
+  /** Wait for a rate-limit token, if a limiter is configured. */
   private async acquire(): Promise<void> {
     if (this.rate_limiter) await this.rate_limiter.acquire();
   }

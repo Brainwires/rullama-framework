@@ -320,6 +320,16 @@ export class VertexAiProvider implements Provider {
   private readonly credentials: ServiceAccountCredentials;
   private cachedToken?: { token: string; expiresAt: number };
 
+  /**
+   * Create a provider that mints OAuth2 access tokens from a service account.
+   *
+   * @param region Vertex AI location (e.g. `us-central1`); also selects the regional host.
+   * @param projectId Google Cloud project that owns the endpoint.
+   * @param model Gemini model id (e.g. `gemini-2.0-flash`).
+   * @param credentials Service-account `client_email`, `private_key` and `token_uri`
+   *   used to sign the JWT assertion.
+   * @param providerName Value reported as `name` (default: `"vertex-ai"`).
+   */
   constructor(
     region: string,
     projectId: string,
@@ -485,6 +495,9 @@ export class VertexAiProvider implements Provider {
   // Internal helpers
   // -----------------------------------------------------------------------
 
+  /** Build the Gemini `generateContent` body: `contents` from the messages,
+   * `systemInstruction` (from `options.system` or a leading system message),
+   * `generationConfig` from the sampling options, and function declarations. */
   private buildRequestBody(
     messages: Message[],
     tools: Tool[] | undefined,

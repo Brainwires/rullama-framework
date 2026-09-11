@@ -1,0 +1,54 @@
+# Publish the 27 @rullama/* Deno packages to JSR.
+#
+# Trigger: push a tag `deno-v<version>` (e.g. `deno-v0.12.1`) whose version matches every
+# package's deno.json — or run the workflow by hand with dry_run for a rehearsal.
+# Publishing from Actions with `id-token: write` gives every package JSR provenance
+# (the "hasProvenance" score factor); a laptop publish never can.
+#
+# `deno publish` at the workspace root publishes every workspace member in dependency
+# order, so the hand-maintained tier lists in deno/scripts/*.sh are not needed here.
+name: Publish Deno packages
+
+on:
+  push:
+    tags:
+      - "deno-v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only run `deno publish --dry-run`"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write # JSR OIDC provenance
+
+jobs:
+  publish:
+    name: JSR
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deno
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Version tag matches package versions
+        if: github.event_name == 'push'
+        run: |
+          tag="${GITHUB_REF_NAME#deno-v}"
+          for f in packages/*/deno.json; do
+            v=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('$f')).version)")
+            if [ "$v" != "$tag" ]; then echo "::error::$f is $v, tag is $tag"; exit 1; fi
+          done
+      - name: Gate (fmt, lint, type-check, doc-lint, tests)
+        run: deno task check
+      - name: Publish (dry run)
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        run: deno publish --dry-run
+      - name: Publish
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        run: deno publish

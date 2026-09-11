@@ -92,6 +92,12 @@ export class GoogleChatProvider implements Provider {
   private readonly apiKey: string;
   private readonly model: string;
 
+  /**
+   * Create a provider for the public Gemini API.
+   *
+   * @param apiKey Google AI Studio key, sent as the `x-goog-api-key` header.
+   * @param model Gemini model id (e.g. `gemini-2.5-flash`).
+   */
   constructor(apiKey: string, model: string) {
     this.apiKey = apiKey;
     this.model = model;

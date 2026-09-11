@@ -77,12 +77,19 @@ export function formatMergeStatus(status: MergeStatus): string {
 
 /** Result from a single worker in the cycle. */
 export interface WorkerResult {
+  /** ID of the task the worker executed. */
   taskId: string;
+  /** Description of the task. */
   taskDescription: string;
+  /** Whether the worker reported success. */
   success: boolean;
+  /** Worker's summary of what it did. */
   summary: string;
+  /** Iterations the worker used. */
   iterations: number;
+  /** Branch the worker committed to. */
   branchName: string;
+  /** Result of merging the worker's branch. */
   mergeStatus: MergeStatus;
 }
 
@@ -92,10 +99,15 @@ export interface WorkerResult {
 
 /** Context provided to the judge for evaluation. */
 export interface JudgeContext {
+  /** The goal the whole cycle is working toward. */
   originalGoal: string;
+  /** 1-based number of the cycle being judged. */
   cycleNumber: number;
+  /** Results of every worker in this cycle. */
   workerResults: WorkerResult[];
+  /** Why the planner chose this cycle's tasks. */
   plannerRationale: string;
+  /** Verdicts from earlier cycles. */
   previousVerdicts: JudgeVerdict[];
 }
 
@@ -105,10 +117,15 @@ export interface JudgeContext {
 
 /** Configuration for the judge agent. */
 export interface JudgeAgentConfig {
+  /** Maximum iterations the judge agent may use. */
   maxIterations: number;
+  /** Whether the judge may read files to verify claims. */
   inspectFiles: boolean;
+  /** Whether the judge may inspect git diffs. */
   inspectDiffs: boolean;
+  /** Sampling temperature for the judge model. */
   temperature: number;
+  /** Maximum tokens per judge response. */
   maxTokens: number;
 }
 

@@ -21,7 +21,11 @@ export class StdioServerTransport implements ServerTransport {
   private encoder = new TextEncoder();
   private done = false;
 
-  /** @param input Byte stream to read requests from (default: stdin). */
+  /**
+   * Start decoding `input` as UTF-8 immediately; a stream error marks the
+   * transport done so {@link readRequest} drains and returns `null`.
+   * @param input Byte stream to read requests from (default: stdin).
+   */
   constructor(input: ReadableStream<Uint8Array> = Deno.stdin.readable) {
     const decoder = new TextDecoderStream();
     input.pipeTo(decoder.writable).catch(() => {

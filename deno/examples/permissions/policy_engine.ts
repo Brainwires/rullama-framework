@@ -14,7 +14,7 @@ import {
   policyRequestForTool,
 } from "@rullama/permission";
 
-async function main() {
+function main(): void {
   console.log("=== Policy Engine Example ===\n");
 
   // 1. Create a fresh policy engine with custom rules
@@ -96,4 +96,4 @@ async function main() {
   console.log("\n=== Done ===");
 }
 
-await main();
+main();

@@ -218,6 +218,12 @@ export class MySqlDatabase implements StorageBackend {
 
   private readonly filterOptions: FilterBuildOptions;
 
+  /**
+   * Open a `mysql2` connection pool.
+   *
+   * @param config Connection URI (default `mysql://localhost:3306/rullama`)
+   *   and whether `Raw` filters are permitted (default `false`).
+   */
   constructor(config?: MySqlConfig) {
     this.filterOptions = { allowRaw: config?.allowRawFilters ?? false };
     const uri = config?.uri ?? DEFAULT_URL;

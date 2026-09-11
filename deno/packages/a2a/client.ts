@@ -61,6 +61,14 @@ export class A2aClient {
   private readonly bearerToken?: string;
   private requestCounter = 1;
 
+  /**
+   * Create a client for one A2A server.
+   *
+   * @param options `baseUrl` (trailing slashes are stripped), the transport
+   *   to speak (`"jsonrpc"` posts to `baseUrl` itself, `"rest"` uses
+   *   `baseUrl/message:send`-style paths; default `"jsonrpc"`) and an
+   *   optional bearer token sent as `Authorization: Bearer …`.
+   */
   constructor(options: A2aClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.transport = options.transport ?? "jsonrpc";
@@ -228,10 +236,15 @@ export class A2aClient {
   // JSON-RPC transport internals
   // -------------------------------------------------------------------------
 
+  /** Return the next monotonically increasing JSON-RPC request id. */
   private nextId(): RequestId {
     return this.requestCounter++;
   }
 
+  /**
+   * Build the request headers: JSON content type plus `Authorization` when a
+   * bearer token is configured.
+   */
   private authHeaders(): Record<string, string> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -242,6 +255,11 @@ export class A2aClient {
     return headers;
   }
 
+  /**
+   * POST a single JSON-RPC 2.0 request to `baseUrl` and unwrap its `result`.
+   * A JSON-RPC `error` object is rethrown as {@link A2aError}; a missing
+   * result or a failed fetch surfaces as an internal error.
+   */
   private async jsonRpcCall<T>(method: string, params: unknown): Promise<T> {
     const id = this.nextId();
     const request: JsonRpcRequest = {
@@ -274,6 +292,10 @@ export class A2aClient {
     return rpcResp.result as T;
   }
 
+  /**
+   * POST a JSON-RPC request whose reply is a Server-Sent Events stream and
+   * yield each parsed {@link StreamResponse} (JSON-RPC envelope framing).
+   */
   private async *jsonRpcStream(
     method: string,
     params: unknown,
@@ -305,10 +327,15 @@ export class A2aClient {
   // REST transport internals
   // -------------------------------------------------------------------------
 
+  /** Join a REST path (e.g. `/tasks/{id}`) onto the base URL. */
   private restUrl(path: string): string {
     return `${this.baseUrl}${path}`;
   }
 
+  /**
+   * POST a JSON body to a REST path and parse the JSON reply; a non-2xx
+   * status is thrown as an internal {@link A2aError}.
+   */
   private async restPost<T>(path: string, body: unknown): Promise<T> {
     const resp = await fetch(this.restUrl(path), {
       method: "POST",
@@ -325,6 +352,7 @@ export class A2aClient {
     return (await resp.json()) as T;
   }
 
+  /** GET a REST path and parse the JSON reply; non-2xx throws. */
   private async restGet<T>(path: string): Promise<T> {
     const resp = await fetch(this.restUrl(path), {
       method: "GET",
@@ -340,6 +368,7 @@ export class A2aClient {
     return (await resp.json()) as T;
   }
 
+  /** DELETE a REST path, discarding the body; non-2xx throws. */
   private async restDelete(path: string): Promise<void> {
     const resp = await fetch(this.restUrl(path), {
       method: "DELETE",
@@ -353,6 +382,10 @@ export class A2aClient {
     }
   }
 
+  /**
+   * POST a JSON body to a REST streaming path and yield each parsed
+   * {@link StreamResponse} from the Server-Sent Events reply (REST framing).
+   */
   private async *restPostStream(
     path: string,
     body: unknown,

@@ -1,26 +1,20 @@
 // Example: Code Analysis
 // Demonstrates symbol extraction, reference finding, call graph construction, and repo map formatting.
-// Run: deno run deno/examples/cognition/code_analysis.ts
+// Run: deno run deno/examples/knowledge/code_analysis.ts
 
 import {
   buildCallGraph,
-  CallGraph,
   createSymbolId,
   definitionToStorageId,
   findReferences,
   RepoMap,
   symbolIdToStorageId,
   symbolKindDisplayName,
-} from "@rullama/knowledge";
+} from "@rullama/rag";
 
-import type {
-  CallEdge,
-  CallGraphNode,
-  CodeAnalysisDefinition,
-  SymbolKind,
-} from "@rullama/knowledge";
+import type { CallGraphNode, CodeAnalysisDefinition } from "@rullama/rag";
 
-async function main() {
+function main(): void {
   console.log("=== rullama Code Analysis Example ===\n");
 
   // 1. Check supported languages
@@ -46,7 +40,7 @@ async function main() {
   console.log("--- Step 2: Extract Definitions ---\n");
 
   const tsSource = `
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 
 /** Configuration for the application. */
 export interface Config {
@@ -250,4 +244,4 @@ function printCallTree(node: CallGraphNode, depth: number): void {
   }
 }
 
-await main();
+main();

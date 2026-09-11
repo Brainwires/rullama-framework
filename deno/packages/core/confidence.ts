@@ -1,11 +1,13 @@
 /**
- * Response Confidence Extraction
- *
- * Based on the CISC paper (arxiv:2502.06233v1). Extracts confidence scores
- * from LLM responses using multiple heuristics, for use in decision-making
- * and SEAL learning loops.
- *
+ * Response confidence extraction, after the CISC paper (arXiv:2502.06233).
+ * `extractConfidence` scores a `ChatResponse` on four heuristic factors
+ * (completion, pattern, length and structure), folds them into a
+ * `ResponseConfidence`, and `isHighConfidence` / `isLowConfidence` /
+ * `confidenceLevel` / `quickConfidenceCheck` are the thresholds callers use to
+ * gate decisions and SEAL learning loops.
  * Equivalent to Rust's `rullama_core::confidence`.
+ *
+ * @module
  */
 
 import type { ChatResponse, ContentBlock } from "./message.ts";

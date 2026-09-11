@@ -163,11 +163,17 @@ export type ContractMessage =
 
 /** Information about an awarded contract. */
 export interface AwardedContract {
+  /** Task the contract was awarded for. */
   taskId: string;
+  /** Agent ID of the winning bidder. */
   winner: string;
+  /** The bid selected by the evaluation strategy. */
   winningBid: TaskBid;
+  /** When the award was made (epoch ms). */
   awardedAt: number;
+  /** Whether the winner has called `acceptAward`. */
   accepted: boolean;
+  /** Set by `completeTask` to the reported success flag; undefined until then. */
   completed?: boolean;
 }
 
@@ -195,6 +201,10 @@ export class ContractNetManager {
   private nextTaskId = 1;
   private listeners: Array<(msg: ContractMessage) => void> = [];
 
+  /**
+   * Create a manager.
+   * @param strategy How `awardTask` picks a winner; defaults to `{ kind: "highest_score" }` (composite `bidScore`).
+   */
   constructor(strategy?: BidEvaluationStrategy) {
     this.evaluationStrategy = strategy ?? { kind: "highest_score" };
   }
@@ -207,6 +217,7 @@ export class ContractNetManager {
     };
   }
 
+  /** Deliver `msg` to every subscriber, ignoring exceptions thrown by listeners. */
   private emit(msg: ContractMessage): void {
     for (const l of this.listeners) {
       try {
@@ -280,6 +291,11 @@ export class ContractNetManager {
     return winner.agentId;
   }
 
+  /**
+   * Pick the winning bid per the configured strategy: composite score, lowest
+   * `estimatedDurationMs`, lowest `currentLoad`, highest `capabilityScore`, or
+   * a weighted score. Ties keep the earlier bid.
+   */
   private evaluateBids(bids: TaskBid[]): TaskBid | undefined {
     if (bids.length === 0) return undefined;
 
@@ -378,11 +394,19 @@ export class ContractNetManager {
 
 /** Agent-side contract participant. */
 export class ContractParticipant {
+  /** ID this participant bids under. */
   readonly agentId: string;
+  /** Capability tags matched against `TaskRequirements.capabilities`. */
   readonly capabilities: string[];
   private currentTasks: string[] = [];
   private maxConcurrent: number;
 
+  /**
+   * Create a participant.
+   * @param agentId Agent identifier placed on generated bids.
+   * @param capabilities Capability tags the agent offers.
+   * @param maxConcurrent Task count at which `shouldBid` returns false (default 3).
+   */
   constructor(
     agentId: string,
     capabilities: string[],
@@ -418,6 +442,7 @@ export class ContractParticipant {
     };
   }
 
+  /** Fraction of the required capabilities this agent has (1.0 when nothing is required). */
   private calculateCapabilityScore(requirements: TaskRequirements): number {
     if (requirements.capabilities.length === 0) return 1.0;
     const matched =

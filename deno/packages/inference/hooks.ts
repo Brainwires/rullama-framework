@@ -108,6 +108,7 @@ export interface DelegationResult {
  * summarization or context injection).
  */
 export class ConversationView {
+  /** Wrap the live conversation history (mutations are visible to the loop). */
   constructor(private messages: Message[]) {}
 
   /** Number of messages in the conversation. */

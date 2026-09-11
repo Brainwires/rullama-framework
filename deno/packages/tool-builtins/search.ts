@@ -1,6 +1,12 @@
 /**
- * Regex-based code pattern search tool.
- * Respects .gitignore via git ls-files fallback.
+ * The `search_code` tool: regex search across a directory tree, honouring
+ * `.gitignore` through `git ls-files` when available. The search root is
+ * confined to the working directory, the pattern is compiled with
+ * `compileBoundedRegex` (length-limited to resist ReDoS), files larger than
+ * `MAX_SEARCH_FILE_BYTES` are skipped and results stop at 100 matches.
+ * Equivalent to Rust's `rullama_tool_builtins::search`.
+ *
+ * @module
  */
 
 // deno-lint-ignore-file no-explicit-any
@@ -19,6 +25,7 @@ export class SearchTool {
     return [SearchTool.searchCodeTool()];
   }
 
+  /** Definition of the `search_code` tool. */
   private static searchCodeTool(): Tool {
     return {
       name: "search_code",
@@ -66,6 +73,7 @@ export class SearchTool {
     }
   }
 
+  /** Run `search_code`: confine the root, compile the bounded regex, walk the tree. */
   private static async searchCode(
     input: any,
     context: ToolContext,

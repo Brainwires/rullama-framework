@@ -23,7 +23,7 @@ class HashEmbedding implements EmbeddingProvider {
     this.modelName = "hash-embedding-v1";
   }
 
-  async embed(text: string): Promise<number[]> {
+  embed(text: string): Promise<number[]> {
     const vec = new Array<number>(this.dimension).fill(0);
     const encoder = new TextEncoder();
     const bytes = encoder.encode(text);
@@ -37,7 +37,7 @@ class HashEmbedding implements EmbeddingProvider {
         vec[i] /= norm;
       }
     }
-    return vec;
+    return Promise.resolve(vec);
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
@@ -62,12 +62,13 @@ class InMemoryVectorStore implements VectorStore {
   private items: StoredItem[] = [];
   private dim = 0;
 
-  async initialize(dimension: number): Promise<void> {
+  initialize(dimension: number): Promise<void> {
     this.dim = dimension;
     console.log(`  Vector store initialized (dimension=${dimension})`);
+    return Promise.resolve();
   }
 
-  async upsert(
+  upsert(
     ids: string[],
     embeddings: number[][],
     contents: string[],
@@ -83,10 +84,10 @@ class InMemoryVectorStore implements VectorStore {
         metadata: metadata[i],
       });
     }
-    return ids.length;
+    return Promise.resolve(ids.length);
   }
 
-  async search(
+  search(
     queryVector: number[],
     limit: number,
     minScore: number,
@@ -96,7 +97,7 @@ class InMemoryVectorStore implements VectorStore {
       score: cosineSimilarity(queryVector, item.embedding),
     }));
 
-    return scored
+    const hits = scored
       .filter((s) => s.score >= minScore)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
@@ -106,21 +107,23 @@ class InMemoryVectorStore implements VectorStore {
         content: s.item.content,
         metadata: s.item.metadata,
       }));
+    return Promise.resolve(hits);
   }
 
-  async delete(ids: string[]): Promise<number> {
+  delete(ids: string[]): Promise<number> {
     const idSet = new Set(ids);
     const before = this.items.length;
     this.items = this.items.filter((item) => !idSet.has(item.id));
-    return before - this.items.length;
+    return Promise.resolve(before - this.items.length);
   }
 
-  async clear(): Promise<void> {
+  clear(): Promise<void> {
     this.items = [];
+    return Promise.resolve();
   }
 
-  async count(): Promise<number> {
-    return this.items.length;
+  count(): Promise<number> {
+    return Promise.resolve(this.items.length);
   }
 }
 

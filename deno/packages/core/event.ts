@@ -40,8 +40,10 @@ export class EventEnvelope<E> implements Event {
   readonly sequence: number;
   readonly occurred_at: string;
   readonly event_type: string = "envelope";
+  /** The wrapped domain event. */
   payload: E;
 
+  /** Wrap `payload` with a fresh event ID and the current timestamp. */
   constructor(trace_id: string, sequence: number, payload: E) {
     this.event_id = crypto.randomUUID();
     this.trace_id = trace_id;

@@ -147,8 +147,16 @@ export function parseSearchPoint(
  * Does not implement StorageBackend -- it is RAG-only.
  */
 export class QdrantDatabase implements VectorDatabase {
+  /** Qdrant REST endpoint with any trailing slash removed. */
   readonly baseUrl: string;
 
+  /**
+   * Create a client for a Qdrant REST endpoint. Nothing is contacted until
+   * {@link QdrantDatabase.initialize} is called. The collection name is fixed
+   * to `code_embeddings`.
+   *
+   * @param url Base URL of the Qdrant server (default `http://localhost:6333`).
+   */
   constructor(url?: string) {
     this.baseUrl = (url ?? DEFAULT_URL).replace(/\/$/, "");
   }
@@ -160,6 +168,10 @@ export class QdrantDatabase implements VectorDatabase {
 
   // ── private helpers ────────────────────────────────────────────────
 
+  /**
+   * Send a JSON request to `baseUrl + path` and return the parsed body; throws
+   * with the status and response text on a non-2xx reply.
+   */
   private async request(
     path: string,
     method: string,
@@ -182,6 +194,7 @@ export class QdrantDatabase implements VectorDatabase {
     return await res.json() as Record<string, unknown>;
   }
 
+  /** List `/collections` and report whether `code_embeddings` is among them. */
   private async collectionExists(): Promise<boolean> {
     const data = await this.request("/collections", "GET");
     const result = data.result as

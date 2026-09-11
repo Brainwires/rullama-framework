@@ -1,6 +1,11 @@
 /**
- * Web fetching tool implementation.
- * Uses `safeFetch` from `@rullama/tool-runtime` (SSRF checks, deadline, body cap).
+ * The `fetch_url` tool: fetches a model-chosen URL through `safeFetch` from
+ * `@rullama/tool-runtime` (http/https only, private / loopback / link-local
+ * addresses refused, every redirect re-checked, deadline enforced) and returns
+ * the body capped by `readCappedText`.
+ * Equivalent to Rust's `rullama_tool_builtins::web`.
+ *
+ * @module
  */
 
 // deno-lint-ignore-file no-explicit-any
@@ -16,6 +21,7 @@ export class WebTool {
     return [WebTool.fetchUrlTool()];
   }
 
+  /** Definition of the `fetch_url` tool. */
   private static fetchUrlTool(): Tool {
     return {
       name: "fetch_url",
@@ -58,6 +64,7 @@ export class WebTool {
     }
   }
 
+  /** Run `fetch_url` through `safeFetch` and cap the body. */
   private static fetchUrl(input: any): Promise<string> {
     return WebTool.fetchUrlContent(String(input.url));
   }

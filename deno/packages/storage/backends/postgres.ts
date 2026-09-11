@@ -135,6 +135,7 @@ export function buildCount(
   return sql.buildCount(PG_DIALECT, tableName, filter, options);
 }
 
+/** Connection and safety options for {@link PostgresDatabase}. */
 export interface PostgresConfig {
   /** Full connection string, e.g. "postgresql://user:pass@host:5432/db". */
   connectionString?: string;
@@ -208,11 +209,21 @@ export function parseVectorText(text: string): number[] {
  * and VectorDatabase.
  */
 export class PostgresDatabase implements StorageBackend, VectorDatabase {
+  /** The underlying `pg` connection pool (shared by both interfaces). */
   readonly pool: pg.Pool;
+  /** Table the VectorDatabase methods read and write (StorageBackend methods take their own table name). */
   readonly tableName: string;
 
   private readonly filterOptions: FilterBuildOptions;
 
+  /**
+   * Open a `pg` pool. Nothing is contacted until the first query.
+   *
+   * @param config `poolConfig` wins over `connectionString`; the connection
+   *   string defaults to `postgresql://localhost:5432/rullama`, the embeddings
+   *   table to `code_embeddings` (validated as a plain identifier), and `Raw`
+   *   filters are disabled unless `allowRawFilters` is `true`.
+   */
   constructor(config?: PostgresConfig) {
     const connString = config?.connectionString ?? DEFAULT_URL;
     this.pool = config?.poolConfig

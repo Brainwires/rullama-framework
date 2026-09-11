@@ -18,57 +18,81 @@ export type ContentBlock =
 
 /** Text content block. */
 export interface TextBlock {
+  /** Marks this block as plain text. */
   type: "text";
+  /** The text content. */
   text: string;
 }
 
 /** Image content block (base64 encoded). */
 export interface ImageBlock {
+  /** Marks this block as an image. */
   type: "image";
+  /** Where the image bytes come from and how they are encoded. */
   source: ImageSource;
 }
 
 /** Tool use request block. */
 export interface ToolUseBlock {
+  /** Marks this block as a tool call requested by the assistant. */
   type: "tool_use";
+  /** Provider-assigned call ID that the matching {@link ToolResultBlock} references. */
   id: string;
+  /** Name of the tool to call. */
   name: string;
+  /** Arguments the model supplied for the call. */
   input: any;
 }
 
 /** Tool result block. */
 export interface ToolResultBlock {
+  /** Marks this block as the result of a tool call. */
   type: "tool_result";
+  /** ID of the {@link ToolUseBlock} this result answers. */
   tool_use_id: string;
+  /** Tool output text (or the error message when `is_error` is true). */
   content: string;
+  /** True when the tool call failed. */
   is_error?: boolean;
 }
 
 /** Image source for image content blocks.
  * Equivalent to Rust's `ImageSource` (serde tag="type", rename_all="snake_case"). */
 export interface ImageSource {
+  /** Encoding of `data`; only inline base64 is supported. */
   type: "base64";
+  /** MIME type of the image (e.g. `image/png`). */
   media_type: string;
+  /** Base64-encoded image bytes. */
   data: string;
 }
 
 /** A message in the conversation.
  * Equivalent to Rust's `Message` in rullama-core. */
 export interface MessageData {
+  /** Who authored the message. */
   role: Role;
+  /** Plain text or a list of content blocks. */
   content: MessageContent;
+  /** Optional participant name (e.g. the tool or agent that produced it). */
   name?: string;
+  /** Arbitrary application data carried with the message; providers do not read it. */
   metadata?: any;
 }
 
 /** A message in the conversation with helper methods.
  * Equivalent to Rust's `Message` in rullama-core. */
 export class Message implements MessageData {
+  /** Who authored the message. */
   role: Role;
+  /** Plain text or a list of content blocks. */
   content: MessageContent;
+  /** Optional participant name (e.g. the tool or agent that produced it). */
   name?: string;
+  /** Arbitrary application data carried with the message; providers do not read it. */
   metadata?: any;
 
+  /** Wrap plain message data; the static factories cover the common roles. */
   constructor(data: MessageData) {
     this.role = data.role;
     this.content = data.content;
@@ -147,8 +171,11 @@ export class Message implements MessageData {
 /** Usage statistics for a chat completion.
  * Equivalent to Rust's `Usage` in rullama-core. */
 export interface Usage {
+  /** Tokens in the input sent to the model. */
   prompt_tokens: number;
+  /** Tokens the model generated. */
   completion_tokens: number;
+  /** `prompt_tokens + completion_tokens`. */
   total_tokens: number;
 }
 
@@ -167,8 +194,11 @@ export function createUsage(
 /** Response from a chat completion.
  * Equivalent to Rust's `ChatResponse` in rullama-core. */
 export interface ChatResponse {
+  /** The assistant message the model produced. */
   message: Message;
+  /** Token accounting for the request. */
   usage: Usage;
+  /** Provider-specific reason generation stopped (e.g. `stop`, `length`, `tool_use`). */
   finish_reason?: string;
 }
 

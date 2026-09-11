@@ -1,18 +1,18 @@
 /**
- * @module @rullama/training
+ * Cloud fine-tuning orchestration for rullama: upload a dataset, start a
+ * job, poll it to completion, and manage the resulting models.
  *
- * Cloud fine-tuning orchestration for the rullama.
+ * Ships OpenAI, Together, and Fireworks implementations of the
+ * {@link FineTuneProvider} interface, a backoff-based {@link JobPoller},
+ * and a {@link TrainingManager} that dispatches to providers by name.
+ * Bedrock and Vertex require their vendor SDKs and are not ported;
+ * implement {@link FineTuneProvider} directly if you need them.
  *
- * Ships OpenAI, Together, and Fireworks providers plus a backoff-based
- * {@link JobPoller}. Bedrock and Vertex require their vendor SDKs and are
- * not ported in this first slice; implement {@link FineTuneProvider}
- * directly if you need them.
+ * Local training (Burn, GPU kernels) stays Rust-side — this package
+ * intentionally exposes only the cloud path. Equivalent to the
+ * `rullama-training` crate built with the `cloud` feature.
  *
- * Local training (Burn, GPU kernels) stays Rust-side — the Deno package
- * intentionally exposes only the cloud path.
- *
- * Equivalent to the `rullama-training` crate built with the `cloud`
- * feature.
+ * @module
  */
 
 // Shared types

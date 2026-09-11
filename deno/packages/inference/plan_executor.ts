@@ -104,15 +104,25 @@ export function defaultPlanExecutionConfig(): PlanExecutionConfig {
 
 /** Execution progress information. */
 export interface ExecutionProgress {
+  /** Total number of tasks in the plan. */
   totalTasks: number;
+  /** Tasks completed so far. */
   completedTasks: number;
+  /** Tasks currently running. */
   inProgressTasks: number;
+  /** Tasks not yet started. */
   pendingTasks: number;
+  /** Tasks blocked on dependencies. */
   blockedTasks: number;
+  /** Tasks skipped. */
   skippedTasks: number;
+  /** Tasks that failed. */
   failedTasks: number;
+  /** Seconds elapsed since execution started. */
   totalDurationSecs: number;
+  /** Mean seconds per completed task, once any completed. */
   averageTaskDurationSecs?: number;
+  /** Projected seconds remaining, once an average exists. */
   estimatedRemainingSecs?: number;
 }
 
@@ -128,6 +138,7 @@ export class PlanExecutorAgent {
   private _status: PlanExecutionStatus = { kind: "idle" };
   private currentTaskId: string | undefined;
 
+  /** Create an executor for `plan`; `config` overrides `defaultPlanExecutionConfig()`. */
   constructor(
     plan: PlanMetadata,
     taskManager: TaskManager,

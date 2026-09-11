@@ -1,11 +1,16 @@
 /**
- * @module @rullama/knowledge
- *
- * Knowledge layer: BrainClient + entity/relationship/thought graph + BKS/PKS.
+ * Knowledge layer for rullama: the type contract for the "Open Brain"
+ * personal-knowledge system. Provides the {@link Thought} model with its
+ * category/source enums and parsers, the {@link Entity} / {@link Relationship}
+ * knowledge-graph types with {@link ExtractionResult} and contradiction
+ * events, the request/response shapes for thought capture, memory search and
+ * PKS/BKS knowledge search, and the {@link BrainClient} interface that ties
+ * them together. No `BrainClient` implementation ships here — a concrete one
+ * needs a storage backend and an embedding provider. Prompting techniques
+ * live in `@rullama/prompting`; RAG and code analysis in `@rullama/rag`.
  * Equivalent to Rust's `rullama-knowledge` crate.
  *
- * Prompting moved to `@rullama/prompting`. RAG and code analysis moved
- * to `@rullama/rag`. No transitional re-exports — update imports.
+ * @module
  */
 
 export {

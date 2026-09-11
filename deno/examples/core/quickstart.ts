@@ -19,7 +19,7 @@ import {
 class EchoProvider implements Provider {
   readonly name = "echo";
 
-  async chat(
+  chat(
     messages: Message[],
     _tools: Tool[] | undefined,
     _options: ChatOptions,
@@ -29,11 +29,11 @@ class EchoProvider implements Provider {
     const text = lastUser?.text() ?? "(no user message)";
     const tokenCount = text.length;
 
-    return {
+    return Promise.resolve({
       message: Message.assistant(`Echo: ${text}`),
       usage: createUsage(tokenCount, tokenCount),
       finish_reason: "stop",
-    };
+    });
   }
 
   async *streamChat(

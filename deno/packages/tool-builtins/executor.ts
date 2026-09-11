@@ -60,6 +60,7 @@ export class BuiltinToolExecutor implements ToolExecutor {
   /**
    * @param providers Tool providers; a tool name owned by two providers is an error.
    */
+  /** Index the tools of every provider by name; a duplicate name throws. */
   constructor(providers: Iterable<ToolProvider>) {
     for (const provider of providers) {
       for (const tool of provider.getTools()) {

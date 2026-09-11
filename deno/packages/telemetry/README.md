@@ -1,6 +1,7 @@
 # @rullama/telemetry
 
-Analytics events, sinks, outcome metrics, and billing hooks.
+Analytics events, sinks, outcome metrics, billing hooks and anomaly detection.
+Depends on `@rullama/core` only.
 
 ## What you get
 
@@ -14,23 +15,33 @@ Analytics events, sinks, outcome metrics, and billing hooks.
 - **`MemoryAnalyticsSink`** — ring-buffer sink for tests.
 - **`MetricsRegistry`** — outcome aggregation with Prometheus text exposition.
 - **`BillingHook`** interface — advisory `onUsage` + enforced `authorize`.
+- **`AnomalyDetector`** — frequency / behaviour-change detection over
+  `ObservedEvent`s (`observe` / `drainAnomalies`).
+- PII helpers — `hashSessionId`, `redactSecrets`.
+
+## Install
+
+```sh
+deno add jsr:@rullama/telemetry
+```
 
 ## Example
 
 ```ts
 import {
   AnalyticsCollector,
+  AnomalyDetector,
+  defaultAnomalyConfig,
   MemoryAnalyticsSink,
   MetricsRegistry,
-  tokensEvent,
 } from "@rullama/telemetry";
 
 const memory = new MemoryAnalyticsSink(1024);
 const metrics = new MetricsRegistry();
 const collector = new AnalyticsCollector([memory, metrics]);
 
-// OTLP passthrough, if you want one:
-collector.onEvent((e) => otlp.export(e));
+// OTLP / logger passthrough, if you want one:
+collector.onEvent((e) => console.debug(e.event_type));
 
 collector.record({
   event_type: "agent_run",
@@ -54,6 +65,16 @@ await collector.flush();
 
 const body = metrics.prometheusText();
 // wire `body` to your /metrics HTTP handler
+console.log(body.split("\n").length, memory.len());
+
+// Anomaly detection over an event stream (used by @rullama/permission audits)
+const detector = new AnomalyDetector(defaultAnomalyConfig());
+detector.observe({
+  timestamp: new Date().toISOString(),
+  event_type: "policy_violation",
+  agent_id: "code-review",
+});
+console.log(detector.drainAnomalies().length);
 ```
 
 ## What's intentionally not ported

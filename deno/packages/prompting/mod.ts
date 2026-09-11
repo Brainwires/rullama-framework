@@ -1,7 +1,13 @@
 /**
- * Prompting module -- adaptive prompting techniques.
+ * Adaptive prompting for rullama: the catalog of 15 prompting techniques with
+ * per-technique metadata (`ALL_TECHNIQUES`, `TECHNIQUE_METADATA`, the
+ * `getTechniquesBy*` filters), `TaskClusterManager` for cosine-similarity task
+ * clustering, `PromptGenerator` for composing a prompt from the techniques that
+ * fit a task, `TemperatureOptimizer` for per-cluster sampling temperature, and
+ * `PromptingLearningCoordinator` for tracking technique effectiveness over time.
+ * Equivalent to Rust's `rullama-prompting` crate.
  *
- * Re-exports all public types and functions from the prompting sub-modules.
+ * @module
  */
 
 // ── Techniques ──────────────────────────────────────────────────────────────

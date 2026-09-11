@@ -25,6 +25,12 @@ export class CachedEmbeddingProvider implements EmbeddingProvider {
   readonly dimension: number;
   readonly modelName: string;
 
+  /**
+   * Wrap `inner`, mirroring its `dimension` and `modelName`.
+   *
+   * @param inner The provider whose `embed` results are memoized.
+   * @param maxSize Maximum number of cached texts before the oldest entry is evicted (default 1000).
+   */
   constructor(inner: EmbeddingProvider, maxSize = 1000) {
     this.inner = inner;
     this.cache = new Map();

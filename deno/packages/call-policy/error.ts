@@ -13,9 +13,23 @@ export type ResilienceErrorKind =
 
 /** Errors surfaced by resilience decorators. */
 export class ResilienceError extends Error {
+  /** Which decorator condition produced this error. */
   readonly kind: ResilienceErrorKind;
+  /**
+   * Structured context for the `kind` — e.g. `{ kind, consumed, limit }` for
+   * `budget_exceeded`, `{ provider, model, failures }` for `circuit_open`,
+   * `{ attempts }` / `{ attempts, elapsed_ms }` for the retry kinds.
+   */
   readonly detail: Record<string, unknown>;
 
+  /**
+   * Construct directly; the static factories below build the standard
+   * messages and `detail` shapes.
+   *
+   * @param kind Error discriminator.
+   * @param message Human-readable description.
+   * @param detail Structured context stored on {@link detail}.
+   */
   constructor(
     kind: ResilienceErrorKind,
     message: string,

@@ -16,11 +16,20 @@ import type { AnalyticsSink } from "./sink.ts";
 /** Callback invoked for every recorded event — cheap hook for OTLP export. */
 export type EventCallback = (event: AnalyticsEvent) => void;
 
+/**
+ * Fans each recorded {@link AnalyticsEvent} out to every registered sink
+ * (sequentially, in the background) and to every `onEvent` callback
+ * (synchronously). Sink and callback failures never propagate.
+ */
 export class AnalyticsCollector {
   private readonly sinks: AnalyticsSink[] = [];
   private readonly callbacks: EventCallback[] = [];
   private pending: Promise<void> = Promise.resolve();
 
+  /**
+   * Create a collector with no callbacks and the given sinks.
+   * @param sinks Initial sinks; more can be added with {@link addSink}.
+   */
   constructor(sinks: AnalyticsSink[] = []) {
     this.sinks.push(...sinks);
   }

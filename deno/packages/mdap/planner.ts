@@ -207,22 +207,39 @@ export function outputFormatDescription(format: OutputFormat): string {
 
 /** Standard red-flag validator implementing the paper's approach. */
 export class StandardRedFlagValidator {
+  /** Thresholds and pattern lists the checks are evaluated against. */
   readonly config: RedFlagConfig;
+  /** Format the response must match when `config.requireExactFormat` is set. */
   readonly expectedFormat?: OutputFormat;
 
+  /**
+   * Create a validator with explicit thresholds.
+   *
+   * @param config - Red-flag thresholds (see `strictRedFlagConfig` / `relaxedRedFlagConfig`).
+   * @param expectedFormat - Optional output format enforced by the format check.
+   */
   constructor(config: RedFlagConfig, expectedFormat?: OutputFormat) {
     this.config = config;
     this.expectedFormat = expectedFormat;
   }
 
+  /** Validator using `strictRedFlagConfig()` and no expected format. */
   static strict(): StandardRedFlagValidator {
     return new StandardRedFlagValidator(strictRedFlagConfig());
   }
 
+  /** Validator using `strictRedFlagConfig()` that also enforces `format`. */
   static withFormat(format: OutputFormat): StandardRedFlagValidator {
     return new StandardRedFlagValidator(strictRedFlagConfig(), format);
   }
 
+  /**
+   * Run the checks in order — length, truncation, format, self-correction,
+   * empty-line ratio — and return the first failure, or `{ valid: true }`.
+   *
+   * @param response - Raw model output.
+   * @param metadata - Token count and finish reason used by the length and truncation checks.
+   */
   validate(response: string, metadata: ResponseMetadata): RedFlagResult {
     // 1. Check length constraints
     const lengthResult = this.checkLength(response, metadata);
@@ -247,6 +264,7 @@ export class StandardRedFlagValidator {
     return { valid: true };
   }
 
+  /** Flag empty (severity 1.0), too-short (0.9) or over-token-limit (0.8) responses. */
   private checkLength(
     response: string,
     metadata: ResponseMetadata,
@@ -283,6 +301,7 @@ export class StandardRedFlagValidator {
     return null;
   }
 
+  /** Flag a finish reason containing "length" or "max_tokens" as truncated (severity 0.85). */
   private checkTruncation(metadata: ResponseMetadata): RedFlagResult | null {
     if (metadata.finishReason) {
       const lower = metadata.finishReason.toLowerCase();
@@ -297,6 +316,7 @@ export class StandardRedFlagValidator {
     return null;
   }
 
+  /** Flag a mismatch against `expectedFormat` (severity 0.9) when exact format is required. */
   private checkFormat(response: string): RedFlagResult | null {
     if (!this.config.requireExactFormat || !this.expectedFormat) return null;
     if (!outputFormatMatches(this.expectedFormat, response)) {
@@ -313,6 +333,7 @@ export class StandardRedFlagValidator {
     return null;
   }
 
+  /** Flag the first `confusionPatterns` substring found (severity 0.7) when enabled. */
   private checkSelfCorrection(response: string): RedFlagResult | null {
     if (!this.config.flagSelfCorrection) return null;
     for (const pattern of this.config.confusionPatterns) {
@@ -327,6 +348,7 @@ export class StandardRedFlagValidator {
     return null;
   }
 
+  /** Flag a blank-line ratio above `maxEmptyLineRatio` (severity 0.6). */
   private checkEmptyLines(response: string): RedFlagResult | null {
     const lines = response.split("\n");
     if (lines.length === 0) return null;
@@ -349,6 +371,7 @@ export class StandardRedFlagValidator {
 
 /** Always-accept validator for testing. */
 export class AcceptAllValidator {
+  /** Always returns `{ valid: true }` regardless of input. */
   validate(_response: string, _metadata: ResponseMetadata): RedFlagResult {
     return { valid: true };
   }
@@ -631,10 +654,22 @@ export function topologicalSort(subtasks: Subtask[]): Subtask[] {
 export class Composer {
   private customHandlers = new Map<string, CompositionHandler>();
 
+  /**
+   * Register a handler invoked for `{ kind: "custom" }` functions whose
+   * `description` equals `name`.
+   */
   registerHandler(name: string, handler: CompositionHandler): void {
     this.customHandlers.set(name, handler);
   }
 
+  /**
+   * Combine subtask outputs according to `fn`.
+   *
+   * @returns The composed value; for `custom` without a registered handler,
+   * `{ composition, results }`.
+   * @throws {MdapError} `composition` when `results` is empty, the reduce
+   * operation is unknown, or a value cannot be coerced.
+   */
   compose(results: SubtaskOutput[], fn: CompositionFunction): unknown {
     if (results.length === 0) {
       throw new MdapError({
@@ -661,6 +696,7 @@ export class Composer {
     }
   }
 
+  /** Join values with newlines; array values are flattened one element per line. */
   private concatenate(results: SubtaskOutput[]): string {
     return results
       .map((r) => {
@@ -672,6 +708,7 @@ export class Composer {
       .join("\n");
   }
 
+  /** Shallow-merge plain-object values; non-objects are keyed by their `subtaskId`. */
   private objectMerge(results: SubtaskOutput[]): Record<string, unknown> {
     const map: Record<string, unknown> = {};
     for (const r of results) {
@@ -688,6 +725,10 @@ export class Composer {
     return map;
   }
 
+  /**
+   * Fold values with a named operation: `sum`/`add`, `multiply`/`product`,
+   * `max`, `min`, `and`/`all`, `or`/`any`, `concat`/`join` (case-insensitive).
+   */
   private reduce(results: SubtaskOutput[], operation: string): unknown {
     const op = operation.toLowerCase();
     switch (op) {
@@ -724,6 +765,7 @@ export class Composer {
     }
   }
 
+  /** Dispatch to a registered handler, or wrap the raw values when none matches. */
   private customCompose(
     results: SubtaskOutput[],
     description: string,
@@ -736,6 +778,7 @@ export class Composer {
     };
   }
 
+  /** Coerce a number or numeric string; throws `composition` otherwise. */
   private extractNumber(value: unknown): number {
     if (typeof value === "number") return value;
     if (typeof value === "string") {
@@ -748,6 +791,7 @@ export class Composer {
     });
   }
 
+  /** Coerce a boolean, "true/yes/1" / "false/no/0" string, or non-zero number; throws `composition` otherwise. */
   private extractBool(value: unknown): boolean {
     if (typeof value === "boolean") return value;
     if (typeof value === "string") {
@@ -947,59 +991,97 @@ export function estimateCallCost(
 
 /** Comprehensive MDAP execution metrics. */
 export class MdapMetrics {
+  /** Identifier of the execution these metrics belong to. */
   executionId: string;
+  /** Epoch-millisecond start timestamp; set by the constructor and `start()`. */
   startTime?: number;
+  /** Epoch-millisecond end timestamp; set by `finalize()`. */
   endTime?: number;
+  /** Snapshot of the configuration used, when created via `withConfig`. */
   configSummary?: ConfigSummary;
 
+  /** Per-subtask metrics in the order they were recorded. */
   subtaskMetrics: SubtaskMetric[] = [];
+  /** Planned step count; set by the caller, used to compute `actualSuccessRate`. */
   totalSteps = 0;
+  /** Subtasks recorded with `succeeded: true`. */
   completedSteps = 0;
+  /** Subtasks recorded with `succeeded: false`. */
   failedSteps = 0;
 
+  /** Sum of `samplesNeeded` across recorded subtasks. */
   totalSamples = 0;
+  /** Sum of `totalVotes` (non-red-flagged samples) across recorded subtasks. */
   validSamples = 0;
+  /** Sum of `redFlagsHit` across recorded subtasks. */
   redFlaggedSamples = 0;
+  /** Occurrence count per red-flag reason string. */
   redFlagBreakdown: Record<string, number> = {};
 
+  /** Voting rounds recorded via `recordVotingRound`. */
   votingRounds: VotingRoundMetric[] = [];
+  /** Mean `totalVotes` per completed step; computed by `finalize()`. */
   averageVotesPerStep = 0;
+  /** Largest `totalVotes` seen for a single subtask. */
   maxVotesForSingleStep = 0;
-  minVotesForSingleStep = Infinity;
+  /** Smallest non-zero `totalVotes` seen for a single subtask (0 after `finalize()` if none). */
+  minVotesForSingleStep: number = Infinity;
 
+  /** Accumulated spend from `addSampleCost`, in USD. */
   actualCostUsd = 0;
+  /** Caller-supplied up-front cost estimate, in USD. */
   estimatedCostUsd = 0;
+  /** `actualCostUsd / completedSteps`; computed by `finalize()`. */
   costPerStep = 0;
+  /** Sum of input tokens across recorded subtasks. */
   totalInputTokens = 0;
+  /** Sum of output tokens across recorded subtasks. */
   totalOutputTokens = 0;
 
+  /** Wall-clock seconds between `startTime` and `endTime`; computed by `finalize()`. */
   totalTimeSeconds = 0;
+  /** Mean `executionTimeMs` per completed step; computed by `finalize()`. */
   averageTimePerStepMs = 0;
+  /** Caller-supplied seconds spent in voting. */
   votingTimeSeconds = 0;
+  /** Caller-supplied seconds spent in decomposition. */
   decompositionTimeSeconds = 0;
 
+  /** Overall outcome passed to `finalize()`. */
   finalSuccess = false;
+  /** Caller-supplied a-priori success probability (see `estimateMdap`). */
   estimatedSuccessProbability = 0;
+  /** `completedSteps / totalSteps`; computed by `finalize()` when `totalSteps > 0`. */
   actualSuccessRate = 0;
 
+  /** Model identifier, if the caller records it. */
   model?: string;
+  /** Provider identifier, if the caller records it. */
   provider?: string;
 
+  /** Create metrics for `executionId` with `startTime` set to now. */
   constructor(executionId: string) {
     this.executionId = executionId;
     this.startTime = Date.now();
   }
 
+  /** Create metrics with `configSummary` pre-populated. */
   static withConfig(executionId: string, config: ConfigSummary): MdapMetrics {
     const m = new MdapMetrics(executionId);
     m.configSummary = config;
     return m;
   }
 
+  /** Reset `startTime` to now. */
   start(): void {
     this.startTime = Date.now();
   }
 
+  /**
+   * Fold one subtask's metrics into the running totals (samples, tokens,
+   * completed/failed counts, min/max votes, red-flag breakdown) and append it
+   * to `subtaskMetrics`.
+   */
   recordSubtask(metric: SubtaskMetric): void {
     this.totalSamples += metric.samplesNeeded;
     this.redFlaggedSamples += metric.redFlagsHit;
@@ -1031,14 +1113,20 @@ export class MdapMetrics {
     this.subtaskMetrics.push(metric);
   }
 
+  /** Append a voting-round record to `votingRounds`. */
   recordVotingRound(round: VotingRoundMetric): void {
     this.votingRounds.push(round);
   }
 
+  /** Add the cost of one sample to `actualCostUsd`. */
   addSampleCost(costUsd: number): void {
     this.actualCostUsd += costUsd;
   }
 
+  /**
+   * Close the run: set `endTime` and `finalSuccess`, then derive the total
+   * time, per-step averages, cost per step and actual success rate.
+   */
   finalize(success: boolean): void {
     this.endTime = Date.now();
     this.finalSuccess = success;
@@ -1066,6 +1154,7 @@ export class MdapMetrics {
     }
   }
 
+  /** Multi-line human-readable summary of steps, samples, votes, cost, tokens, time and outcome. */
   summary(): string {
     const rfRate = this.totalSamples > 0
       ? (this.redFlaggedSamples / this.totalSamples) * 100
@@ -1090,6 +1179,7 @@ export class MdapMetrics {
     ].join("\n");
   }
 
+  /** Multi-line breakdown of red-flag reasons sorted by count with percentage of red-flagged samples. */
   redFlagAnalysis(): string {
     const keys = Object.keys(this.redFlagBreakdown);
     if (keys.length === 0) return "No red-flags encountered.";

@@ -8,5 +8,12 @@
     "./regression": "./regression.ts",
     "./ranking-metrics": "./ranking_metrics.ts",
     "./stability": "./stability_tests.ts"
+  },
+  "publish": {
+    "exclude": [
+      "**/*_test.ts",
+      "test_util.ts",
+      "__readme_check.ts"
+    ]
   }
 }

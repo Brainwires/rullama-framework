@@ -15,7 +15,7 @@ import {
   requiresApiKey,
 } from "@rullama/provider";
 
-async function main() {
+function main(): void {
   console.log("=== Provider Factory & Model Listing Example ===\n");
 
   // 1. Browse the provider registry
@@ -148,4 +148,4 @@ async function main() {
   console.log("lister.listModels() to interact with the APIs.");
 }
 
-await main();
+main();

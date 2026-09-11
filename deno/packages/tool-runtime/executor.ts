@@ -1,9 +1,12 @@
 /**
- * Tool Executor interface
+ * The `ToolExecutor` interface — the seam through which agents run tools
+ * without depending on a concrete implementation — plus the `ToolPreHook`
+ * interface and its `allow()` / `reject()` decisions for gating a call before it
+ * executes. `EnforcingExecutor` in `./enforcement.ts` wraps any executor with
+ * permission checks; `@rullama/tool-builtins` provides the default executor.
+ * Equivalent to Rust's `rullama_tool_runtime::executor`.
  *
- * Defines the ToolExecutor interface for abstracted tool execution.
- * Framework crates like agents depend on this interface to call tools
- * without coupling to any concrete implementation.
+ * @module
  */
 
 import type { Tool, ToolContext, ToolUse } from "@rullama/core";
@@ -31,6 +34,7 @@ export function reject(reason: string): PreHookDecision {
  * call intent against current agent state (not just JSON schema).
  */
 export interface ToolPreHook {
+  /** Decide whether `toolUse` may run; return `reject(reason)` to block it. */
   beforeExecute(
     toolUse: ToolUse,
     context: ToolContext,

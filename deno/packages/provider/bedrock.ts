@@ -237,6 +237,14 @@ export class BedrockProvider implements Provider {
   private readonly model: string;
   private readonly credentials: AwsCredentials;
 
+  /**
+   * Create a provider that signs each request with the given credentials.
+   *
+   * @param region AWS region of the Bedrock runtime endpoint (e.g. `us-east-1`).
+   * @param model Bedrock model id (e.g. `anthropic.claude-3-5-sonnet-20241022-v2:0`).
+   * @param credentials Access key, secret and optional session token used for SigV4.
+   * @param providerName Value reported as `name` (default: `"bedrock"`).
+   */
   constructor(
     region: string,
     model: string,
@@ -376,6 +384,9 @@ export class BedrockProvider implements Provider {
   // Internal helpers
   // -----------------------------------------------------------------------
 
+  /** Build the Anthropic Messages body for Bedrock: same mapping as the
+   * direct Anthropic provider, but carrying `anthropic_version` instead of a
+   * `model` field (the model is part of the invoke URL). */
   private buildRequestBody(
     messages: Message[],
     tools: Tool[] | undefined,

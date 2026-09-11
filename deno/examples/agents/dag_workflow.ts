@@ -9,7 +9,7 @@ import {
   type ToolCallRecord,
 } from "@rullama/agent";
 
-async function main() {
+function main(): void {
   console.log("=== DAG Workflow (ExecutionGraph) ===\n");
 
   // 1. Create an execution graph for a multi-step agent run
@@ -160,4 +160,4 @@ async function main() {
   console.log("\nDAG workflow demo complete.");
 }
 
-await main();
+main();

@@ -14,35 +14,35 @@ The v0.11.0 restructure split the old monolithic crates (`rullama-providers`,
 others. The current package set is 27 packages, each 1:1 with a Rust crate under
 `crates/`. Run `deno task parity` to regenerate this diff.
 
-| Rust crate                | Deno package                                               | Status                                        |
-| ------------------------- | ---------------------------------------------------------- | --------------------------------------------- |
-| `rullama-a2a`             | [`@rullama/a2a`](../packages/a2a/)                         | Faithful (no gRPC, by design).                |
-| `rullama-agent`           | [`@rullama/agent`](../packages/agent/)                     | Faithful — coordination primitives.           |
-| `rullama-call-policy`     | [`@rullama/call-policy`](../packages/call-policy/)         | Faithful (was `resilience`).                  |
-| `rullama-core`            | [`@rullama/core`](../packages/core/)                       | Faithful.                                     |
-| `rullama-eval`            | [`@rullama/eval`](../packages/eval/)                       | Faithful — evaluation harness.                |
-| `rullama-finetune`        | [`@rullama/finetune`](../packages/finetune/)               | Partial — cloud slice only (was `training`).  |
-| `rullama-inference`       | [`@rullama/inference`](../packages/inference/)             | Faithful — TaskAgent/Chat/Planner/etc.        |
-| `rullama-knowledge`       | [`@rullama/knowledge`](../packages/knowledge/)             | Partial — RAG/BKS/PKS are client-only.        |
-| `rullama-mcp-client`      | [`@rullama/mcp-client`](../packages/mcp-client/)           | Faithful (was `mcp`).                         |
-| `rullama-mcp-server`      | [`@rullama/mcp-server`](../packages/mcp-server/)           | Faithful — own package (unfolded in v0.11.0). |
-| `rullama-mdap`            | [`@rullama/mdap`](../packages/mdap/)                       | Faithful — MDAP/MAKER voting.                 |
-| `rullama-memory`          | [`@rullama/memory`](../packages/memory/)                   | Faithful.                                     |
-| `rullama-network`         | [`@rullama/network`](../packages/network/)                 | Faithful.                                     |
-| `rullama-permission`      | [`@rullama/permission`](../packages/permission/)           | Faithful (was `permissions`).                 |
-| `rullama-prompting`       | [`@rullama/prompting`](../packages/prompting/)             | Faithful.                                     |
-| `rullama-provider`        | [`@rullama/provider`](../packages/provider/)               | Partial — see §Providers (was `providers`).   |
-| `rullama-provider-speech` | [`@rullama/provider-speech`](../packages/provider-speech/) | Faithful — HTTP audio clients only.           |
-| `rullama-rag`             | [`@rullama/rag`](../packages/rag/)                         | Partial — client-only.                        |
-| `rullama-reasoning`       | [`@rullama/reasoning`](../packages/reasoning/)             | Partial — Tier 1 only.                        |
-| `rullama-seal`            | [`@rullama/seal`](../packages/seal/)                       | Faithful — SEAL learning loop.                |
-| `rullama-session`         | [`@rullama/session`](../packages/session/)                 | Faithful (SQLite → Deno KV).                  |
-| `rullama-skills`          | [`@rullama/skills`](../packages/skills/)                   | Faithful — SKILL.md system.                   |
-| `rullama-storage`         | [`@rullama/storage`](../packages/storage/)                 | Faithful.                                     |
-| `rullama-stores`          | [`@rullama/stores`](../packages/stores/)                   | Faithful.                                     |
-| `rullama-telemetry`       | [`@rullama/telemetry`](../packages/telemetry/)             | Partial — see §Telemetry.                     |
-| `rullama-tool-builtins`   | [`@rullama/tool-builtins`](../packages/tool-builtins/)     | Partial — see §Tools.                         |
-| `rullama-tool-runtime`    | [`@rullama/tool-runtime`](../packages/tool-runtime/)       | Partial — see §Tools.                         |
+| Rust crate                | Deno package                                               | Status                                       |
+| ------------------------- | ---------------------------------------------------------- | -------------------------------------------- |
+| `rullama-a2a`             | [`@rullama/a2a`](../packages/a2a/)                         | Faithful (no gRPC, by design).               |
+| `rullama-agent`           | [`@rullama/agent`](../packages/agent/)                     | Faithful — coordination primitives.          |
+| `rullama-call-policy`     | [`@rullama/call-policy`](../packages/call-policy/)         | Faithful (was `resilience`).                 |
+| `rullama-core`            | [`@rullama/core`](../packages/core/)                       | Faithful.                                    |
+| `rullama-eval`            | [`@rullama/eval`](../packages/eval/)                       | Faithful — evaluation harness.               |
+| `rullama-finetune`        | [`@rullama/finetune`](../packages/finetune/)               | Partial — cloud slice only (was `training`). |
+| `rullama-inference`       | [`@rullama/inference`](../packages/inference/)             | Partial — see §Inference.                    |
+| `rullama-knowledge`       | [`@rullama/knowledge`](../packages/knowledge/)             | Partial — types + `BrainClient` only.        |
+| `rullama-mcp-client`      | [`@rullama/mcp-client`](../packages/mcp-client/)           | Faithful (was `@rullama/mcp`; stdio only).   |
+| `rullama-mcp-server`      | [`@rullama/mcp-server`](../packages/mcp-server/)           | Partial — see §MCP server.                   |
+| `rullama-mdap`            | [`@rullama/mdap`](../packages/mdap/)                       | Faithful — MDAP/MAKER voting.                |
+| `rullama-memory`          | [`@rullama/memory`](../packages/memory/)                   | Faithful.                                    |
+| `rullama-network`         | [`@rullama/network`](../packages/network/)                 | Faithful.                                    |
+| `rullama-permission`      | [`@rullama/permission`](../packages/permission/)           | Faithful (was `permissions`).                |
+| `rullama-prompting`       | [`@rullama/prompting`](../packages/prompting/)             | Faithful.                                    |
+| `rullama-provider`        | [`@rullama/provider`](../packages/provider/)               | Partial — see §Providers (was `providers`).  |
+| `rullama-provider-speech` | [`@rullama/provider-speech`](../packages/provider-speech/) | Faithful — HTTP audio clients only.          |
+| `rullama-rag`             | [`@rullama/rag`](../packages/rag/)                         | Partial — client-only.                       |
+| `rullama-reasoning`       | [`@rullama/reasoning`](../packages/reasoning/)             | Partial — Tier 1 only.                       |
+| `rullama-seal`            | [`@rullama/seal`](../packages/seal/)                       | Faithful — SEAL learning loop.               |
+| `rullama-session`         | [`@rullama/session`](../packages/session/)                 | Faithful (SQLite → Deno KV).                 |
+| `rullama-skills`          | [`@rullama/skills`](../packages/skills/)                   | Faithful — SKILL.md system.                  |
+| `rullama-storage`         | [`@rullama/storage`](../packages/storage/)                 | Faithful.                                    |
+| `rullama-stores`          | [`@rullama/stores`](../packages/stores/)                   | Faithful.                                    |
+| `rullama-telemetry`       | [`@rullama/telemetry`](../packages/telemetry/)             | Partial — see §Telemetry.                    |
+| `rullama-tool-builtins`   | [`@rullama/tool-builtins`](../packages/tool-builtins/)     | Partial — see §Tools.                        |
+| `rullama-tool-runtime`    | [`@rullama/tool-runtime`](../packages/tool-runtime/)       | Partial — see §Tools.                        |
 
 Rust-only crates on the runtime boundary (no Deno package, intentional):
 `rullama` (meta), `rullama-hardware`, `rullama-sandbox`,
@@ -76,8 +76,8 @@ over `@rullama/network` or `@rullama/a2a`. This set is kept in sync with the
 - **`browser` tool** — pairs with the Rust Thalora headless browser. Drive it
   over IPC from Deno when needed.
 - **LanceDB / ONNX / tantivy RAG** — native indexing stays Rust-side. The Deno
-  `knowledge` package keeps its client role and talks to a Rust RAG service over
-  the existing `RagClient` interface.
+  `@rullama/rag` package keeps its client role and talks to a Rust RAG service
+  over the `RagClient` interface.
 - **Burn-based local training** — the Deno `finetune` package exposes cloud
   fine-tuning only.
 
@@ -164,10 +164,48 @@ Not ported:
   `uploadDataset`.
 - **`local/` subtree** — Burn-based training stays Rust-side.
 
-## Knowledge — client-interface only
+## Knowledge, prompting, RAG — client-interface only
 
-`@rullama/knowledge` ships the full prompting-technique catalog, code analysis
-helpers, and the client interfaces (`BrainClient`, `RagClient`, plus
-request/response types). The concrete RAG / BKS / PKS implementations stay in
-Rust because they depend on LanceDB + tantivy + ONNX which are not portable to
-Deno; Deno consumers proxy to the Rust service over the existing interfaces.
+Since v0.11.0 these are three packages, each 1:1 with a Rust crate:
+
+- `@rullama/knowledge` ships **only** the knowledge-graph types (`Thought`,
+  `Entity`, `Relationship`, request/response shapes) and the `BrainClient`
+  interface. It does **not** ship prompting techniques or RAG; no `BrainClient`
+  implementation ships.
+- `@rullama/prompting` ships the full 15-technique catalog, task clustering,
+  prompt generation, temperature optimization and the learning coordinator (the
+  Rust crate's `library`, `seal` and `storage` modules are not ported).
+- `@rullama/rag` ships the `RagClient` interface, its request/response types and
+  the code-analysis helpers (`RepoMap`, call graphs) under
+  `@rullama/rag/code-analysis`. The concrete indexing service stays in Rust
+  (LanceDB + tantivy + ONNX are not portable to Deno); the Rust crate's
+  `spectral` module is not ported. Deno consumers proxy to the Rust service over
+  the interface.
+
+## Inference — partial
+
+`@rullama/inference` ports `runtime` (`runAgentLoop`), `context`
+(`AgentContext`, enforcing by default since v0.12.0), `task_agent`, `pool`
+(`AgentPool`), `validator_agent`, `validation_loop`, `plan_executor`,
+`agent_hooks`, `roles` and `system_prompts`, plus the judge / planner **prompt
+builders and parsers** (`judgeAgentPrompt`, `parseVerdict`,
+`plannerAgentPrompt`, `parsePlannerOutput`, `validateTaskGraph`).
+
+Not ported:
+
+- **`chat_agent`** — there is no `ChatAgent` class in Deno.
+- **`JudgeAgent` / `PlannerAgent` as classes** — drive a `TaskAgent` with the
+  exported prompts and parse its output.
+- **`cycle_orchestrator`** — only the configuration / record types ship
+  (`CycleOrchestratorConfig`, `CycleRecord`, `CycleOrchestratorResult`); the
+  Plan → Work → Judge loop itself is not ported.
+- **`builder`, `summarization`, `task_orchestrator`, `validation_agent`**.
+
+## MCP server — partial
+
+`@rullama/mcp-server` ports the registry, handler trait, middleware chain (Auth,
+Logging, RateLimit, ToolFilter) and the stdio transport. The server handles
+exactly four MCP methods — `initialize`, `notifications/initialized`,
+`tools/list` and `tools/call` — and answers method-not-found for everything else
+(resources, prompts, sampling, logging). Only `StdioServerTransport` ships;
+implement `ServerTransport` for anything else.

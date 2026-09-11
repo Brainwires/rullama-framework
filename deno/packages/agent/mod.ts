@@ -38,6 +38,11 @@ export {
   type LockType,
 } from "./file_locks.ts";
 
+// ── Task types (aliases of @rullama/core's) ────────────────────────────
+// Exported so the `TaskManager` / `TaskQueue` signatures below are fully
+// documented from this package's public surface.
+export type { Task, TaskPriority, TaskStatus } from "./task_manager.ts";
+
 // ── Task manager ───────────────────────────────────────────────────────
 export {
   formatDurationSecs,

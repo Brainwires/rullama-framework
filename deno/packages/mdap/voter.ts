@@ -27,6 +27,7 @@ import { defaultEarlyStopping } from "./planner.ts";
 
 /** Interface for red-flag validators. */
 export interface RedFlagValidator {
+  /** Decide whether a raw sample is acceptable; invalid results carry a reason and severity. */
   validate(response: string, metadata: ResponseMetadata): RedFlagResult;
 }
 
@@ -48,6 +49,16 @@ export class FirstToAheadByKVoter {
   private readonly _votingMethod: VotingMethod;
   private readonly useConfidenceWeights: boolean;
 
+  /**
+   * Create a voter.
+   *
+   * @param options.k - Required lead over the runner-up (must be >= 1, else throws).
+   * @param options.maxSamples - Sample cap before `max_samples_exceeded` (clamped to >= 1).
+   * @param options.batchSize - Samples drawn concurrently per round (default 4).
+   * @param options.earlyStopping - RASC early-stop settings (default `defaultEarlyStopping()`).
+   * @param options.votingMethod - Winner rule (default `"first_to_ahead_by_k"`).
+   * @param options.useConfidenceWeights - Also accumulate confidence-weighted tallies (default false).
+   */
   constructor(options: {
     k: number;
     maxSamples: number;
@@ -105,14 +116,17 @@ export class FirstToAheadByKVoter {
     });
   }
 
+  /** The required lead over the runner-up. */
   get k(): number {
     return this._k;
   }
 
+  /** The sample cap before voting fails. */
   get maxSamples(): number {
     return this._maxSamples;
   }
 
+  /** The winner rule this voter applies. */
   get votingMethod(): VotingMethod {
     return this._votingMethod;
   }
@@ -294,6 +308,7 @@ export class FirstToAheadByKVoter {
 
   // -- Private helpers --
 
+  /** Run `count` sampler calls concurrently, dropping any that reject. */
   private async sampleBatch<T>(
     sampler: () => Promise<SampledResponse<T>>,
     count: number,
@@ -308,6 +323,7 @@ export class FirstToAheadByKVoter {
     return settled.filter((s): s is SampledResponse<T> => s !== null);
   }
 
+  /** Dispatch the winner check to the rule selected by `votingMethod`. */
   private checkWinnerByMethod<T>(
     votes: Map<string, { count: number; value: T }>,
     weightedVotes: Map<string, number>,
@@ -479,11 +495,13 @@ export class FirstToAheadByKVoter {
     return Math.sqrt(variance / (total * total));
   }
 
+  /** `winnerVotes / totalVotes`, or 0 when there are no votes. */
   private calculateConfidence(winnerVotes: number, totalVotes: number): number {
     if (totalVotes === 0) return 0;
     return winnerVotes / totalVotes;
   }
 
+  /** Assemble the `VoteResult`, adding `weightedConfidence` when weights were tracked. */
   private buildResult<T>(
     winner: T,
     winnerKey: string,
@@ -532,6 +550,7 @@ export class FirstToAheadByKVoter {
     };
   }
 
+  /** Render a `RedFlagReason` as a compact `Kind(detail)` string for `redFlagReasons`. */
   private formatReason(reason: import("./types.ts").RedFlagReason): string {
     switch (reason.kind) {
       case "response_too_long":
@@ -573,31 +592,40 @@ export class VoterBuilder {
   private _votingMethod: VotingMethod = "first_to_ahead_by_k";
   private _useConfidenceWeights = false;
 
+  /** Set the required lead k (default 3; clamped to >= 1 at build). */
   k(k: number): this {
     this._k = k;
     return this;
   }
 
+  /** Set the sample cap (default 50; clamped to >= 1 at build). */
   maxSamples(maxSamples: number): this {
     this._maxSamples = maxSamples;
     return this;
   }
 
+  /** Set the concurrent samples per round (default 4; clamped to >= 1 at build). */
   batchSize(size: number): this {
     this._batchSize = size;
     return this;
   }
 
+  /** Set the early-stopping config (default `defaultEarlyStopping()`). */
   earlyStopping(config: EarlyStoppingConfig): this {
     this._earlyStopping = config;
     return this;
   }
 
+  /** Set the winner rule (default `"first_to_ahead_by_k"`). */
   votingMethod(method: VotingMethod): this {
     this._votingMethod = method;
     return this;
   }
 
+  /**
+   * Toggle confidence-weighted tallies; enabling it also switches a
+   * `first_to_ahead_by_k` method to `confidence_weighted`.
+   */
   confidenceWeighted(enabled: boolean): this {
     this._useConfidenceWeights = enabled;
     if (enabled && this._votingMethod === "first_to_ahead_by_k") {
@@ -606,6 +634,7 @@ export class VoterBuilder {
     return this;
   }
 
+  /** Construct the voter, clamping k, maxSamples and batchSize to >= 1. */
   build(): FirstToAheadByKVoter {
     return new FirstToAheadByKVoter({
       k: Math.max(1, this._k),

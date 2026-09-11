@@ -335,6 +335,12 @@ export class OpenAiResponsesProvider implements Provider {
   private lastResponseId: string | undefined;
 
   /**
+   * Create a provider for the `/v1/responses` endpoint.
+   *
+   * @param apiKey Bearer token for the `Authorization` header.
+   * @param model Model id (e.g. `gpt-5-mini`).
+   * @param baseUrl Responses endpoint (default: `https://api.openai.com/v1/responses`).
+   * @param providerName Value reported as `name` (default: `"openai-responses"`).
    * @param previousResponseId Sent as `previous_response_id` on every request
    *   from this instance. The provider is otherwise stateless: it never feeds
    *   its own last response id back automatically, because an instance shared

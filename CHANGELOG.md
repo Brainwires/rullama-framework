@@ -204,6 +204,10 @@ sanitizer, were **advisory** — no execution path called any of them.
 - **`@rullama/network`**: `defaultBridgeConfig()` no longer points at a
   vendor's hosted relay; `backendUrl` is required and validated by
   `RemoteBridge`.
+- **`@rullama/inference`**: `ValidatorAgent.validate` never cleared its
+  timeout timer, keeping the event loop alive after validation finished.
+- **`@rullama/mcp-server`**: `RequestContext` (a class) was re-exported as a
+  type only, so consumers could not construct one.
 - **`@rullama/mdap`**: `MdapResult<T>` (an alias of `T`) is deprecated.
 - **`@rullama/eval`**: the module doc names the right package and no longer
   `{@link}`s file names.
@@ -222,6 +226,28 @@ sanitizer, were **advisory** — no execution path called any of them.
 - Lint: `RegressionSuite.new()` → `create()`, `SessionId.new()` → `from()`
   (the old names remain, deprecated, until 0.13); six `async` methods that
   never awaited now return promises directly.
+
+#### Publishing and documentation
+
+- Every package ships a `LICENSE` (MIT) and a `publish.exclude` so test files
+  no longer go to JSR.
+- `deno task doc-lint` runs `deno doc --lint` over all 74 published
+  entrypoints and is part of `deno task check`; every entrypoint starts with
+  a `@module` doc block and every exported symbol is documented (the JSR
+  "has docs" score factors).
+- `.github/workflows/publish-deno.yml`: a `deno-v<version>` tag publishes all
+  27 packages from GitHub Actions with OIDC provenance (workspace `deno
+  publish`, dependency order handled by Deno). `deno/scripts/publish.sh` is
+  the manual fallback; the two 0.12.0-era scripts are gone.
+- `deno task jsr:scores` writes `docs/jsr-scores.md` from JSR's score API.
+- Root `deno.json` no longer pins `@rullama/*` to `jsr:` (workspace members
+  resolve locally; the pins only put unhashed entries in `deno.lock`); the
+  lockfile is regenerated and the pre-JSR `deno.land/std` entries are gone.
+  `deno task check` also type-checks `examples/`.
+- Package READMEs use the current package names and carry a compiling
+  example; `docs/` no longer references the pre-0.11 package names, missing
+  classes (`ChatAgent`, `JudgeAgent`, `PlannerAgent`, `CycleOrchestrator`)
+  or interfaces that do not match the code.
 
 #### Tooling
 

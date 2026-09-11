@@ -6,5 +6,12 @@
     ".": "./mod.ts",
     "./middleware": "./middleware/mod.ts",
     "./transport": "./transport/mod.ts"
+  },
+  "publish": {
+    "exclude": [
+      "**/*_test.ts",
+      "test_util.ts",
+      "__readme_check.ts"
+    ]
   }
 }

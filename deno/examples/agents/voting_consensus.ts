@@ -4,18 +4,17 @@
 // Run: deno run deno/examples/agents/voting_consensus.ts
 
 import {
-  type MdapRedFlagResult,
   type OutputFormat,
+  type RedFlagResult,
   relaxedRedFlagConfig,
   type ResponseMetadata,
   type SampledResponse,
   StandardRedFlagValidator,
   strictRedFlagConfig,
   type VoteResult,
-  type VotingMethod,
-} from "@rullama/agent";
+} from "@rullama/mdap";
 
-async function main() {
+function main(): void {
   console.log("=== MAKER Voting Consensus Building Blocks ===\n");
 
   // 1. Create sampled responses with metadata
@@ -116,7 +115,7 @@ async function main() {
 
   for (let i = 0; i < responses.length; i++) {
     const resp = responses[i];
-    const result: MdapRedFlagResult = validator.validate(
+    const result: RedFlagResult = validator.validate(
       resp.rawResponse,
       resp.metadata,
     );
@@ -238,4 +237,4 @@ async function main() {
   console.log("\n=== Done ===");
 }
 
-await main();
+main();

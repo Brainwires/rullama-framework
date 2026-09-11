@@ -145,19 +145,29 @@ export function createAuditEvent(eventType: AuditEventType): AuditEvent {
   };
 }
 
-/** Builder-style helpers for AuditEvent (mutates and returns the event). */
+// Builder-style helpers for AuditEvent. Each one mutates the event in place
+// and returns it so calls can be chained: withOutcome(withAgent(e, id), "failure").
+
+/** Set `agent_id` on the event; mutates and returns the same event. */
 export function withAgent(event: AuditEvent, agentId: string): AuditEvent {
   event.agent_id = agentId;
   return event;
 }
+/** Set `action` (the operation performed, e.g. a tool name); mutates and returns the same event. */
 export function withAction(event: AuditEvent, action: string): AuditEvent {
   event.action = action;
   return event;
 }
+/** Set `target` (file path, domain, branch, …); mutates and returns the same event. */
 export function withTarget(event: AuditEvent, target: string): AuditEvent {
   event.target = target;
   return event;
 }
+/**
+ * Copy a {@link PolicyDecision} onto the event: `matched_policy` becomes
+ * `policy_id` and the decision's `reason` becomes `decision`. Mutates and
+ * returns the same event.
+ */
 export function withPolicyDecision(
   event: AuditEvent,
   decision: PolicyDecision,
@@ -166,10 +176,12 @@ export function withPolicyDecision(
   event.decision = decision.reason;
   return event;
 }
+/** Set the numeric `trust_level` (0–4, see `trustLevelToU8`) in effect at the time; mutates and returns the same event. */
 export function withTrustLevel(event: AuditEvent, level: number): AuditEvent {
   event.trust_level = level;
   return event;
 }
+/** Set `outcome` (`"success"` is the default from {@link createAuditEvent}); mutates and returns the same event. */
 export function withOutcome(
   event: AuditEvent,
   outcome: ActionOutcome,
@@ -177,6 +189,7 @@ export function withOutcome(
   event.outcome = outcome;
   return event;
 }
+/** Set `duration_ms`; mutates and returns the same event. */
 export function withDuration(
   event: AuditEvent,
   durationMs: number,
@@ -184,11 +197,13 @@ export function withDuration(
   event.duration_ms = durationMs;
   return event;
 }
+/** Set `error` AND force `outcome` to `"failure"`; mutates and returns the same event. */
 export function withError(event: AuditEvent, error: string): AuditEvent {
   event.error = error;
   event.outcome = "failure";
   return event;
 }
+/** Add (or overwrite) one `metadata` key/value pair; mutates and returns the same event. */
 export function withMetadata(
   event: AuditEvent,
   key: string,

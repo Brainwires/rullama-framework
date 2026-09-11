@@ -2,7 +2,7 @@
 // Demonstrates creating agent identities with capability cards, discovering
 // peers via ManualDiscovery, constructing message envelopes (direct, broadcast,
 // topic, reply), and using the PeerTable for routing decisions.
-// Run: deno run deno/examples/agent-network/network_manager.ts
+// Run: deno run deno/examples/network/network_manager.ts
 
 import {
   type AgentIdentity,

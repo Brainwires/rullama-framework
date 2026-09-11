@@ -124,6 +124,7 @@ export interface RateLimitedClientOptions {
  * {@link RateLimiter} before invoking the wrapped function.
  */
 export class RateLimitedClient<TArgs extends unknown[], TResult> {
+  /** The token bucket every {@link RateLimitedClient.execute} call draws from. */
   readonly limiter: RateLimiter;
   readonly #fn: (...args: TArgs) => Promise<TResult>;
 

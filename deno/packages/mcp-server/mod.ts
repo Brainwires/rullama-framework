@@ -21,7 +21,7 @@ export {
 
 export { type McpHandler } from "./handler.ts";
 
-export { McpServer, type RequestContext } from "./server.ts";
+export { type ClientInfo, McpServer, RequestContext } from "./server.ts";
 
 // Middleware
 export * from "./middleware/mod.ts";

@@ -1,12 +1,14 @@
 /**
  * @module @rullama/network
  *
- * Agent-to-agent networking layer: identity, routing, discovery, peer table,
- * agent management, remote bridge, and client connectivity.
+ * Agent-to-agent networking layer: agent identity + capability cards,
+ * message envelopes, routing strategies, a peer table, peer discovery,
+ * an agent-management contract, the remote relay bridge (command queue,
+ * heartbeat telemetry, protocol negotiation) and a stdio relay client.
  *
  * The MCP server framework lives in `@rullama/mcp-server` — import from
  * there directly. `AgentNetworkError` + `ErrorCode` are re-exported here for
- * convenience (the underlying class lives in mcp-server).
+ * convenience (the underlying class lives in `@rullama/mcp-server`).
  */
 
 export { AgentNetworkError, ErrorCode } from "./error.ts";
@@ -132,6 +134,20 @@ export type {
   AgentEventType,
   AgentInfoProvider,
   BackendCommand,
+  BackendCommand_AttachmentChunk,
+  BackendCommand_AttachmentComplete,
+  BackendCommand_AttachmentUpload,
+  BackendCommand_Authenticated,
+  BackendCommand_AuthenticationFailed,
+  BackendCommand_CancelOperation,
+  BackendCommand_Disconnect,
+  BackendCommand_Ping,
+  BackendCommand_RequestSync,
+  BackendCommand_SendInput,
+  BackendCommand_SlashCommand,
+  BackendCommand_SpawnAgent,
+  BackendCommand_Subscribe,
+  BackendCommand_Unsubscribe,
   // Bridge types
   BridgeConfig,
   BridgeConfigProvider,
@@ -155,6 +171,13 @@ export type {
   RemoteBridgeConfig,
   RemoteBridgeStatus,
   RemoteMessage,
+  RemoteMessage_AgentEvent,
+  RemoteMessage_AgentStream,
+  RemoteMessage_AttachmentReceived,
+  RemoteMessage_CommandResult,
+  RemoteMessage_Heartbeat,
+  RemoteMessage_Pong,
+  RemoteMessage_Register,
   RetryPolicy,
   StateChangeHandler,
   StreamChunkType,

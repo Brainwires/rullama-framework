@@ -34,6 +34,11 @@ export class RateLimitMiddleware implements Middleware {
   private readonly perToolLimits: Map<string, number> = new Map();
   private readonly buckets: Map<string, RateLimitBucket> = new Map();
 
+  /**
+   * Create the middleware with no per-tool overrides and no buckets yet.
+   * @param maxRequestsPerSecond Default per-client, per-tool limit (bucket
+   *   size and refill rate); see {@link withToolLimit} for overrides.
+   */
   constructor(maxRequestsPerSecond: number) {
     this.maxRequestsPerSecond = maxRequestsPerSecond;
   }
@@ -44,6 +49,7 @@ export class RateLimitMiddleware implements Middleware {
     return this;
   }
 
+  /** The per-tool override for `key` (a tool name), else the default limit. */
   private getLimit(key: string): number {
     return this.perToolLimits.get(key) ?? this.maxRequestsPerSecond;
   }

@@ -14,7 +14,14 @@
  * @module
  */
 
-import type { MessageMetadata } from "@rullama/stores";
+import type { MessageMetadata as StoresMessageMetadata } from "@rullama/stores";
+
+/**
+ * Full message record kept in the hot tier: the `MessageMetadata` of
+ * `@rullama/stores`, aliased here so the `TieredMemory` API is documented
+ * without an extra import.
+ */
+export type MessageMetadata = StoresMessageMetadata;
 
 const SECS_PER_HOUR = 3600;
 const SIMILARITY_WEIGHT = 0.50;
@@ -77,12 +84,19 @@ export function promoteTier(tier: MemoryTier): MemoryTier | undefined {
 
 /** Metadata tracking for tiered storage. */
 export interface TierMetadata {
+  /** Identifier of the tracked message (matches `MessageMetadata.messageId`). */
   messageId: string;
+  /** Tier the message currently lives in. */
   tier: MemoryTier;
+  /** Caller-supplied importance in `[0, 1]`; the dominant term of `retentionScore`. */
   importance: number;
+  /** Unix seconds of the most recent `recordAccess` (or creation). */
   lastAccessed: number;
+  /** Number of `recordAccess` calls since creation. */
   accessCount: number;
+  /** Unix seconds when the metadata was created. */
   createdAt: number;
+  /** Trust level of the entry; `"canonical"` entries are never TTL-evicted. */
   authority: MemoryAuthority;
 }
 
@@ -128,9 +142,13 @@ export function retentionScore(meta: TierMetadata): number {
 
 /** Combined retrieval score blending similarity, recency, and importance. */
 export interface MultiFactorScore {
+  /** Embedding similarity of the candidate to the query, weighted 0.5. */
   similarity: number;
+  /** Recency factor from `recencyFromHours` (1.0 = just accessed), weighted 0.3. */
   recency: number;
+  /** Importance of the entry, weighted 0.2. */
   importance: number;
+  /** Weighted sum `0.5 * similarity + 0.3 * recency + 0.2 * importance`. */
   combined: number;
 }
 
@@ -155,12 +173,19 @@ export function recencyFromHours(hoursSinceAccess: number): number {
 
 /** Summary of a message for warm tier storage. */
 export interface MessageSummary {
+  /** Unique id of the summary; the key under which the warm tier stores it. */
   summaryId: string;
+  /** Id of the hot-tier message this summary compresses. */
   originalMessageId: string;
+  /** Conversation the original message belonged to. */
   conversationId: string;
+  /** Role of the original message (e.g. `"user"`, `"assistant"`). */
   role: string;
+  /** Compressed text of the original message. */
   summary: string;
+  /** Named entities worth preserving from the original message. */
   keyEntities: string[];
+  /** Unix seconds when the summary was produced. */
   createdAt: number;
 }
 
@@ -175,11 +200,17 @@ export type FactType =
 
 /** Key fact extracted from messages for cold tier storage. */
 export interface KeyFact {
+  /** Unique id of the fact; the key under which the cold tier stores it. */
   factId: string;
+  /** Ids of the messages the fact was distilled from. */
   originalMessageIds: string[];
+  /** Conversation the source messages belonged to. */
   conversationId: string;
+  /** The distilled fact, as a single sentence or phrase. */
   fact: string;
+  /** Category of the fact. */
   factType: FactType;
+  /** Unix seconds when the fact was extracted. */
   createdAt: number;
 }
 
@@ -187,11 +218,17 @@ export interface KeyFact {
 
 /** Result from adaptive search across tiers. */
 export interface TieredSearchResult {
+  /** Text of the hit: full message, summary, or fact depending on `tier`. */
   content: string;
+  /** Ranking score; equals `multiFactorScore.combined` when that is present. */
   score: number;
+  /** Tier the hit was found in. */
   tier: MemoryTier;
+  /** Id of the source message, when the hit is traceable to one. */
   originalMessageId?: string;
+  /** Full message record; present only for hot-tier hits. */
   metadata?: MessageMetadata;
+  /** Per-factor breakdown of `score`, when multi-factor ranking was used. */
   multiFactorScore?: MultiFactorScore;
 }
 
@@ -199,12 +236,19 @@ export interface TieredSearchResult {
 
 /** Configuration for tiered memory behavior. */
 export interface TieredMemoryConfig {
+  /** Hours a message may stay hot before it is a demotion candidate (default 24). */
   hotRetentionHours: number;
+  /** Hours a summary may stay warm before it is a demotion candidate (default 168). */
   warmRetentionHours: number;
+  /** Minimum importance that keeps a message in the hot tier (default 0.3). */
   hotImportanceThreshold: number;
+  /** Minimum importance that keeps a summary in the warm tier (default 0.1). */
   warmImportanceThreshold: number;
+  /** Hot-tier capacity; `TieredMemory` evicts the oldest inserts past it (default 1000). */
   maxHotMessages: number;
+  /** Warm-tier capacity; `demoteToWarm` evicts the oldest summaries past it (default 5000). */
   maxWarmSummaries: number;
+  /** When set, `addMessage` stamps `expiresAt = now + sessionTtlSecs` so `evictExpired` can drop it. */
   sessionTtlSecs?: number;
 }
 
@@ -224,9 +268,13 @@ export function defaultTieredMemoryConfig(): TieredMemoryConfig {
 
 /** Statistics about tiered memory usage. */
 export interface TieredMemoryStats {
+  /** Messages currently stored in the hot tier. */
   hotCount: number;
+  /** Summaries currently stored in the warm tier. */
   warmCount: number;
+  /** Key facts currently stored in the cold tier. */
   coldCount: number;
+  /** Message ids with tier metadata (hot + demoted messages still tracked). */
   totalTracked: number;
 }
 
@@ -243,8 +291,13 @@ export class TieredMemory {
   private warmSummaries: Map<string, MessageSummary> = new Map();
   private coldFacts: Map<string, KeyFact> = new Map();
   private tierMetadata: Map<string, TierMetadata> = new Map();
+  /** Retention and capacity settings this instance was built with. */
   readonly config: TieredMemoryConfig;
 
+  /**
+   * Create an empty tiered memory.
+   * @param config Retention/capacity settings; defaults to `defaultTieredMemoryConfig()`.
+   */
   constructor(config?: TieredMemoryConfig) {
     this.config = config ?? defaultTieredMemoryConfig();
   }

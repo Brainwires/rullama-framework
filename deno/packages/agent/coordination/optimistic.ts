@@ -14,9 +14,13 @@
 
 /** Version information for a resource. */
 export interface ResourceVersion {
+  /** Monotonic version counter; starts at 1 on the first commit. */
   version: number;
+  /** Content hash recorded by the commit that produced this version. */
   contentHash: string;
+  /** Agent whose commit produced this version. */
   lastModifier: string;
+  /** When the version was committed (epoch ms). */
   modifiedAt: number;
 }
 
@@ -43,23 +47,37 @@ export type ResolutionStrategy =
 
 /** Describes a conflict between two operations. */
 export interface OptimisticConflict {
+  /** Resource whose version moved under the committer. */
   resourceId: string;
+  /** Agent whose commit was rejected. */
   conflictingAgent: string;
+  /** Version the rejected token was based on. */
   expectedVersion: number;
+  /** Version actually stored at commit time. */
   actualVersion: number;
+  /** Agent that committed the current version (`lastModifier`). */
   holderAgent: string;
+  /** When the conflict was detected (epoch ms). */
   detectedAt: number;
 }
 
 /** Full conflict information for resolution. */
 export interface OptimisticConflictDetails {
+  /** Resource in conflict. */
   resourceId: string;
+  /** First party to the conflict. */
   agentA: string;
+  /** Second party to the conflict. */
   agentB: string;
+  /** Version proposed by `agentA`. */
   versionA: ResourceVersion;
+  /** Version proposed by `agentB`. */
   versionB: ResourceVersion;
+  /** Common ancestor version both parties started from. */
   baseVersion: ResourceVersion;
+  /** Content proposed by `agentA`, when available for merging. */
   contentA?: string;
+  /** Content proposed by `agentB`, when available for merging. */
   contentB?: string;
 }
 
@@ -78,10 +96,15 @@ export type Resolution =
 
 /** Token for optimistic operations. */
 export interface OptimisticToken {
+  /** Resource the operation will commit to. */
   resourceId: string;
+  /** Version observed at `beginOptimistic` (0 for an unseen resource). */
   baseVersion: number;
+  /** Content hash observed at `beginOptimistic` (empty string for an unseen resource). */
   baseHash: string;
+  /** Agent performing the operation. */
   agentId: string;
+  /** When the token was issued (epoch ms); compared by `isTokenStale`. */
   createdAt: number;
 }
 
@@ -99,8 +122,11 @@ export function isTokenStale(
 
 /** Record of a conflict for history/debugging. */
 export interface ConflictRecord {
+  /** The conflict that was detected. */
   conflict: OptimisticConflict;
+  /** How the controller resolved it. */
   resolution: Resolution;
+  /** When the resolution was recorded (epoch ms). */
   resolvedAt: number;
 }
 
@@ -137,9 +163,13 @@ export function commitVersion(result: CommitResult): number | undefined {
 
 /** Statistics about optimistic concurrency. */
 export interface OptimisticStats {
+  /** Number of resources with at least one committed version. */
   totalResources: number;
+  /** Conflicts currently retained in history (bounded by `maxHistory`). */
   totalConflicts: number;
+  /** Retained conflicts whose resolution was `"retry"`. */
   resolvedByRetry: number;
+  /** Retained conflicts whose resolution was `"escalate"`. */
   escalated: number;
 }
 
@@ -155,6 +185,11 @@ export class OptimisticController {
   private conflictHistory: ConflictRecord[] = [];
   private maxHistory: number;
 
+  /**
+   * Create a controller with no versions recorded.
+   * @param defaultStrategy Used for resources without a registered strategy; defaults to `{ kind: "first_writer_wins" }`.
+   * @param maxHistory Maximum conflict records retained (oldest dropped first; default 100).
+   */
   constructor(
     defaultStrategy?: ResolutionStrategy,
     maxHistory = 100,
@@ -263,6 +298,7 @@ export class OptimisticController {
     }
   }
 
+  /** Write a new version on top of whatever is stored, bypassing the version check. Returns the new version number. */
   private forceCommit(
     resourceId: string,
     contentHash: string,
@@ -279,6 +315,12 @@ export class OptimisticController {
     return newVersion;
   }
 
+  /**
+   * Map a conflict to a `Resolution` using the resource's registered strategy
+   * (looked up by exact `resourceId`) or the default. `merge` always escalates
+   * because no content is available here; `retry` escalates once the version
+   * gap reaches `maxAttempts`.
+   */
   private resolveConflictAuto(conflict: OptimisticConflict): Resolution {
     const strategy = this.strategies.get(conflict.resourceId) ??
       this.defaultStrategy;
@@ -312,6 +354,7 @@ export class OptimisticController {
     }
   }
 
+  /** Append to the conflict history, trimming the oldest entries beyond `maxHistory`. */
   private recordConflict(
     conflict: OptimisticConflict,
     resolution: Resolution,

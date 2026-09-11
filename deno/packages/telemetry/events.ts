@@ -8,10 +8,13 @@
 export interface ComplianceMetadata {
   /** ISO 3166-1 alpha-2 (e.g. "EU", "US"). */
   data_region?: string;
+  /** Whether the event's payload is known to contain personally identifiable information. */
   pii_present?: boolean;
+  /** How many days the event must be retained before it may be purged. */
   retention_days?: number;
   /** "GDPR" | "HIPAA" | "EU_AI_ACT" | … */
   regulation?: string;
+  /** Whether the event must be written to an audit trail. */
   audit_required?: boolean;
 }
 

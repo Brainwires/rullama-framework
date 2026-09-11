@@ -44,12 +44,11 @@ async function main() {
 
   // Simulate an API call
   let callCount = 0;
-  async function mockApiCall(
-    endpoint: string,
-    payload: string,
-  ): Promise<string> {
+  function mockApiCall(endpoint: string, payload: string): Promise<string> {
     callCount++;
-    return `Response #${callCount} from ${endpoint}: processed "${payload}"`;
+    return Promise.resolve(
+      `Response #${callCount} from ${endpoint}: processed "${payload}"`,
+    );
   }
 
   const rateLimitedApi = new RateLimitedClient(mockApiCall, {

@@ -11,7 +11,9 @@
 
 /** One redaction rule. */
 export interface SensitivePattern {
+  /** Global regex matching the secret; `lastIndex` is reset before each use. */
   regex: RegExp;
+  /** Category name written into the `[REDACTED: <label>]` replacement. */
   label: string;
 }
 

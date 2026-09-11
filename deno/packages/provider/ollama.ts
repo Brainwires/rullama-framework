@@ -68,6 +68,12 @@ export class OllamaChatProvider implements Provider {
   private readonly model: string;
   private readonly baseUrl: string;
 
+  /**
+   * Create a provider for a local Ollama server (no API key).
+   *
+   * @param model Ollama model tag (e.g. `llama3.3`).
+   * @param baseUrl Server root (default: `http://localhost:11434`).
+   */
   constructor(model: string, baseUrl?: string) {
     this.model = model;
     this.baseUrl = baseUrl ?? DEFAULT_OLLAMA_URL;
@@ -165,6 +171,8 @@ export class OllamaChatProvider implements Provider {
   // Internal helpers
   // -----------------------------------------------------------------------
 
+  /** Build the `/api/chat` body: converted messages, `temperature` / `top_p`
+   * under `options`, tools in OpenAI function form, and the `stream` flag. */
   private buildRequestBody(
     messages: Message[],
     tools: Tool[] | undefined,

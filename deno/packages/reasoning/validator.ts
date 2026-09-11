@@ -12,10 +12,12 @@ export type ValidationResult =
   | { kind: "invalid"; reason: string; severity: number; confidence: number }
   | { kind: "skipped" };
 
+/** `true` when the result's kind is `"valid"`. */
 export function isValid(r: ValidationResult): boolean {
   return r.kind === "valid";
 }
 
+/** `true` when the result's kind is `"invalid"` (`"skipped"` is neither). */
 export function isInvalid(r: ValidationResult): boolean {
   return r.kind === "invalid";
 }
@@ -125,14 +127,29 @@ export function validateHeuristic(
 
 /** Provider-backed semantic response validator. */
 export class LocalValidator {
+  /** Provider used for the LLM-backed {@link validate} call. */
   readonly provider: Provider;
+  /** Model id this validator was configured for (advisory). */
   readonly model_id: string;
 
+  /**
+   * Create a validator bound to one provider.
+   *
+   * @param provider Any `@rullama/core` `Provider`; called with a
+   *   deterministic, 50-token chat request per validation.
+   * @param model_id Model id recorded for logging/config.
+   */
   constructor(provider: Provider, model_id: string) {
     this.provider = provider;
     this.model_id = model_id;
   }
 
+  /**
+   * Ask the model whether `response` (truncated to 500 chars) is appropriate
+   * for `task` and parse its `VALID` / `INVALID:<reason>` answer. Returns
+   * `{ kind: "skipped" }` — not `null` — for responses under 10 characters
+   * and when the provider call throws.
+   */
   async validate(task: string, response: string): Promise<ValidationResult> {
     if (response.trim().length < 10) return { kind: "skipped" };
 
@@ -158,6 +175,7 @@ Output ONLY: VALID or INVALID:<reason>`;
     }
   }
 
+  /** Fast, pure-heuristic variant — no provider call. */
   validateHeuristic(task: string, response: string): ValidationResult {
     return validateHeuristic(task, response);
   }

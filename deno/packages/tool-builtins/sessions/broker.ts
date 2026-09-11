@@ -11,8 +11,10 @@
 
 /** Opaque identifier for a chat session. */
 export class SessionId {
+  /** The raw id string. */
   readonly value: string;
 
+  /** Wrap a raw session id. */
   constructor(value: string) {
     this.value = value;
   }
@@ -22,6 +24,7 @@ export class SessionId {
     return this.value;
   }
 
+  /** The raw id string. */
   toString(): string {
     return this.value;
   }
@@ -34,6 +37,7 @@ export class SessionId {
 
 /** Summary metadata for a single session, returned by `sessions_list`. */
 export interface SessionSummary {
+  /** Session ID. */
   id: SessionId;
   /** Originating channel (e.g. "discord", "web", "internal"). */
   channel: string;
@@ -93,6 +97,7 @@ export function defaultSpawnRequest(): SpawnRequest {
 
 /** Result of {@link SessionBroker.spawn}. */
 export interface SpawnedSession {
+  /** ID of the newly spawned session. */
   id: SessionId;
   /** Set iff `wait_for_first_reply` was true and the reply arrived in time. */
   first_reply: SessionMessage | null;

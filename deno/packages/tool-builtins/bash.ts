@@ -1,6 +1,13 @@
 /**
- * Bash execution tool implementation.
- * Uses Deno.Command for subprocess execution.
+ * The `execute_command` tool: runs a shell command with `Deno.Command` in the
+ * tool context's working directory. Each command gets a timeout (default 30 s)
+ * after which the whole process tree is killed, a child environment scrubbed of
+ * credential-like variables (`scrubEnv` / `SECRET_ENV_PATTERN`), stdout and
+ * stderr capped at `MAX_OUTPUT_BYTES`, and a block list of destructive
+ * patterns; output can be filtered or truncated via `OutputMode` / `StderrMode`.
+ * Equivalent to Rust's `rullama_tool_builtins::bash`.
+ *
+ * @module
  */
 
 // deno-lint-ignore-file no-explicit-any
@@ -145,6 +152,7 @@ export class BashTool {
     return [BashTool.executeCommandTool()];
   }
 
+  /** Definition of the `execute_command` tool. */
   private static executeCommandTool(): Tool {
     return {
       name: "execute_command",
@@ -219,6 +227,7 @@ export class BashTool {
     }
   }
 
+  /** Run `execute_command`: validate, execute with a timeout, format the output. */
   private static async executeCommand(
     input: any,
     context: ToolContext,
@@ -254,6 +263,7 @@ export class BashTool {
     );
   }
 
+  /** Validate and normalise the tool input. */
   private static parseParams(input: any): ParsedParams {
     return {
       command: input.command,
@@ -531,6 +541,7 @@ export class BashTool {
     return defaults;
   }
 
+  /** Derive the output limits from the requested output / stderr modes. */
   private static resolveOutputLimits(params: ParsedParams): OutputLimits {
     const limits: OutputLimits = {
       maxLines: params.maxLines,
@@ -614,6 +625,7 @@ export class BashTool {
     return cmd;
   }
 
+  /** Spawn the shell, kill the whole tree on timeout, return capped output. */
   private static async runCommandWithTimeout(
     command: string,
     workingDir: string,
@@ -663,6 +675,7 @@ export class BashTool {
     }
   }
 
+  /** Apply the output mode (head / tail / filter / truncate) to the captured text. */
   private static formatOutput(
     originalCommand: string,
     transformedCommand: string,

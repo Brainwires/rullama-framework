@@ -4,22 +4,10 @@
 // Run: deno run deno/examples/a2a/a2a_client_server.ts
 
 import type {
-  AgentCapabilities,
   AgentCard,
-  AgentProvider,
-  AgentSkill,
-  Artifact,
-  CancelTaskRequest,
-  GetTaskRequest,
-  ListTasksRequest,
-  ListTasksResponse,
   Message,
-  Part,
-  SendMessageRequest,
   SendMessageResponse,
   Task,
-  TaskState,
-  TaskStatus,
 } from "@rullama/a2a";
 import {
   A2aClient,
@@ -27,9 +15,8 @@ import {
   createAgentMessage,
   createUserMessage,
 } from "@rullama/a2a";
-import type { A2aHandler } from "@rullama/a2a";
 
-async function main(): Promise<void> {
+function main(): void {
   console.log("=== A2A Client/Server Example ===\n");
 
   // -----------------------------------------------------------------------
@@ -179,7 +166,9 @@ async function main(): Promise<void> {
   console.log("--- 6. A2aClient API Overview ---");
 
   const client = new A2aClient({ baseUrl: "http://localhost:8080" });
-  console.log("  Created A2aClient (JSON-RPC transport, no live server)");
+  console.log(
+    `  Created ${client.constructor.name} (JSON-RPC transport, no live server)`,
+  );
   console.log();
 
   console.log("  Available client methods:");
@@ -237,4 +226,4 @@ async function main(): Promise<void> {
   console.log("\nDone.");
 }
 
-await main();
+main();

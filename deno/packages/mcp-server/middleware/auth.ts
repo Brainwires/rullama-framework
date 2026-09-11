@@ -39,6 +39,10 @@ export function constantTimeEqual(a: string, b: string): boolean {
 export class AuthMiddleware implements Middleware {
   private readonly token: string;
 
+  /**
+   * Create the middleware for one shared secret.
+   * @param token The secret clients must present as the `_auth_token` param.
+   */
   constructor(token: string) {
     this.token = token;
   }

@@ -9,5 +9,12 @@
     "./plan": "./plan_store.ts",
     "./task": "./task_store.ts",
     "./template": "./template_store.ts"
+  },
+  "publish": {
+    "exclude": [
+      "**/*_test.ts",
+      "test_util.ts",
+      "__readme_check.ts"
+    ]
   }
 }

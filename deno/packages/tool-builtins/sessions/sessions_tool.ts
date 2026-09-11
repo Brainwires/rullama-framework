@@ -19,9 +19,13 @@ import {
   type SpawnRequest,
 } from "./broker.ts";
 
+/** Name of the list-sessions tool. */
 export const TOOL_SESSIONS_LIST = "sessions_list";
+/** Name of the session-history tool. */
 export const TOOL_SESSIONS_HISTORY = "sessions_history";
+/** Name of the send-to-session tool. */
 export const TOOL_SESSIONS_SEND = "sessions_send";
+/** Name of the spawn-session tool. */
 export const TOOL_SESSIONS_SPAWN = "sessions_spawn";
 
 /**
@@ -39,6 +43,7 @@ export class SessionsTool {
   private readonly broker: SessionBroker;
   private readonly current_session_id: SessionId | null;
 
+  /** Create the tool over `broker`; `current_session_id` is the caller's own session, if any. */
   constructor(broker: SessionBroker, current_session_id: SessionId | null) {
     this.broker = broker;
     this.current_session_id = current_session_id;
@@ -56,6 +61,7 @@ export class SessionsTool {
 
   // ── Tool schemas ─────────────────────────────────────────────────────────
 
+  /** Definition of the `sessions_list` tool. */
   private static listTool(): Tool {
     return {
       name: TOOL_SESSIONS_LIST,
@@ -70,6 +76,7 @@ export class SessionsTool {
     };
   }
 
+  /** Definition of the `sessions_history` tool. */
   private static historyTool(): Tool {
     return {
       name: TOOL_SESSIONS_HISTORY,
@@ -93,6 +100,7 @@ export class SessionsTool {
     };
   }
 
+  /** Definition of the `sessions_send` tool. */
   private static sendTool(): Tool {
     return {
       name: TOOL_SESSIONS_SEND,
@@ -118,6 +126,7 @@ export class SessionsTool {
     };
   }
 
+  /** Definition of the `sessions_spawn` tool. */
   private static spawnTool(): Tool {
     return {
       name: TOOL_SESSIONS_SPAWN,
@@ -189,6 +198,7 @@ export class SessionsTool {
     }
   }
 
+  /** Run `sessions_list`. */
   private async execList(tool_use_id: string): Promise<ToolResult> {
     try {
       const summaries = await this.broker.list();
@@ -211,6 +221,7 @@ export class SessionsTool {
     }
   }
 
+  /** Run `sessions_history`. */
   private async execHistory(
     tool_use_id: string,
     input: Record<string, unknown>,
@@ -240,6 +251,7 @@ export class SessionsTool {
     }
   }
 
+  /** Run `sessions_send`. */
   private async execSend(
     tool_use_id: string,
     input: Record<string, unknown>,
@@ -280,6 +292,7 @@ export class SessionsTool {
     }
   }
 
+  /** Run `sessions_spawn`. */
   private async execSpawn(
     tool_use_id: string,
     input: Record<string, unknown>,
@@ -331,6 +344,7 @@ export class SessionsTool {
     }
   }
 
+  /** The caller's session id: from the context metadata, else the constructor value. */
   private resolveCurrentSessionId(context: ToolContext): SessionId | null {
     const raw = context.metadata[CTX_METADATA_SESSION_ID];
     if (raw && raw.length > 0) return new SessionId(raw);

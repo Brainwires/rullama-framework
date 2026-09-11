@@ -25,16 +25,22 @@ export type ToolCategory =
   | "Orchestrator"
   | "CodeExecution";
 
+/** Outcome of routing a query to tool categories. */
 export interface RouteResult {
+  /** Categories the query was mapped to, in detection order. */
   categories: ToolCategory[];
+  /** Confidence in the routing, 0.0–1.0 (0.85 for LLM results, 0.5 for fallback). */
   confidence: number;
+  /** `true` if a local LLM produced it, `false` for a fallback result. */
   used_local_llm: boolean;
 }
 
+/** Build a fallback result (confidence 0.5, `used_local_llm: false`). */
 export function routeFromFallback(categories: ToolCategory[]): RouteResult {
   return { categories, confidence: 0.5, used_local_llm: false };
 }
 
+/** Build a result attributed to the local LLM (`used_local_llm: true`). */
 export function routeFromLocal(
   categories: ToolCategory[],
   confidence: number,
@@ -101,14 +107,28 @@ export function parseCategories(output: string): ToolCategory[] {
 
 /** Provider-backed semantic router. */
 export class LocalRouter {
+  /** Provider used for the LLM-backed {@link classify} call. */
   readonly provider: Provider;
+  /** Model id this router was configured for (advisory). */
   readonly model_id: string;
 
+  /**
+   * Create a router bound to one provider.
+   *
+   * @param provider Any `@rullama/core` `Provider`; called with a
+   *   deterministic, 50-token chat request per query.
+   * @param model_id Model id recorded for logging/config.
+   */
   constructor(provider: Provider, model_id: string) {
     this.provider = provider;
     this.model_id = model_id;
   }
 
+  /**
+   * Ask the model for comma-separated category names and parse them with
+   * {@link parseCategories}. Returns `null` when the call throws or no
+   * category is recognised, so callers can fall back.
+   */
   async classify(query: string): Promise<RouteResult | null> {
     const user =
       `Classify this query into tool categories. Output ONLY the category names, comma-separated.

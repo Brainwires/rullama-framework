@@ -62,6 +62,7 @@ export class AgentContext {
    *   {@link preExecuteHook} is always consulted (it is read at call time, so it
    *   may be set later with {@link withPreExecuteHook}).
    */
+  /** Create a context. See the class docs for the enforcement default. */
   constructor(
     workingDirectory: string,
     toolExecutor: ToolExecutor,

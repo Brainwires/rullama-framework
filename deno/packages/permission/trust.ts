@@ -10,13 +10,14 @@
 
 // ── Trust Level ─────────────────────────────────────────────────────
 
+import { dirname } from "@std/path";
+
 /**
- * Trust level enum representing discrete trust categories.
+ * Trust level enum representing discrete trust categories, ordered from
+ * `"untrusted"` (0) to `"system"` (4); see {@link trustLevelToU8}.
  *
  * Rust equivalent: `TrustLevel` enum (serde `rename_all = "lowercase"`)
  */
-import { dirname } from "@std/path";
-
 export type TrustLevel = "untrusted" | "low" | "medium" | "high" | "system";
 
 /** Numeric value for a trust level (matches Rust discriminant). */
@@ -107,11 +108,17 @@ export function violationRecentPenalty(severity: ViolationSeverity): number {
  * Rust equivalent: `ViolationCounts` struct
  */
 export interface ViolationCounts {
+  /** Lifetime count of minor violations. */
   minor: number;
+  /** Lifetime count of major violations. */
   major: number;
+  /** Lifetime count of critical violations. */
   critical: number;
+  /** Minor violations since the last decay window (extra penalty; cleared by {@link decayRecentViolations}). */
   recent_minor: number;
+  /** Major violations since the last decay window (extra penalty; cleared by {@link decayRecentViolations}). */
   recent_major: number;
+  /** Critical violations since the last decay window (extra penalty; cleared by {@link decayRecentViolations}). */
   recent_critical: number;
 }
 
@@ -316,14 +323,23 @@ export function trustFactorReset(factor: TrustFactor): void {
  * Rust equivalent: `TrustStatistics` struct
  */
 export interface TrustStatistics {
+  /** Number of agents with a trust factor. */
   total_agents: number;
+  /** Agents currently at level `"untrusted"`. */
   untrusted: number;
+  /** Agents currently at level `"low"`. */
   low_trust: number;
+  /** Agents currently at level `"medium"`. */
   medium_trust: number;
+  /** Agents currently at level `"high"`. */
   high_trust: number;
+  /** Agents currently at level `"system"`. */
   system: number;
+  /** Sum of lifetime (non-recent) violations across all agents. */
   total_violations: number;
+  /** Sum of `total_ops` across all agents. */
   total_operations: number;
+  /** Aggregate success ratio: total successful ops / `total_operations` (0 when there are no operations). Not the mean of per-agent `score`s. */
   average_score: number;
 }
 

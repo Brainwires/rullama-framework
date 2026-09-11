@@ -1,8 +1,12 @@
 /**
- * SEAL (Self-Evolving Agentic Learning) Integration Module.
+ * @module @rullama/seal
  *
- * Implements techniques from the SEAL paper to enhance conversational question
- * answering, semantic parsing, and self-evolving agent capabilities.
+ * SEAL (Self-Evolving Agentic Learning) for the rullama. Implements
+ * techniques from the SEAL paper to enhance conversational question answering,
+ * semantic parsing, and self-evolving agent capabilities. `SealProcessor` runs
+ * a query through coreference resolution, query-core extraction, pattern
+ * learning and structural reflection in-process; the individual stages are
+ * exported for standalone use.
  *
  * Components:
  * - Coreference Resolution — pronouns / definite NPs → concrete entities
@@ -16,7 +20,6 @@
  * Equivalent to Rust's `rullama_agents::seal` module.
  */
 
-import type { EntityStoreT, RelationshipGraphT } from "@rullama/core";
 import { CoreferenceResolver, type DialogState } from "./coreference.ts";
 import { LearningCoordinator } from "./learning.ts";
 import {
@@ -29,7 +32,11 @@ import {
   ReflectionModule,
   type ReflectionReport,
 } from "./reflection.ts";
-import { newSealProcessingResult, type SealProcessingResult } from "./types.ts";
+import type {
+  EntityStoreT,
+  RelationshipGraphT,
+  SealProcessingResult,
+} from "./types.ts";
 
 // ─── Re-exports ─────────────────────────────────────────────────────────────
 
@@ -133,22 +140,41 @@ export {
   validateIntegrationConfig,
 } from "./knowledge_integration.ts";
 
-export { newSealProcessingResult, type SealProcessingResult };
+export {
+  type EdgeType,
+  type EntityStoreT,
+  type EntityType,
+  newSealProcessingResult,
+  type RelationshipGraphT,
+  type SealProcessingResult,
+  type ToolErrorCategory,
+  type ToolOutcome,
+} from "./types.ts";
 
 // ─── SealConfig / SealProcessor ─────────────────────────────────────────────
 
 /** Configuration for the SEAL processor. */
 export interface SealConfig {
+  /** Run coreference detection/resolution (step 1 of `process`). */
   enable_coreference: boolean;
+  /** Extract a `QueryCore` from the resolved query (step 2). */
   enable_query_cores: boolean;
+  /** Consult and update the learning coordinator (step 3) and honour `recordOutcome`. */
   enable_learning: boolean;
+  /** Validate the extracted core structurally and score quality (step 4). */
   enable_reflection: boolean;
+  /** Reflection retry budget; stored for parity with Rust, not consulted by `process`. */
   max_reflection_retries: number;
+  /** Resolutions with confidence below this are discarded and not rewritten into the query. */
   min_coreference_confidence: number;
+  /** Reliability bar for pattern use; stored for parity with Rust, not consulted by `process`. */
   min_pattern_reliability: number;
 }
 
-/** Default SEAL config — all stages enabled. */
+/**
+ * Default SEAL config — all stages enabled, `max_reflection_retries` 2,
+ * `min_coreference_confidence` 0.5, `min_pattern_reliability` 0.7.
+ */
 export function defaultSealConfig(): SealConfig {
   return {
     enable_coreference: true,
@@ -163,13 +189,21 @@ export function defaultSealConfig(): SealConfig {
 
 /** Main SEAL processor that orchestrates all components. */
 export class SealProcessor {
+  /** The configuration the processor was built with. */
   readonly config: SealConfig;
   private coreferenceResolver: CoreferenceResolver;
   private queryExtractor: QueryCoreExtractor;
-  // Public so tests (mirroring Rust) can inspect `processor.learning_coordinator.local.conversation_id`.
+  /**
+   * Learning state; replaced by {@link initConversation}. Public so tests
+   * (mirroring Rust) can inspect `processor.learning_coordinator.local.conversation_id`.
+   */
   learning_coordinator: LearningCoordinator;
   private reflection_module: ReflectionModule;
 
+  /**
+   * Build a processor with fresh stage instances; the learning coordinator
+   * starts with an empty conversation id until {@link initConversation}.
+   */
   constructor(config: SealConfig) {
     this.config = config;
     this.coreferenceResolver = new CoreferenceResolver();
@@ -297,15 +331,19 @@ export class SealProcessor {
     return this.learning_coordinator.getContextForPrompt();
   }
 
+  /** The coreference resolver used by step 1. */
   coreference(): CoreferenceResolver {
     return this.coreferenceResolver;
   }
+  /** The query-core extractor used by step 2. */
   queryExtractorAccess(): QueryCoreExtractor {
     return this.queryExtractor;
   }
+  /** The current learning coordinator (same object as `learning_coordinator`). */
   learningMut(): LearningCoordinator {
     return this.learning_coordinator;
   }
+  /** The reflection module used by step 4 and {@link reflect}. */
   reflection(): ReflectionModule {
     return this.reflection_module;
   }

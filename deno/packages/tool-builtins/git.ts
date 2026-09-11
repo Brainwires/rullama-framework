@@ -1,6 +1,13 @@
 /**
- * Git operations tool implementation.
- * Uses Deno.Command for git subprocess execution.
+ * Git tools that shell out to `git` with `Deno.Command`: `git_status`,
+ * `git_diff`, `git_log`, `git_stage`, `git_unstage`, `git_commit`, `git_push`,
+ * `git_pull`, `git_fetch`, `git_branch` and `git_discard`. Model-supplied refs,
+ * remotes and branch names must match `SAFE_REF_PATTERN` (`assertSafeRef`) and
+ * file lists may not start with `-` (`assertSafeFiles`), so arguments cannot be
+ * turned into git options or remote helpers.
+ * Equivalent to Rust's `rullama_tool_builtins::git`.
+ *
+ * @module
  */
 
 // deno-lint-ignore-file no-explicit-any
@@ -58,6 +65,7 @@ export class GitTool {
     ];
   }
 
+  /** Definition of the `git_status` tool. */
   private static gitStatusTool(): Tool {
     return {
       name: "git_status",
@@ -67,6 +75,7 @@ export class GitTool {
     };
   }
 
+  /** Definition of the `git_diff` tool. */
   private static gitDiffTool(): Tool {
     return {
       name: "git_diff",
@@ -76,6 +85,7 @@ export class GitTool {
     };
   }
 
+  /** Definition of the `git_log` tool. */
   private static gitLogTool(): Tool {
     return {
       name: "git_log",
@@ -94,6 +104,7 @@ export class GitTool {
     };
   }
 
+  /** Definition of the `git_stage` tool. */
   private static gitStageTool(): Tool {
     return {
       name: "git_stage",
@@ -112,6 +123,7 @@ export class GitTool {
     };
   }
 
+  /** Definition of the `git_unstage` tool. */
   private static gitUnstageTool(): Tool {
     return {
       name: "git_unstage",
@@ -130,6 +142,7 @@ export class GitTool {
     };
   }
 
+  /** Definition of the `git_commit` tool. */
   private static gitCommitTool(): Tool {
     return {
       name: "git_commit",
@@ -152,6 +165,7 @@ export class GitTool {
     };
   }
 
+  /** Definition of the `git_push` tool. */
   private static gitPushTool(): Tool {
     return {
       name: "git_push",
@@ -179,6 +193,7 @@ export class GitTool {
     };
   }
 
+  /** Definition of the `git_pull` tool. */
   private static gitPullTool(): Tool {
     return {
       name: "git_pull",
@@ -206,6 +221,7 @@ export class GitTool {
     };
   }
 
+  /** Definition of the `git_fetch` tool. */
   private static gitFetchTool(): Tool {
     return {
       name: "git_fetch",
@@ -234,6 +250,7 @@ export class GitTool {
     };
   }
 
+  /** Definition of the `git_discard` tool. */
   private static gitDiscardTool(): Tool {
     return {
       name: "git_discard",
@@ -252,6 +269,7 @@ export class GitTool {
     };
   }
 
+  /** Definition of the `git_branch` tool. */
   private static gitBranchTool(): Tool {
     return {
       name: "git_branch",
@@ -387,6 +405,7 @@ export class GitTool {
     };
   }
 
+  /** Run `git status`. */
   private static async gitStatus(context: ToolContext): Promise<string> {
     const result = await GitTool.runGit(
       ["status", "--porcelain=v1"],
@@ -398,6 +417,7 @@ export class GitTool {
     return `Git Status:\n\n${result.stdout || "(clean)"}`;
   }
 
+  /** Run `git diff`. */
   private static async gitDiff(context: ToolContext): Promise<string> {
     const result = await GitTool.runGit(
       ["diff"],
@@ -409,6 +429,7 @@ export class GitTool {
     return `Git Diff:\n\n${result.stdout || "(no changes)"}`;
   }
 
+  /** Run `git log` with a bounded entry count. */
   private static async gitLog(
     input: any,
     context: ToolContext,
@@ -424,6 +445,7 @@ export class GitTool {
     return `Git Log:\n\n${result.stdout}`;
   }
 
+  /** Run `git add` on validated file paths. */
   private static async gitStage(
     input: any,
     context: ToolContext,
@@ -439,6 +461,7 @@ export class GitTool {
     return `Successfully staged ${files.length} file(s)`;
   }
 
+  /** Run `git reset` on validated file paths. */
   private static async gitUnstage(
     input: any,
     context: ToolContext,
@@ -454,6 +477,7 @@ export class GitTool {
     return `Successfully unstaged ${files.length} file(s)`;
   }
 
+  /** Run `git commit` with the given message. */
   private static async gitCommit(
     input: any,
     context: ToolContext,
@@ -469,6 +493,7 @@ export class GitTool {
     return `Commit successful:\n${result.stdout}`;
   }
 
+  /** Run `git push` to a validated remote / branch. */
   private static async gitPush(
     input: any,
     context: ToolContext,
@@ -487,6 +512,7 @@ export class GitTool {
     return `Push successful:\n${result.stdout}${result.stderr}`;
   }
 
+  /** Run `git pull` from a validated remote / branch. */
   private static async gitPull(
     input: any,
     context: ToolContext,
@@ -505,6 +531,7 @@ export class GitTool {
     return `Pull successful:\n${result.stdout}`;
   }
 
+  /** Run `git fetch` from a validated remote. */
   private static async gitFetch(
     input: any,
     context: ToolContext,
@@ -529,6 +556,7 @@ export class GitTool {
     return `Fetch successful:\n${fetchOutput}`;
   }
 
+  /** Run `git checkout --` on validated file paths. */
   private static async gitDiscard(
     input: any,
     context: ToolContext,
@@ -544,6 +572,7 @@ export class GitTool {
     return `Successfully discarded changes to ${files.length} file(s)`;
   }
 
+  /** Run a `git branch` sub-operation with a validated branch name. */
   private static async gitBranch(
     input: any,
     context: ToolContext,

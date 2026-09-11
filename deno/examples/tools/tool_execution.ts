@@ -1,7 +1,7 @@
 // Example: Tool Execution
 // Demonstrates the ToolExecutor and ToolPreHook interfaces for executing tools
 // with pre-execution validation hooks (safety guards, audit logging).
-// Run: deno run deno/examples/tool-system/tool_execution.ts
+// Run: deno run deno/examples/tools/tool_execution.ts
 
 import { ToolContext, ToolResult } from "@rullama/core";
 import type { Tool, ToolUse } from "@rullama/core";
@@ -24,10 +24,14 @@ class SafetyGuardHook implements ToolPreHook {
     this.blockedPatterns = ["rm -rf", "DROP TABLE"];
   }
 
-  async beforeExecute(
+  beforeExecute(
     toolUse: ToolUse,
     _context: ToolContext,
   ): Promise<PreHookDecision> {
+    return Promise.resolve(this.decide(toolUse));
+  }
+
+  private decide(toolUse: ToolUse): PreHookDecision {
     // Check if the tool itself is blocked
     if (this.blockedTools.includes(toolUse.name)) {
       return reject(`Tool '${toolUse.name}' is blocked by safety policy.`);
@@ -49,7 +53,7 @@ class SafetyGuardHook implements ToolPreHook {
 // 2. Define a logging/audit hook
 
 class AuditLogHook implements ToolPreHook {
-  async beforeExecute(
+  beforeExecute(
     toolUse: ToolUse,
     context: ToolContext,
   ): Promise<PreHookDecision> {
@@ -59,7 +63,7 @@ class AuditLogHook implements ToolPreHook {
           JSON.stringify(toolUse.input)
         }`,
     );
-    return allow();
+    return Promise.resolve(allow());
   }
 }
 

@@ -82,8 +82,11 @@ export type HookResult =
 /** Filter to control which events a hook receives.
  * Equivalent to Rust's `EventFilter` in rullama-core. */
 export interface EventFilter {
+  /** Only events from these agents pass; empty means any agent. */
   agent_ids: Set<string>;
+  /** Only events with these `type` values pass; empty means any type. */
   event_types: Set<string>;
+  /** Only tool events for these tools pass; empty means any tool. */
   tool_names: Set<string>;
 }
 
@@ -118,9 +121,13 @@ export function filterMatches(
 /** Interface for lifecycle hooks.
  * Equivalent to Rust's `LifecycleHook` trait in rullama-core. */
 export interface LifecycleHook {
+  /** Identifies the hook (for logging and debugging). */
   readonly name: string;
+  /** Dispatch order; lower values run first. Treated as 0 when omitted. */
   priority?(): number;
+  /** Which events the hook wants; when omitted it receives every event. */
   filter?(): EventFilter;
+  /** Handle an event; anything but `continue` stops dispatch to later hooks. */
   onEvent(event: LifecycleEvent): Promise<HookResult>;
 }
 

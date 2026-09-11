@@ -28,3 +28,5 @@ fuzz/corpus/**/[0-9a-f]*
 deno/coverage/
 # Claude Code per-user settings (fallow's MCP approval lands here)
 .claude/settings.local.json
+# scratch files the README-example checks create
+**/__readme_check.ts

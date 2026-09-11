@@ -69,6 +69,8 @@ export class ChatProviderFactory {
   // Protocol-specific constructors
   // -----------------------------------------------------------------------
 
+  /** Build an `OpenAiChatProvider` for any Chat Completions-compatible entry;
+   * `base_url` falls back to the registry default and `api_key` is required. */
   private static createOpenAiCompat(
     config: ProviderConfig,
     defaultBaseUrl: string,
@@ -88,6 +90,8 @@ export class ChatProviderFactory {
     );
   }
 
+  /** Build an `AnthropicChatProvider` (Messages API); `api_key` is required,
+   * `base_url` is passed through when set. */
   private static createAnthropic(config: ProviderConfig): Provider {
     const apiKey = config.api_key;
     if (!apiKey) {
@@ -103,6 +107,8 @@ export class ChatProviderFactory {
     );
   }
 
+  /** Build a `GoogleChatProvider` for the public Gemini API; `api_key` is
+   * required and `base_url` is ignored. */
   private static createGemini(config: ProviderConfig): Provider {
     const apiKey = config.api_key;
     if (!apiKey) {
@@ -111,10 +117,14 @@ export class ChatProviderFactory {
     return new GoogleChatProvider(apiKey, config.model);
   }
 
+  /** Build an `OllamaChatProvider`; no key needed, `base_url` overrides the
+   * local server address. */
   private static createOllama(config: ProviderConfig): Provider {
     return new OllamaChatProvider(config.model, config.base_url);
   }
 
+  /** Build an `OpenAiResponsesProvider` (`/v1/responses`); `api_key` is
+   * required, `base_url` is passed through when set. */
   private static createOpenAiResponses(config: ProviderConfig): Provider {
     const apiKey = config.api_key;
     if (!apiKey) {

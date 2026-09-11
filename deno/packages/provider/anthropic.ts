@@ -39,6 +39,12 @@ export class AnthropicChatProvider implements Provider {
   private readonly baseUrl: string;
 
   /**
+   * Create a provider bound to one Claude model.
+   *
+   * @param apiKey Anthropic API key, sent as the `x-api-key` header.
+   * @param model Model id (e.g. `claude-sonnet-4-20250514`).
+   * @param providerName Value reported as `name` (default: `"anthropic"`);
+   *   lets one wire format serve several registry entries.
    * @param baseUrl Messages endpoint (default: `https://api.anthropic.com/v1/messages`);
    *   set it to route through a gateway or proxy.
    */
@@ -104,6 +110,8 @@ export class AnthropicChatProvider implements Provider {
   // Internal helpers
   // -----------------------------------------------------------------------
 
+  /** Build the Messages API JSON body (system prompt, messages, tools,
+   * sampling options) for this provider's model, with `stream` set as given. */
   private body(
     messages: Message[],
     tools: Tool[] | undefined,

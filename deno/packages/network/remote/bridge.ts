@@ -1,8 +1,10 @@
 /**
  * @module remote/bridge
  *
- * RemoteBridge — connects local agents to a cloud relay via WebSocket.
- * Uses the native WebSocket API (not Supabase SDK) for portability.
+ * RemoteBridge — connects local agents to a relay backend you run.
+ * The current transport is authenticated HTTP polling (`/api/remote/connect`
+ * + `/api/remote/heartbeat` via `fetch`); the `"websocket"` connection mode is
+ * declared but not yet implemented.
  *
  * Equivalent to Rust's `rullama-network::remote::bridge`.
  */
@@ -89,10 +91,13 @@ export type StateChangeHandler = (state: BridgeState) => void;
 /**
  * Remote control bridge.
  *
- * Maintains communication with the backend using WebSocket (preferred)
- * or HTTP polling (fallback). Uses the native WebSocket API.
+ * Registers with the backend, then heartbeats on `heartbeatIntervalSecs`,
+ * shipping queued command results and executing any backend commands the
+ * heartbeat response carries. Reconnects automatically until `shutdown()`.
+ * Currently only the `"polling"` connection mode is implemented.
  */
 export class RemoteBridge {
+  /** The configuration this bridge was constructed with (validated `backendUrl`). */
   readonly config: BridgeConfig;
 
   private _state: BridgeState = "disconnected";
@@ -110,6 +115,12 @@ export class RemoteBridge {
   private onCommand: CommandHandler | undefined;
   private onStateChange: StateChangeHandler | undefined;
 
+  /**
+   * Create a bridge; also builds the internal {@link HeartbeatCollector}
+   * from `config.version` / `hostname` / `agentInfoProvider`.
+   *
+   * @throws Error if `config.backendUrl` is not an `http(s)://` URL.
+   */
   constructor(config: BridgeConfig) {
     if (!/^https?:\/\//.test(config.backendUrl)) {
       throw new Error(
@@ -184,6 +195,7 @@ export class RemoteBridge {
   // State management
   // --------------------------------------------------------------------------
 
+  /** Update the connection state and notify the registered state-change handler. */
   private setState(state: BridgeState): void {
     this._state = state;
     this.onStateChange?.(state);

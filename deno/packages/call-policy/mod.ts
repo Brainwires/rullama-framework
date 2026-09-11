@@ -1,7 +1,11 @@
 /**
- * @module @rullama/resilience
+ * @module @rullama/call-policy
  *
- * Provider-layer resilience middleware for the rullama.
+ * Provider-layer call policies for rullama: retry, budget, circuit breaking
+ * and response caching. Each policy is a decorator that wraps a
+ * `@rullama/core` {@link Provider} and is itself a `Provider`, so they stack
+ * in any order; {@link ProviderDecorator} is the base class for writing your
+ * own.
  *
  * Wraps any `@rullama/core` {@link Provider} with composable decorators:
  *

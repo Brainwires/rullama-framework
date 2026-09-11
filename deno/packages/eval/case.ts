@@ -43,6 +43,7 @@ export class AlwaysPassCase implements EvaluationCase {
   /** Simulated duration in milliseconds returned by each trial. */
   duration_ms: number;
 
+  /** Create a case that always succeeds, reported under `name`. */
   constructor(name: string) {
     this.name_ = name;
     this.category_ = "test";
@@ -73,6 +74,7 @@ export class AlwaysFailCase implements EvaluationCase {
   /** Error message returned by each trial. */
   readonly error_msg: string;
 
+  /** Create a case that always fails with `error`, reported under `name`. */
   constructor(name: string, error: string) {
     this.name_ = name;
     this.category_ = "test";
@@ -96,6 +98,7 @@ export class StochasticCase implements EvaluationCase {
   /** Probability of success per trial (0.0-1.0). */
   readonly success_rate: number;
 
+  /** Create a case that succeeds with probability `success_rate`, reported under `name`. */
   constructor(name: string, success_rate: number) {
     this.name_ = name;
     this.success_rate = Math.max(0.0, Math.min(1.0, success_rate));

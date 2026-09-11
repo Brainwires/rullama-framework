@@ -181,6 +181,12 @@ export class StdioTransport {
 export class Transport {
   #inner: StdioTransport;
 
+  /**
+   * Wrap an already-spawned {@link StdioTransport}; every send/receive call
+   * on this instance is forwarded to it unchanged.
+   *
+   * @param transport The stdio transport produced by `StdioTransport.create`.
+   */
   constructor(transport: StdioTransport) {
     this.#inner = transport;
   }

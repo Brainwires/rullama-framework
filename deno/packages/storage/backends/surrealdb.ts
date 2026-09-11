@@ -238,6 +238,14 @@ export class SurrealDatabase implements StorageBackend {
 
   private readonly filterOptions: FilterBuildOptions;
 
+  /**
+   * Create a SurrealDB client. The connection is opened lazily by
+   * {@link SurrealDatabase.connect} (called automatically by every query).
+   *
+   * @param config Namespace and database are required; `url` defaults to
+   *   `ws://localhost:8000`, credentials to `root`/`root`, and `Raw` filters
+   *   are disabled unless `allowRawFilters` is `true`.
+   */
   constructor(config: SurrealConfig) {
     this.filterOptions = { allowRaw: config.allowRawFilters ?? false };
     this.db = new Surreal();
@@ -267,6 +275,10 @@ export class SurrealDatabase implements StorageBackend {
 
   // ── Private helpers ────────────────────────────────────────────────
 
+  /**
+   * Connect if needed, run one SurrealQL statement with `bindings`, and return
+   * the first statement's rows (wrapped in an array when it is a scalar).
+   */
   private async runQuery(
     query: string,
     bindings?: Record<string, unknown>,

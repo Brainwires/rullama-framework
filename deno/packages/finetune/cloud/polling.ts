@@ -35,12 +35,27 @@ export function defaultPollerConfig(): JobPollerConfig {
 
 /** Poll `provider` until `job_id` reaches a terminal state (or timeout). */
 export class JobPoller {
+  /** Backoff/timeout settings this poller runs with. */
   readonly config: JobPollerConfig;
 
+  /**
+   * Create a poller.
+   *
+   * @param config Backoff/timeout settings; defaults to {@link defaultPollerConfig}.
+   */
   constructor(config: JobPollerConfig = defaultPollerConfig()) {
     this.config = config;
   }
 
+  /**
+   * Repeatedly call `provider.getJobStatus(job_id)` — invoking
+   * `config.on_status` each time — sleeping between calls with exponential
+   * backoff, until the status is terminal.
+   *
+   * @returns The terminal status (`succeeded`, `failed`, or `cancelled`).
+   * @throws `TrainingError` (`timeout`) once `config.timeout_ms` of wall-clock
+   *   time has elapsed without a terminal status.
+   */
   async poll(
     provider: FineTuneProvider,
     job_id: TrainingJobId,

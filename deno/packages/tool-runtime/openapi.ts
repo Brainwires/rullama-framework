@@ -1,10 +1,12 @@
 /**
- * OpenAPI Tool Generation -- Automatically create tools from OpenAPI 3.x specs.
+ * OpenAPI 3.x to tool generation. `openApiToTools` / `openApiToToolDefs`
+ * parse a spec into `Tool` definitions (one per operation, with the parameters
+ * folded into the input schema) that can be registered in a `ToolRegistry`, and
+ * `executeOpenApiTool` / `executeOpenApiToolWithEndpoint` perform the HTTP call
+ * for a tool use with a bounded `OPENAPI_TIMEOUT_MS`.
+ * Equivalent to Rust's `rullama_tool_runtime::openapi`.
  *
- * Parses OpenAPI specifications and generates Tool definitions that can
- * be registered in a ToolRegistry and executed by agents.
- *
- * Equivalent to Rust's `rullama_tool_system::openapi` module.
+ * @module
  */
 
 // deno-lint-ignore-file no-explicit-any

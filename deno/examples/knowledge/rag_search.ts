@@ -1,6 +1,6 @@
 // Example: RAG Search
 // Demonstrates the RagClient interface for codebase indexing and hybrid semantic+keyword search.
-// Run: deno run deno/examples/cognition/rag_search.ts
+// Run: deno run deno/examples/knowledge/rag_search.ts
 
 import type {
   IndexRequest,
@@ -10,12 +10,12 @@ import type {
   RagClient,
   SearchResult,
   StatisticsResponse,
-} from "@rullama/knowledge";
+} from "@rullama/rag";
 import {
   DEFAULT_LIMIT,
   DEFAULT_MAX_FILE_SIZE,
   DEFAULT_MIN_SCORE,
-} from "@rullama/knowledge";
+} from "@rullama/rag";
 
 // ---------------------------------------------------------------------------
 // Mock RagClient — in production, supply a real vector-DB-backed implementation
@@ -24,14 +24,14 @@ import {
 class MockRagClient implements RagClient {
   private indexed = false;
 
-  async indexCodebase(req: IndexRequest): Promise<IndexResponse> {
+  indexCodebase(req: IndexRequest): Promise<IndexResponse> {
     console.log(
       `  [mock] Indexing ${req.path} (patterns: ${
         req.includePatterns?.join(", ") ?? "*"
       })`,
     );
     this.indexed = true;
-    return {
+    return Promise.resolve({
       mode: "full",
       filesIndexed: 42,
       chunksCreated: 318,
@@ -40,10 +40,10 @@ class MockRagClient implements RagClient {
       errors: [],
       filesUpdated: 0,
       filesRemoved: 0,
-    };
+    });
   }
 
-  async queryCodebase(req: QueryRequest): Promise<QueryResponse> {
+  queryCodebase(req: QueryRequest): Promise<QueryResponse> {
     const results: SearchResult[] = [
       {
         filePath: "src/knowledge/entity.ts",
@@ -81,16 +81,16 @@ class MockRagClient implements RagClient {
       },
     ];
 
-    return {
+    return Promise.resolve({
       results: results.slice(0, req.limit ?? DEFAULT_LIMIT),
       durationMs: 23,
       thresholdUsed: req.minScore ?? DEFAULT_MIN_SCORE,
       thresholdLowered: false,
-    };
+    });
   }
 
-  async getStatistics(): Promise<StatisticsResponse> {
-    return {
+  getStatistics(): Promise<StatisticsResponse> {
+    return Promise.resolve({
       totalFiles: 42,
       totalChunks: 318,
       totalEmbeddings: 318,
@@ -99,16 +99,16 @@ class MockRagClient implements RagClient {
         { language: "TypeScript", fileCount: 30, chunkCount: 220 },
         { language: "Rust", fileCount: 12, chunkCount: 98 },
       ],
-    };
+    });
   }
 
-  async clearIndex() {
+  clearIndex(): Promise<{ success: boolean; message: string }> {
     this.indexed = false;
-    return { success: true, message: "Index cleared" };
+    return Promise.resolve({ success: true, message: "Index cleared" });
   }
 
-  async advancedSearch(
-    req: import("@rullama/knowledge").AdvancedSearchRequest,
+  advancedSearch(
+    req: import("@rullama/rag").AdvancedSearchRequest,
   ): Promise<QueryResponse> {
     return this.queryCodebase({
       query: req.query,
@@ -117,15 +117,15 @@ class MockRagClient implements RagClient {
     });
   }
 
-  async searchGitHistory(
-    req: import("@rullama/knowledge").SearchGitHistoryRequest,
-  ) {
-    return {
+  searchGitHistory(
+    _req: import("@rullama/rag").SearchGitHistoryRequest,
+  ): Promise<import("@rullama/rag").SearchGitHistoryResponse> {
+    return Promise.resolve({
       results: [],
       commitsIndexed: 0,
       totalCachedCommits: 0,
       durationMs: 5,
-    };
+    });
   }
 }
 

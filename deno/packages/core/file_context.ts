@@ -1,11 +1,12 @@
 /**
- * File Context Manager
- *
- * Manages file content for context injection with smart chunking for large
- * files. Prevents re-injection of files already in context and retrieves
- * relevant portions of large files based on a query.
- *
+ * File context manager for context-window injection. `FileContextManager`
+ * tracks which files are already in context so they are not re-injected,
+ * returns small files whole and large files as query-ranked chunks
+ * (`buildFileChunks` / `findRelevantChunks`), and formats the result for a
+ * prompt with `formatContent`.
  * Equivalent to Rust's `rullama_core::file_context`.
+ *
+ * @module
  */
 
 const MAX_DIRECT_FILE_CHARS = 50_000;
@@ -14,6 +15,7 @@ const MAX_FILE_CHUNKS = 5;
 
 /** A chunk of file content with line range + relevance score. */
 export interface FileChunk {
+  /** Text of the chunk. */
   content: string;
   /** 1-indexed starting line. */
   line_start: number;

@@ -2,7 +2,7 @@
 // Demonstrates building an McpToolRegistry with tool handlers, assembling a
 // MiddlewareChain (auth, logging, rate-limiting, tool filtering), dispatching
 // tool calls, and constructing an McpServer with middleware layers.
-// Run: deno run deno/examples/agent-network/mcp_server.ts
+// Run: deno run deno/examples/network/mcp_server.ts
 
 import {
   AuthMiddleware,
@@ -16,7 +16,7 @@ import {
   RequestContext,
   ToolFilterMiddleware,
   type ToolHandler,
-} from "@rullama/network";
+} from "@rullama/mcp-server";
 
 import type {
   CallToolResult,
@@ -35,15 +35,15 @@ async function main(): Promise<void> {
   const registry = new McpToolRegistry();
 
   // Echo handler: returns the input arguments as text
-  const echoHandler: ToolHandler = async (
+  const echoHandler: ToolHandler = (
     args: Record<string, unknown>,
     _ctx: RequestContext,
   ): Promise<CallToolResult> => {
     const message = (args.message as string) ?? "(empty)";
     console.log(`    [EchoHandler] called with: ${message}`);
-    return {
+    return Promise.resolve({
       content: [{ type: "text", text: `Echo: ${message}` }],
-    };
+    });
   };
 
   registry.register(
@@ -60,15 +60,15 @@ async function main(): Promise<void> {
   );
 
   // Time handler: returns the current UTC time
-  const timeHandler: ToolHandler = async (
+  const timeHandler: ToolHandler = (
     _args: Record<string, unknown>,
     _ctx: RequestContext,
   ): Promise<CallToolResult> => {
     const now = new Date().toISOString();
     console.log(`    [TimeHandler] returning time: ${now}`);
-    return {
+    return Promise.resolve({
       content: [{ type: "text", text: now }],
-    };
+    });
   };
 
   registry.register(
@@ -223,7 +223,7 @@ async function main(): Promise<void> {
     listTools(): McpToolDef[] {
       return registry.listTools();
     },
-    async callTool(
+    callTool(
       name: string,
       args: Record<string, unknown>,
       reqCtx: RequestContext,

@@ -8,5 +8,12 @@
     "./cluster": "./cluster.ts",
     "./generator": "./generator.ts",
     "./temperature": "./temperature.ts"
+  },
+  "publish": {
+    "exclude": [
+      "**/*_test.ts",
+      "test_util.ts",
+      "__readme_check.ts"
+    ]
   }
 }

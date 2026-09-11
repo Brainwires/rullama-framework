@@ -207,6 +207,7 @@ export class EnforcingExecutor implements ToolExecutor {
   readonly #filterOutput: boolean;
   readonly #onDecision: ((event: EnforcementEvent) => void) | undefined;
 
+  /** Wrap `inner`; see `EnforcementOptions` for the defaults. */
   constructor(inner: ToolExecutor, options: EnforcementOptions = {}) {
     this.inner = inner;
     this.policy = options.policy ?? PolicyEngine.withDefaults();
@@ -249,6 +250,7 @@ export class EnforcingExecutor implements ToolExecutor {
     return await this.runPreHooks(toolUse, context);
   }
 
+  /** Permission-mode gate; returns a denial reason or `undefined`. */
   private checkMode(toolUse: ToolUse): string | undefined {
     if (this.mode !== "read-only") return undefined;
     const category = AgentCapabilities.categorizeTool(toolUse.name);
@@ -256,6 +258,7 @@ export class EnforcingExecutor implements ToolExecutor {
     return `tool '${toolUse.name}' is not permitted in read-only mode`;
   }
 
+  /** Capability gate (tool, path, domain, git op); returns a denial reason or `undefined`. */
   private checkCapabilities(toolUse: ToolUse): string | undefined {
     const caps = this.capabilities;
     if (caps === undefined || this.mode === "full") return undefined;
@@ -267,6 +270,7 @@ export class EnforcingExecutor implements ToolExecutor {
       this.checkNetworkAndGitCapability(caps, request);
   }
 
+  /** File-path capability check for tools that take a path. */
   private checkFileCapability(
     caps: AgentCapabilities,
     request: PolicyRequest,
@@ -279,6 +283,7 @@ export class EnforcingExecutor implements ToolExecutor {
     return `${write ? "write" : "read"} access to '${path}' is not permitted`;
   }
 
+  /** Domain and git-operation capability checks. */
   private checkNetworkAndGitCapability(
     caps: AgentCapabilities,
     request: PolicyRequest,
@@ -293,6 +298,7 @@ export class EnforcingExecutor implements ToolExecutor {
     return undefined;
   }
 
+  /** Policy-engine gate, including the approval round-trip. */
   private async checkPolicy(
     toolUse: ToolUse,
     context: ToolContext,
@@ -339,6 +345,7 @@ export class EnforcingExecutor implements ToolExecutor {
     return await this.askApproval(toolUse, synthetic, context);
   }
 
+  /** Ask the `ApprovalHandler`; denied when none is configured. */
   private async askApproval(
     toolUse: ToolUse,
     decision: PolicyDecision,
@@ -358,6 +365,7 @@ export class EnforcingExecutor implements ToolExecutor {
     return reason;
   }
 
+  /** Run every pre-execute hook; the first rejection wins. */
   private async runPreHooks(
     toolUse: ToolUse,
     context: ToolContext,
@@ -373,6 +381,7 @@ export class EnforcingExecutor implements ToolExecutor {
     return undefined;
   }
 
+  /** Redact secrets and wrap external content in the result. */
   private postProcess(toolUse: ToolUse, result: ToolResult): ToolResult {
     if (!this.#filterOutput) return result;
     let content = filterToolOutput(result.content);
@@ -382,6 +391,7 @@ export class EnforcingExecutor implements ToolExecutor {
     return new ToolResult(result.tool_use_id, content, result.is_error);
   }
 
+  /** Report a decision to `onDecision`. */
   private emit(
     toolUse: ToolUse,
     decision: PolicyDecision,

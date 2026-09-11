@@ -28,21 +28,44 @@ const AGENT_STATE_TABLE = "agent_states";
 
 /** Metadata for storing tasks (flat serialization form). */
 export interface TaskMetadata {
+  /** Unique task identifier (`Task.id`); the key `get` and `delete` use. */
   taskId: string;
+  /** Id of the conversation the task belongs to. */
   conversationId: string;
+  /** Id of the plan the task was created from, if any. */
   planId?: string;
+  /** What the task is meant to accomplish. */
   description: string;
+  /**
+   * Lifecycle state as a plain string, one of `TaskStatus`: `"pending"`,
+   * `"inprogress"`, `"completed"`, `"failed"`, `"blocked"` or `"skipped"`.
+   * An empty string reads back as `"pending"` via {@link metadataToTask}.
+   */
   status: string;
+  /** Id of the parent task in the task tree, if this is a subtask. */
   parentId?: string;
-  children: string; // JSON array
-  dependsOn: string; // JSON array
+  /** JSON-encoded array of child task ids (e.g. `"[]"`). */
+  children: string;
+  /** JSON-encoded array of ids of tasks that must finish before this one may start. */
+  dependsOn: string;
+  /**
+   * Priority as a plain string, one of `TaskPriority`: `"low"`, `"normal"`,
+   * `"high"` or `"urgent"`. An empty string reads back as `"normal"`.
+   */
   priority: string;
+  /** Id of the agent the task is assigned to, if any. */
   assignedTo?: string;
+  /** Number of agent iterations spent on the task so far. */
   iterations: number;
+  /** Summary of the outcome, once one has been written. */
   summary?: string;
+  /** Creation time as a Unix timestamp in seconds. */
   createdAt: number;
+  /** Last-modification time as a Unix timestamp in seconds. */
   updatedAt: number;
+  /** Time work on the task began, as a Unix timestamp in seconds, if it has started. */
   startedAt?: number;
+  /** Time the task reached a terminal state, as a Unix timestamp in seconds, if it has. */
   completedAt?: number;
 }
 
@@ -180,13 +203,21 @@ function taskFromRecord(r: Record): TaskMetadata {
 
 /** Metadata for storing agent state. */
 export interface AgentStateMetadata {
+  /** Unique id of the agent instance whose state this is; the key `get` and `delete` use. */
   agentId: string;
+  /** Id of the task the agent is working on (`getByTask` looks up by it). */
   taskId: string;
+  /** Id of the conversation the agent is running in. */
   conversationId: string;
+  /** Agent lifecycle status as a free-form string chosen by the caller (stored verbatim, not validated). */
   status: string;
+  /** Iteration counter the agent had reached when the state was saved. */
   iteration: number;
+  /** The agent's execution context, JSON-serialized by the caller (stored opaquely). */
   contextJson: string;
+  /** Time the state was first created, as a Unix timestamp in seconds. */
   createdAt: number;
+  /** Time the state was last saved, as a Unix timestamp in seconds. */
   updatedAt: number;
 }
 
@@ -233,24 +264,38 @@ function stateFromRecord(r: Record): AgentStateMetadata {
 
 /** Interface for task store operations. */
 export interface TaskStoreI {
+  /** Create the backing `tasks` table if it does not already exist. */
   ensureTable(): Promise<void>;
+  /** Insert the task, replacing any stored task with the same `taskId`. */
   save(task: TaskMetadata): Promise<void>;
+  /** Look up a task by `taskId`; `undefined` when none has that id. */
   get(taskId: string): Promise<TaskMetadata | undefined>;
+  /** Every task whose `conversationId` matches, in backend order (no sorting applied). */
   getByConversation(conversationId: string): Promise<TaskMetadata[]>;
+  /** Every task whose `planId` matches, in backend order (no sorting applied). */
   getByPlan(planId: string): Promise<TaskMetadata[]>;
+  /** Delete one task by `taskId` (no-op when absent). */
   delete(taskId: string): Promise<void>;
+  /** Delete every task belonging to a conversation. */
   deleteByConversation(conversationId: string): Promise<void>;
+  /** Delete every task created from a plan. */
   deleteByPlan(planId: string): Promise<void>;
 }
 
 /** Store for managing tasks. */
 export class TaskStore implements TaskStoreI {
+  /**
+   * Create a store over `backend`; call {@link ensureTable} before use.
+   * @param backend Storage backend that holds the `tasks` table.
+   */
   constructor(private readonly backend: StorageBackend) {}
 
+  /** Create the `tasks` table on the backend if it is missing. */
   async ensureTable(): Promise<void> {
     await this.backend.ensureTable(TASK_TABLE, tasksFieldDefs());
   }
 
+  /** Delete any stored row with the same `taskId` (errors ignored), then insert `task`. */
   async save(task: TaskMetadata): Promise<void> {
     // Delete existing task with same ID first
     try {
@@ -259,12 +304,14 @@ export class TaskStore implements TaskStoreI {
     await this.backend.insert(TASK_TABLE, [taskToRecord(task)]);
   }
 
+  /** Query the backend for the single record whose `task_id` matches. */
   async get(taskId: string): Promise<TaskMetadata | undefined> {
     const filter = Filters.Eq("task_id", FieldValues.Utf8(taskId));
     const records = await this.backend.query(TASK_TABLE, filter, 1);
     return records.length > 0 ? taskFromRecord(records[0]) : undefined;
   }
 
+  /** Query every record whose `conversation_id` matches. */
   async getByConversation(conversationId: string): Promise<TaskMetadata[]> {
     const filter = Filters.Eq(
       "conversation_id",
@@ -274,17 +321,20 @@ export class TaskStore implements TaskStoreI {
     return records.map(taskFromRecord);
   }
 
+  /** Query every record whose `plan_id` matches. */
   async getByPlan(planId: string): Promise<TaskMetadata[]> {
     const filter = Filters.Eq("plan_id", FieldValues.Utf8(planId));
     const records = await this.backend.query(TASK_TABLE, filter);
     return records.map(taskFromRecord);
   }
 
+  /** Delete the record whose `task_id` matches. */
   async delete(taskId: string): Promise<void> {
     const filter = Filters.Eq("task_id", FieldValues.Utf8(taskId));
     await this.backend.delete(TASK_TABLE, filter);
   }
 
+  /** Delete every record whose `conversation_id` matches. */
   async deleteByConversation(conversationId: string): Promise<void> {
     const filter = Filters.Eq(
       "conversation_id",
@@ -293,6 +343,7 @@ export class TaskStore implements TaskStoreI {
     await this.backend.delete(TASK_TABLE, filter);
   }
 
+  /** Delete every record whose `plan_id` matches. */
   async deleteByPlan(planId: string): Promise<void> {
     const filter = Filters.Eq("plan_id", FieldValues.Utf8(planId));
     await this.backend.delete(TASK_TABLE, filter);
@@ -303,19 +354,23 @@ export class TaskStore implements TaskStoreI {
 export class InMemoryTaskStore implements TaskStoreI {
   private tasks: Map<string, TaskMetadata> = new Map();
 
+  /** No-op: there is no table to create in memory. */
   async ensureTable(): Promise<void> {
     await Promise.resolve();
   }
 
+  /** Store a shallow copy of `task` under its `taskId`, replacing any existing entry. */
   async save(task: TaskMetadata): Promise<void> {
     this.tasks.set(task.taskId, { ...task });
     await Promise.resolve();
   }
 
+  /** Return the stored task for `taskId`, if any. */
   async get(taskId: string): Promise<TaskMetadata | undefined> {
     return await Promise.resolve(this.tasks.get(taskId));
   }
 
+  /** Stored tasks whose `conversationId` matches, in insertion order. */
   async getByConversation(conversationId: string): Promise<TaskMetadata[]> {
     return await Promise.resolve(
       [...this.tasks.values()].filter((t) =>
@@ -324,17 +379,20 @@ export class InMemoryTaskStore implements TaskStoreI {
     );
   }
 
+  /** Stored tasks whose `planId` matches, in insertion order. */
   async getByPlan(planId: string): Promise<TaskMetadata[]> {
     return await Promise.resolve(
       [...this.tasks.values()].filter((t) => t.planId === planId),
     );
   }
 
+  /** Remove the task from the map (no-op when absent). */
   async delete(taskId: string): Promise<void> {
     this.tasks.delete(taskId);
     await Promise.resolve();
   }
 
+  /** Remove every stored task whose `conversationId` matches. */
   async deleteByConversation(conversationId: string): Promise<void> {
     for (const [id, t] of this.tasks) {
       if (t.conversationId === conversationId) this.tasks.delete(id);
@@ -342,6 +400,7 @@ export class InMemoryTaskStore implements TaskStoreI {
     await Promise.resolve();
   }
 
+  /** Remove every stored task whose `planId` matches. */
   async deleteByPlan(planId: string): Promise<void> {
     for (const [id, t] of this.tasks) {
       if (t.planId === planId) this.tasks.delete(id);
@@ -354,23 +413,36 @@ export class InMemoryTaskStore implements TaskStoreI {
 
 /** Interface for agent state store operations. */
 export interface AgentStateStoreI {
+  /** Create the backing `agent_states` table if it does not already exist. */
   ensureTable(): Promise<void>;
+  /** Insert the state, replacing any stored state with the same `agentId`. */
   save(state: AgentStateMetadata): Promise<void>;
+  /** Look up an agent's state by `agentId`; `undefined` when none has that id. */
   get(agentId: string): Promise<AgentStateMetadata | undefined>;
+  /** Every stored state whose `conversationId` matches, in backend order. */
   getByConversation(conversationId: string): Promise<AgentStateMetadata[]>;
+  /** The first stored state whose `taskId` matches; `undefined` when there is none. */
   getByTask(taskId: string): Promise<AgentStateMetadata | undefined>;
+  /** Delete one agent's state by `agentId` (no-op when absent). */
   delete(agentId: string): Promise<void>;
+  /** Delete every stored state belonging to a conversation. */
   deleteByConversation(conversationId: string): Promise<void>;
 }
 
 /** Store for managing agent state persistence. */
 export class AgentStateStore implements AgentStateStoreI {
+  /**
+   * Create a store over `backend`; call {@link ensureTable} before use.
+   * @param backend Storage backend that holds the `agent_states` table.
+   */
   constructor(private readonly backend: StorageBackend) {}
 
+  /** Create the `agent_states` table on the backend if it is missing. */
   async ensureTable(): Promise<void> {
     await this.backend.ensureTable(AGENT_STATE_TABLE, agentStatesFieldDefs());
   }
 
+  /** Delete any stored row with the same `agentId` (errors ignored), then insert `state`. */
   async save(state: AgentStateMetadata): Promise<void> {
     try {
       await this.delete(state.agentId);
@@ -378,12 +450,14 @@ export class AgentStateStore implements AgentStateStoreI {
     await this.backend.insert(AGENT_STATE_TABLE, [stateToRecord(state)]);
   }
 
+  /** Query the backend for the single record whose `agent_id` matches. */
   async get(agentId: string): Promise<AgentStateMetadata | undefined> {
     const filter = Filters.Eq("agent_id", FieldValues.Utf8(agentId));
     const records = await this.backend.query(AGENT_STATE_TABLE, filter, 1);
     return records.length > 0 ? stateFromRecord(records[0]) : undefined;
   }
 
+  /** Query every record whose `conversation_id` matches. */
   async getByConversation(
     conversationId: string,
   ): Promise<AgentStateMetadata[]> {
@@ -395,17 +469,20 @@ export class AgentStateStore implements AgentStateStoreI {
     return records.map(stateFromRecord);
   }
 
+  /** Query the backend for the first record whose `task_id` matches (limit 1). */
   async getByTask(taskId: string): Promise<AgentStateMetadata | undefined> {
     const filter = Filters.Eq("task_id", FieldValues.Utf8(taskId));
     const records = await this.backend.query(AGENT_STATE_TABLE, filter, 1);
     return records.length > 0 ? stateFromRecord(records[0]) : undefined;
   }
 
+  /** Delete the record whose `agent_id` matches. */
   async delete(agentId: string): Promise<void> {
     const filter = Filters.Eq("agent_id", FieldValues.Utf8(agentId));
     await this.backend.delete(AGENT_STATE_TABLE, filter);
   }
 
+  /** Delete every record whose `conversation_id` matches. */
   async deleteByConversation(conversationId: string): Promise<void> {
     const filter = Filters.Eq(
       "conversation_id",
@@ -419,19 +496,23 @@ export class AgentStateStore implements AgentStateStoreI {
 export class InMemoryAgentStateStore implements AgentStateStoreI {
   private states: Map<string, AgentStateMetadata> = new Map();
 
+  /** No-op: there is no table to create in memory. */
   async ensureTable(): Promise<void> {
     await Promise.resolve();
   }
 
+  /** Store a shallow copy of `state` under its `agentId`, replacing any existing entry. */
   async save(state: AgentStateMetadata): Promise<void> {
     this.states.set(state.agentId, { ...state });
     await Promise.resolve();
   }
 
+  /** Return the stored state for `agentId`, if any. */
   async get(agentId: string): Promise<AgentStateMetadata | undefined> {
     return await Promise.resolve(this.states.get(agentId));
   }
 
+  /** Stored states whose `conversationId` matches, in insertion order. */
   async getByConversation(
     conversationId: string,
   ): Promise<AgentStateMetadata[]> {
@@ -442,17 +523,20 @@ export class InMemoryAgentStateStore implements AgentStateStoreI {
     );
   }
 
+  /** The first stored state (insertion order) whose `taskId` matches, if any. */
   async getByTask(taskId: string): Promise<AgentStateMetadata | undefined> {
     return await Promise.resolve(
       [...this.states.values()].find((s) => s.taskId === taskId),
     );
   }
 
+  /** Remove the state from the map (no-op when absent). */
   async delete(agentId: string): Promise<void> {
     this.states.delete(agentId);
     await Promise.resolve();
   }
 
+  /** Remove every stored state whose `conversationId` matches. */
   async deleteByConversation(conversationId: string): Promise<void> {
     for (const [id, s] of this.states) {
       if (s.conversationId === conversationId) this.states.delete(id);

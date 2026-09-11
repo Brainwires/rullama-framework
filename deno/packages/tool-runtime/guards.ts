@@ -17,6 +17,7 @@ export class PathEscapeError extends Error {
   /** The offending path, as requested. */
   readonly requested: string;
 
+  /** Create the error for `requested` escaping `root`. */
   constructor(root: string, requested: string) {
     super(`path '${requested}' resolves outside the working directory`);
     this.name = "PathEscapeError";

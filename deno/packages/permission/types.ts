@@ -88,6 +88,7 @@ export function isDestructiveGitOp(op: GitOperation): boolean {
 export class PathPattern {
   readonly #pattern: string;
 
+  /** Wrap a glob pattern string such as `"src/**"`; evaluate it with `matches()`. */
   constructor(pattern: string) {
     this.#pattern = pattern;
   }
@@ -546,6 +547,12 @@ export class AgentCapabilities {
   /** Resource quota limits. */
   quotas: ResourceQuotas;
 
+  /**
+   * Build a capability set; every omitted section falls back to its
+   * `default*` factory and `capability_id` to a fresh UUID.
+   *
+   * @param init Partial overrides for any section.
+   */
   constructor(init?: Partial<AgentCapabilities>) {
     this.capability_id = init?.capability_id ?? crypto.randomUUID();
     this.filesystem = init?.filesystem ?? defaultFilesystemCapabilities();

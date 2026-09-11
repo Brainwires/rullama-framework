@@ -1,12 +1,12 @@
 /**
- * Regression testing infrastructure for CI integration.
+ * Regression gating for CI. `RegressionSuite` compares the per-category
+ * success rates of a `SuiteResult` against stored `CategoryBaseline`s and fails
+ * when any category drops more than `RegressionConfig.max_regression` below its
+ * baseline; `isCiPassing`, `failingCategoryResults` and `improvedCategoryResults`
+ * summarise a `RegressionResult`.
+ * Equivalent to Rust's `rullama_eval::regression`.
  *
- * {@link RegressionSuite} compares current {@link SuiteResult} success rates
- * against stored per-category baselines. If any category drops more than
- * {@link RegressionConfig.max_regression} below its baseline, the check
- * fails — enabling CI pipelines to gate on evaluation regressions.
- *
- * Equivalent to Rust's `rullama_agents::eval::regression` module.
+ * @module
  */
 
 import type { EvaluationStats } from "./trial.ts";
@@ -53,27 +53,36 @@ export interface RegressionConfig {
   min_trials: number;
 }
 
+/** Default regression configuration. */
 export function defaultRegressionConfig(): RegressionConfig {
   return { max_regression: 0.05, min_trials: 30 };
 }
 
 // ─── Per-category result ───────────────────────────────────────────────────
 
+/** Regression check outcome for one category. */
 export interface CategoryRegressionResult {
+  /** Category label. */
   category: string;
+  /** Success rate in the current suite result. */
   current_success_rate: number;
+  /** Success rate stored in the baseline. */
   baseline_success_rate: number;
   /** `baseline - current` (positive = regression, negative = improvement). */
   regression: number;
+  /** Whether the category stayed within the allowed regression. */
   passed: boolean;
+  /** Why the category failed, or `null` when it passed. */
   reason: string | null;
 }
 
 // ─── Aggregate result ──────────────────────────────────────────────────────
 
+/** Outcome of a full regression check. */
 export interface RegressionResult {
   /** true when all checked categories passed. */
   passed: boolean;
+  /** Per-category outcomes. */
   category_results: CategoryRegressionResult[];
 }
 
@@ -105,9 +114,12 @@ export function improvedCategoryResults(
  * {@link RegressionConfig.max_regression} below its baseline.
  */
 export class RegressionSuite {
+  /** Regression thresholds in effect. */
   config: RegressionConfig;
+  /** Stored baselines keyed by category. */
   readonly baselines: Map<string, CategoryBaseline>;
 
+  /** Create a suite with the given thresholds (defaults to `defaultRegressionConfig()`). */
   constructor(config: RegressionConfig = defaultRegressionConfig()) {
     this.config = { ...config };
     this.baselines = new Map();

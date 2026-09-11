@@ -57,6 +57,11 @@ export class ExecutionGraph {
   /** Flat ordered list of tool names across all steps. */
   toolSequence: string[] = [];
 
+  /**
+   * Create an empty graph for one run.
+   * @param promptHash Hex SHA-256 identifying the system prompt + tool set.
+   * @param runStartedAt ISO timestamp of the run start; defaults to now.
+   */
   constructor(promptHash: string, runStartedAt?: string) {
     this.promptHash = promptHash;
     this.runStartedAt = runStartedAt ?? new Date().toISOString();

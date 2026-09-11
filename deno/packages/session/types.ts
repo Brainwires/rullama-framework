@@ -6,8 +6,10 @@
 
 /** Opaque identifier for a persisted session. */
 export class SessionId {
+  /** The raw string identifier this SessionId wraps. */
   readonly value: string;
 
+  /** Wrap a raw string as a SessionId. Equivalent to {@link SessionId.from}. */
   constructor(value: string) {
     this.value = value;
   }
@@ -28,10 +30,17 @@ export class SessionId {
     return this.value;
   }
 
+  /** Render the id as its underlying string (used by template literals and `String()`). */
   toString(): string {
     return this.value;
   }
 
+  /**
+   * Compare against another SessionId or a raw string by value.
+   *
+   * @param other Another SessionId, or a plain string id.
+   * @returns `true` when both refer to the same underlying string.
+   */
   equals(other: SessionId | string): boolean {
     return this.value === (other instanceof SessionId ? other.value : other);
   }
@@ -39,6 +48,7 @@ export class SessionId {
 
 /** Metadata row returned by {@link SessionStore.list}. */
 export interface SessionRecord {
+  /** Identifier of the session this row describes. */
   id: SessionId;
   /** Number of messages in the transcript. */
   message_count: number;
@@ -55,7 +65,9 @@ export interface SessionRecord {
  * Defaults to `{ offset: 0, limit: null }`, equivalent to an unbounded `list`.
  */
 export interface ListOptions {
+  /** Number of leading rows to skip. */
   offset: number;
+  /** Maximum number of rows to return, or `null` for no cap. */
   limit: number | null;
 }
 

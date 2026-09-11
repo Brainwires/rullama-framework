@@ -1,22 +1,13 @@
 /**
- * Two-phase commit transaction manager for file write operations.
+ * Two-phase commit for file writes. `TransactionManager` implements
+ * `@rullama/core`'s `StagingBackend`: `stage()` writes content to a temporary
+ * directory without touching the target, `commit()` moves every staged file into
+ * place (creating parent directories, falling back to copy + delete across
+ * filesystems) and `rollback()` discards the staged files. Target paths are
+ * confined to the working directory.
+ * Equivalent to Rust's `rullama_tool_runtime::transaction`.
  *
- * TransactionManager implements StagingBackend from @rullama/core.
- *
- * ## Protocol
- *
- * 1. **Stage** - calls to stage() write content to a temporary directory with a
- *    key-addressed filename. The target path is not touched.
- *
- * 2. **Commit** - commit() moves each staged file to its target path. Parent
- *    directories are created as needed. On cross-filesystem moves a
- *    copy+delete fallback is used.
- *
- * 3. **Rollback** - rollback() deletes all staged files from the temp dir
- *    without touching any target path.
- *
- * A TransactionManager is single-use per transaction: after commit() or
- * rollback() the queue is empty and new stages can be accepted.
+ * @module
  */
 
 import type { CommitResult, StagedWrite, StagingBackend } from "@rullama/core";

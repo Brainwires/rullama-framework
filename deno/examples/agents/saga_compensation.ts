@@ -17,15 +17,16 @@ import {
 
 /** A file-write operation that always succeeds. */
 const mockFileWrite: CompensableOperation = {
-  async execute(): Promise<OperationResult> {
+  execute(): Promise<OperationResult> {
     console.log("    [execute] Writing config.toml ...");
-    return {
+    return Promise.resolve({
       ...successResult("mock-file-write"),
       output: "wrote 42 bytes to config.toml",
-    };
+    });
   },
-  async compensate(_result: OperationResult): Promise<void> {
+  compensate(_result: OperationResult): Promise<void> {
     console.log("    [compensate] Restoring original config.toml");
+    return Promise.resolve();
   },
   description(): string {
     return "Write file: config.toml";
@@ -37,15 +38,16 @@ const mockFileWrite: CompensableOperation = {
 
 /** A git-stage operation that always succeeds. */
 const mockGitStage: CompensableOperation = {
-  async execute(): Promise<OperationResult> {
+  execute(): Promise<OperationResult> {
     console.log("    [execute] Staging config.toml ...");
-    return {
+    return Promise.resolve({
       ...successResult("mock-git-stage"),
       output: "staged 1 file",
-    };
+    });
   },
-  async compensate(_result: OperationResult): Promise<void> {
+  compensate(_result: OperationResult): Promise<void> {
     console.log("    [compensate] Unstaging config.toml (git reset HEAD)");
+    return Promise.resolve();
   },
   description(): string {
     return "Git stage: config.toml";
@@ -57,12 +59,13 @@ const mockGitStage: CompensableOperation = {
 
 /** A build operation that always fails. */
 const mockBuild: CompensableOperation = {
-  async execute(): Promise<OperationResult> {
+  execute(): Promise<OperationResult> {
     console.log("    [execute] Running cargo build ... FAILED");
-    return failureResult("mock-build");
+    return Promise.resolve(failureResult("mock-build"));
   },
-  async compensate(_result: OperationResult): Promise<void> {
+  compensate(_result: OperationResult): Promise<void> {
     // Build is non-compensable, but we implement it anyway (will be skipped).
+    return Promise.resolve();
   },
   description(): string {
     return "Build project";

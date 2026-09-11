@@ -28,10 +28,15 @@ export interface Provider {
 /** Chat completion options.
  * Equivalent to Rust's `ChatOptions` in rullama-core. */
 export class ChatOptions {
+  /** Sampling temperature (default 0.7). */
   temperature?: number;
+  /** Maximum tokens the model may generate (default 4096). */
   max_tokens?: number;
+  /** Nucleus-sampling probability mass. */
   top_p?: number;
+  /** Sequences that end generation when produced. */
   stop?: string[];
+  /** System prompt sent ahead of the messages. */
   system?: string;
   /**
    * Model to use for this call, when the provider serves several. Providers
@@ -40,6 +45,7 @@ export class ChatOptions {
    */
   model?: string;
 
+  /** Create options, applying the defaults (`temperature` 0.7, `max_tokens` 4096) for anything not given. */
   constructor(opts?: Partial<ChatOptions>) {
     this.temperature = opts?.temperature ?? 0.7;
     this.max_tokens = opts?.max_tokens ?? 4096;

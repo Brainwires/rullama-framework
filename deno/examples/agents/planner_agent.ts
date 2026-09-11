@@ -14,9 +14,9 @@ import {
   validateTaskGraph,
   verdictHints,
   verdictType,
-} from "@rullama/agent";
+} from "@rullama/inference";
 
-async function main() {
+function main(): void {
   // 1. Parse a planner output from a fenced JSON block
   const plannerText = `
 I've analyzed the codebase. Here is the plan:
@@ -64,6 +64,9 @@ This plan prioritizes correctness before documentation.
 
   const config = defaultPlannerAgentConfig();
   const output = parsePlannerOutput(plannerText, config);
+
+  // validateTaskGraph throws on cycles / dangling ids; the parsed output is sound.
+  validateTaskGraph(output.tasks);
 
   console.log("=== Planner Output ===");
   console.log(`Rationale: ${output.rationale}`);
@@ -189,4 +192,4 @@ function printVerdict(verdict: JudgeVerdict): void {
   }
 }
 
-await main();
+main();

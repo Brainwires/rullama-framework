@@ -4,11 +4,8 @@
 // to track pool health. Also shows CommunicationHub and FileLockManager.
 // Run: deno run deno/examples/agents/agent_pool.ts
 
-import {
-  type AgentPoolStats,
-  CommunicationHub,
-  FileLockManager,
-} from "@rullama/agent";
+import { CommunicationHub, FileLockManager } from "@rullama/agent";
+import type { AgentPoolStats } from "@rullama/inference";
 import { Task } from "@rullama/core";
 
 async function main() {

@@ -16,10 +16,15 @@ import type { AgentInfoProvider } from "./heartbeat.ts";
 
 /** Remote bridge configuration (as returned by a provider). */
 export interface RemoteBridgeConfig {
+  /** Relay backend base URL (`http(s)://...`). */
   backendUrl: string;
+  /** Bearer token for the backend; when empty the manager falls back to `BridgeConfigProvider.getApiKey()`. */
   apiKey: string;
+  /** Seconds between heartbeat polls. */
   heartbeatIntervalSecs: number;
+  /** Seconds to wait before reconnecting after a failure. */
   reconnectDelaySecs: number;
+  /** Consecutive reconnect failures tolerated before giving up (0 = unlimited). */
   maxReconnectAttempts: number;
 }
 
@@ -80,6 +85,16 @@ export class RemoteBridgeManager {
   private readonly version: string;
   private readonly hostname: string;
 
+  /**
+   * Create a manager; nothing connects until `startFromConfig()` /
+   * `startWithConfig()` is called.
+   *
+   * @param options.configProvider Source of the remote config and API key.
+   * @param options.agentInfoProvider Live agent list for heartbeats; defaults
+   *   to a provider that returns no agents.
+   * @param options.version Client version reported to the backend.
+   * @param options.hostname Reported hostname (defaults to `"unknown"`).
+   */
   constructor(options: {
     configProvider: BridgeConfigProvider;
     agentInfoProvider?: AgentInfoProvider;

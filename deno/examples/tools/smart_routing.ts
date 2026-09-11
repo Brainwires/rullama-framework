@@ -1,7 +1,7 @@
 // Example: Smart Routing
 // Demonstrates the smart tool router that analyzes user queries to determine
 // which tool categories are relevant, using keyword-based pattern matching.
-// Run: deno run deno/examples/tool-system/smart_routing.ts
+// Run: deno run deno/examples/tools/smart_routing.ts
 
 import { Message } from "@rullama/core";
 import {
@@ -23,7 +23,7 @@ import {
 } from "@rullama/tool-builtins";
 import type { Tool } from "@rullama/core";
 
-async function main() {
+function main(): void {
   console.log("=== Smart Routing Example ===\n");
 
   // 1. Set up a registry with built-in tools
@@ -170,4 +170,4 @@ async function main() {
   console.log("\nDone.");
 }
 
-await main();
+main();

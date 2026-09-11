@@ -23,19 +23,29 @@
 
 /** Status of a tracked file. */
 export interface FileStatus {
+  /** Whether the file currently exists. */
   exists: boolean;
+  /** Hash of the last recorded content. */
   contentHash: string;
+  /** When the status was last updated (epoch ms). */
   lastModified: number;
+  /** Agent holding the file lock, or null if unlocked. */
   lockedBy: string | null;
+  /** True after `updateFile` until `markFilesClean` is called. */
   dirty: boolean;
 }
 
 /** Git repository state snapshot. */
 export interface GitState {
+  /** Checked-out branch name. */
   currentBranch: string;
+  /** Commit hash at HEAD. */
   headCommit: string;
+  /** Paths staged in the index. */
   stagedFiles: string[];
+  /** Paths modified in the working tree. */
   modifiedFiles: string[];
+  /** Whether unresolved merge conflicts are present. */
   hasConflicts: boolean;
 }
 
@@ -141,20 +151,33 @@ export type OperationLogStatus =
 
 /** Log entry for a tracked operation. */
 export interface OperationLog {
+  /** Operation identifier (see `OperationState.generateId`). */
   id: string;
+  /** Agent executing the operation. */
   agentId: string;
+  /** Free-form operation category (e.g. `"file_write"`). */
   operationType: string;
+  /** When the operation started (epoch ms). */
   startedAt: number;
+  /** When it finished (epoch ms), or null while running. */
   completedAt: number | null;
+  /** Lifecycle status. */
   status: OperationLogStatus;
+  /** Caller-supplied inputs, kept for debugging and compensation. */
   // deno-lint-ignore no-explicit-any
   inputs: any;
+  /** Outputs recorded by `completeOperation`, or null until then. */
   // deno-lint-ignore no-explicit-any
   outputs: any | null;
+  /** Error text recorded on failure, or null. */
   error: string | null;
+  /** IDs of operations nested under this one. */
   childOperations: string[];
+  /** ID of the enclosing operation, or null at top level. */
   parentOperation: string | null;
+  /** Resources the operation reads or requires. */
   resourcesNeeded: string[];
+  /** Resources the operation creates or modifies. */
   resourcesProduced: string[];
 }
 
@@ -288,7 +311,9 @@ export type DependencyStrength = "hard" | "soft" | "advisory";
 
 /** An edge in the dependency graph. */
 export interface DependencyEdge {
+  /** Kind of relationship the edge encodes. */
   dependencyType: DependencyType;
+  /** How strictly the relationship must be honoured. */
   strength: DependencyStrength;
 }
 
@@ -323,6 +348,7 @@ export class DependencyState {
     Array<{ target: string; edge: DependencyEdge }>
   >();
 
+  /** Insert a node (with an empty adjacency list) for `resourceId` if none exists. */
   private ensureNode(
     resourceId: string,
     resourceType: ResourceNodeType = "generic",
@@ -487,16 +513,23 @@ export class DependencyState {
 
 /** Result of validating an operation. */
 export interface StateValidationResult {
+  /** True when `errors` is empty. */
   valid: boolean;
+  /** Blocking problems: resource overlap with a running operation, or a deadlock. */
   errors: string[];
+  /** Non-blocking notes, e.g. a needed resource that does not exist yet. */
   warnings: string[];
 }
 
 /** A proposed operation to validate. */
 export interface ProposedOperation {
+  /** Agent that wants to run the operation. */
   agentId: string;
+  /** Free-form operation category. */
   operationType: string;
+  /** Resources the operation would read or require. */
   resourcesNeeded: string[];
+  /** Resources the operation would create or modify. */
   resourcesProduced: string[];
 }
 
@@ -510,16 +543,23 @@ export type ApplicationChange =
 
 /** State change to record. */
 export interface StateChange {
+  /** Operation that produced the change (informational; not applied to operation state). */
   operationId: string;
+  /** Application-state mutations to apply in order. */
   applicationChanges: ApplicationChange[];
+  /** Dependency edges to add (`from` depends on `to`). */
   newDependencies: Array<{ from: string; to: string; edge: DependencyEdge }>;
 }
 
 /** Snapshot of current state. */
 export interface StateSnapshot {
+  /** Copy of every tracked file's status keyed by path. */
   files: Map<string, FileStatus>;
+  /** Resource ID -> holding agent, from the dependency graph. */
   locks: Map<string, string>;
+  /** Copy of the recorded git state. */
   gitState: GitState;
+  /** IDs of operations still running. */
   activeOperations: string[];
 }
 
@@ -529,8 +569,11 @@ export interface StateSnapshot {
 
 /** Three-State Model for comprehensive state tracking. */
 export class ThreeStateModel {
+  /** Domain resources: files, generic resources, git state. */
   readonly applicationState: ApplicationState;
+  /** Execution log of operations per agent. */
   readonly operationState: OperationState;
+  /** Resource/agent dependency graph used for deadlock checks and ordering. */
   readonly dependencyState: DependencyState;
 
   constructor() {

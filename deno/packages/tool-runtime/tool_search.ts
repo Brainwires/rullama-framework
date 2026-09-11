@@ -1,9 +1,12 @@
 /**
- * Tool Search — meta-tool for discovering available tools dynamically.
+ * The `search_tools` meta-tool for discovering deferred tools at run time.
+ * `ToolSearchTool` searches a `ToolRegistry` by keyword or regex and, when a
+ * `ToolEmbeddingIndex` is supplied, by embedding similarity (`semantic` mode
+ * returns an error result without one), so an agent can start with a small tool
+ * set and pull in more as needed.
+ * Equivalent to Rust's `rullama_tool_runtime::tool_search`.
  *
- * Equivalent to Rust's `rullama_tools::tool_search` module. The semantic
- * search mode is deferred until an embedding backend lands in the Deno
- * `@rullama/knowledge` package; requesting it returns a clear error.
+ * @module
  */
 
 import {
@@ -97,6 +100,7 @@ export class ToolSearchTool {
     }
   }
 
+  /** Run `search_tools` in keyword, regex or semantic mode. */
   private static searchTools(
     input: Record<string, unknown>,
     registry: ToolRegistry,
@@ -175,6 +179,7 @@ export class ToolSearchTool {
     return Promise.resolve(result);
   }
 
+  /** Semantic search over `embeddingIndex`. */
   private static async searchSemantic(
     query: string,
     registry: ToolRegistry,

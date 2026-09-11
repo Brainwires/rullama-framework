@@ -11,5 +11,12 @@
     "./fish": "./fish.ts",
     "./google-tts": "./google_tts.ts",
     "./murf": "./murf.ts"
+  },
+  "publish": {
+    "exclude": [
+      "**/*_test.ts",
+      "test_util.ts",
+      "__readme_check.ts"
+    ]
   }
 }

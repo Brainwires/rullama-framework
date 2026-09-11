@@ -11,9 +11,14 @@ import { Task, type TaskPriority } from "@rullama/core";
 export interface ParsedStep {
   /** 1-based serial number assigned in parse order. */
   number: number;
+  /** Step text with the list marker and surrounding whitespace removed. */
   description: string;
   /** 0 = root, 1 = substep, … (derived from leading whitespace / 2). */
   indent_level: number;
+  /**
+   * `true` when the text contains "important"/"critical" (or a `!` for
+   * numbered steps); {@link stepsToTasks} maps it to `"high"` priority.
+   */
   is_priority: boolean;
 }
 

@@ -18,6 +18,7 @@
 
 /** Voting-specific error details. */
 export interface VotingErrorDetails {
+  /** Which voting failure occurred (e.g. `max_samples_exceeded` when no candidate got k ahead before `maxSamples`). */
   kind:
     | "max_samples_exceeded"
     | "all_samples_red_flagged"
@@ -27,17 +28,23 @@ export interface VotingErrorDetails {
     | "hash_error"
     | "invalid_k"
     | "parallel_error";
+  /** Human-readable description of the failure. */
   message: string;
   /** Vote tally per candidate key (for max_samples_exceeded). */
   votes?: Record<string, number>;
+  /** Samples drawn before giving up (for max_samples_exceeded). */
   samples?: number;
+  /** Number of samples the validator rejected (for all_samples_red_flagged). */
   redFlagged?: number;
+  /** Total samples drawn (for all_samples_red_flagged). */
   total?: number;
+  /** Sampler calls made in the first batch that all failed (for no_valid_responses). */
   attempts?: number;
 }
 
 /** Red-flag error details. */
 export interface RedFlagErrorDetails {
+  /** Which red-flag check failed. */
   kind:
     | "response_too_long"
     | "invalid_format"
@@ -48,11 +55,13 @@ export interface RedFlagErrorDetails {
     | "invalid_json"
     | "missing_field"
     | "pattern_error";
+  /** Human-readable description of the failure. */
   message: string;
 }
 
 /** Decomposition error details. */
 export interface DecompositionErrorDetails {
+  /** Which decomposition failure occurred (`validateDecomposition` raises `empty_result` / `invalid_dependency`, `topologicalSort` raises `circular_dependency`). */
   kind:
     | "max_depth_exceeded"
     | "cannot_decompose"
@@ -62,6 +71,7 @@ export interface DecompositionErrorDetails {
     | "empty_result"
     | "invalid_strategy"
     | "discriminator_error";
+  /** Human-readable description of the failure. */
   message: string;
 }
 
@@ -83,8 +93,13 @@ export type MdapErrorKind =
 
 /** Main MDAP error class. */
 export class MdapError extends Error {
+  /** The structured error category and its details. */
   readonly kind: MdapErrorKind;
 
+  /**
+   * Create an error whose `message` is taken from `kind.message`, else
+   * `kind.details.message`, else `MDAP error: <type>`.
+   */
   constructor(kind: MdapErrorKind) {
     const msg = "message" in kind
       ? (kind as { message: string }).message
@@ -96,10 +111,12 @@ export class MdapError extends Error {
     this.kind = kind;
   }
 
+  /** Create an `{ type: "other" }` error with the given message. */
   static other(message: string): MdapError {
     return new MdapError({ type: "other", message });
   }
 
+  /** Create a `{ type: "provider" }` error (treated as retryable) with the given message. */
   static provider(message: string): MdapError {
     return new MdapError({ type: "provider", message });
   }
@@ -333,6 +350,15 @@ export interface MicroagentResponse {
 
 /** Trait interface for providers that can be used with microagents. */
 export interface MicroagentProvider {
+  /**
+   * Run one stateless chat completion with the given system and user prompts.
+   *
+   * @param system - System prompt (the filled-in `systemPromptTemplate`).
+   * @param user - User message carrying the subtask input.
+   * @param temperature - Sampling temperature.
+   * @param maxTokens - Hard output-token limit for this call.
+   * @returns The response text plus token counts and timing.
+   */
   chat(
     system: string,
     user: string,
@@ -399,6 +425,7 @@ export type DecompositionStrategy =
 
 /** Trait for custom composition handlers. */
 export interface CompositionHandler {
+  /** Combine the ordered subtask outputs into a single composed value. */
   compose(results: SubtaskOutput[]): unknown;
 }
 
@@ -438,37 +465,61 @@ export interface ModelCosts {
 
 /** Summary of MDAP configuration for metrics. */
 export interface ConfigSummary {
+  /** The first-to-ahead-by-k margin used for voting. */
   k: number;
+  /** Target probability of full-task success (0.0-1.0). */
   targetSuccessRate: number;
+  /** Number of samples drawn concurrently per voting batch. */
   parallelSamples: number;
+  /** Cap on samples drawn for a single subtask before voting fails. */
   maxSamplesPerSubtask: number;
+  /** Name of the `DecompositionStrategy` kind in use. */
   decompositionStrategy: string;
 }
 
 /** Metrics for a single subtask execution. */
 export interface SubtaskMetric {
+  /** ID of the subtask these metrics describe. */
   subtaskId: string;
+  /** The subtask's human-readable description. */
   description: string;
+  /** Total samples drawn for this subtask, including red-flagged ones. */
   samplesNeeded: number;
+  /** Number of samples the red-flag validator rejected. */
   redFlagsHit: number;
+  /** Formatted reason string for each red-flagged sample. */
   redFlagReasons: string[];
+  /** Winner's share of valid votes (`winnerVotes / totalVotes`). */
   finalConfidence: number;
+  /** Wall-clock time spent on this subtask in milliseconds. */
   executionTimeMs: number;
+  /** Votes received by the winning candidate. */
   winnerVotes: number;
+  /** Valid (non-red-flagged) votes cast. */
   totalVotes: number;
+  /** Whether voting produced a winner. */
   succeeded: boolean;
+  /** Input tokens consumed across all samples. */
   inputTokens: number;
+  /** Output tokens produced across all samples. */
   outputTokens: number;
+  /** The subtask's `complexityEstimate` (0.0-1.0). */
   complexityEstimate: number;
 }
 
 /** Metrics for a single voting round. */
 export interface VotingRoundMetric {
+  /** Zero-based index of the step (subtask) being voted on. */
   step: number;
+  /** Zero-based index of the sampling batch within the step. */
   round: number;
+  /** Vote tally per candidate key after this round. */
   candidates: Record<string, number>;
+  /** Candidate key that won in this round, if voting concluded. */
   winner?: string;
+  /** Samples rejected by the red-flag validator in this round. */
   redFlaggedThisRound: number;
+  /** Time spent sampling and validating this round in milliseconds. */
   roundTimeMs: number;
 }
 

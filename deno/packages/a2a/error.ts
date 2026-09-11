@@ -7,33 +7,33 @@
 // ---------------------------------------------------------------------------
 
 /** Invalid JSON payload. */
-export const JSON_PARSE_ERROR = -32700;
+export const JSON_PARSE_ERROR: number = -32700;
 /** Request payload validation error. */
-export const INVALID_REQUEST = -32600;
+export const INVALID_REQUEST: number = -32600;
 /** Method not found. */
-export const METHOD_NOT_FOUND = -32601;
+export const METHOD_NOT_FOUND: number = -32601;
 /** Invalid parameters. */
-export const INVALID_PARAMS = -32602;
+export const INVALID_PARAMS: number = -32602;
 /** Internal error. */
-export const INTERNAL_ERROR = -32603;
+export const INTERNAL_ERROR: number = -32603;
 /** Task not found. */
-export const TASK_NOT_FOUND = -32001;
+export const TASK_NOT_FOUND: number = -32001;
 /** Task cannot be canceled. */
-export const TASK_NOT_CANCELABLE = -32002;
+export const TASK_NOT_CANCELABLE: number = -32002;
 /** Push notification is not supported. */
-export const PUSH_NOT_SUPPORTED = -32003;
+export const PUSH_NOT_SUPPORTED: number = -32003;
 /** This operation is not supported. */
-export const UNSUPPORTED_OPERATION = -32004;
+export const UNSUPPORTED_OPERATION: number = -32004;
 /** Incompatible content types. */
-export const CONTENT_TYPE_NOT_SUPPORTED = -32005;
+export const CONTENT_TYPE_NOT_SUPPORTED: number = -32005;
 /** Invalid agent response. */
-export const INVALID_AGENT_RESPONSE = -32006;
+export const INVALID_AGENT_RESPONSE: number = -32006;
 /** Authenticated Extended Card is not configured. */
-export const EXTENDED_CARD_NOT_CONFIGURED = -32007;
+export const EXTENDED_CARD_NOT_CONFIGURED: number = -32007;
 /** Extension support is required but not provided. */
-export const EXTENSION_SUPPORT_REQUIRED = -32008;
+export const EXTENSION_SUPPORT_REQUIRED: number = -32008;
 /** Protocol version is not supported. */
-export const VERSION_NOT_SUPPORTED = -32009;
+export const VERSION_NOT_SUPPORTED: number = -32009;
 
 // ---------------------------------------------------------------------------
 // Error class
@@ -46,6 +46,15 @@ export class A2aError extends Error {
   /** Optional additional data. */
   data?: unknown;
 
+  /**
+   * Build an error carrying a JSON-RPC error code.
+   *
+   * @param code One of the exported `*_ERROR` / `TASK_*` codes (or a custom
+   *   server-defined one).
+   * @param message Human-readable description; becomes `Error.message`.
+   * @param data Optional structured payload forwarded as the JSON-RPC
+   *   `error.data` field.
+   */
   constructor(code: number, message: string, data?: unknown) {
     super(message);
     this.name = "A2aError";

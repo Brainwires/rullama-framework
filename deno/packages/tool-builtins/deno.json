@@ -10,5 +10,12 @@
     "./web": "./web.ts",
     "./search": "./search.ts",
     "./semantic-search": "./semantic_search.ts"
+  },
+  "publish": {
+    "exclude": [
+      "**/*_test.ts",
+      "test_util.ts",
+      "__readme_check.ts"
+    ]
   }
 }

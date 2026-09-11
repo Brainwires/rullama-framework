@@ -101,6 +101,16 @@ export class OpenAiChatProvider implements Provider {
   private readonly model: string;
   private readonly baseUrl: string;
 
+  /**
+   * Create a provider for an OpenAI-compatible Chat Completions endpoint.
+   *
+   * @param apiKey Bearer token for the `Authorization` header.
+   * @param model Model id (e.g. `gpt-5-mini`, `llama-3.3-70b-versatile`).
+   * @param baseUrl Full chat-completions URL (default:
+   *   `https://api.openai.com/v1/chat/completions`); point it at Groq,
+   *   Together, Fireworks, Anyscale or any compatible server.
+   * @param providerName Value reported as `name` (default: `"openai"`).
+   */
   constructor(
     apiKey: string,
     model: string,
@@ -205,6 +215,9 @@ export class OpenAiChatProvider implements Provider {
   // Internal helpers
   // -----------------------------------------------------------------------
 
+  /** Build the Chat Completions body: converted messages, sampling options
+   * (`max_completion_tokens` only for reasoning models), function tools, and
+   * `stream: true` when streaming. */
   private buildRequestBody(
     messages: Message[],
     tools: Tool[] | undefined,

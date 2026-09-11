@@ -21,83 +21,125 @@ import {
 
 /** Default configuration section. Rust equivalent: `DefaultConfig` */
 export interface DefaultConfig {
+  /** Base capability profile name (`"read_only"`, `"standard_dev"`, `"full_access"`); unknown names fall back to `standard_dev`. */
   profile: string;
 }
 
 /** Filesystem configuration section. Rust equivalent: `FilesystemConfig` */
 export interface FilesystemConfig {
+  /** Glob patterns the agent may read; replaces the profile's list when set. */
   read_paths?: string[];
+  /** Glob patterns the agent may write; replaces the profile's list when set. */
   write_paths?: string[];
+  /** Glob patterns that are always denied, even if a read/write pattern matches. */
   denied_paths?: string[];
+  /** Whether symlinks may be followed during path checks. */
   follow_symlinks?: boolean;
+  /** Whether dot-files and dot-directories may be accessed. */
   access_hidden?: boolean;
+  /** Maximum size of a single write as a size string (`"512KB"`, `"1MB"`); parsed by {@link parseSize}. */
   max_write_size?: string;
+  /** Whether the agent may delete files. */
   can_delete?: boolean;
+  /** Whether the agent may create directories. */
   can_create_dirs?: boolean;
 }
 
 /** Tools configuration section. Rust equivalent: `ToolsConfig` */
 export interface ToolsConfig {
+  /** Tool category names (`"file_read"`, `"bash"`, …, see {@link parseToolCategory}); unrecognised names are dropped. */
   allowed_categories?: string[];
+  /** Tool names that are denied regardless of category. */
   denied_tools?: string[];
+  /** Tool names that always require interactive approval. */
   always_approve?: string[];
 }
 
 /** Network configuration section. Rust equivalent: `NetworkConfig` */
 export interface NetworkConfig {
+  /** Domain patterns the agent may reach. */
   allowed_domains?: string[];
+  /** Domain patterns that are always denied. */
   denied_domains?: string[];
+  /** When `true`, every domain not in `denied_domains` is allowed. */
   allow_all?: boolean;
+  /** Maximum network requests per minute. */
   rate_limit?: number;
+  /** Whether outbound API calls are permitted. */
   allow_api_calls?: boolean;
 }
 
 /** Spawning configuration section. Rust equivalent: `SpawningConfig` */
 export interface SpawningConfig {
+  /** Whether the agent may spawn child agents (maps to `SpawningCapabilities.can_spawn`). */
   enabled?: boolean;
+  /** Maximum number of concurrent child agents. */
   max_children?: number;
+  /** Maximum nesting depth of the spawn tree. */
   max_depth?: number;
+  /** Whether a child may be granted more capabilities than its parent. */
   can_elevate?: boolean;
 }
 
 /** Git configuration section. Rust equivalent: `GitConfig` */
 export interface GitConfig {
+  /** Git operation names (`"commit"`, `"push"`, `"force-push"`, …, see {@link parseGitOperation}); unrecognised names are dropped. */
   allowed_ops?: string[];
+  /** Branch names that may not be pushed to or modified directly. */
   protected_branches?: string[];
+  /** Whether `git push --force` is permitted. */
   can_force_push?: boolean;
+  /** Whether destructive operations (reset, rebase, force-push) are permitted. */
   can_destructive?: boolean;
+  /** Branches that may only be changed through a pull request. */
   require_pr_branches?: string[];
 }
 
 /** Quotas configuration section. Rust equivalent: `QuotasConfig` */
 export interface QuotasConfig {
+  /** Wall-clock budget as a duration string (`"30m"`, `"1h"`); parsed to seconds by {@link parseDuration}. */
   max_execution_time?: string;
+  /** Maximum number of tool invocations per run. */
   max_tool_calls?: number;
+  /** Maximum number of distinct files the agent may modify. */
   max_files_modified?: number;
+  /** Maximum number of LLM tokens the agent may consume. */
   max_tokens?: number;
 }
 
 /** Individual policy rule configuration. Rust equivalent: `PolicyRuleConfig` */
 export interface PolicyRuleConfig {
+  /** Human-readable rule name. */
   name: string;
+  /** Evaluation priority; higher values are evaluated first. */
   priority?: number;
+  /** Conditions that must all hold for the rule to match. */
   conditions?: PolicyConditionConfig[];
+  /** Action name in snake_case (`"allow"`, `"deny"`, `"require_approval"`, …). */
   action: string;
+  /** Enforcement mode name (`"coercive"`, `"normative"`, `"adaptive"`). */
   enforcement?: string;
 }
 
 /** Policy condition configuration. Rust equivalent: `PolicyConditionConfig` */
 export interface PolicyConditionConfig {
+  /** Match a specific tool name. */
   tool?: string;
+  /** Match a tool category name. */
   tool_category?: string;
+  /** Match file paths against this glob pattern. */
   file_path?: string;
+  /** Match network domains against this pattern. */
   domain?: string;
+  /** Match a git operation name. */
   git_op?: string;
+  /** Match only when the agent's numeric trust level is at least this value (0–4). */
   min_trust_level?: number;
 }
 
 /** Policies configuration section. Rust equivalent: `PoliciesConfig` */
 export interface PoliciesConfig {
+  /** The policy rules, in declaration order. */
   rules?: PolicyRuleConfig[];
 }
 
@@ -109,13 +151,21 @@ export interface PoliciesConfig {
  * Rust equivalent: `PermissionsConfig` struct
  */
 export interface PermissionsConfig {
+  /** Base profile selection. */
   default?: DefaultConfig;
+  /** Filesystem overrides applied on top of the profile. */
   filesystem?: FilesystemConfig;
+  /** Tool overrides applied on top of the profile. */
   tools?: ToolsConfig;
+  /** Network overrides applied on top of the profile. */
   network?: NetworkConfig;
+  /** Agent-spawning overrides applied on top of the profile. */
   spawning?: SpawningConfig;
+  /** Git overrides applied on top of the profile. */
   git?: GitConfig;
+  /** Resource-quota overrides applied on top of the profile. */
   quotas?: QuotasConfig;
+  /** Policy rules. Not consumed by {@link configToCapabilities}; feed them to a `PolicyEngine` yourself. */
   policies?: PoliciesConfig;
 }
 

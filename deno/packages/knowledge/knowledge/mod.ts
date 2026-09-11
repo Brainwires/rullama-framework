@@ -224,151 +224,225 @@ export interface ContradictionEvent {
 
 /** Request to capture a new thought. */
 export interface CaptureThoughtRequest {
+  /** Text of the thought to store. */
   content: string;
+  /** Category name; parsed with {@link parseThoughtCategory}, auto-detected when omitted. */
   category?: string;
+  /** Tags to attach; implementations may add auto-extracted ones. */
   tags?: string[];
+  /** Importance score in 0.0--1.0 (implementations default to 0.5). */
   importance?: number;
+  /** Capture source name; parsed with {@link parseThoughtSource}, defaults to `"manual"`. */
   source?: string;
 }
 
 /** Response after capturing a thought. */
 export interface CaptureThoughtResponse {
+  /** UUID assigned to the stored thought. */
   id: string;
+  /** Category the thought was filed under (given or detected). */
   category: string;
+  /** Final tag list on the stored thought. */
   tags: string[];
+  /** Importance score in 0.0--1.0 that was stored. */
   importance: number;
+  /** Number of PKS facts extracted from the content during capture. */
   factsExtracted: number;
 }
 
 /** Request to search memory. */
 export interface SearchMemoryRequest {
+  /** Natural-language query to embed and match semantically. */
   query: string;
+  /** Maximum number of results to return. */
   limit?: number;
+  /** Drop results whose similarity score is below this threshold. */
   minScore?: number;
+  /** Restrict to thoughts in this category. */
   category?: string;
+  /** Restrict to these result sources (e.g. `"thoughts"`, `"pks"`). */
   sources?: string[];
 }
 
 /** Response from memory search. */
 export interface SearchMemoryResponse {
+  /** Matching entries, best score first. */
   results: MemorySearchResult[];
+  /** Number of entries in `results`. */
   total: number;
 }
 
 /** A single memory search result. */
 export interface MemorySearchResult {
+  /** Matched text (thought content or fact value). */
   content: string;
+  /** Similarity score, higher is a closer match. */
   score: number;
+  /** Which store produced the hit (e.g. `"thoughts"` or `"pks"`). */
   source: string;
+  /** UUID of the originating thought, when the hit is a thought. */
   thoughtId?: string;
+  /** Category of the originating thought or fact. */
   category?: string;
+  /** Tags of the originating thought. */
   tags?: string[];
+  /** Unix timestamp (seconds) when the entry was created. */
   createdAt?: number;
 }
 
 /** Request to list recent thoughts. */
 export interface ListRecentRequest {
+  /** Maximum number of thoughts to return. */
   limit?: number;
+  /** Only list thoughts in this category. */
   category?: string;
+  /** Only list thoughts created after this ISO 8601 timestamp. */
   since?: string;
 }
 
 /** Response from listing recent thoughts. */
 export interface ListRecentResponse {
+  /** Thought summaries, newest first. */
   thoughts: ThoughtSummary[];
+  /** Number of entries in `thoughts`. */
   total: number;
 }
 
 /** Summary of a thought for listing. */
 export interface ThoughtSummary {
+  /** Thought UUID. */
   id: string;
+  /** Thought text. */
   content: string;
+  /** Category name. */
   category: string;
+  /** Attached tags. */
   tags: string[];
+  /** Importance score in 0.0--1.0. */
   importance: number;
+  /** Unix timestamp (seconds) of creation. */
   createdAt: number;
 }
 
 /** Request to get a single thought. */
 export interface GetThoughtRequest {
+  /** UUID of the thought to fetch. */
   id: string;
 }
 
 /** Response containing a full thought. */
 export interface GetThoughtResponse {
+  /** Thought UUID. */
   id: string;
+  /** Thought text. */
   content: string;
+  /** Category name. */
   category: string;
+  /** Attached tags. */
   tags: string[];
+  /** How the thought was captured (see {@link ThoughtSource}). */
   source: string;
+  /** Importance score in 0.0--1.0. */
   importance: number;
+  /** Unix timestamp (seconds) of creation. */
   createdAt: number;
+  /** Unix timestamp (seconds) of the last update. */
   updatedAt: number;
 }
 
 /** Request to search knowledge (PKS/BKS). */
 export interface SearchKnowledgeRequest {
+  /** Query text matched against fact keys and values. */
   query: string;
+  /** Which store to search: `"pks"`, `"bks"`, or both when omitted. */
   source?: string;
+  /** Restrict to facts in this category. */
   category?: string;
+  /** Drop facts whose confidence is below this threshold (0.0--1.0). */
   minConfidence?: number;
+  /** Maximum number of results to return. */
   limit?: number;
 }
 
 /** Response from knowledge search. */
 export interface SearchKnowledgeResponse {
+  /** Matching facts, highest confidence first. */
   results: KnowledgeResult[];
+  /** Number of entries in `results`. */
   total: number;
 }
 
 /** A single knowledge search result. */
 export interface KnowledgeResult {
+  /** Store the fact came from (`"pks"` or `"bks"`). */
   source: string;
+  /** Fact category. */
   category: string;
+  /** Fact key (the subject, e.g. an entity name). */
   key: string;
+  /** Fact value (what is known about the key). */
   value: string;
+  /** Confidence in 0.0--1.0 that the fact is correct. */
   confidence: number;
+  /** Surrounding text the fact was extracted from. */
   context?: string;
 }
 
 /** Request to delete a thought. */
 export interface DeleteThoughtRequest {
+  /** UUID of the thought to soft-delete. */
   id: string;
 }
 
 /** Response after deleting a thought. */
 export interface DeleteThoughtResponse {
+  /** `true` when the thought existed and was marked deleted. */
   deleted: boolean;
+  /** UUID of the thought the request targeted. */
   id: string;
 }
 
 /** Memory statistics. */
 export interface MemoryStatsResponse {
+  /** Counts over the thought store. */
   thoughts: ThoughtStats;
+  /** Counts over the Personal Knowledge Store. */
   pks: PksStats;
+  /** Counts over the Behavioral Knowledge Store. */
   bks: BksStats;
 }
 
 /** Thought store statistics. */
 export interface ThoughtStats {
+  /** Total non-deleted thoughts. */
   total: number;
+  /** Thought count per category name. */
   byCategory: Record<string, number>;
+  /** Thoughts created in the last 24 hours. */
   recent24h: number;
+  /** Thoughts created in the last 7 days. */
   recent7d: number;
+  /** Thoughts created in the last 30 days. */
   recent30d: number;
+  /** Most-used tags as `[tag, count]` pairs, most used first. */
   topTags: [string, number][];
 }
 
 /** Personal Knowledge Store statistics. */
 export interface PksStats {
+  /** Total facts stored. */
   totalFacts: number;
+  /** Fact count per category name. */
   byCategory: Record<string, number>;
+  /** Mean confidence across all facts (0.0--1.0). */
   avgConfidence: number;
 }
 
 /** Behavioral Knowledge Store statistics. */
 export interface BksStats {
+  /** Total behavioral truths stored. */
   totalTruths: number;
+  /** Truth count per category name. */
   byCategory: Record<string, number>;
 }
 

@@ -1,14 +1,13 @@
 /**
- * Semantic Search Tool — RAG-powered codebase search.
+ * RAG-backed semantic code search tools: `index_codebase`, `query_codebase`,
+ * `search_with_filters`, `search_git_history`, `get_rag_statistics` and
+ * `clear_rag_index`. Each call is dispatched to an injected `RagClient` from
+ * `@rullama/rag`, so the host chooses the transport (in-process stub, HTTP RPC
+ * to the Rust indexing service, …) instead of the global client the Rust
+ * version keeps.
+ * Equivalent to Rust's `rullama_tool_builtins::semantic_search`.
  *
- * Provides semantic code search using vector embeddings via the
- * `@rullama/knowledge` RAG interfaces. Supports indexing, querying,
- * filtered search, statistics, and git history search.
- *
- * Equivalent to Rust's `rullama_tools::semantic_search` module. The Rust
- * version carries a global `OnceCell<RagClient>`; the Deno port accepts an
- * injected {@link RagClient} on each call so the host picks the transport
- * (in-process stub, HTTP RPC to the Rust service, etc.).
+ * @module
  */
 
 import {
@@ -239,6 +238,7 @@ export class SemanticSearchTool {
     }
   }
 
+  /** Route a tool call to its handler by name. */
   private static dispatch(
     tool_name: string,
     input: Record<string, unknown>,
@@ -262,6 +262,7 @@ export class SemanticSearchTool {
     }
   }
 
+  /** Index a codebase through `client` and format the summary. */
   static async indexCodebase(
     input: Record<string, unknown>,
     client: RagClient,
@@ -285,6 +286,7 @@ export class SemanticSearchTool {
     return `Indexed ${resp.filesIndexed} files, ${resp.chunksCreated} chunks in ${resp.durationMs}ms (mode: ${resp.mode})`;
   }
 
+  /** Query the index through `client` and format the hits. */
   static async queryCodebase(
     input: Record<string, unknown>,
     client: RagClient,
@@ -312,6 +314,7 @@ export class SemanticSearchTool {
     return out;
   }
 
+  /** Filtered search (extensions, languages, path patterns) through `client`. */
   static async searchWithFilters(
     input: Record<string, unknown>,
     client: RagClient,
@@ -346,6 +349,7 @@ export class SemanticSearchTool {
     return out;
   }
 
+  /** Fetch and format index statistics. */
   static async getStatistics(client: RagClient): Promise<string> {
     const resp = await client.getStatistics();
     let out = "RAG Index Statistics:\n";
@@ -361,11 +365,13 @@ export class SemanticSearchTool {
     return out;
   }
 
+  /** Clear the index. */
   static async clearIndex(client: RagClient): Promise<string> {
     const resp = await client.clearIndex();
     return `Cleared index: ${resp.message}`;
   }
 
+  /** Search git history through `client` and format the commits. */
   static async searchGitHistory(
     input: Record<string, unknown>,
     client: RagClient,

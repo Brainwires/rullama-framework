@@ -3,9 +3,13 @@
 /** Result from a vector similarity search.
  * Equivalent to Rust's `VectorSearchResult` in rullama-core. */
 export interface VectorSearchResult {
+  /** ID the item was upserted under. */
   id: string;
+  /** Similarity score (higher is closer). */
   score: number;
+  /** Text stored alongside the vector. */
   content: string;
+  /** Metadata stored alongside the vector. */
   metadata: any;
 }
 

@@ -5,5 +5,12 @@
   "exports": {
     ".": "./mod.ts",
     "./code-analysis": "./code_analysis/mod.ts"
+  },
+  "publish": {
+    "exclude": [
+      "**/*_test.ts",
+      "test_util.ts",
+      "__readme_check.ts"
+    ]
   }
 }

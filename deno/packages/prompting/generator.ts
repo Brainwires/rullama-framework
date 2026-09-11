@@ -1,8 +1,12 @@
 /**
- * Prompt Generation with Adaptive Technique Selection
+ * Prompt generation with adaptive technique selection. `PromptGenerator`
+ * matches a task to a cluster, selects the techniques that fit its
+ * characteristics, complexity and SEAL quality scores, and composes them into a
+ * `GeneratedPrompt`; `inferRoleAndDomain` and `inferTaskType` derive the
+ * role/domain hints the templates use.
+ * Equivalent to Rust's `rullama_prompting::generator`.
  *
- * Generates dynamic prompts by selecting and composing prompting techniques
- * based on task characteristics, cluster matching, and SEAL quality scores.
+ * @module
  */
 
 import type { TaskCluster } from "./cluster.ts";
@@ -43,6 +47,7 @@ export interface GeneratedPrompt {
 export class PromptGenerator {
   private readonly clusterManager: TaskClusterManager;
 
+  /** Create a generator that matches tasks against `clusterManager`'s clusters. */
   constructor(clusterManager: TaskClusterManager) {
     this.clusterManager = clusterManager;
   }

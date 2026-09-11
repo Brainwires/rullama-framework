@@ -1,13 +1,13 @@
 /**
- * @module @rullama/mcp-client
+ * Model Context Protocol (MCP) client for rullama. Provides {@link McpClient},
+ * which spawns MCP servers as subprocesses over a stdio transport, negotiates
+ * protocol version `2025-06-18` (and accepts `2025-03-26` / `2024-11-05`), and
+ * lists/calls tools, reads resources and fetches prompts. Also exports the
+ * JSON-RPC 2.0 and MCP wire types, the {@link StdioTransport} / {@link Transport}
+ * layer, and {@link McpConfigManager} for the on-disk server list
+ * (`~/.rullama/mcp-config.json`). Equivalent to Rust's `rullama-mcp` crate.
  *
- * rullama MCP - Model Context Protocol client and types.
- * Equivalent to Rust's `rullama-mcp` crate.
- *
- * - **McpClient**: Connect to external MCP servers, list/call tools, resources, prompts
- * - **Transport**: Stdio-based transport layer for MCP communication
- * - **Types**: JSON-RPC 2.0 types and MCP protocol types
- * - **Config**: MCP server configuration management
+ * @module
  */
 
 // Client

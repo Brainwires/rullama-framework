@@ -203,6 +203,7 @@ export class TaskAgent {
   /** Total cost USD. */
   private totalCostUsd = 0;
 
+  /** Create an agent for `task`; `config` overrides `defaultTaskAgentConfig()`. */
   constructor(
     id: string,
     task: Task,
