@@ -20,16 +20,15 @@
 #   core → (call-policy, permission, storage, telemetry, mcp-client, …)
 #        → tool-runtime → tool-builtins → inference → skills/seal/network …
 #
-# Lockstep releases (every package at the same version, e.g. 0.12.1) use the
-# `deno-v<version>` tag, which publishes the whole workspace in one job (Deno
-# orders the members itself).
+# `deno task publish:changes` (deno/scripts/publish-changes.ts) works out which
+# packages need publishing, then creates and pushes their tags in dependency
+# order, waiting for each run — that is the normal way to release.
 
 name: Publish Deno packages
 
 on:
   push:
     tags:
-      - "deno-v*" # every @rullama/* package (lockstep)
       - "a2a-v*" # @rullama/a2a
       - "agent-v*" # @rullama/agent
       - "call-policy-v*" # @rullama/call-policy
@@ -112,31 +111,19 @@ jobs:
             telemetry-v*) pkg=telemetry ;;
             tool-builtins-v*) pkg=tool-builtins ;;
             tool-runtime-v*) pkg=tool-runtime ;;
-            deno-v*) pkg="" ;;
             *) echo "::error::unrecognized tag '$GITHUB_REF_NAME'"; exit 1 ;;
           esac
           version="${GITHUB_REF_NAME#*-v}"
-          if [ -n "$pkg" ]; then
-            cfg="packages/$pkg/deno.json"
-            v=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('$cfg')).version)")
-            if [ "$v" != "$version" ]; then
-              echo "::error::$cfg is version $v but the tag says $version — bump it first"; exit 1
-            fi
-            echo "config=--config $cfg" >> "$GITHUB_OUTPUT"
-            echo "Publishing @rullama/$pkg@$version ($cfg)"
-          else
-            for f in packages/*/deno.json; do
-              v=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('$f')).version)")
-              if [ "$v" != "$version" ]; then
-                echo "::error::$f is version $v but the lockstep tag says $version"; exit 1
-              fi
-            done
-            echo "config=" >> "$GITHUB_OUTPUT"
-            echo "Publishing every @rullama/* package at $version"
+          cfg="packages/$pkg/deno.json"
+          v=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('$cfg')).version)")
+          if [ "$v" != "$version" ]; then
+            echo "::error::$cfg is version $v but the tag says $version — bump it first"; exit 1
           fi
+          echo "config=$cfg" >> "$GITHUB_OUTPUT"
+          echo "Publishing @rullama/$pkg@$version ($cfg)"
 
       - name: Gate (fmt, lint, type-check, doc-lint, tests)
         run: deno task check
 
       - name: Publish to JSR (with provenance)
-        run: deno publish ${{ steps.pkg.outputs.config }}
+        run: deno publish --config ${{ steps.pkg.outputs.config }}

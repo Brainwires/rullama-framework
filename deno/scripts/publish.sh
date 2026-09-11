@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
 # Publish all 27 @rullama/* packages to JSR from a workstation.
 #
-# The normal path is the GitHub workflow (.github/workflows/publish-deno.yml): push a
-# `deno-v<version>` tag and Actions publishes with OIDC provenance. This script is the
-# manual fallback for the same thing.
+# The normal release path is `deno task publish:changes`: it tags changed packages
+# `<package>-v<version>` and the publish-deno.yml workflow publishes each one with
+# OIDC provenance. This script is the manual fallback for the same thing.
 #
 #   ./deno/scripts/publish.sh --dry-run                 # rehearse everything (dirty tree ok)
 #   ./deno/scripts/publish.sh --package tool-runtime    # one package (like a <pkg>-v* tag)
 #   ./deno/scripts/publish.sh                           # every package, interactive auth
 #   JSR_TOKEN=jsrp_... ./deno/scripts/publish.sh        # token auth
 #
-# Without --package, `deno publish` at the workspace root publishes every member in
-# dependency order and requires all packages to carry the same version (a lockstep
-# release, tag `deno-v<version>`). With --package it publishes that member only
-# (tag `<package>-v<version>`); publish dependencies first when several change.
+# With --package it publishes that member only; without it, every member (all must
+# carry the same version).
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -60,4 +58,4 @@ echo "=== publishing every @rullama/* package at $version ${DRY_RUN:+(dry run)} 
 deno task check
 # shellcheck disable=SC2086
 deno publish $DRY_RUN $TOKEN_ARG
-echo "=== done. Tag it: git tag -a deno-v$version -m 'Deno port v$version' && git push origin deno-v$version ==="
+echo "=== done ==="

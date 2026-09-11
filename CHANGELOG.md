@@ -239,8 +239,10 @@ sanitizer, were **advisory** — no execution path called any of them.
   "has docs" score factors).
 - `.github/workflows/publish-deno.yml`: per-package tags — pushing
   `<package>-v<version>` (e.g. `tool-runtime-v0.12.2`) publishes that one
-  package from GitHub Actions with OIDC provenance, exactly like denext; a
-  `deno-v<version>` tag publishes all 27 in lockstep. `deno/scripts/publish.sh
+  package from GitHub Actions with OIDC provenance, exactly like denext.
+  `deno task publish:changes` finds the packages whose version is not on
+  JSR (and flags packages that changed without a bump), then tags and pushes
+  them in dependency order, waiting for each run. `deno/scripts/publish.sh
   [--package <name>]` is the manual fallback; the two 0.12.0-era scripts are
   gone.
 - `deno task jsr:scores` writes `docs/jsr-scores.md` from JSR's score API.
