@@ -70,16 +70,44 @@ export interface CacheBackend {
   put(key: CacheKey, resp: CachedResponse): Promise<void>;
 }
 
-/** In-memory cache — the default backend. */
+/** Default {@link MemoryCache} capacity. */
+export const DEFAULT_MEMORY_CACHE_ENTRIES = 1000;
+
+/**
+ * In-memory cache — the default backend. Bounded: least-recently-used entries
+ * are evicted once `maxEntries` is exceeded, so a long-running process with
+ * many distinct prompts cannot grow without limit.
+ */
 export class MemoryCache implements CacheBackend {
   private readonly entries = new Map<string, CachedResponse>();
+  readonly maxEntries: number;
+
+  /** @param maxEntries Capacity; must be at least 1. */
+  constructor(maxEntries: number = DEFAULT_MEMORY_CACHE_ENTRIES) {
+    if (!Number.isInteger(maxEntries) || maxEntries < 1) {
+      throw new Error(
+        `maxEntries must be a positive integer (got ${maxEntries})`,
+      );
+    }
+    this.maxEntries = maxEntries;
+  }
 
   get(key: CacheKey): Promise<CachedResponse | null> {
-    return Promise.resolve(this.entries.get(key.value) ?? null);
+    const hit = this.entries.get(key.value);
+    if (hit !== undefined) {
+      // Refresh recency: Map iteration order is insertion order.
+      this.entries.delete(key.value);
+      this.entries.set(key.value, hit);
+    }
+    return Promise.resolve(hit ?? null);
   }
 
   put(key: CacheKey, resp: CachedResponse): Promise<void> {
+    this.entries.delete(key.value);
     this.entries.set(key.value, resp);
+    while (this.entries.size > this.maxEntries) {
+      this.entries.delete(this.entries.keys().next().value as string);
+    }
     return Promise.resolve();
   }
 

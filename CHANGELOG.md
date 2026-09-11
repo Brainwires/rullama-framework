@@ -83,6 +83,47 @@ sanitizer, were **advisory** — no execution path called any of them.
   `confinePathLexical` / `isWithin`, `compileBoundedRegex`, `safeFileName`,
   `safeFetch` / `checkUrl` / `isPrivateAddress` / `readCappedText`.
 
+#### Security (storage, memory, MCP server, telemetry, permission)
+
+- **`@rullama/storage`**: table and column names are validated as plain
+  identifiers before they are interpolated (values were already bound);
+  `LIMIT` must be a non-negative integer; `Filter.kind === "Raw"` is
+  **disabled by default** — pass `{ allowRaw: true }` to the builders or
+  `allowRawFilters: true` to a backend to re-enable it. Applies to Postgres,
+  MySQL and SurrealDB (new `backends/sql_guards.ts`).
+- **`@rullama/memory`**: `maxHotMessages` / `maxWarmSummaries` were declared
+  and never enforced; the oldest entries are now evicted past the cap.
+- **`@rullama/call-policy`**: `MemoryCache` is a bounded LRU
+  (`new MemoryCache(maxEntries)`, default 1000) instead of an unbounded map.
+- **`@rullama/mcp-server`**: rate limiting is keyed per client and the bucket
+  map is bounded (the tool name is attacker-controlled); the auth token is
+  compared in constant time and stripped from `params` before the handler and
+  logging see it; the stdio transport skips blank lines (a blank line used to
+  be treated as EOF and stopped the server) and rejects a line over 16 MiB
+  without a newline; `initialize` params are structurally validated
+  (`parseInitializeParams` — `{}` used to crash the serve loop); notifications
+  get no response (JSON-RPC 2.0 §4.1); server logs go to stderr, never to the
+  protocol channel. `McpServer` accepts a transport in its constructor.
+- **`@rullama/core`**: new `secrets.ts` — `SENSITIVE_PATTERNS`,
+  `redactSecrets`, `containsSecrets` — the one secret table, now shared by
+  `@rullama/tool-runtime`'s sanitizer and `@rullama/telemetry`'s
+  `redactSecrets` (which previously missed `sk-ant-`, `ghp_`, `AKIA`, JWTs
+  and PEM blocks).
+- **`@rullama/permission`**: `PathPattern` escapes `[`/`]` and a pattern that
+  does not compile matches nothing (it used to fall back to substring
+  matching, turning a broken deny rule into a no-op); the trust store and the
+  audit log are written owner-only (`0600`, directories `0700`) with a
+  portable `dirname`, and write failures are reported on stderr and exposed as
+  `lastError` instead of being swallowed.
+- **`@rullama/network`**: README states plainly that the layer is an
+  unauthenticated transport (no envelope signatures or replay protection —
+  planned for 0.13).
+- **`@rullama/storage`** internals: the Postgres and MySQL builders
+  (`filterToSql`, `buildCreateTable`, `buildInsert`, `buildSelect`,
+  `buildDelete`, `buildCount`) are one dialect-parameterised implementation
+  (`backends/sql_builder.ts`); the per-backend exports and their SQL output
+  are unchanged.
+
 #### Fixed
 
 - **CI**: the Deno job had failed on every run since 2026-07-01 — `tests/`

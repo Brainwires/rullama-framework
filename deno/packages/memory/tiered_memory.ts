@@ -259,15 +259,24 @@ export class TieredMemory {
         this.config.sessionTtlSecs;
     }
 
-    this.hotMessages.set(message.messageId, message);
-    this.tierMetadata.set(message.messageId, meta);
+    this.storeHot(message, meta);
   }
 
   /** Add a message with canonical authority. */
   addCanonicalMessage(message: MessageMetadata, importance: number): void {
     const meta = createTierMetadata(message.messageId, importance, "canonical");
+    this.storeHot(message, meta);
+  }
+
+  /** Insert into the hot tier, evicting the oldest entries past `maxHotMessages`. */
+  private storeHot(message: MessageMetadata, meta: TierMetadata): void {
     this.hotMessages.set(message.messageId, message);
     this.tierMetadata.set(message.messageId, meta);
+    while (this.hotMessages.size > this.config.maxHotMessages) {
+      const oldest = this.hotMessages.keys().next().value as string;
+      this.hotMessages.delete(oldest);
+      this.tierMetadata.delete(oldest);
+    }
   }
 
   /** Record access to a message. */
@@ -285,6 +294,11 @@ export class TieredMemory {
       meta.tier = "warm";
     }
     this.warmSummaries.set(summary.summaryId, summary);
+    while (this.warmSummaries.size > this.config.maxWarmSummaries) {
+      this.warmSummaries.delete(
+        this.warmSummaries.keys().next().value as string,
+      );
+    }
   }
 
   /** Demote a summary from warm to cold. */

@@ -58,15 +58,48 @@ export class RequestContext {
  * MCP server that processes JSON-RPC requests via a transport.
  * Equivalent to Rust `McpServer`.
  */
+/**
+ * Structurally validate `initialize` params. A client that sends `{}` (or
+ * nothing) previously crashed the serve loop on `params.clientInfo.name`.
+ */
+export function parseInitializeParams(raw: unknown): InitializeParams {
+  const p = (typeof raw === "object" && raw !== null ? raw : {}) as Record<
+    string,
+    unknown
+  >;
+  const client =
+    (typeof p.clientInfo === "object" && p.clientInfo !== null
+      ? p.clientInfo
+      : {}) as Record<string, unknown>;
+  return {
+    protocolVersion: typeof p.protocolVersion === "string"
+      ? p.protocolVersion
+      : "2024-11-05",
+    capabilities:
+      (typeof p.capabilities === "object" && p.capabilities !== null
+        ? p.capabilities
+        : {}) as InitializeParams["capabilities"],
+    clientInfo: {
+      name: typeof client.name === "string" ? client.name : "unknown",
+      version: typeof client.version === "string" ? client.version : "unknown",
+    },
+  };
+}
+
 export class McpServer {
   private handler: McpHandler;
   private middleware: MiddlewareChain;
   private transport: ServerTransport;
 
-  constructor(handler: McpHandler) {
+  /**
+   * @param handler The application handler.
+   * @param transport Transport to serve on (default: stdio). Passing one here
+   *   avoids opening stdin when the server will never use it (tests, embedding).
+   */
+  constructor(handler: McpHandler, transport?: ServerTransport) {
     this.handler = handler;
     this.middleware = new MiddlewareChain();
-    this.transport = new StdioServerTransport();
+    this.transport = transport ?? new StdioServerTransport();
   }
 
   /** Set a custom transport. Returns this for chaining. */
@@ -84,7 +117,7 @@ export class McpServer {
   /** Run the server event loop until the transport closes. */
   async run(): Promise<void> {
     const ctx = new RequestContext(null);
-    console.info("MCP Relay server starting");
+    console.error("MCP server starting");
 
     while (true) {
       let line: string | null;
@@ -96,7 +129,7 @@ export class McpServer {
       }
 
       if (line === null) {
-        console.debug("Transport closed (EOF)");
+        console.error("Transport closed (EOF)");
         break;
       }
 
@@ -134,6 +167,9 @@ export class McpServer {
       // Dispatch to handler
       const response = await this.handleRequest(request, ctx);
 
+      // JSON-RPC: a notification (no id) MUST NOT be answered.
+      if (request.id === undefined || request.id === null) continue;
+
       // Run response middleware
       await this.middleware.processResponse(response, ctx);
 
@@ -143,7 +179,7 @@ export class McpServer {
     if (this.handler.onShutdown) {
       await this.handler.onShutdown();
     }
-    console.info("MCP Relay server shut down");
+    console.error("MCP server shut down");
   }
 
   // deno-lint-ignore require-await
@@ -179,11 +215,7 @@ export class McpServer {
     request: JsonRpcRequest,
     ctx: RequestContext,
   ): Promise<JsonRpcResponse> {
-    const params = (request.params as InitializeParams) ?? {
-      protocolVersion: "2024-11-05",
-      capabilities: {},
-      clientInfo: { name: "unknown", version: "0.5.0" },
-    };
+    const params = parseInitializeParams(request.params);
 
     ctx.clientInfo = {
       name: params.clientInfo.name,

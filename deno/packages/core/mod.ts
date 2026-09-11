@@ -180,3 +180,11 @@ export {
   type FileContent,
   FileContextManager,
 } from "./file_context.ts";
+
+// Secret detection / redaction (shared by tool-runtime sanitization and telemetry)
+export {
+  containsSecrets,
+  redactSecrets,
+  SENSITIVE_PATTERNS,
+  type SensitivePattern,
+} from "./secrets.ts";

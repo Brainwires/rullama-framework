@@ -6,6 +6,13 @@ connectivity.
 
 Equivalent to the Rust `rullama-network` crate.
 
+> **Transport security.** `@rullama/network` is an _unauthenticated_ transport
+> layer: `MessageEnvelope.sender` is a self-asserted string and envelopes carry
+> no signature, nonce or timestamp check. Use it only between processes you
+> already trust (one host, one operator), or wrap it in an authenticated channel
+> (mTLS, an SSH tunnel, an authenticated WebSocket). Signed envelopes with
+> replay protection are planned for 0.13.
+
 ## Install
 
 ```sh

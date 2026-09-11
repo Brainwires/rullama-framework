@@ -1,4 +1,4 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { hashSessionId, redactSecrets } from "./pii.ts";
 
 Deno.test("hash is deterministic and short hex", async () => {
@@ -21,4 +21,27 @@ Deno.test("redact replaces obvious secrets", () => {
   );
   assert(r.includes("REDACTED"));
   assert(r.includes("plain-text"));
+});
+
+Deno.test("redactSecrets covers vendor key formats, JWTs and PEM blocks", () => {
+  const text = [
+    "anthropic sk-ant-abcdefghijklmnopqrstuvwxyz0123",
+    "github ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+    "aws AKIAIOSFODNN7EXAMPLE",
+    "jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc_def-ghi",
+    "password=hunter2xyz",
+  ].join("\n");
+  const out = redactSecrets(text);
+  for (
+    const leak of [
+      "sk-ant-",
+      "ghp_",
+      "AKIAIOSFODNN7EXAMPLE",
+      "eyJhbGci",
+      "hunter2xyz",
+    ]
+  ) {
+    assert(!out.includes(leak), `${leak} leaked: ${out}`);
+  }
+  assertStringIncludes(out, "[REDACTED:");
 });

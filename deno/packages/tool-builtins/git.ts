@@ -350,6 +350,17 @@ export class GitTool {
     };
   }
 
+  /** Run a git command; throw `<label> failed: <stderr>` on a non-zero exit. */
+  private static async runOrThrow(
+    args: string[],
+    cwd: string,
+    label: string,
+  ): Promise<{ stdout: string; stderr: string }> {
+    const result = await GitTool.runGit(args, cwd);
+    if (!result.success) throw new Error(`${label} failed: ${result.stderr}`);
+    return result;
+  }
+
   /** Run a git command and return stdout. */
   private static async runGit(
     args: string[],
@@ -468,10 +479,11 @@ export class GitTool {
     args.push(remote);
     if (branch) args.push(branch);
 
-    const result = await GitTool.runGit(args, context.working_directory);
-    if (!result.success) {
-      throw new Error(`Push failed: ${result.stderr}`);
-    }
+    const result = await GitTool.runOrThrow(
+      args,
+      context.working_directory,
+      "Push",
+    );
     return `Push successful:\n${result.stdout}${result.stderr}`;
   }
 
@@ -485,10 +497,11 @@ export class GitTool {
     args.push(remote);
     if (branch) args.push(branch);
 
-    const result = await GitTool.runGit(args, context.working_directory);
-    if (!result.success) {
-      throw new Error(`Pull failed: ${result.stderr}`);
-    }
+    const result = await GitTool.runOrThrow(
+      args,
+      context.working_directory,
+      "Pull",
+    );
     return `Pull successful:\n${result.stdout}`;
   }
 
@@ -505,10 +518,11 @@ export class GitTool {
     }
     if (input.prune) args.push("--prune");
 
-    const result = await GitTool.runGit(args, context.working_directory);
-    if (!result.success) {
-      throw new Error(`Fetch failed: ${result.stderr}`);
-    }
+    const result = await GitTool.runOrThrow(
+      args,
+      context.working_directory,
+      "Fetch",
+    );
     const fetchOutput = (!result.stdout && !result.stderr)
       ? "Already up to date."
       : `${result.stdout}${result.stderr}`;

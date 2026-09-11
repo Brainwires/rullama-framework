@@ -131,52 +131,47 @@ export class PathPattern {
  * This is a pragmatic port — it covers the patterns used in the
  * Rust crate without pulling in a full glob library.
  */
+/** Regex metacharacters that are literal in a glob and must be escaped. */
+const GLOB_ESCAPED = new Set([
+  "(",
+  ")",
+  "{",
+  "}",
+  "+",
+  "|",
+  "^",
+  "$",
+  "\\",
+  "[",
+  "]",
+  ".",
+]);
+
+/** Translate the glob token at `i`: returns the regex fragment and its length. */
+function globToken(pattern: string, i: number): [string, number] {
+  if (pattern.startsWith("**/", i)) return ["(?:.*/)?", 3];
+  if (pattern.startsWith("**", i)) return [".*", 2];
+  const c = pattern[i];
+  if (c === "*") return ["[^/]*", 1];
+  if (c === "?") return ["[^/]", 1];
+  return [GLOB_ESCAPED.has(c) ? `\\${c}` : c, 1];
+}
+
 function globMatch(pattern: string, path: string): boolean {
-  // Convert glob pattern to regex
   let regexStr = "^";
-  let i = 0;
-  while (i < pattern.length) {
-    const c = pattern[i];
-    if (c === "*") {
-      if (i + 1 < pattern.length && pattern[i + 1] === "*") {
-        // `**` — match anything (including slashes)
-        i += 2;
-        if (i < pattern.length && pattern[i] === "/") {
-          i++; // skip trailing slash after **
-          regexStr += "(?:.*/)?";
-        } else {
-          regexStr += ".*";
-        }
-      } else {
-        // `*` — match anything except `/`
-        regexStr += "[^/]*";
-        i++;
-      }
-    } else if (c === "?") {
-      regexStr += "[^/]";
-      i++;
-    } else if (c === ".") {
-      regexStr += "\\.";
-      i++;
-    } else if (
-      c === "(" || c === ")" || c === "{" || c === "}" || c === "+" ||
-      c === "|" || c === "^" || c === "$" || c === "\\"
-    ) {
-      regexStr += "\\" + c;
-      i++;
-    } else {
-      regexStr += c;
-      i++;
-    }
+  for (let i = 0; i < pattern.length;) {
+    const [fragment, consumed] = globToken(pattern, i);
+    regexStr += fragment;
+    i += consumed;
   }
   regexStr += "$";
-
   try {
-    const re = new RegExp(regexStr);
-    return re.test(path);
+    return new RegExp(regexStr).test(path);
   } catch {
-    // Fall back to simple string matching if pattern is invalid
-    return path.includes(pattern);
+    // A pattern that does not compile matches NOTHING. (It used to fall back
+    // to substring matching, which turned a broken deny rule into a no-op and
+    // a broken allow rule into an over-broad one.)
+    return false;
   }
 }
 

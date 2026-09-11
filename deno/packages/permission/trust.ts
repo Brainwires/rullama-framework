@@ -15,6 +15,8 @@
  *
  * Rust equivalent: `TrustLevel` enum (serde `rename_all = "lowercase"`)
  */
+import { dirname } from "@std/path";
+
 export type TrustLevel = "untrusted" | "low" | "medium" | "high" | "system";
 
 /** Numeric value for a trust level (matches Rust discriminant). */
@@ -333,6 +335,7 @@ export interface TrustStatistics {
  * Rust equivalent: `TrustManager` struct
  */
 export class TrustManager {
+  #lastError: Error | undefined;
   #factors: Map<string, TrustFactor> = new Map();
   #storePath: string;
   #persist: boolean;
@@ -394,17 +397,28 @@ export class TrustManager {
   save(): void {
     if (!this.#persist) return;
     try {
-      const parent = this.#storePath.substring(
-        0,
-        this.#storePath.lastIndexOf("/"),
-      );
-      if (parent) Deno.mkdirSync(parent, { recursive: true });
+      // Owner-only: the store holds per-agent trust scores.
+      Deno.mkdirSync(dirname(this.#storePath), {
+        recursive: true,
+        mode: 0o700,
+      });
       const store = {
         factors: Object.fromEntries(this.#factors),
         last_saved: new Date().toISOString(),
       };
-      Deno.writeTextFileSync(this.#storePath, JSON.stringify(store, null, 2));
-    } catch { /* ignore */ }
+      Deno.writeTextFileSync(this.#storePath, JSON.stringify(store, null, 2), {
+        mode: 0o600,
+      });
+      this.#lastError = undefined;
+    } catch (e) {
+      this.#lastError = e instanceof Error ? e : new Error(String(e));
+      console.error(`TrustManager: failed to save ${this.#storePath}: ${e}`);
+    }
+  }
+
+  /** The most recent persistence failure, if the last save() did not succeed. */
+  get lastError(): Error | undefined {
+    return this.#lastError;
   }
 
   /** Get or create a trust factor for an agent. Rust equivalent: `TrustManager::get_or_create()` */

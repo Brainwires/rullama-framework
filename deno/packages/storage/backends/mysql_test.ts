@@ -4,7 +4,7 @@
  * These tests exercise the pure helper functions (no live MySQL server required).
  */
 
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertThrows } from "@std/assert";
 import {
   buildCount,
   buildCreateTable,
@@ -161,7 +161,11 @@ Deno.test("filterToSql - empty And / Or", () => {
 });
 
 Deno.test("filterToSql - Raw expression", () => {
-  const [sql, vals] = filterToSql(Filters.Raw("custom_fn(col) > 0"));
+  // Disabled unless explicitly allowed.
+  assertThrows(() => filterToSql(Filters.Raw("custom_fn(col) > 0")));
+  const [sql, vals] = filterToSql(Filters.Raw("custom_fn(col) > 0"), {
+    allowRaw: true,
+  });
   assertEquals(sql, "custom_fn(col) > 0");
   assertEquals(vals.length, 0);
 });

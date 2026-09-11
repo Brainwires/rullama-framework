@@ -119,7 +119,9 @@ Deno.test("filterToSql - empty And / Or", () => {
 });
 
 Deno.test("filterToSql - Raw expression", () => {
-  const [sql, vals] = filterToSql(Filters.Raw("custom_fn(col) > 0"), 1);
+  const [sql, vals] = filterToSql(Filters.Raw("custom_fn(col) > 0"), 1, {
+    allowRaw: true,
+  });
   assertEquals(sql, "custom_fn(col) > 0");
   assertEquals(vals.length, 0);
 });

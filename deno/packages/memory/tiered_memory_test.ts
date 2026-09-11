@@ -288,3 +288,38 @@ Deno.test("TieredMemory - stats", () => {
   assertEquals(stats.coldCount, 0);
   assertEquals(stats.totalTracked, 2);
 });
+
+Deno.test("TieredMemory enforces maxHotMessages and maxWarmSummaries", () => {
+  const memory = new TieredMemory({
+    ...defaultTieredMemoryConfig(),
+    maxHotMessages: 3,
+    maxWarmSummaries: 2,
+  });
+  for (let i = 0; i < 5; i++) {
+    memory.addMessage(
+      {
+        messageId: `m${i}`,
+        conversationId: "c",
+        role: "user",
+        timestamp: i,
+        tokenCount: 1,
+      } as never,
+      0.5,
+    );
+  }
+  const stats = memory.getStats();
+  assertEquals(stats.hotCount, 3);
+  for (let i = 0; i < 4; i++) {
+    memory.demoteToWarm(
+      `m${i}`,
+      {
+        summaryId: `s${i}`,
+        conversationId: "c",
+        content: "…",
+        messageIds: [],
+        createdAt: i,
+      } as never,
+    );
+  }
+  assertEquals(memory.getStats().warmCount, 2);
+});

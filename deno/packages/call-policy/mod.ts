@@ -36,6 +36,7 @@ export {
   type CachedResponse,
   type CacheKey,
   cacheKeyFor,
+  DEFAULT_MEMORY_CACHE_ENTRIES,
   MemoryCache,
 } from "./cache.ts";
 export {

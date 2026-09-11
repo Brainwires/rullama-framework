@@ -16,6 +16,12 @@ import type {
   Record as BwRecord,
   ScoredRecord,
 } from "../types.ts";
+import {
+  assertIdentifier,
+  assertLimit,
+  assertRawAllowed,
+  type FilterBuildOptions,
+} from "./sql_guards.ts";
 
 const DEFAULT_URL = "ws://localhost:8000";
 
@@ -68,10 +74,31 @@ export function fieldValueToJson(fv: FieldValue): unknown {
  * Returns `[sql, bindings]` where bindings is `[paramName, jsonValue][]`.
  * `paramOffset` is mutated to track the next parameter index.
  */
+/** Join sub-filters with `op`; `empty` is the SurrealQL for an empty list. */
+function combineSurreal(
+  filters: Filter[],
+  op: "AND" | "OR",
+  empty: string,
+  paramOffset: { value: number },
+  options: FilterBuildOptions | undefined,
+): [string, [string, unknown][]] {
+  if (filters.length === 0) return [empty, []];
+  const parts: string[] = [];
+  const allBinds: [string, unknown][] = [];
+  for (const f of filters) {
+    const [sql, binds] = filterToSurrealQL(f, paramOffset, options);
+    parts.push(sql);
+    allBinds.push(...binds);
+  }
+  return [`(${parts.join(` ${op} `)})`, allBinds];
+}
+
 export function filterToSurrealQL(
   filter: Filter,
   paramOffset: { value: number },
+  options?: FilterBuildOptions,
 ): [string, [string, unknown][]] {
+  if ("field" in filter) assertIdentifier(filter.field, "field");
   switch (filter.kind) {
     case "Eq": {
       const name = `p${paramOffset.value++}`;
@@ -125,30 +152,24 @@ export function filterToSurrealQL(
       const arr = filter.values.map(fieldValueToJson);
       return [`${filter.field} IN $${name}`, [[name, arr]]];
     }
-    case "And": {
-      if (filter.filters.length === 0) return ["true", []];
-      const parts: string[] = [];
-      const allBinds: [string, unknown][] = [];
-      for (const f of filter.filters) {
-        const [sql, binds] = filterToSurrealQL(f, paramOffset);
-        parts.push(sql);
-        allBinds.push(...binds);
-      }
-      return [`(${parts.join(" AND ")})`, allBinds];
-    }
-    case "Or": {
-      if (filter.filters.length === 0) return ["false", []];
-      const parts: string[] = [];
-      const allBinds: [string, unknown][] = [];
-      for (const f of filter.filters) {
-        const [sql, binds] = filterToSurrealQL(f, paramOffset);
-        parts.push(sql);
-        allBinds.push(...binds);
-      }
-      return [`(${parts.join(" OR ")})`, allBinds];
-    }
+    case "And":
+      return combineSurreal(
+        filter.filters,
+        "AND",
+        "true",
+        paramOffset,
+        options,
+      );
+    case "Or":
+      return combineSurreal(
+        filter.filters,
+        "OR",
+        "false",
+        paramOffset,
+        options,
+      );
     case "Raw":
-      return [filter.expression, []];
+      return [assertRawAllowed(filter.expression, options), []];
   }
 }
 
@@ -203,6 +224,8 @@ export interface SurrealConfig {
   username?: string;
   /** Password (default: "root"). */
   password?: string;
+  /** Allow `Filter.kind === "Raw"` (verbatim SurrealQL). Default: false. */
+  allowRawFilters?: boolean;
 }
 
 /**
@@ -213,7 +236,10 @@ export class SurrealDatabase implements StorageBackend {
   private connected = false;
   private config: SurrealConfig;
 
+  private readonly filterOptions: FilterBuildOptions;
+
   constructor(config: SurrealConfig) {
+    this.filterOptions = { allowRaw: config.allowRawFilters ?? false };
     this.db = new Surreal();
     this.config = config;
   }
@@ -260,11 +286,13 @@ export class SurrealDatabase implements StorageBackend {
   // ── StorageBackend ─────────────────────────────────────────────────
 
   async ensureTable(tableName: string, schema: FieldDef[]): Promise<void> {
+    assertIdentifier(tableName, "table name");
     let ddl = `DEFINE TABLE IF NOT EXISTS ${tableName} SCHEMAFULL;\n`;
 
     for (const field of schema) {
       const surealType = fieldTypeToSurrealQL(field.fieldType);
       const typeExpr = field.nullable ? `option<${surealType}>` : surealType;
+      assertIdentifier(field.name, "field");
       ddl += `DEFINE FIELD ${field.name} ON ${tableName} TYPE ${typeExpr};\n`;
 
       if (field.fieldType.kind === "Vector") {
@@ -287,10 +315,24 @@ export class SurrealDatabase implements StorageBackend {
       for (const [name, value] of record) {
         obj[name] = fieldValueToJson(value);
       }
+      assertIdentifier(tableName, "table name");
       batch += `CREATE ${tableName} CONTENT ${JSON.stringify(obj)};\n`;
     }
     batch += "COMMIT TRANSACTION;\n";
     await this.db.query(batch);
+  }
+
+  /** ` WHERE …` (or empty) plus named bindings for an optional filter. */
+  private whereClause(
+    filter: Filter | undefined,
+  ): [string, Record<string, unknown>] {
+    if (!filter) return ["", {}];
+    const [whereSql, whereBinds] = filterToSurrealQL(
+      filter,
+      { value: 0 },
+      this.filterOptions,
+    );
+    return [` WHERE ${whereSql}`, Object.fromEntries(whereBinds)];
   }
 
   async query(
@@ -298,19 +340,11 @@ export class SurrealDatabase implements StorageBackend {
     filter?: Filter,
     limit?: number,
   ): Promise<BwRecord[]> {
-    let sql = `SELECT * FROM ${tableName}`;
-    const bindings: Record<string, unknown> = {};
-
-    if (filter) {
-      const offset = { value: 0 };
-      const [whereSql, whereBinds] = filterToSurrealQL(filter, offset);
-      sql += ` WHERE ${whereSql}`;
-      for (const [name, val] of whereBinds) {
-        bindings[name] = val;
-      }
-    }
+    assertIdentifier(tableName, "table name");
+    const [where, bindings] = this.whereClause(filter);
+    let sql = `SELECT * FROM ${tableName}${where}`;
     if (limit !== undefined) {
-      sql += ` LIMIT ${limit}`;
+      sql += ` LIMIT ${assertLimit(limit)}`;
     }
 
     const rows = await this.runQuery(sql, bindings) as Record<
@@ -322,7 +356,11 @@ export class SurrealDatabase implements StorageBackend {
 
   async delete(tableName: string, filter: Filter): Promise<void> {
     const offset = { value: 0 };
-    const [whereSql, whereBinds] = filterToSurrealQL(filter, offset);
+    const [whereSql, whereBinds] = filterToSurrealQL(
+      filter,
+      offset,
+      this.filterOptions,
+    );
     const bindings: Record<string, unknown> = {};
     for (const [name, val] of whereBinds) {
       bindings[name] = val;
@@ -334,18 +372,9 @@ export class SurrealDatabase implements StorageBackend {
   }
 
   async count(tableName: string, filter?: Filter): Promise<number> {
-    let sql = `SELECT count() AS total FROM ${tableName}`;
-    const bindings: Record<string, unknown> = {};
-
-    if (filter) {
-      const offset = { value: 0 };
-      const [whereSql, whereBinds] = filterToSurrealQL(filter, offset);
-      sql += ` WHERE ${whereSql}`;
-      for (const [name, val] of whereBinds) {
-        bindings[name] = val;
-      }
-    }
-    sql += " GROUP ALL";
+    assertIdentifier(tableName, "table name");
+    const [where, bindings] = this.whereClause(filter);
+    const sql = `SELECT count() AS total FROM ${tableName}${where} GROUP ALL`;
 
     const rows = await this.runQuery(sql, bindings) as Record<
       string,
@@ -369,7 +398,11 @@ export class SurrealDatabase implements StorageBackend {
     let whereExtra = "";
     if (filter) {
       const offset = { value: 0 };
-      const [whereSql, whereBinds] = filterToSurrealQL(filter, offset);
+      const [whereSql, whereBinds] = filterToSurrealQL(
+        filter,
+        offset,
+        this.filterOptions,
+      );
       whereExtra = ` AND ${whereSql}`;
       for (const [name, val] of whereBinds) {
         bindings[name] = val;

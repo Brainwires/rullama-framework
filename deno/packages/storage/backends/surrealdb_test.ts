@@ -208,7 +208,9 @@ Deno.test("filterToSurrealQL - empty And / Or", () => {
 
 Deno.test("filterToSurrealQL - Raw", () => {
   const offset = { value: 0 };
-  const [sql, binds] = filterToSurrealQL(Filters.Raw("custom_fn()"), offset);
+  const [sql, binds] = filterToSurrealQL(Filters.Raw("custom_fn()"), offset, {
+    allowRaw: true,
+  });
   assertEquals(sql, "custom_fn()");
   assertEquals(binds.length, 0);
 });
