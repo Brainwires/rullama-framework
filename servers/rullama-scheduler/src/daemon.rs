@@ -446,11 +446,22 @@ mod tests {
     }
 
     #[test]
-    fn next_fire_after_hourly_is_within_one_hour() {
-        let base = Utc::now();
-        let t = next_fire_after("0 * * * *", base).unwrap();
-        let diff = (t - base).num_seconds();
-        assert!(diff > 0 && diff <= 3600);
+    fn next_fire_after_hourly_is_the_next_top_of_the_hour() {
+        // Fixed bases, including the last second of an hour. A wall-clock base
+        // used to flake there: 0.4 s to the next fire truncated to 0 seconds.
+        for (base, want) in [
+            ("2026-01-01T12:34:56.789Z", "2026-01-01T13:00:00Z"),
+            ("2026-01-01T12:59:59.600Z", "2026-01-01T13:00:00Z"),
+            ("2026-01-01T13:00:00Z", "2026-01-01T14:00:00Z"),
+        ] {
+            let base: DateTime<Utc> = base.parse().unwrap();
+            let want: DateTime<Utc> = want.parse().unwrap();
+            assert_eq!(
+                next_fire_after("0 * * * *", base),
+                Some(want),
+                "from {base}"
+            );
+        }
     }
 
     // ── is_due ────────────────────────────────────────────────────────────────
