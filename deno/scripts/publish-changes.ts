@@ -195,11 +195,22 @@ function settle(tag: string, info: RunInfo): void {
   );
 }
 
+/** `latestRun`, but a transient gh or network failure reads as "not known yet". */
+function pollRun(tag: string): RunInfo | null {
+  try {
+    return latestRun(tag);
+  } catch (e) {
+    const reason = (e as Error).message.split("\n")[0];
+    console.error(`  (poll failed, retrying: ${reason})`);
+    return null;
+  }
+}
+
 async function waitForRun(tag: string): Promise<void> {
   console.log(`  waiting for the publish workflow run of ${tag} …`);
   for (let i = 0; i < 120; i++) {
     await sleep(15_000);
-    const info = latestRun(tag);
+    const info = pollRun(tag);
     if (info?.status === "completed") return settle(tag, info);
   }
   throw new Error(`timed out waiting for the publish run of ${tag}`);
@@ -213,11 +224,17 @@ function remoteHasTag(tag: string): boolean {
   return run("git", ["ls-remote", "--tags", "origin", ref], REPO) !== "";
 }
 
-/** Re-run the last publish run of a tag that is already on origin. */
+/**
+ * Re-run the last publish run of a tag that is already on origin. A run that
+ * is still going is left alone; the caller waits for it.
+ */
 function rerunPublish(tag: string): void {
   const last = latestRun(tag);
   if (!last) {
     throw new Error(`${tag} is on origin but has no publish run to re-run`);
+  }
+  if (last.status !== "completed") {
+    return console.log(`${tag}: publish run already in progress ${last.url}`);
   }
   run("gh", ["run", "rerun", String(last.databaseId)]);
   console.log(`re-running ${last.url} (${tag} is already on origin)`);
