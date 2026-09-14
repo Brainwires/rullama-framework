@@ -14,7 +14,7 @@ import {
   type TaskBid,
 } from "@rullama/agent";
 
-async function main() {
+function main(): void {
   console.log("=== Contract-Net Bidding Protocol ===\n");
 
   // 1. Create a task announcement with requirements
@@ -163,4 +163,4 @@ async function main() {
   console.log("\nContract-Net demo complete.");
 }
 
-await main();
+main();

@@ -1,6 +1,9 @@
-import { assertEquals, assertThrows } from "@std/assert";
+import { assert, assertEquals, assertThrows } from "@std/assert";
+import { BedrockProvider } from "./bedrock.ts";
+import { VertexAiProvider } from "./vertex.ts";
+import { PROVIDER_REGISTRY } from "./registry.ts";
 import { ChatProviderFactory } from "./factory.ts";
-import type { ProviderConfig } from "./types.ts";
+import { defaultModel, type ProviderConfig } from "./types.ts";
 
 Deno.test("ChatProviderFactory.create - ollama no key required", () => {
   const config: ProviderConfig = {
@@ -128,4 +131,40 @@ Deno.test("ChatProviderFactory.create - ollama with custom url", () => {
   };
   const provider = ChatProviderFactory.create(config);
   assertEquals(provider.name, "ollama");
+});
+
+Deno.test("factory: bedrock and vertex-ai resolve to their own providers, not the wire-format lookalikes", () => {
+  const bedrock = ChatProviderFactory.create({
+    provider: "bedrock",
+    model: "anthropic.claude-sonnet-4-20250514-v1:0",
+    options: {
+      region: "us-east-1",
+      access_key_id: "AKIA",
+      secret_access_key: "s",
+    },
+  } as ProviderConfig);
+  assert(bedrock instanceof BedrockProvider);
+  const vertex = ChatProviderFactory.create({
+    provider: "vertex-ai",
+    model: "gemini-2.0-flash",
+    options: {
+      project_id: "p",
+      credentials: {
+        client_email: "e",
+        private_key: "k",
+        token_uri: "https://oauth2.googleapis.com/token",
+      },
+    },
+  } as ProviderConfig);
+  assert(vertex instanceof VertexAiProvider);
+});
+
+Deno.test("registry default models agree with defaultModel()", () => {
+  for (const entry of PROVIDER_REGISTRY) {
+    assertEquals(
+      entry.default_model,
+      defaultModel(entry.provider_type),
+      entry.provider_type,
+    );
+  }
 });

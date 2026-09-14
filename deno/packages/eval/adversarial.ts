@@ -1,12 +1,12 @@
 /**
- * Adversarial test cases for robustness evaluation.
+ * Adversarial test-case templates for robustness evaluation: prompt
+ * injection, ambiguous instructions, missing context and budget exhaustion,
+ * plus `standardAdversarialSuite` bundling all of them. The templates produce
+ * inputs and payloads only — wire each one to a concrete `EvaluationCase`
+ * (or a closure) that passes the payload to the agent under test.
+ * Equivalent to Rust's `rullama_eval::adversarial`.
  *
- * The test cases in this module are *structural templates* — they produce
- * test inputs / payloads but do **not** execute agent code themselves.
- * Wire them up with a closure or a concrete {@link EvaluationCase} impl that
- * passes the payload to your agent under test.
- *
- * Equivalent to Rust's `rullama_agents::eval::adversarial` module.
+ * @module
  */
 
 // ─── Adversarial test type ─────────────────────────────────────────────────

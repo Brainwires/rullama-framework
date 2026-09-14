@@ -7,18 +7,27 @@
  * `rullama-inference` crate. Provides:
  *
  * - **AgentRuntime / runAgentLoop** — generic execution loop
- * - **TaskAgent** — concrete agent with provider + tool loop
- * - **AgentContext** — environment bundle
- * - **JudgeAgent / PlannerAgent / ValidatorAgent** — LLM-driven helpers
- * - **CycleOrchestrator** — Plan → Work → Judge loop
- * - **PlanExecutorAgent** — plan execution
- * - **ValidationLoop** — quality checks
+ * - **TaskAgent / spawnTaskAgent** — concrete agent with provider + tool loop
+ * - **AgentContext** — environment bundle; wraps the tool executor in
+ *   `@rullama/tool-runtime`'s enforcing executor by default
+ *   (`enforcement: false` opts out)
+ * - **AgentPool** — bounded pool of concurrent `TaskAgent`s
+ * - **ValidatorAgent** / **runValidation** — read-only quality gates
+ * - **PlanExecutorAgent** — plan execution with approval modes
+ * - **Judge / Planner helpers** — prompt builders and parsers
+ *   (`judgeAgentPrompt`, `parseVerdict`, `plannerAgentPrompt`,
+ *   `parsePlannerOutput`, `validateTaskGraph`) plus their config types. There
+ *   are no `JudgeAgent` / `PlannerAgent` classes; drive a `TaskAgent` with the
+ *   prompt and parse its output.
+ * - **Cycle orchestration** — `CycleOrchestratorConfig` / `CycleRecord` /
+ *   `CycleOrchestratorResult` types only; the Plan → Work → Judge loop itself
+ *   is not ported.
  * - **AgentLifecycleHooks** — hook interface for telemetry/observability
  * - **AgentRole** — least-privilege tool restriction by role
  * - **system_prompts** — canonical prompt registry
  *
  * Coordination primitives (communication, locks, task manager/queue,
- * patterns) stay in `@rullama/agents` / `@rullama/agent`.
+ * patterns) stay in `@rullama/agent`.
  */
 
 export * from "./runtime.ts";
@@ -34,16 +43,16 @@ export * from "./validation_loop.ts";
 export * from "./roles.ts";
 export * from "./agent_pool.ts";
 
-// System prompt registry. `judgeAgentPrompt` and `plannerAgentPrompt` exist in
-// two places (judge_agent.ts / planner_agent.ts with drifted wording vs the
-// canonical system_prompts/agents.ts version). We export the canonical
-// versions aliased — consumers wanting strict Rust↔Deno parity should use
-// `canonicalJudgeAgentPrompt` / `canonicalPlannerAgentPrompt`.
+// System prompt registry. `judgeAgentPrompt` / `plannerAgentPrompt` have one
+// implementation (system_prompts/agents.ts); the `canonical*` aliases are kept
+// for 0.12 compatibility and are removed in 0.13.
 export {
   type AgentPromptKind,
   buildAgentPrompt,
+  /** @deprecated Use `judgeAgentPrompt`. */
   judgeAgentPrompt as canonicalJudgeAgentPrompt,
   mdapMicroagentPrompt,
+  /** @deprecated Use `plannerAgentPrompt`. */
   plannerAgentPrompt as canonicalPlannerAgentPrompt,
   reasoningAgentPrompt,
   simpleAgentPrompt,

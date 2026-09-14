@@ -1,9 +1,12 @@
 /**
- * Tool Search — meta-tool for discovering available tools dynamically.
+ * The `search_tools` meta-tool for discovering deferred tools at run time.
+ * `ToolSearchTool` searches a `ToolRegistry` by keyword or regex and, when a
+ * `ToolEmbeddingIndex` is supplied, by embedding similarity (`semantic` mode
+ * returns an error result without one), so an agent can start with a small tool
+ * set and pull in more as needed.
+ * Equivalent to Rust's `rullama_tool_runtime::tool_search`.
  *
- * Equivalent to Rust's `rullama_tools::tool_search` module. The semantic
- * search mode is deferred until an embedding backend lands in the Deno
- * `@rullama/knowledge` package; requesting it returns a clear error.
+ * @module
  */
 
 import {
@@ -97,7 +100,8 @@ export class ToolSearchTool {
     }
   }
 
-  private static async searchTools(
+  /** Run `search_tools` in keyword, regex or semantic mode. */
+  private static searchTools(
     input: Record<string, unknown>,
     registry: ToolRegistry,
     embeddingIndex: ToolEmbeddingIndex | undefined,
@@ -111,8 +115,10 @@ export class ToolSearchTool {
 
     if (mode === "semantic") {
       if (!embeddingIndex) {
-        throw new Error(
-          "Semantic search mode requires a ToolEmbeddingIndex. Pass one to ToolSearchTool.execute or use 'keyword'/'regex' mode instead.",
+        return Promise.reject(
+          new Error(
+            "Semantic search mode requires a ToolEmbeddingIndex. Pass one to ToolSearchTool.execute or use 'keyword'/'regex' mode instead.",
+          ),
         );
       }
       return ToolSearchTool.searchSemantic(
@@ -126,8 +132,10 @@ export class ToolSearchTool {
     }
 
     if (mode === "regex" && query.length > MAX_REGEX_LENGTH) {
-      throw new Error(
-        `Regex pattern exceeds maximum length of ${MAX_REGEX_LENGTH} characters (got ${query.length})`,
+      return Promise.reject(
+        new Error(
+          `Regex pattern exceeds maximum length of ${MAX_REGEX_LENGTH} characters (got ${query.length})`,
+        ),
       );
     }
 
@@ -136,8 +144,10 @@ export class ToolSearchTool {
       try {
         regex = new RegExp(query);
       } catch (e) {
-        throw new Error(
-          `Invalid regex pattern '${query}': ${(e as Error).message}`,
+        return Promise.reject(
+          new Error(
+            `Invalid regex pattern '${query}': ${(e as Error).message}`,
+          ),
         );
       }
     }
@@ -159,16 +169,17 @@ export class ToolSearchTool {
     });
 
     if (matching.length === 0) {
-      return `No tools found matching query: "${query}"`;
+      return Promise.resolve(`No tools found matching query: "${query}"`);
     }
 
     let result = `Found ${matching.length} tools matching "${query}":\n\n`;
     for (const tool of matching) {
       result += ToolSearchTool.formatTool(tool, null);
     }
-    return result;
+    return Promise.resolve(result);
   }
 
+  /** Semantic search over `embeddingIndex`. */
   private static async searchSemantic(
     query: string,
     registry: ToolRegistry,

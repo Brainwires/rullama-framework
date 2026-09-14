@@ -1,8 +1,14 @@
 /**
- * MDAP - MAKER voting framework
+ * @module @rullama/mdap
  *
- * Multi-Dimensional Adaptive Planning system implementing the MAKER paper's
- * approach to reliable agent execution through:
+ * Multi-Dimensional Adaptive Planning — the MAKER voting framework for
+ * reliable multi-step agent execution. Provides first-to-ahead-by-k
+ * consensus voting (with RASC early stopping, confidence weighting and Borda
+ * count), red-flag validation of microagent outputs, task decomposition and
+ * composition helpers, cost/probability scaling laws, execution metrics and
+ * structured tool-intent parsing. Equivalent to Rust's `rullama-mdap` crate.
+ *
+ * Building blocks:
  *
  * - **Voting**: First-to-ahead-by-k consensus algorithm for error correction
  * - **Microagents**: Minimal context single-step agents (m=1 decomposition)

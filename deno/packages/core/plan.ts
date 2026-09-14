@@ -25,25 +25,47 @@ export function parsePlanStatus(s: string): PlanStatus | undefined {
 /** Metadata for a persisted execution plan.
  * Equivalent to Rust's `PlanMetadata` in rullama-core. */
 export class PlanMetadata {
+  /** Random UUID identifying the plan. */
   plan_id: string;
+  /** Conversation the plan belongs to. */
   conversation_id: string;
+  /** First line of the task description, truncated to 50 characters. */
   title: string;
+  /** The task the plan was written for. */
   task_description: string;
+  /** The plan text itself (markdown). */
   plan_content: string;
+  /** Model that generated the plan, if recorded. */
   model_id?: string;
+  /** Current lifecycle status. */
   status: PlanStatus;
+  /** True once the plan has been run (see {@link PlanMetadata.markExecuted}). */
   executed: boolean;
+  /** Agent iterations consumed while executing the plan. */
   iterations_used: number;
+  /** Unix timestamp (seconds) when the plan was created. */
   created_at: number;
+  /** Unix timestamp (seconds) of the last mutation. */
   updated_at: number;
+  /** Path the plan was exported to, once {@link PlanMetadata.setFilePath} has been called. */
   file_path?: string;
+  /** Embedding vector of the plan, for similarity lookup. */
   embedding?: number[];
+  /** ID of the plan this one branched from; undefined for a root plan. */
   parent_plan_id?: string;
+  /** IDs of plans branched from this one. */
   child_plan_ids: string[];
+  /** Name given to this branch when it was created from its parent. */
   branch_name?: string;
+  /** True once the branch has been merged back into its parent. */
   merged: boolean;
+  /** Nesting depth: 0 for a root plan, parent depth + 1 for a branch. */
   depth: number;
 
+  /**
+   * Create a draft plan with a fresh UUID; the title is derived from the
+   * first line of `taskDescription`.
+   */
   constructor(
     conversationId: string,
     taskDescription: string,
@@ -179,20 +201,29 @@ ${this.plan_content}
 /** A single step in a serializable pre-execution plan.
  * Equivalent to Rust's `PlanStep` in rullama-core. */
 export interface PlanStep {
+  /** 1-based position of the step within the plan. */
   step_number: number;
+  /** What the step does. */
   description: string;
+  /** Name of the tool the step is expected to use, if the model suggested one. */
   tool_hint?: string;
+  /** Model's estimate of the tokens the step will consume. */
   estimated_tokens: number;
 }
 
 /** Budget constraints for a serializable plan.
  * Equivalent to Rust's `PlanBudget` in rullama-core. */
 export class PlanBudget {
+  /** Maximum number of steps a plan may have; unlimited when undefined. */
   max_steps?: number;
+  /** Maximum total estimated tokens; unlimited when undefined. */
   max_estimated_tokens?: number;
+  /** Maximum estimated cost in USD; unlimited when undefined. */
   max_estimated_cost_usd?: number;
+  /** USD per token used to turn the token estimate into a cost (default 0.000003). */
   cost_per_token: number;
 
+  /** Create an unlimited budget with the default per-token cost. */
   constructor() {
     this.cost_per_token = 0.000003;
   }
@@ -245,11 +276,16 @@ export class PlanBudget {
 /** A serializable execution plan.
  * Equivalent to Rust's `SerializablePlan` in rullama-core. */
 export class SerializablePlan {
+  /** Random UUID identifying the plan. */
   plan_id: string;
+  /** The task the plan was written for. */
   task_description: string;
+  /** Ordered steps of the plan. */
   steps: PlanStep[];
+  /** Unix timestamp (seconds) when the plan was created. */
   created_at: number;
 
+  /** Create a plan for `taskDescription` from already-parsed steps. */
   constructor(taskDescription: string, steps: PlanStep[]) {
     this.plan_id = crypto.randomUUID();
     this.task_description = taskDescription;

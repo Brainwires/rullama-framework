@@ -12,6 +12,7 @@
  * function can be supplied when constructing the breaker.
  */
 
+import { ProviderDecorator } from "./decorator.ts";
 import type {
   ChatOptions,
   ChatResponse,
@@ -45,29 +46,28 @@ interface Entry {
 }
 
 /** Circuit-breaker decorator. */
-export class CircuitBreakerProvider implements Provider {
-  readonly inner: Provider;
+export class CircuitBreakerProvider extends ProviderDecorator {
   private readonly cfg: CircuitBreakerConfig;
   private readonly entries = new Map<string, Entry>();
   private readonly modelKey: (options: ChatOptions) => string;
   private fallback: Provider | null = null;
 
+  /**
+   * Wrap `inner` with a per-model circuit breaker.
+   *
+   * @param inner Provider whose failures are tracked.
+   * @param cfg Failure threshold and cooldown; see {@link defaultCircuitBreakerConfig}.
+   * @param modelKey Derives the breaker key from each call's options; defaults
+   *   to `options.model`, falling back to `"default"`.
+   */
   constructor(
     inner: Provider,
     cfg: CircuitBreakerConfig = defaultCircuitBreakerConfig(),
-    modelKey: (options: ChatOptions) => string = () => "default",
+    modelKey: (options: ChatOptions) => string = (o) => o.model ?? "default",
   ) {
-    this.inner = inner;
+    super(inner);
     this.cfg = cfg;
     this.modelKey = modelKey;
-  }
-
-  get name(): string {
-    return this.inner.name;
-  }
-
-  maxOutputTokens(): number {
-    return this.inner.maxOutputTokens?.() ?? Infinity;
   }
 
   /** Attach a fallback provider used when the circuit is open. */
@@ -82,10 +82,17 @@ export class CircuitBreakerProvider implements Provider {
     return this.entries.get(key)?.state ?? "closed";
   }
 
+  /** Namespace a model label under the wrapped provider's name (`<provider>::<model>`). */
   private key(model: string): string {
     return `${this.inner.name}::${model}`;
   }
 
+  /**
+   * Admission check run before each call: throws `circuit_open` while the
+   * cooldown is still running, moves an expired `open` entry to `half_open`
+   * (letting this call through as the probe), and creates a `closed` entry
+   * for unseen keys.
+   */
   private transitionIn(key: string): void {
     const entry = this.entries.get(key) ?? {
       state: "closed" as CircuitState,
@@ -97,13 +104,18 @@ export class CircuitBreakerProvider implements Provider {
         entry.state = "half_open";
         this.entries.set(key, entry);
       } else {
-        throw ResilienceError.circuitOpen(this.inner.name, key, entry.failures);
+        throw ResilienceError.circuitOpen(
+          this.inner.name,
+          key.slice(this.inner.name.length + 2),
+          entry.failures,
+        );
       }
     } else {
       this.entries.set(key, entry);
     }
   }
 
+  /** Close the circuit for `key` and clear its failure count. */
   private recordSuccess(key: string): void {
     this.entries.set(key, {
       state: "closed",
@@ -112,6 +124,10 @@ export class CircuitBreakerProvider implements Provider {
     });
   }
 
+  /**
+   * Count a failure for `key`; opens the circuit for `cooldown_ms` once the
+   * threshold is reached or if the failure happened during a half-open probe.
+   */
   private recordFailure(key: string): void {
     const entry = this.entries.get(key) ?? {
       state: "closed" as CircuitState,
@@ -129,6 +145,12 @@ export class CircuitBreakerProvider implements Provider {
     this.entries.set(key, entry);
   }
 
+  /**
+   * Forward the call when the circuit for this model key admits it, recording
+   * success or failure. When the circuit is open the fallback provider (if one
+   * was attached via {@link withFallback}) is used instead; otherwise the
+   * `circuit_open` {@link ResilienceError} is thrown.
+   */
   async chat(
     messages: Message[],
     tools: Tool[] | undefined,
@@ -154,6 +176,7 @@ export class CircuitBreakerProvider implements Provider {
     }
   }
 
+  /** Pass-through: streaming neither consults nor updates the breaker. */
   streamChat(
     messages: Message[],
     tools: Tool[] | undefined,

@@ -54,18 +54,27 @@ export type RemovalReason =
 
 /** Information about a waiter in the queue. */
 export interface WaiterInfo {
+  /** Waiting agent. */
   agentId: string;
+  /** Index in the queue (0 = next to be served). */
   position: number;
+  /** Priority given at registration (lower number = served sooner). */
   priority: number;
+  /** Whole seconds elapsed since registration. */
   waitingSinceSecs: number;
+  /** Whether the agent asked to acquire automatically on reaching the front. */
   autoAcquire: boolean;
 }
 
 /** Status of a wait queue for a resource. */
 export interface QueueStatus {
+  /** Resource key the queue belongs to. */
   resourceKey: string;
+  /** Number of agents waiting. */
   queueLength: number;
+  /** Waiters in queue order. */
   waiters: WaiterInfo[];
+  /** Mean historical wait for this resource in ms, or null with no history. */
   estimatedWaitMs: number | null;
 }
 
@@ -106,6 +115,10 @@ export class WaitQueue {
   private maxHistoryEntries: number;
   private eventTarget = new EventTarget();
 
+  /**
+   * Create an empty wait queue.
+   * @param maxHistoryEntries Wait durations kept per resource for `estimateWait` (default 100).
+   */
   constructor(maxHistoryEntries = 100) {
     this.maxHistoryEntries = maxHistoryEntries;
   }
@@ -366,6 +379,7 @@ export class WaitQueue {
 
   // ── Private ─────────────────────────────────────────────────────────────
 
+  /** Dispatch `event` to subscribers as a `queue-event` CustomEvent. */
   private emit(event: WaitQueueEvent): void {
     this.eventTarget.dispatchEvent(
       new CustomEvent("queue-event", { detail: event }),

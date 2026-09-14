@@ -33,6 +33,7 @@ export interface Fixture {
 export interface FixtureMessage {
   /** Message role — e.g. "user", "system", "assistant". */
   role: string;
+  /** Message text. */
   content: string;
 }
 
@@ -46,20 +47,29 @@ export interface ExpectedBehavior {
 
 /** A single constraint on a fixture outcome. */
 export interface Assertion {
+  /** Substring the output must contain. */
   contains?: string;
+  /** Regular expression the output must match. */
   regex?: string;
+  /** Tool name that must appear in the tool sequence. */
   tool_called?: string;
+  /** Expected finish reason. */
   finish_reason?: string;
 }
 
 /** Result of running a fixture through a {@link FixtureRunner}. */
 export interface RunOutcome {
+  /** Final text the agent produced. */
   output_text: string;
+  /** Tool names in the order they were called. */
   tool_sequence: string[];
+  /** Reason the run stopped, if reported. */
   finish_reason: string | null;
+  /** Wall-clock duration of the run in milliseconds. */
   duration_ms: number;
 }
 
+/** An empty outcome: no output, no tools, no finish reason. */
 export function defaultRunOutcome(): RunOutcome {
   return {
     output_text: "",
@@ -77,14 +87,18 @@ export interface FixtureRunner {
 
 /** An {@link EvaluationCase} built from a fixture + runner pair. */
 export class FixtureCase implements EvaluationCase {
+  /** The fixture this case replays. */
   readonly fixture_: Fixture;
+  /** The runner that executes the fixture's messages. */
   readonly runner: FixtureRunner;
 
+  /** Create a case from a fixture and the runner that executes it. */
   constructor(fixture: Fixture, runner: FixtureRunner) {
     this.fixture_ = fixture;
     this.runner = runner;
   }
 
+  /** The fixture this case replays. */
   fixture(): Fixture {
     return this.fixture_;
   }

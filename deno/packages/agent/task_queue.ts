@@ -7,7 +7,7 @@
  * @module
  */
 
-import type { Task, TaskPriority, TaskStatus } from "@rullama/core";
+import type { Task, TaskPriority, TaskStatus } from "./task_manager.ts";
 
 // ---------------------------------------------------------------------------
 // Queued task
@@ -58,8 +58,13 @@ export class TaskQueue {
     normal: [],
     low: [],
   };
+  /** Capacity across all priority levels; `enqueue` throws once reached. */
   readonly maxSize: number;
 
+  /**
+   * Create an empty queue.
+   * @param maxSize Total number of tasks the queue accepts before `enqueue` throws (default 100).
+   */
   constructor(maxSize = 100) {
     this.maxSize = maxSize;
   }

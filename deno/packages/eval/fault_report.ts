@@ -12,6 +12,7 @@ import type { RegressionSuite } from "./regression.ts";
 
 // ─── FaultKind ─────────────────────────────────────────────────────────────
 
+/** Kind of fault detected in a suite result, with the numbers behind it. */
 export type FaultKind =
   | {
     type: "regression";
@@ -57,12 +58,19 @@ export function faultKindLabel(k: FaultKind): string {
 
 /** A classified eval fault ready for self-improvement task generation. */
 export interface FaultReport {
+  /** Name of the evaluation case. */
   case_name: string;
+  /** Category label of the case. */
   category: string;
+  /** What went wrong. */
   fault_kind: FaultKind;
+  /** A few representative error messages from failed trials. */
   sample_errors: string[];
+  /** Number of failed trials. */
   n_failures: number;
+  /** Total number of trials. */
   n_trials: number;
+  /** Suggested follow-up task description for an agent to investigate. */
   suggested_task_description: string;
 }
 

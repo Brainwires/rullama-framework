@@ -11,7 +11,6 @@ Deno.test("lookup - known providers return entries", () => {
   assertNotEquals(lookup("google"), undefined);
   assertNotEquals(lookup("ollama"), undefined);
   assertNotEquals(lookup("openai-responses"), undefined);
-  assertNotEquals(lookup("rullama"), undefined);
 });
 
 Deno.test("lookup - unknown provider returns undefined", () => {

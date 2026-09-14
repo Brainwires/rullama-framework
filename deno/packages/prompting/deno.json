@@ -1,12 +1,19 @@
 {
   "name": "@rullama/prompting",
   "license": "MIT",
-  "version": "0.11.0",
+  "version": "0.12.1",
   "exports": {
     ".": "./mod.ts",
     "./techniques": "./techniques.ts",
     "./cluster": "./cluster.ts",
     "./generator": "./generator.ts",
     "./temperature": "./temperature.ts"
+  },
+  "publish": {
+    "exclude": [
+      "**/*_test.ts",
+      "test_util.ts",
+      "__readme_check.ts"
+    ]
   }
 }

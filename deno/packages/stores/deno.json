@@ -1,7 +1,7 @@
 {
   "name": "@rullama/stores",
   "license": "MIT",
-  "version": "0.11.0",
+  "version": "0.12.1",
   "exports": {
     ".": "./mod.ts",
     "./conversation": "./conversation_store.ts",
@@ -9,5 +9,12 @@
     "./plan": "./plan_store.ts",
     "./task": "./task_store.ts",
     "./template": "./template_store.ts"
+  },
+  "publish": {
+    "exclude": [
+      "**/*_test.ts",
+      "test_util.ts",
+      "__readme_check.ts"
+    ]
   }
 }

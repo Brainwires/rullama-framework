@@ -3,10 +3,7 @@
 // and listing messages by conversation.
 // Run: deno run deno/examples/storage/message_store.ts
 
-import {
-  InMemoryMessageStore,
-  type MessageMetadata,
-} from "@rullama/storage";
+import { InMemoryMessageStore, type MessageMetadata } from "@rullama/stores";
 
 async function main() {
   console.log("=== Message Store Example ===\n");

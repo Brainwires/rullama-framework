@@ -4,6 +4,7 @@
  * Equivalent to Rust's `rullama_resilience::retry` module.
  */
 
+import { ProviderDecorator } from "./decorator.ts";
 import type {
   ChatOptions,
   ChatResponse,
@@ -74,23 +75,27 @@ function sleep(ms: number): Promise<void> {
  * backoff and optional jitter. Only non-streaming `chat` requests are
  * retried — streaming passes through unchanged.
  */
-export class RetryProvider implements Provider {
-  readonly inner: Provider;
+export class RetryProvider extends ProviderDecorator {
   private readonly policy: RetryPolicy;
 
+  /**
+   * Wrap `inner` with retry logic.
+   *
+   * @param inner Provider whose `chat` failures are retried.
+   * @param policy Attempt count, backoff and deadline; see {@link defaultRetryPolicy}.
+   */
   constructor(inner: Provider, policy: RetryPolicy = defaultRetryPolicy()) {
-    this.inner = inner;
+    super(inner);
     this.policy = policy;
   }
 
-  get name(): string {
-    return this.inner.name;
-  }
-
-  maxOutputTokens(): number {
-    return this.inner.maxOutputTokens?.() ?? Infinity;
-  }
-
+  /**
+   * Call the wrapped provider up to `policy.max_attempts` times. Non-retryable
+   * errors (per {@link classifyError}) are rethrown as-is on the first attempt;
+   * once retries have started, exhaustion surfaces as a `retries_exhausted`
+   * {@link ResilienceError} and an elapsed `overall_deadline_ms` as
+   * `deadline_exceeded`, each with the last error as `cause`.
+   */
   async chat(
     messages: Message[],
     tools: Tool[] | undefined,
@@ -137,6 +142,7 @@ export class RetryProvider implements Provider {
     );
   }
 
+  /** Pass-through: streaming responses are never retried. */
   streamChat(
     messages: Message[],
     tools: Tool[] | undefined,

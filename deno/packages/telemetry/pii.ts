@@ -2,15 +2,20 @@
  * PII redaction helpers.
  *
  * Narrower than the Rust crate — we port the two most-used helpers:
- * `hashSessionId` for consistent audit keys, and `redactPayload` for removing
- * obvious secrets from logs.
+ * `hashSessionId` for consistent audit keys, and `redactSecrets` for removing
+ * secrets from logs.
  *
  * Equivalent to selected parts of `rullama_telemetry::pii` (the heavier
  * PII tools — email / phone / SSN detectors — live in Rust until an explicit
  * request is made to port them).
  */
 
-/** Deterministic, irreversible hash of a session id (lower 12 hex chars). */
+import { redactSecrets as coreRedactSecrets } from "@rullama/core";
+
+/**
+ * Deterministic, irreversible hash of a session id: the first 6 bytes (12 hex
+ * chars) of SHA-256 over `"rullama-session:" + session_id`.
+ */
 export async function hashSessionId(session_id: string): Promise<string> {
   const bytes = new TextEncoder().encode(`rullama-session:${session_id}`);
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
@@ -22,12 +27,12 @@ export async function hashSessionId(session_id: string): Promise<string> {
   return hex;
 }
 
-/** Strip common secret patterns from a free-form string. */
+/**
+ * Strip secret patterns (API keys, tokens, JWTs, private keys, `password=…`)
+ * from a free-form string. Delegates to `redactSecrets` in `@rullama/core`, the
+ * same table `@rullama/tool-runtime` uses for tool output — so a log line and a
+ * tool result redact identically.
+ */
 export function redactSecrets(text: string): string {
-  return text
-    .replace(/\b(sk|pk|api|bearer)[-_]?[A-Za-z0-9]{16,}/gi, "***REDACTED***")
-    .replace(
-      /\b[A-Za-z0-9+/]{32,}={0,2}\b/g,
-      (m) => (m.length > 40 ? "***REDACTED***" : m),
-    );
+  return coreRedactSecrets(text);
 }

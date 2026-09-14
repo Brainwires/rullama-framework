@@ -61,6 +61,13 @@ pub struct JobIdRequest {
     pub id: String,
 }
 
+/// Empty argument object for tools that take no parameters.
+///
+/// The MCP spec requires every tool's `inputSchema` to be an object; `()` would
+/// produce a `null` schema, which rmcp rejects at registration.
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct NoParams {}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetLogsRequest {
     /// Job ID
@@ -145,7 +152,7 @@ impl SchedulerServer {
     }
 
     #[tool(description = "List all scheduled jobs with their status and next scheduled run time.")]
-    async fn list_jobs(&self, Parameters(()): Parameters<()>) -> Result<String, String> {
+    async fn list_jobs(&self, Parameters(_): Parameters<NoParams>) -> Result<String, String> {
         let store = self.handle.store.read().await;
         let jobs = store.all();
 
@@ -352,7 +359,7 @@ impl SchedulerServer {
     }
 
     #[tool(description = "Return overall scheduler status: uptime, job counts, and daemon health.")]
-    async fn status(&self, Parameters(()): Parameters<()>) -> Result<String, String> {
+    async fn status(&self, Parameters(_): Parameters<NoParams>) -> Result<String, String> {
         let store = self.handle.store.read().await;
         let all = store.all();
         let total = all.len();

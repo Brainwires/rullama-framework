@@ -20,18 +20,32 @@ import type {
   FineTuneProvider,
 } from "./types.ts";
 
+/** Default Together AI API root used when no `base_url` is passed. */
 export const TOGETHER_API_BASE = "https://api.together.xyz/v1";
 
+/**
+ * Together AI implementation of {@link FineTuneProvider} over `/files` + `/fine-tunes`.
+ */
 export class TogetherFineTune implements FineTuneProvider {
+  /** Provider key used by `TrainingManager`. */
   readonly name = "together";
+  /** API root every request URL is built from. */
   readonly base_url: string;
+  /** Bearer token sent in the `Authorization` header of every request. */
   private readonly api_key: string;
 
+  /**
+   * Create a provider bound to one API key.
+   *
+   * @param api_key Together AI API key.
+   * @param base_url Override the API root (e.g. a proxy or a test server).
+   */
   constructor(api_key: string, base_url: string = TOGETHER_API_BASE) {
     this.api_key = api_key;
     this.base_url = base_url;
   }
 
+  /** Chat models Together accepts for fine-tuning (Llama-3 8B/70B, Mistral-7B-Instruct, Qwen2-7B). */
   supportedBaseModels(): string[] {
     return [
       "meta-llama/Llama-3-8b-chat-hf",
@@ -41,6 +55,7 @@ export class TogetherFineTune implements FineTuneProvider {
     ];
   }
 
+  /** Together supports DPO via `training_method: { method: "dpo" }`; ORPO is not offered. */
   supportsDpo(): boolean {
     return true;
   }
@@ -96,6 +111,13 @@ export class TogetherFineTune implements FineTuneProvider {
     }
   }
 
+  /**
+   * Multipart-upload the bytes to `/files` with `purpose=fine-tune`. The `format` argument is ignored — the file is always sent as `training_data.jsonl` with type `application/json`.
+   *
+   * @returns The Together file id.
+   *
+   * @throws `TrainingError` (`api`) on a non-2xx response, (`upload`) if the response has no `id`.
+   */
   async uploadDataset(
     data: Uint8Array,
     _format: DataFormat,
@@ -124,6 +146,11 @@ export class TogetherFineTune implements FineTuneProvider {
     return new DatasetId(id);
   }
 
+  /**
+   * POST `/fine-tunes`. Sends `n_epochs`, `batch_size`, `learning_rate`, plus `validation_file`, `suffix`, LoRA (`lora`, `lora_r`, `lora_alpha`, `lora_dropout`), and DPO (`training_method`) when set.
+   *
+   * @throws `TrainingError` (`validation`) for `orpo` alignment, (`api`) on a non-2xx response, (`provider`) if the response has no `id`.
+   */
   async createJob(config: CloudFineTuneConfig): Promise<TrainingJobId> {
     const body: Record<string, unknown> = {
       training_file: config.training_dataset.value,
@@ -141,6 +168,15 @@ export class TogetherFineTune implements FineTuneProvider {
       body.lora_r = config.lora.rank;
       body.lora_alpha = config.lora.alpha;
       body.lora_dropout = config.lora.dropout;
+    }
+    const alignment = config.alignment;
+    if (alignment.kind === "dpo") {
+      // https://docs.together.ai/docs/fine-tuning-preference
+      body.training_method = { method: "dpo", dpo_beta: alignment.beta };
+    } else if (alignment.kind !== "none") {
+      throw TrainingError.validation(
+        `${this.name} does not support ${alignment.kind} alignment`,
+      );
     }
 
     const res = await fetch(`${this.base_url}/fine-tunes`, {
@@ -163,6 +199,11 @@ export class TogetherFineTune implements FineTuneProvider {
     return new TrainingJobIdClass(id);
   }
 
+  /**
+   * GET `/fine-tunes/{id}` and map the `status` field via {@link TogetherFineTune.parseJobStatus}.
+   *
+   * @throws `TrainingError` (`job_not_found`) on 404, (`api`) on other non-2xx responses.
+   */
   async getJobStatus(job_id: TrainingJobId): Promise<TrainingJobStatus> {
     const res = await fetch(`${this.base_url}/fine-tunes/${job_id.value}`, {
       headers: { Authorization: `Bearer ${this.api_key}` },
@@ -178,6 +219,7 @@ export class TogetherFineTune implements FineTuneProvider {
     return TogetherFineTune.parseJobStatus(status_str, body);
   }
 
+  /** POST `/fine-tunes/{id}/cancel`; throws `TrainingError` (`api`) on a non-2xx response. */
   async cancelJob(job_id: TrainingJobId): Promise<void> {
     const res = await fetch(
       `${this.base_url}/fine-tunes/${job_id.value}/cancel`,
@@ -198,6 +240,9 @@ export class TogetherFineTune implements FineTuneProvider {
     }
   }
 
+  /**
+   * GET `/fine-tunes` and map each entry to a summary. Entries missing `id`/`model`/`status` are skipped; a missing `created_at` falls back to now; `metrics` is always `null`.
+   */
   async listJobs(): Promise<TrainingJobSummary[]> {
     const res = await fetch(`${this.base_url}/fine-tunes`, {
       headers: { Authorization: `Bearer ${this.api_key}` },
@@ -235,6 +280,7 @@ export class TogetherFineTune implements FineTuneProvider {
     return out;
   }
 
+  /** DELETE `/models/{model_id}`; throws `TrainingError` (`api`) on a non-2xx response. */
   async deleteModel(model_id: string): Promise<void> {
     const res = await fetch(`${this.base_url}/models/${model_id}`, {
       method: "DELETE",

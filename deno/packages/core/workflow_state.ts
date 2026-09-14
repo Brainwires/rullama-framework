@@ -49,11 +49,15 @@ export function newSideEffectRecord(
 
 /** Snapshot of an agent's execution progress that survives process restarts. */
 export interface WorkflowCheckpoint {
+  /** Task the checkpoint belongs to; also the store key. */
   task_id: string;
+  /** Agent executing the task. */
   agent_id: string;
+  /** Number of steps completed so far. */
   step_index: number;
   /** `tool_use_id` values for calls that have already been executed. */
   completed_tool_ids: string[];
+  /** Side effects applied so far, in execution order. */
   side_effects_log: SideEffectRecord[];
   /** Unix timestamp (seconds) of the last update. */
   updated_at: number;
@@ -86,13 +90,20 @@ export function isCompleted(
 
 /** Persistence backend for workflow checkpoints. */
 export interface WorkflowStateStore {
+  /** Persist `cp`, replacing any checkpoint stored for the same task. */
   saveCheckpoint(cp: WorkflowCheckpoint): Promise<void>;
+  /** Load the checkpoint for `task_id`, or null if none exists. */
   loadCheckpoint(task_id: string): Promise<WorkflowCheckpoint | null>;
+  /**
+   * Record a completed tool call: add `tool_use_id` to the completed set,
+   * append `effect`, and advance the step index (creating the checkpoint if needed).
+   */
   markStepComplete(
     task_id: string,
     tool_use_id: string,
     effect: SideEffectRecord,
   ): Promise<void>;
+  /** Remove the checkpoint for `task_id`; a no-op if none exists. */
   deleteCheckpoint(task_id: string): Promise<void>;
 }
 
@@ -102,16 +113,22 @@ export interface WorkflowStateStore {
 export class InMemoryWorkflowStateStore implements WorkflowStateStore {
   private checkpoints = new Map<string, WorkflowCheckpoint>();
 
+  /** Store a deep copy of `cp` under its task ID. */
   saveCheckpoint(cp: WorkflowCheckpoint): Promise<void> {
     this.checkpoints.set(cp.task_id, structuredClone(cp));
     return Promise.resolve();
   }
 
+  /** Return a deep copy of the stored checkpoint, or null if none exists. */
   loadCheckpoint(task_id: string): Promise<WorkflowCheckpoint | null> {
     const cp = this.checkpoints.get(task_id);
     return Promise.resolve(cp ? structuredClone(cp) : null);
   }
 
+  /**
+   * Record a completed tool call in the stored checkpoint, creating one with
+   * agent ID `"unknown"` if the task has none yet.
+   */
   markStepComplete(
     task_id: string,
     tool_use_id: string,
@@ -131,6 +148,7 @@ export class InMemoryWorkflowStateStore implements WorkflowStateStore {
     return Promise.resolve();
   }
 
+  /** Drop the checkpoint for `task_id`, if any. */
   deleteCheckpoint(task_id: string): Promise<void> {
     this.checkpoints.delete(task_id);
     return Promise.resolve();
@@ -160,8 +178,10 @@ function sanitizeTaskId(task_id: string): string {
  * written to a `.tmp` path and then renamed.
  */
 export class FsWorkflowStateStore implements WorkflowStateStore {
+  /** Directory the `<task_id>.json` checkpoint files live in. */
   readonly dir: string;
 
+  /** Use `dir` for checkpoint files, creating it (recursively) if missing. */
   constructor(dir: string) {
     this.dir = dir;
     Deno.mkdirSync(dir, { recursive: true });
@@ -172,10 +192,12 @@ export class FsWorkflowStateStore implements WorkflowStateStore {
     return new FsWorkflowStateStore(defaultWorkflowStatePath());
   }
 
+  /** Path of the checkpoint file for `task_id` (ID sanitised to a safe filename). */
   private checkpointPath(task_id: string): string {
     return join(this.dir, `${sanitizeTaskId(task_id)}.json`);
   }
 
+  /** Write `cp` as pretty-printed JSON via a `.tmp` file and an atomic rename. */
   async saveCheckpoint(cp: WorkflowCheckpoint): Promise<void> {
     const path = this.checkpointPath(cp.task_id);
     const tmp = `${path}.tmp`;
@@ -184,6 +206,7 @@ export class FsWorkflowStateStore implements WorkflowStateStore {
     await Deno.rename(tmp, path);
   }
 
+  /** Read and parse the checkpoint file; null when the file does not exist. */
   async loadCheckpoint(task_id: string): Promise<WorkflowCheckpoint | null> {
     const path = this.checkpointPath(task_id);
     try {
@@ -195,6 +218,10 @@ export class FsWorkflowStateStore implements WorkflowStateStore {
     }
   }
 
+  /**
+   * Load (or create, with agent ID `"unknown"`) the checkpoint, record the
+   * completed tool call, and write it back atomically.
+   */
   async markStepComplete(
     task_id: string,
     tool_use_id: string,
@@ -211,6 +238,7 @@ export class FsWorkflowStateStore implements WorkflowStateStore {
     await this.saveCheckpoint(cp);
   }
 
+  /** Delete the checkpoint file; a missing file is not an error. */
   async deleteCheckpoint(task_id: string): Promise<void> {
     const path = this.checkpointPath(task_id);
     try {

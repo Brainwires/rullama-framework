@@ -7,11 +7,7 @@
  * @module
  */
 
-import type {
-  ChunkMetadata,
-  DatabaseStats,
-  SearchResult,
-} from "@rullama/core";
+import type { ChunkMetadata, DatabaseStats, SearchResult } from "@rullama/core";
 import type { VectorDatabase } from "../traits.ts";
 
 const DEFAULT_URL = "http://localhost:19530";
@@ -161,9 +157,18 @@ export function parseMilvusResult(
  * Does not implement StorageBackend -- it is RAG-only.
  */
 export class MilvusDatabase implements VectorDatabase {
+  /** Milvus REST endpoint with any trailing slash removed. */
   readonly baseUrl: string;
+  /** Name of the Milvus collection that holds the embeddings. */
   readonly collectionName: string;
 
+  /**
+   * Create a client for a Milvus REST v2 endpoint. Nothing is contacted until
+   * {@link MilvusDatabase.initialize} is called.
+   *
+   * @param url Base URL of the Milvus server (default `http://localhost:19530`).
+   * @param collectionName Collection to read and write (default `code_embeddings`).
+   */
   constructor(url?: string, collectionName?: string) {
     this.baseUrl = (url ?? DEFAULT_URL).replace(/\/$/, "");
     this.collectionName = collectionName ?? DEFAULT_COLLECTION;
@@ -176,6 +181,10 @@ export class MilvusDatabase implements VectorDatabase {
 
   // -- private helpers ----------------------------------------------------
 
+  /**
+   * POST a JSON body to a `/v2/vectordb/...` path and return the parsed reply;
+   * throws when the response is not JSON or its `code` is neither 0 nor 200.
+   */
   private async apiPost(
     path: string,
     body: unknown,
@@ -207,6 +216,7 @@ export class MilvusDatabase implements VectorDatabase {
     return parsed;
   }
 
+  /** Ask `/v2/vectordb/collections/has` whether {@link collectionName} exists. */
   private async collectionExists(): Promise<boolean> {
     const resp = await this.apiPost("/v2/vectordb/collections/has", {
       collectionName: this.collectionName,

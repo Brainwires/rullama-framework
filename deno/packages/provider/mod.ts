@@ -1,12 +1,25 @@
 /**
- * @module @rullama/providers
+ * Chat provider implementations for rullama. Every class here implements the
+ * `Provider` interface from `@rullama/core` over plain `fetch()`: Anthropic
+ * Messages, OpenAI Chat Completions (also Groq / Together / Fireworks /
+ * Anyscale), OpenAI Responses, AWS Bedrock (SigV4), Google Gemini, Vertex AI
+ * (service-account JWT) and Ollama. `ChatProviderFactory` builds any of them
+ * from a `ProviderConfig` by consulting `PROVIDER_REGISTRY`, and the module
+ * also exposes the SSE / NDJSON stream parsers, the `RateLimiter` re-export
+ * from core, and `createModelLister` for enumerating a provider's models.
  *
- * Provider layer for the rullama.
- * Contains chat provider implementations that wrap AI APIs with the
- * `Provider` interface from `@rullama/core`.
- *
- * Equivalent to Rust's `rullama-providers` crate.
+ * @module
  */
+
+// Core types that appear in the exported provider signatures.
+export type {
+  ChatOptions,
+  ChatResponse,
+  Message,
+  Provider,
+  StreamChunk,
+  Tool,
+} from "@rullama/core";
 
 // Types
 export {

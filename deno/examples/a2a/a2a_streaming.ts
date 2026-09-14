@@ -5,7 +5,6 @@
 // Run: deno run deno/examples/a2a/a2a_streaming.ts
 
 import type {
-  Artifact,
   Message,
   StreamResponse,
   Task,
@@ -21,7 +20,7 @@ import {
   isTaskResponse,
 } from "@rullama/a2a";
 
-async function main(): Promise<void> {
+function main(): void {
   console.log("=== A2A Streaming Types Example ===\n");
 
   const taskId = crypto.randomUUID();
@@ -245,4 +244,4 @@ async function main(): Promise<void> {
   console.log("\nDone.");
 }
 
-await main();
+main();

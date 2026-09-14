@@ -1,13 +1,24 @@
 /**
- * File operations tool implementation.
- * Uses Deno's native FS APIs.
+ * Filesystem tools over Deno's native APIs: `read_file`, `write_file`,
+ * `edit_file`, `list_directory`, `search_files`, `delete_file` and
+ * `create_directory`. Every path is confined to the tool context's working
+ * directory — lexically via `confinePathLexical` and, for the operations that
+ * touch the disk, after following symlinks via `confinePath` (both from
+ * `@rullama/tool-runtime`) — and reads are capped at `MAX_READ_BYTES`.
+ * Equivalent to Rust's `rullama_tool_builtins::file_ops`.
+ *
+ * @module
  */
 
 // deno-lint-ignore-file no-explicit-any
 
 import { objectSchema, type ToolContext, ToolResult } from "@rullama/core";
 import type { Tool } from "@rullama/core";
-import { join, resolve } from "@std/path";
+import { globToRegExp } from "@std/path";
+import { confinePath, confinePathLexical } from "@rullama/tool-runtime";
+
+/** Bytes of a file returned by `read_file`; longer files are truncated with a marker. */
+export const MAX_READ_BYTES = 1024 * 1024;
 
 /** File operations tool. */
 export class FileOpsTool {
@@ -24,6 +35,7 @@ export class FileOpsTool {
     ];
   }
 
+  /** Definition of the `read_file` tool. */
   private static readFileTool(): Tool {
     return {
       name: "read_file",
@@ -41,6 +53,7 @@ export class FileOpsTool {
     };
   }
 
+  /** Definition of the `write_file` tool. */
   private static writeFileTool(): Tool {
     return {
       name: "write_file",
@@ -62,6 +75,7 @@ export class FileOpsTool {
     };
   }
 
+  /** Definition of the `edit_file` tool. */
   private static editFileTool(): Tool {
     return {
       name: "edit_file",
@@ -88,6 +102,7 @@ export class FileOpsTool {
     };
   }
 
+  /** Definition of the `list_directory` tool. */
   private static listDirectoryTool(): Tool {
     return {
       name: "list_directory",
@@ -110,6 +125,7 @@ export class FileOpsTool {
     };
   }
 
+  /** Definition of the `search_files` tool. */
   private static searchFilesTool(): Tool {
     return {
       name: "search_files",
@@ -131,6 +147,7 @@ export class FileOpsTool {
     };
   }
 
+  /** Definition of the `delete_file` tool. */
   private static deleteFileTool(): Tool {
     return {
       name: "delete_file",
@@ -148,6 +165,7 @@ export class FileOpsTool {
     };
   }
 
+  /** Definition of the `create_directory` tool. */
   private static createDirectoryTool(): Tool {
     return {
       name: "create_directory",
@@ -211,28 +229,54 @@ export class FileOpsTool {
     }
   }
 
-  /** Resolve a path relative to the working directory. */
+  /**
+   * Resolve a path against the working directory. Relative paths and absolute
+   * paths already inside the working directory are accepted; anything that
+   * resolves outside it (`../`, another absolute path) throws. Lexical only —
+   * the operations below also follow symlinks via {@link FileOpsTool.confine}.
+   */
   static resolvePath(path: string, context: ToolContext): string {
-    if (path.startsWith("/")) {
-      return resolve(path);
-    }
-    return resolve(join(context.working_directory, path));
+    return confinePathLexical(context.working_directory, path);
   }
 
+  /** {@link resolvePath}, then reject symlinks that escape the working directory. */
+  static confine(path: string, context: ToolContext): Promise<string> {
+    return confinePath(context.working_directory, path);
+  }
+
+  /** Run `read_file` (capped at `MAX_READ_BYTES`). */
   private static async readFile(
     input: any,
     context: ToolContext,
   ): Promise<string> {
-    const fullPath = FileOpsTool.resolvePath(input.path, context);
-    const content = await Deno.readTextFile(fullPath);
-    return `File: ${fullPath}\nSize: ${content.length} bytes\n\n${content}`;
+    const fullPath = await FileOpsTool.confine(input.path, context);
+    const { size } = await Deno.stat(fullPath);
+    if (size <= MAX_READ_BYTES) {
+      const content = await Deno.readTextFile(fullPath);
+      return `File: ${fullPath}\nSize: ${content.length} bytes\n\n${content}`;
+    }
+    const file = await Deno.open(fullPath, { read: true });
+    try {
+      const buf = new Uint8Array(MAX_READ_BYTES);
+      let read = 0;
+      while (read < buf.byteLength) {
+        const n = await file.read(buf.subarray(read));
+        if (n === null) break;
+        read += n;
+      }
+      const head = new TextDecoder().decode(buf.subarray(0, read));
+      return `File: ${fullPath}\nSize: ${size} bytes (showing first ${read})\n\n${head}\n[truncated at ${MAX_READ_BYTES} bytes]`;
+    } finally {
+      file.close();
+    }
   }
 
+  /** Run `write_file`. */
   private static async writeFile(
     input: any,
     context: ToolContext,
   ): Promise<string> {
-    const fullPath = FileOpsTool.resolvePath(input.path, context);
+    const fullPath = await FileOpsTool.confine(input.path, context);
     const content: string = input.content;
 
     // Ensure parent directory exists
@@ -245,11 +289,12 @@ export class FileOpsTool {
     return `Successfully wrote ${content.length} bytes to ${fullPath}`;
   }
 
+  /** Run `edit_file` (exact-string replacement). */
   private static async editFile(
     input: any,
     context: ToolContext,
   ): Promise<string> {
-    const fullPath = FileOpsTool.resolvePath(input.path, context);
+    const fullPath = await FileOpsTool.confine(input.path, context);
     const oldText: string = input.old_text;
     const newText: string = input.new_text;
 
@@ -267,11 +312,12 @@ export class FileOpsTool {
     return `Successfully replaced 1 occurrence(s) in ${fullPath}`;
   }
 
+  /** Run `list_directory`. */
   private static async listDirectory(
     input: any,
     context: ToolContext,
   ): Promise<string> {
-    const fullPath = FileOpsTool.resolvePath(input.path, context);
+    const fullPath = await FileOpsTool.confine(input.path, context);
     const recursive = input.recursive ?? false;
 
     const entries: string[] = [];
@@ -297,19 +343,17 @@ export class FileOpsTool {
     }`;
   }
 
+  /** Run `search_files` (glob match on names). */
   private static async searchFiles(
     input: any,
     context: ToolContext,
   ): Promise<string> {
-    const fullPath = FileOpsTool.resolvePath(input.path, context);
+    const fullPath = await FileOpsTool.confine(input.path, context);
     const pattern: string = input.pattern;
 
-    // Convert glob pattern to regex
-    const regexStr = pattern
-      .replace(/\./g, "\\.")
-      .replace(/\*/g, ".*")
-      .replace(/\?/g, ".");
-    const regex = new RegExp(regexStr);
+    // A real glob → regex conversion: every other regex metacharacter in the
+    // pattern is escaped, so `[`, `(`, `+` cannot smuggle in a regex.
+    const regex = globToRegExp(pattern, { extended: false, globstar: false });
 
     const matches: string[] = [];
     for await (const entry of walkDir(fullPath)) {
@@ -332,11 +376,12 @@ export class FileOpsTool {
     }`;
   }
 
+  /** Run `delete_file`. */
   private static async deleteFile(
     input: any,
     context: ToolContext,
   ): Promise<string> {
-    const fullPath = FileOpsTool.resolvePath(input.path, context);
+    const fullPath = await FileOpsTool.confine(input.path, context);
 
     try {
       const stat = await Deno.stat(fullPath);
@@ -352,11 +397,12 @@ export class FileOpsTool {
     return `Successfully deleted file: ${fullPath}`;
   }
 
+  /** Run `create_directory`. */
   private static async createDirectory(
     input: any,
     context: ToolContext,
   ): Promise<string> {
-    const fullPath = FileOpsTool.resolvePath(input.path, context);
+    const fullPath = await FileOpsTool.confine(input.path, context);
     await Deno.mkdir(fullPath, { recursive: true });
     return `Successfully created directory: ${fullPath}`;
   }

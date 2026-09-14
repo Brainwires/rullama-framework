@@ -1,0 +1,76 @@
+#!/bin/sh
+# rullama-framework pre-commit hook — Deno formatting + lint auto-fix, then the fallow gate.
+#
+# Enable it once per clone with:
+#
+#     cd deno && deno task hooks:install      # = git config core.hooksPath .githooks
+#
+# The Deno half (`deno task check:fix`: deno fmt, deno lint --fix, then a report-only
+# deno lint) runs only when the commit touches deno/, so Rust-only commits are not slowed.
+# It is intentionally FAST: formatting and linting only, no tests — the full suite stays
+# in CI (`deno task check`). The final `deno lint` reports rules with no auto-fix; if it
+# fails the commit is aborted so the remaining issues are addressed by hand.
+#
+# The fallow half always runs (fallow only parses TS/JS, so a Rust-only commit is a no-op
+# for it). It was scaffolded by `fallow hooks install --target git` and moved here so the
+# hook is versioned; keep the base-ref logic in sync with fallow's generated hook.
+set -e
+
+STAGED="$(git diff --cached --name-only --diff-filter=ACM)"
+
+if printf '%s\n' "$STAGED" | grep -q '^deno/'; then
+  # Resolve deno robustly: git runs hooks under /bin/sh, whose PATH often lacks
+  # ~/.deno/bin (and `deno` may be a shell alias that doesn't apply here).
+  if command -v deno >/dev/null 2>&1; then
+    DENO=deno
+  elif [ -x "$HOME/.deno/bin/deno" ]; then
+    DENO="$HOME/.deno/bin/deno"
+  else
+    echo "pre-commit: deno not found. Install it (https://deno.com) or add ~/.deno/bin to PATH." >&2
+    exit 1
+  fi
+
+  (cd deno && "$DENO" task check:fix)
+
+  # Re-stage the formatted content of files that were ALREADY staged for this commit.
+  # `deno fmt` / `deno lint --fix` edit the working tree but not the index, so without
+  # this the commit would capture the PRE-format content and CI's `deno fmt --check`
+  # fails on the commit. Only re-add files already staged — never unstaged work.
+  printf '%s\n' "$STAGED" | grep '^deno/' | tr '\n' '\0' | xargs -0 git add --
+fi
+
+# Fallow code-intelligence gate. `fallow audit` scopes dead-code + complexity +
+# duplication to the changeset and exits 1 on a `fail` verdict (0 otherwise), so
+# `set -e` aborts the commit on failure. Audit defaults to gate=new-only: inherited
+# findings on touched files are reported but only findings the changeset INTRODUCES
+# block. Fallow is REQUIRED — resolve it like deno above.
+if command -v fallow >/dev/null 2>&1; then
+  FALLOW=fallow
+elif command -v npx >/dev/null 2>&1 && npx --no-install fallow --version >/dev/null 2>&1; then
+  FALLOW="npx --no-install fallow"
+else
+  echo "pre-commit: fallow not found. Install it: npm i -g fallow (or cargo install fallow-cli)." >&2
+  echo "pre-commit: see AGENTS.md > Fallow local gate." >&2
+  exit 1
+fi
+
+# Diff against the merge-base with the upstream so feature branches forked off a
+# non-default integration branch compare against the right base; fall back to main.
+UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+if [ -n "$UPSTREAM" ]; then
+  BASE="$(git merge-base "$UPSTREAM" HEAD 2>/dev/null || echo "$UPSTREAM")"
+else
+  BASE="main"
+fi
+
+# Measured coverage, when present: `cd deno && deno task coverage:fallow` writes an
+# Istanbul map from the unit suite so fallow's CRAP score uses real per-function coverage
+# instead of its import-graph estimate. Optional: without the file the audit runs as before.
+COV=""
+if [ -f deno/coverage/coverage-final.json ]; then
+  COV="--coverage deno/coverage/coverage-final.json"
+else
+  echo "pre-commit: no deno/coverage/coverage-final.json — fallow will ESTIMATE coverage for CRAP." >&2
+  echo "pre-commit: run 'cd deno && deno task coverage:fallow' first if the gate blocks on a CRAP finding." >&2
+fi
+$FALLOW audit --base "$BASE" --quiet --explain --gate-marker git --no-css $COV

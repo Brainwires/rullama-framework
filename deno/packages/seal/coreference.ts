@@ -7,11 +7,7 @@
  * Equivalent to Rust's `rullama_agents::seal::coreference` module.
  */
 
-import type {
-  EntityStoreT,
-  EntityType,
-  RelationshipGraphT,
-} from "@rullama/core";
+import type { EntityStoreT, EntityType, RelationshipGraphT } from "./types.ts";
 
 // ─── Regex statics ──────────────────────────────────────────────────────────
 
@@ -65,18 +61,27 @@ export function compatibleTypes(ref: ReferenceType): EntityType[] {
 
 /** An unresolved reference detected in user input. */
 export interface UnresolvedReference {
+  /** The matched surface text, lower-cased (e.g. `"it"`, `"the file"`). */
   text: string;
+  /** Which anaphora class the pattern that matched belongs to. */
   ref_type: ReferenceType;
+  /** Start offset of the match in the lower-cased message. */
   start: number;
+  /** End offset (exclusive) of the match in the lower-cased message. */
   end: number;
 }
 
 /** Salience factors for ranking antecedent candidates. */
 export interface SalienceScore {
+  /** `DialogState.recencyScore` — focus-stack position (+0.2 if recently modified) or `exp(-0.1 * turns since last mention)`; weight 0.35. */
   recency: number;
+  /** `DialogState.frequencyScore` — `log1p(mentions) / 3` capped at 1; weight 0.15. */
   frequency: number;
+  /** Graph node `importance` when a graph is supplied (0 if the node is absent), else 0.5; weight 0.2. */
   graph_centrality: number;
+  /** Type compatibility; always 1.0 because candidates are pre-filtered by compatible type; weight 0.2. */
   type_match: number;
+  /** 1.0 for the top of the focus stack, 0.5 for any other focus-stack entry, else 0; weight 0.1. */
   syntactic_prominence: number;
 }
 
@@ -91,10 +96,15 @@ export function salienceTotal(s: SalienceScore): number {
 
 /** A resolved reference with its antecedent. */
 export interface ResolvedReference {
+  /** The reference that was resolved. */
   reference: UnresolvedReference;
+  /** Name of the entity chosen as the antecedent. */
   antecedent: string;
+  /** Type of the antecedent entity. */
   entity_type: EntityType;
+  /** Resolution confidence — the antecedent's {@link salienceTotal}. */
   confidence: number;
+  /** The salience factors that ranked the antecedent first. */
   salience: SalienceScore;
 }
 
@@ -102,9 +112,13 @@ export interface ResolvedReference {
 
 /** Dialog state for tracking entities across conversation turns. */
 export class DialogState {
+  /** Most-recently-mentioned entity names first; capped at 20 entries. */
   focus_stack: string[] = [];
+  /** Entity name → the turn numbers at which it was mentioned. */
   mention_history: Map<string, number[]> = new Map();
+  /** Zero-based turn counter advanced by {@link nextTurn}. */
   current_turn = 0;
+  /** Most-recently-modified entity names first; capped at 10 entries. */
   recently_modified: string[] = [];
   private entity_types: Map<string, EntityType> = new Map();
 
@@ -300,6 +314,11 @@ export class CoreferenceResolver {
     return resolved;
   }
 
+  /**
+   * Rank every type-compatible candidate (focus stack first, then the entity
+   * store) by {@link salienceTotal} and return the best, or `undefined` when
+   * there are no candidates.
+   */
   private resolveSingle(
     reference: UnresolvedReference,
     dialogState: DialogState,
@@ -354,6 +373,10 @@ export class CoreferenceResolver {
     };
   }
 
+  /**
+   * Build the {@link SalienceScore} for a candidate from the dialog state and
+   * (optionally) the graph node's `importance`; `type_match` is fixed at 1.0.
+   */
   private computeSalience(
     name: string,
     dialogState: DialogState,
@@ -431,10 +454,12 @@ export class InMemoryEntityStore implements EntityStoreT {
     this.byType.set(entityType, existing);
   }
 
+  /** All registered names of the given type (empty if none). */
   entityNamesByType(entityType: EntityType): string[] {
     return Array.from(this.byType.get(entityType) ?? []);
   }
 
+  /** Up to `limit` `[name, type]` pairs in insertion order (no ranking). */
   topEntityInfo(limit: number): [string, EntityType][] {
     const out: [string, EntityType][] = [];
     for (const [et, names] of this.byType.entries()) {

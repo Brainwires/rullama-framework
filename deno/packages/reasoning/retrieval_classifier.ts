@@ -7,12 +7,15 @@
 
 import { ChatOptions, Message, type Provider } from "@rullama/core";
 
+/** How strongly a query appears to depend on earlier conversation context. */
 export type RetrievalNeed = "none" | "low" | "medium" | "high";
 
+/** `true` for `"medium"` and `"high"` — the levels worth a retrieval call. */
 export function shouldRetrieve(need: RetrievalNeed): boolean {
   return need === "medium" || need === "high";
 }
 
+/** Map a need level to a numeric weight: none 0, low 0.25, medium 0.6, high 0.9. */
 export function retrievalScore(need: RetrievalNeed): number {
   switch (need) {
     case "none":
@@ -26,13 +29,19 @@ export function retrievalScore(need: RetrievalNeed): number {
   }
 }
 
+/** Outcome of retrieval-need classification. */
 export interface ClassificationResult {
+  /** Classified need level. */
   need: RetrievalNeed;
+  /** Confidence in the classification, 0.0–1.0. */
   confidence: number;
+  /** `true` if a local LLM produced it, `false` for the heuristic fallback. */
   used_local_llm: boolean;
+  /** The model's one-line reason (text after `LEVEL:`); `null` for heuristic results. */
   intent: string | null;
 }
 
+/** Build a result attributed to the local LLM (`used_local_llm: true`). */
 export function classificationFromLocal(
   need: RetrievalNeed,
   confidence: number,
@@ -41,6 +50,7 @@ export function classificationFromLocal(
   return { need, confidence, used_local_llm: true, intent };
 }
 
+/** Build a heuristic result (`used_local_llm: false`, no intent). */
 export function classificationFromFallback(
   need: RetrievalNeed,
   confidence: number,
@@ -87,6 +97,15 @@ const CONTINUATION = [
   "go on",
 ];
 
+/**
+ * Pure keyword heuristic: adds weight for back-reference phrases ("earlier",
+ * "you said"…), past-tense questions, continuation cues, short context
+ * windows and unresolved pronouns, then buckets the total into a need level.
+ *
+ * @param query The user's query.
+ * @param context_len Number of recent messages already in context; fewer
+ *   messages raise the need.
+ */
 export function classifyHeuristic(
   query: string,
   context_len: number,
@@ -138,6 +157,10 @@ export function classifyHeuristic(
   return classificationFromFallback(need, confidence);
 }
 
+/**
+ * Parse `LEVEL: reason` model output into a result (confidence 0.8);
+ * an unrecognised level defaults to `"low"`.
+ */
 export function parseClassification(output: string): ClassificationResult {
   const trimmed = output.trim();
   const up = trimmed.toUpperCase();
@@ -157,15 +180,33 @@ export function parseClassification(output: string): ClassificationResult {
   return classificationFromLocal(need, 0.8, intent);
 }
 
+/**
+ * Provider-backed retrieval-need classifier with a heuristic fallback;
+ * decides whether a query needs earlier conversation context.
+ */
 export class RetrievalClassifier {
+  /** Provider used for the LLM-backed {@link classify} call. */
   readonly provider: Provider;
+  /** Model id this classifier was configured for (advisory). */
   readonly model_id: string;
 
+  /**
+   * Create a classifier bound to one provider.
+   *
+   * @param provider Any `@rullama/core` `Provider`; called with a
+   *   deterministic, 50-token chat request per classification.
+   * @param model_id Model id recorded for logging/config.
+   */
   constructor(provider: Provider, model_id: string) {
     this.provider = provider;
     this.model_id = model_id;
   }
 
+  /**
+   * Ask the model to grade the query (NONE/LOW/MEDIUM/HIGH) given how many
+   * context messages exist. Returns `null` if the call throws so callers can
+   * fall back to {@link classifyHeuristic}.
+   */
   async classify(
     query: string,
     context_len: number,
@@ -200,6 +241,7 @@ Classification:`;
     }
   }
 
+  /** Fast, pure-heuristic variant — no provider call. */
   classifyHeuristic(query: string, context_len: number): ClassificationResult {
     return classifyHeuristic(query, context_len);
   }

@@ -1,7 +1,7 @@
 // Example: Tool Registry
 // Shows how to create a ToolRegistry, register built-in and custom tools,
 // list tools by category, look up metadata, and search.
-// Run: deno run deno/examples/tool-system/tool_registry.ts
+// Run: deno run deno/examples/tools/tool_registry.ts
 
 import type { Tool } from "@rullama/core";
 import { objectSchema } from "@rullama/core";
@@ -10,11 +10,10 @@ import {
   FileOpsTool,
   GitTool,
   SearchTool,
-  ToolRegistry,
-  ValidationTool,
   WebTool,
-} from "@rullama/tools";
-import type { ToolCategory } from "@rullama/tools";
+} from "@rullama/tool-builtins";
+import { ToolRegistry, ValidationTool } from "@rullama/tool-runtime";
+import type { ToolCategory } from "@rullama/tool-runtime";
 
 /** Helper: create a custom tool definition with the given name and description. */
 function makeCustomTool(name: string, description: string): Tool {
@@ -30,7 +29,7 @@ function makeCustomTool(name: string, description: string): Tool {
   };
 }
 
-async function main() {
+function main(): void {
   console.log("=== Tool Registry Example ===\n");
 
   // 1. Create a registry and populate it with built-in tools
@@ -124,4 +123,4 @@ async function main() {
   console.log("\nDone.");
 }
 
-await main();
+main();

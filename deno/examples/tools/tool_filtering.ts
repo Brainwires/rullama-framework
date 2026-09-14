@@ -2,7 +2,7 @@
 // Demonstrates sanitization, error classification, and content filtering
 // for tool inputs and outputs -- injection detection, sensitive data redaction,
 // and error taxonomy.
-// Run: deno run deno/examples/tool-system/tool_filtering.ts
+// Run: deno run deno/examples/tools/tool_filtering.ts
 
 import {
   categoryName,
@@ -10,7 +10,6 @@ import {
   containsSensitiveData,
   defaultRetryStrategy,
   delayForAttempt,
-  errorMessage,
   failureOutcome,
   filterToolOutput,
   getSuggestion,
@@ -19,12 +18,11 @@ import {
   maxAttempts,
   redactSensitiveData,
   retryStrategy,
-  sanitizeExternalContent,
   successOutcome,
   wrapWithContentSource,
-} from "@rullama/tools";
+} from "@rullama/tool-runtime";
 
-async function main() {
+function main(): void {
   console.log("=== Tool Filtering Example ===\n");
 
   // 1. Error classification
@@ -171,4 +169,4 @@ async function main() {
   console.log("\nDone.");
 }
 
-await main();
+main();

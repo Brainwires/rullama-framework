@@ -4,6 +4,7 @@ import {
   InMemoryTokenStore,
   isTokenExpired,
   newPkceChallenge,
+  newState,
   type OAuthToken,
   pkceAuthorizationUrl,
 } from "./oauth.ts";
@@ -84,4 +85,32 @@ Deno.test("clientCredentialsConfig builder", () => {
   );
   assertEquals(cfg.scopes, ["read", "write"]);
   assertEquals(cfg.flow.kind, "client_credentials");
+});
+
+Deno.test("pkceAuthorizationUrl percent-encodes every parameter", async () => {
+  const pkce = await newPkceChallenge();
+  const url = new URL(pkceAuthorizationUrl(
+    pkce,
+    "https://auth.example.com/authorize",
+    "client-1",
+    "https://app.example.com/cb?x=1",
+    ["read:user", "repo"],
+    "abc&redirect_uri=https://evil.test",
+  ));
+  assertEquals(url.searchParams.getAll("redirect_uri"), [
+    "https://app.example.com/cb?x=1",
+  ]);
+  assertEquals(
+    url.searchParams.get("state"),
+    "abc&redirect_uri=https://evil.test",
+  );
+  assertEquals(url.searchParams.get("scope"), "read:user repo");
+  assertEquals(url.searchParams.get("code_challenge"), pkce.challenge);
+});
+
+Deno.test("newState is unguessable and url-safe", () => {
+  const a = newState();
+  const b = newState();
+  assert(a !== b);
+  assert(/^[A-Za-z0-9_-]{40,}$/.test(a));
 });

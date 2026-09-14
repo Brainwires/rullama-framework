@@ -1,63 +1,94 @@
-# @rullama/agents
+# @rullama/agent
 
-Agent orchestration, coordination, and lifecycle management for the rullama. Provides the core agentic execution loop, task agents,
-inter-agent communication, and distributed coordination patterns.
+Multi-agent coordination primitives for the rullama framework: an in-memory
+inter-agent message bus, read/write file locks with deadlock detection,
+hierarchical task tracking with a priority queue, a per-run execution graph, and
+six coordination patterns (Contract-Net, Saga, optimistic concurrency, market
+allocation, the SagaLLM three-state model, and a priority wait queue).
 
-Equivalent to the Rust `rullama-agent` crate.
+Equivalent to the Rust `rullama-agent` crate. Everything here is single-process
+and in-memory; nothing is persisted.
+
+The LLM-driven agents themselves (`runAgentLoop`, `TaskAgent`, `spawnTaskAgent`,
+`AgentContext`, `PlanExecutorAgent`, `AgentPool`) live in `@rullama/inference`,
+not here.
 
 ## Install
 
 ```sh
-deno add @rullama/agents
+deno add jsr:@rullama/agent
 ```
 
 ## Quick Example
 
+Decompose work into dependent tasks, schedule the ready ones through a priority
+queue, and coordinate file access between two agents:
+
 ```ts
-import { ChatOptions, Message } from "@rullama/core";
-import { AnthropicChatProvider } from "@rullama/provider";
-import { BashTool, ToolRegistry } from "@rullama/tools";
-import { AgentContext, spawnTaskAgent, TaskAgent } from "@rullama/agent";
+import {
+  CommunicationHub,
+  FileLockManager,
+  TaskManager,
+  TaskQueue,
+} from "@rullama/agent";
 
-const registry = new ToolRegistry();
-registry.registerTools(BashTool.getTools());
+// Hierarchical tasks with dependencies.
+const tasks = new TaskManager();
+const root = tasks.createTask("Ship the feature");
+const write = tasks.createTask("Write the code", root);
+const test = tasks.createTask("Run the tests", root);
+tasks.addDependency(test, write); // tests wait for the code
 
-const provider = new AnthropicChatProvider(
-  Deno.env.get("ANTHROPIC_API_KEY")!,
-  "claude-sonnet-4-20250514",
-  "anthropic",
-);
+// Only dependency-free tasks are ready; queue them by priority.
+const queue = new TaskQueue(50);
+for (const task of tasks.getReadyTasks()) queue.enqueue(task, "high");
 
-const context = new AgentContext({ tools: registry.allTools() });
+const next = queue.dequeueAndAssign("agent-1");
+if (next) tasks.startTask(next.task.id);
 
-const result = await spawnTaskAgent({
-  agentId: "my-agent",
-  provider,
-  context,
-  systemPrompt: "You are a helpful assistant.",
-  taskDescription: "Show the current date and time.",
+// Coordinate file access: write locks exclude other agents.
+const locks = new FileLockManager({ timeoutMs: 60_000 });
+const guard = locks.acquireLock("agent-1", "src/feature.ts", "write");
+console.log(locks.canAcquire("src/feature.ts", "agent-2", "read")); // false
+guard.release();
+
+// Tell the other agent what happened.
+const hub = new CommunicationHub();
+hub.registerAgent("agent-1");
+hub.registerAgent("agent-2");
+hub.sendMessage("agent-1", "agent-2", {
+  type: "status_update",
+  agentId: "agent-1",
+  status: "done",
 });
+console.log(hub.tryReceiveMessage("agent-2")?.message);
 
-console.log(result.output);
+tasks.completeTask(write, "implemented");
+console.log(tasks.getStats()); // { total: 3, pending: 1, inProgress: 1, completed: 1, ... }
 ```
 
 ## Core Components
 
-| Component                      | Description                                                               |
-| ------------------------------ | ------------------------------------------------------------------------- |
-| `runAgentLoop`                 | Generic execution loop: call provider, extract tool uses, execute, repeat |
-| `TaskAgent` / `spawnTaskAgent` | Concrete agent with provider + tool loop and validation                   |
-| `AgentContext`                 | Environment bundle (tools, communication hub, file locks, working set)    |
-| `CommunicationHub`             | Inter-agent messaging bus with conflict detection                         |
-| `FileLockManager`              | File access coordination with deadlock detection                          |
-| `TaskManager`                  | Hierarchical task decomposition and dependency tracking                   |
-| `TaskQueue`                    | Priority-based task scheduling                                            |
-| `PlanExecutorAgent`            | Plan step execution orchestration                                         |
+| Component          | Description                                                                        |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| `CommunicationHub` | Per-agent in-memory message channels; `sendMessage`, `broadcast`, `receiveMessage` |
+| `AgentMessage`     | Discriminated union of every message kind (status, help, saga, bids, conflicts)    |
+| `FileLockManager`  | Read/write file locks with timeouts, polling `acquireWithWait`, deadlock detection |
+| `TaskManager`      | Task tree with parent/child links, dependencies, `getReadyTasks`, stats and timing |
+| `TaskQueue`        | Bounded priority queue (`urgent > high > normal > low`, FIFO within a level)       |
+| `ExecutionGraph`   | Per-run step/tool-call trace; `telemetryFromGraph` summarizes it as `RunTelemetry` |
+
+`Task`, `TaskPriority` and `TaskStatus` are re-exported (as types) from
+`@rullama/core` for convenience; construct `Task` via `TaskManager.createTask`
+or import the class from `@rullama/core`.
 
 ## Coordination Patterns
 
-| Pattern                | Description                                               |
-| ---------------------- | --------------------------------------------------------- |
-| `ContractNetManager`   | Bidding protocol for task-to-agent negotiation            |
-| `SagaExecutor`         | Compensating transactions for multi-step operations       |
-| `OptimisticController` | Optimistic locking with conflict detection and resolution |
+| Pattern                                      | Description                                                                           |
+| -------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `ContractNetManager` / `ContractParticipant` | Announce → bid → award protocol with pluggable `BidEvaluationStrategy`                |
+| `SagaExecutor` / `CompensationReport`        | Run `CompensableOperation` steps; `compensateAll` undoes them in reverse              |
+| `OptimisticController`                       | Version tokens, commit-time conflict detection, `ResolutionStrategy` per resource     |
+| `MarketAllocator`                            | Budgeted bidding with `PricingStrategy` (first/second/fixed/dynamic/free) and urgency |
+| `ThreeStateModel`                            | Application / operation / dependency state with validation and deadlock checks        |
+| `WaitQueue`                                  | Priority-ordered waiters per resource key, promise-based readiness, wait estimates    |

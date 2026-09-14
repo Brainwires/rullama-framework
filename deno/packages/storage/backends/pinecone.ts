@@ -7,11 +7,7 @@
  * @module
  */
 
-import type {
-  ChunkMetadata,
-  DatabaseStats,
-  SearchResult,
-} from "@rullama/core";
+import type { ChunkMetadata, DatabaseStats, SearchResult } from "@rullama/core";
 import type { VectorDatabase } from "../traits.ts";
 
 const BATCH_SIZE = 100;
@@ -156,11 +152,22 @@ export function extractFilePathsFromIds(
  * Does not implement StorageBackend -- Pinecone is a pure vector store.
  */
 export class PineconeDatabase implements VectorDatabase {
+  /** Index host URL (`https://<index>-<project>.svc.<env>.pinecone.io`), trailing slash removed. */
   readonly indexHost: string;
+  /** API key sent as the `Api-Key` header on every request. */
   readonly apiKey: string;
+  /** Pinecone namespace used for every upsert, query and delete (`""` = default namespace). */
   readonly namespace: string;
   private dimension: number | null = null;
 
+  /**
+   * Create a client for one Pinecone index. Nothing is contacted until
+   * {@link PineconeDatabase.initialize} is called.
+   *
+   * @param indexHost The index's data-plane host URL (from the Pinecone console / describe-index).
+   * @param apiKey Pinecone API key.
+   * @param namespace Namespace to scope all operations to (default: the index's default namespace).
+   */
   constructor(indexHost: string, apiKey: string, namespace = "") {
     this.indexHost = indexHost.replace(/\/$/, "");
     this.apiKey = apiKey;
@@ -169,6 +176,10 @@ export class PineconeDatabase implements VectorDatabase {
 
   // -- private helpers ----------------------------------------------------
 
+  /**
+   * Send an authenticated JSON request to `indexHost + path` and return the
+   * parsed body; throws with the status and response text on a non-2xx reply.
+   */
   private async request(
     path: string,
     method: string,

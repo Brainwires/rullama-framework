@@ -7,6 +7,7 @@
  * Equivalent to Rust's `rullama_resilience::budget` module.
  */
 
+import { ProviderDecorator } from "./decorator.ts";
 import type {
   ChatOptions,
   ChatResponse,
@@ -21,8 +22,11 @@ import { ResilienceError } from "./error.ts";
 
 /** Caps to enforce on a single BudgetGuard. null = unbounded. */
 export interface BudgetConfig {
+  /** Cap on cumulative `usage.total_tokens` observed across calls (input estimate is also pre-checked). */
   max_tokens: number | null;
+  /** Cap on cumulative spend recorded via {@link BudgetGuard.recordCostCents}, in USD cents. */
   max_usd_cents: number | null;
+  /** Cap on the number of rounds (one per `chat`/`streamChat` call or `checkAndTick`). */
   max_rounds: number | null;
 }
 
@@ -33,31 +37,45 @@ export function defaultBudgetConfig(): BudgetConfig {
 
 /** Shared mutable budget counters. */
 export class BudgetGuard {
+  /** The caps this guard enforces. */
   readonly cfg: BudgetConfig;
+  /** Running total of tokens recorded through {@link recordUsage}. */
   private tokens = 0;
+  /** Running total of spend recorded through {@link recordCostCents}. */
   private usd_cents = 0;
+  /** Number of rounds ticked so far. */
   private rounds = 0;
 
+  /**
+   * Create a guard with all counters at zero.
+   *
+   * @param cfg Caps to enforce; defaults to unbounded ({@link defaultBudgetConfig}).
+   */
   constructor(cfg: BudgetConfig = defaultBudgetConfig()) {
     this.cfg = cfg;
   }
 
+  /** The caps this guard was constructed with (same object as {@link cfg}). */
   config(): BudgetConfig {
     return this.cfg;
   }
 
+  /** Tokens consumed so far, as accumulated from provider `usage` reports. */
   tokensConsumed(): number {
     return this.tokens;
   }
 
+  /** Spend consumed so far in USD cents, as recorded by {@link recordCostCents}. */
   usdCentsConsumed(): number {
     return this.usd_cents;
   }
 
+  /** Rounds consumed so far — one per decorated call or explicit tick. */
   roundsConsumed(): number {
     return this.rounds;
   }
 
+  /** Zero every counter; the caps are unchanged. */
   reset(): void {
     this.tokens = 0;
     this.usd_cents = 0;
@@ -145,23 +163,26 @@ function approxBlockLen(b: ContentBlock): number {
 }
 
 /** A Provider decorator that enforces a {@link BudgetGuard} around every call. */
-export class BudgetProvider implements Provider {
-  readonly inner: Provider;
+export class BudgetProvider extends ProviderDecorator {
+  /** The shared counters/caps consulted before and after every call. */
   readonly guard: BudgetGuard;
 
+  /**
+   * Wrap `inner` so every call is checked against and recorded into `guard`.
+   * Share one guard between several providers to enforce a joint budget.
+   */
   constructor(inner: Provider, guard: BudgetGuard) {
-    this.inner = inner;
+    super(inner);
     this.guard = guard;
   }
 
-  get name(): string {
-    return this.inner.name;
-  }
-
-  maxOutputTokens(): number {
-    return this.inner.maxOutputTokens?.() ?? Infinity;
-  }
-
+  /**
+   * Run the pre-flight checks, tick a round, forward the call, then record
+   * the response's `usage` into the guard.
+   *
+   * Throws a `budget_exceeded` {@link ResilienceError} when a cap is already
+   * hit or when the estimated input tokens alone would exceed `max_tokens`.
+   */
   async chat(
     messages: Message[],
     tools: Tool[] | undefined,
@@ -188,6 +209,11 @@ export class BudgetProvider implements Provider {
     return resp;
   }
 
+  /**
+   * Same pre-flight checks and round tick as {@link chat}, performed
+   * synchronously before the stream starts; `usage` chunks observed while
+   * iterating are recorded into the guard.
+   */
   streamChat(
     messages: Message[],
     tools: Tool[] | undefined,

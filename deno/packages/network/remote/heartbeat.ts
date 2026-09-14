@@ -72,6 +72,14 @@ export class HeartbeatCollector {
   /** Agent info provider callback. */
   private readonly agentInfoProvider: AgentInfoProvider;
 
+  /**
+   * Create a collector with no agents tracked yet.
+   *
+   * @param options.version Client version reported in every heartbeat.
+   * @param options.hostname Reported hostname (defaults to `"unknown"`).
+   * @param options.agentInfoProvider Callback returning the live agent list;
+   *   defaults to a provider that returns no agents.
+   */
   constructor(
     options: {
       version: string;
@@ -195,18 +203,31 @@ export class HeartbeatCollector {
 
 /** Snapshot of protocol metrics. */
 export interface MetricsSnapshot {
+  /** Messages successfully sent since the last reset. */
   messages_sent: number;
+  /** Messages that failed to send since the last reset. */
   messages_failed: number;
+  /** Total payload bytes sent. */
   bytes_sent: number;
+  /** Total payload bytes received. */
   bytes_received: number;
+  /** compressed / uncompressed bytes recorded via `recordCompression` (1.0 when nothing was recorded). */
   compression_ratio: number;
+  /** 50th-percentile one-way latency in ms (undefined with no samples). */
   latency_p50?: number;
+  /** 95th-percentile one-way latency in ms (undefined with no samples). */
   latency_p95?: number;
+  /** 99th-percentile one-way latency in ms (undefined with no samples). */
   latency_p99?: number;
+  /** 50th-percentile command round-trip time in ms (undefined with no samples). */
   roundtrip_p50?: number;
+  /** 95th-percentile command round-trip time in ms (undefined with no samples). */
   roundtrip_p95?: number;
+  /** 99th-percentile command round-trip time in ms (undefined with no samples). */
   roundtrip_p99?: number;
+  /** Whole seconds since `recordConnectionStart` (0 if never recorded). */
   uptime_secs: number;
+  /** Whole seconds since the last send/receive activity (0 if none). */
   idle_secs: number;
 }
 

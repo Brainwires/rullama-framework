@@ -1,12 +1,19 @@
 {
   "name": "@rullama/eval",
   "license": "MIT",
-  "version": "0.11.0",
+  "version": "0.12.1",
   "exports": {
     ".": "./mod.ts",
     "./adversarial": "./adversarial.ts",
     "./regression": "./regression.ts",
     "./ranking-metrics": "./ranking_metrics.ts",
     "./stability": "./stability_tests.ts"
+  },
+  "publish": {
+    "exclude": [
+      "**/*_test.ts",
+      "test_util.ts",
+      "__readme_check.ts"
+    ]
   }
 }

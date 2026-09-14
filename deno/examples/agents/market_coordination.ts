@@ -15,7 +15,7 @@ import {
   type UrgencyContext,
 } from "@rullama/agent";
 
-async function main() {
+function main(): void {
   console.log("=== Market-Based Resource Allocation ===\n");
 
   // 1. Create a market allocator with second-price auction
@@ -174,4 +174,4 @@ async function main() {
   console.log("\nMarket coordination demo complete.");
 }
 
-await main();
+main();

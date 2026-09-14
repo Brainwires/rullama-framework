@@ -1,15 +1,12 @@
 /**
  * Cross-package integration test: Permission enforcement.
  *
- * Verifies that @rullama/permissions PolicyEngine correctly allows
+ * Verifies that @rullama/permission PolicyEngine correctly allows
  * and denies operations based on configured policies, and that
  * capability profiles enforce expected restrictions.
  */
 
-import {
-  assert,
-  assertEquals,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals } from "@std/assert";
 import {
   AgentCapabilities,
   createPolicy,

@@ -9,10 +9,32 @@
 
 import type {
   JsonRpcMessage,
+  JsonRpcNotification,
   JsonRpcRequest,
   JsonRpcResponse,
 } from "./types.ts";
 import { parseJsonRpcMessage } from "./types.ts";
+
+/**
+ * Split a text stream into non-empty lines, keeping a trailing partial line
+ * until the next chunk (or flush) completes it.
+ */
+export function lineSplitter(): TransformStream<string, string> {
+  let lineBuffer = "";
+  return new TransformStream<string, string>({
+    transform(chunk, controller) {
+      lineBuffer += chunk;
+      const lines = lineBuffer.split("\n");
+      lineBuffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.trim().length > 0) controller.enqueue(line);
+      }
+    },
+    flush(controller) {
+      if (lineBuffer.trim().length > 0) controller.enqueue(lineBuffer);
+    },
+  });
+}
 
 /**
  * Stdio transport for communicating with MCP servers via stdin/stdout.
@@ -61,29 +83,9 @@ export class StdioTransport {
     const writer = child.stdin.getWriter();
 
     // Create a line reader from stdout
-    let lineBuffer = "";
     const reader = child.stdout
       .pipeThrough(new TextDecoderStream())
-      .pipeThrough(
-        new TransformStream<string, string>({
-          transform(chunk, controller) {
-            lineBuffer += chunk;
-            const lines = lineBuffer.split("\n");
-            // Keep the last (possibly incomplete) line in the buffer
-            lineBuffer = lines.pop() ?? "";
-            for (const line of lines) {
-              if (line.trim().length > 0) {
-                controller.enqueue(line);
-              }
-            }
-          },
-          flush(controller) {
-            if (lineBuffer.trim().length > 0) {
-              controller.enqueue(lineBuffer);
-            }
-          },
-        }),
-      )
+      .pipeThrough(lineSplitter())
       .getReader();
 
     // We return immediately; the process is now running.
@@ -97,7 +99,9 @@ export class StdioTransport {
    * Send a JSON-RPC request via stdin.
    * Equivalent to Rust `StdioTransport::send_request`.
    */
-  async sendRequest(request: JsonRpcRequest): Promise<void> {
+  async sendRequest(
+    request: JsonRpcRequest | JsonRpcNotification,
+  ): Promise<void> {
     if (this.#closed) {
       throw new Error("Transport is closed");
     }
@@ -177,6 +181,12 @@ export class StdioTransport {
 export class Transport {
   #inner: StdioTransport;
 
+  /**
+   * Wrap an already-spawned {@link StdioTransport}; every send/receive call
+   * on this instance is forwarded to it unchanged.
+   *
+   * @param transport The stdio transport produced by `StdioTransport.create`.
+   */
   constructor(transport: StdioTransport) {
     this.#inner = transport;
   }
@@ -185,7 +195,9 @@ export class Transport {
    * Send a JSON-RPC request.
    * Equivalent to Rust `Transport::send_request`.
    */
-  async sendRequest(request: JsonRpcRequest): Promise<void> {
+  async sendRequest(
+    request: JsonRpcRequest | JsonRpcNotification,
+  ): Promise<void> {
     await this.#inner.sendRequest(request);
   }
 

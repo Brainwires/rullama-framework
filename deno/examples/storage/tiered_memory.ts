@@ -15,9 +15,9 @@ import {
   retentionScore,
   TieredMemory,
   type TieredMemoryConfig,
-} from "@rullama/storage";
+} from "@rullama/memory";
 
-async function main() {
+function main(): void {
   console.log("=== Tiered Memory Example ===\n");
 
   // 1. Configure tiered memory with custom thresholds
@@ -201,4 +201,4 @@ async function main() {
   console.log("\nDone.");
 }
 
-await main();
+main();

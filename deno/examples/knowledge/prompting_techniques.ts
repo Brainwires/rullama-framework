@@ -1,31 +1,27 @@
 // Example: Prompting Techniques
 // Demonstrates listing, grouping, and filtering the 15 adaptive prompting techniques
 // by category, complexity level, and task characteristics.
-// Run: deno run deno/examples/cognition/prompting_techniques.ts
+// Run: deno run deno/examples/knowledge/prompting_techniques.ts
 
 import {
   ALL_CATEGORIES,
   ALL_COMPLEXITY_LEVELS,
-  ALL_TASK_CHARACTERISTICS,
   ALL_TECHNIQUES,
-  countByComplexity,
   getAllTechniqueMetadata,
   getTechniqueMetadata,
   getTechniquesByCategory,
   getTechniquesByComplexity,
   getTechniquesBySealQuality,
   parseTechniqueId,
-  TECHNIQUE_METADATA,
   techniqueToId,
-} from "@rullama/knowledge";
+} from "@rullama/prompting";
 
 import type {
-  ComplexityLevel,
   PromptingTechnique,
   TaskCharacteristic,
   TechniqueCategory,
   TechniqueMetadata,
-} from "@rullama/knowledge";
+} from "@rullama/prompting";
 
 function categoryLabel(cat: TechniqueCategory): string {
   const labels: Record<TechniqueCategory, string> = {
@@ -37,7 +33,7 @@ function categoryLabel(cat: TechniqueCategory): string {
   return labels[cat];
 }
 
-async function main() {
+function main(): void {
   // 1. Setup -- load metadata for every technique
   console.log("=== Prompting Techniques Library ===\n");
 
@@ -166,4 +162,4 @@ async function main() {
   console.log("\n=== Done ===");
 }
 
-await main();
+main();

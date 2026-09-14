@@ -69,8 +69,11 @@ export interface LockStats {
 
 /** Guard that can be used to track and release a lock. */
 export interface LockGuard {
+  /** Agent that holds the lock this guard releases. */
   readonly agentId: string;
+  /** File path the lock applies to. */
   readonly path: string;
+  /** Whether the guarded lock is a `"read"` or `"write"` lock. */
   readonly lockType: LockType;
   /** Release the lock. */
   release(): void;
@@ -94,6 +97,12 @@ export class FileLockManager {
   /** agent_id -> set of paths the agent is waiting for (for deadlock detection). */
   private waiting = new Map<string, Set<string>>();
 
+  /**
+   * Create a lock manager.
+   * @param options `timeoutMs` sets the default auto-expiry applied to every
+   * lock acquired without an explicit timeout (default 300 000 ms = 5 minutes);
+   * `noTimeout: true` disables the default expiry entirely.
+   */
   constructor(options?: { timeoutMs?: number; noTimeout?: boolean }) {
     if (options?.noTimeout) {
       this.defaultTimeoutMs = undefined;
@@ -364,6 +373,7 @@ export class FileLockManager {
 
   // ---- Private helpers ----
 
+  /** Return the lock state for `path`, inserting an empty one if the path is untracked. */
   private getOrCreateState(path: string): FileLockState {
     let state = this.locks.get(path);
     if (!state) {
@@ -373,6 +383,7 @@ export class FileLockManager {
     return state;
   }
 
+  /** Build a `LockGuard` whose `release()` calls `releaseLock` and swallows any error. */
   private createGuard(
     agentId: string,
     path: string,
@@ -392,6 +403,7 @@ export class FileLockManager {
     };
   }
 
+  /** Record that `agentId` is blocked waiting on `path` (feeds the deadlock wait-for graph). */
   private startWaiting(agentId: string, path: string): void {
     let paths = this.waiting.get(agentId);
     if (!paths) {
@@ -401,6 +413,7 @@ export class FileLockManager {
     paths.add(path);
   }
 
+  /** Drop the wait-for entry for `agentId` on `path`, removing the agent once it waits on nothing. */
   private stopWaiting(agentId: string, path: string): void {
     const paths = this.waiting.get(agentId);
     if (paths) {

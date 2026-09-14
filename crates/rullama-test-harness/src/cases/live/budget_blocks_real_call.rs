@@ -1,6 +1,8 @@
 //! D.9 — `live.providers.budget_pre_check_blocks_real_call`. Stack:
 //!
-//!     BudgetProvider → RecordingProvider → real OllamaProvider
+//! ```text
+//! BudgetProvider → RecordingProvider → real OllamaProvider
+//! ```
 //!
 //! Initialise the `BudgetGuard` so `max_rounds=1` and then pre-consume
 //! that round; the next chat() must be rejected pre-flight by the

@@ -1,6 +1,13 @@
 /**
- * Bash execution tool implementation.
- * Uses Deno.Command for subprocess execution.
+ * The `execute_command` tool: runs a shell command with `Deno.Command` in the
+ * tool context's working directory. Each command gets a timeout (default 30 s)
+ * after which the whole process tree is killed, a child environment scrubbed of
+ * credential-like variables (`scrubEnv` / `SECRET_ENV_PATTERN`), stdout and
+ * stderr capped at `MAX_OUTPUT_BYTES`, and a block list of destructive
+ * patterns; output can be filtered or truncated via `OutputMode` / `StderrMode`.
+ * Equivalent to Rust's `rullama_tool_builtins::bash`.
+ *
+ * @module
  */
 
 // deno-lint-ignore-file no-explicit-any
@@ -78,6 +85,56 @@ interface CommandOutput {
   exitCode: number;
 }
 
+/** Bytes of stdout / stderr kept per command; the rest is dropped with a marker. */
+export const MAX_OUTPUT_BYTES = 256 * 1024;
+
+/**
+ * Environment variables withheld from child processes: anything that looks like
+ * a credential. The parent process holds provider API keys; a model-authored
+ * `env` or `printenv` would otherwise hand them to the model.
+ */
+export const SECRET_ENV_PATTERN =
+  /(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|PRIVATE|AUTH|COOKIE|SESSION)|^AWS_|^AZURE_|^GOOGLE_APPLICATION|^GITHUB_|^GH_|^NPM_|^JSR_|^CARGO_REGISTRY/i;
+
+/** Copy of `env` without the entries matching {@link SECRET_ENV_PATTERN}. */
+export function scrubEnv(
+  env: Record<string, string>,
+  pattern: RegExp = SECRET_ENV_PATTERN,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) {
+    if (!pattern.test(k)) out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Kill a spawned shell AND its descendants. Killing only `bash` would leave
+ * the command it forked (e.g. `sleep 300`) alive and holding the stdout pipe,
+ * so `output()` would still wait for it. `pkill -P` reaches the children on
+ * Linux/macOS; on platforms without it we fall back to the shell alone.
+ */
+function killTree(child: Deno.ChildProcess): void {
+  try {
+    new Deno.Command("pkill", {
+      args: ["-KILL", "-P", String(child.pid)],
+      stdout: "null",
+      stderr: "null",
+    }).outputSync();
+  } catch { /* pkill unavailable */ }
+  try {
+    child.kill("SIGKILL");
+  } catch { /* already exited */ }
+}
+
+/** Decode at most `limit` bytes; append a marker when the output was longer. */
+function decodeCapped(bytes: Uint8Array, limit = MAX_OUTPUT_BYTES): string {
+  const text = new TextDecoder().decode(bytes.subarray(0, limit));
+  return bytes.byteLength > limit
+    ? `${text}\n[output truncated at ${limit} bytes]`
+    : text;
+}
+
 interface ParsedParams {
   command: string;
   timeout: number;
@@ -95,6 +152,7 @@ export class BashTool {
     return [BashTool.executeCommandTool()];
   }
 
+  /** Definition of the `execute_command` tool. */
   private static executeCommandTool(): Tool {
     return {
       name: "execute_command",
@@ -169,6 +227,7 @@ export class BashTool {
     }
   }
 
+  /** Run `execute_command`: validate, execute with a timeout, format the output. */
   private static async executeCommand(
     input: any,
     context: ToolContext,
@@ -204,6 +263,7 @@ export class BashTool {
     );
   }
 
+  /** Validate and normalise the tool input. */
   private static parseParams(input: any): ParsedParams {
     return {
       command: input.command,
@@ -481,6 +541,7 @@ export class BashTool {
     return defaults;
   }
 
+  /** Derive the output limits from the requested output / stderr modes. */
   private static resolveOutputLimits(params: ParsedParams): OutputLimits {
     const limits: OutputLimits = {
       maxLines: params.maxLines,
@@ -564,37 +625,57 @@ export class BashTool {
     return cmd;
   }
 
+  /** Spawn the shell, kill the whole tree on timeout, return capped output. */
   private static async runCommandWithTimeout(
     command: string,
     workingDir: string,
     timeoutMs: number,
   ): Promise<CommandOutput> {
+    // On timeout the whole process tree is killed (see killTree); the abort
+    // signal is a belt-and-braces backstop should spawn() itself be pending.
+    const abort = new AbortController();
     const cmd = new Deno.Command("bash", {
       args: ["-o", "pipefail", "-c", command],
       cwd: workingDir,
       stdout: "piped",
       stderr: "piped",
+      clearEnv: true,
+      env: scrubEnv(Deno.env.toObject()),
+      signal: abort.signal,
     });
 
-    const abortController = new AbortController();
-    const timer = setTimeout(() => abortController.abort(), timeoutMs);
+    let child: Deno.ChildProcess | undefined;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      // Children first: once bash itself is dead its children are re-parented
+      // and `pkill -P` can no longer find them.
+      if (child !== undefined) killTree(child);
+      abort.abort();
+    }, timeoutMs);
 
     try {
-      const process = cmd.spawn();
-      const output = await process.output();
-      clearTimeout(timer);
-
+      child = cmd.spawn();
+      const output = await child.output();
+      if (timedOut) {
+        throw new Error(`command timed out after ${timeoutMs / 1000}s`);
+      }
       return {
-        stdout: new TextDecoder().decode(output.stdout),
-        stderr: new TextDecoder().decode(output.stderr),
+        stdout: decodeCapped(output.stdout),
+        stderr: decodeCapped(output.stderr),
         exitCode: output.code,
       };
     } catch (e) {
+      const reason = timedOut
+        ? `command timed out after ${timeoutMs / 1000}s`
+        : (e as Error).message;
+      throw new Error(`Failed to execute command: ${reason}`);
+    } finally {
       clearTimeout(timer);
-      throw new Error(`Failed to execute command: ${(e as Error).message}`);
     }
   }
 
+  /** Apply the output mode (head / tail / filter / truncate) to the captured text. */
   private static formatOutput(
     originalCommand: string,
     transformedCommand: string,

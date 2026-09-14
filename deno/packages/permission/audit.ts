@@ -9,6 +9,8 @@
  * @module
  */
 
+import { dirname } from "@std/path";
+
 import type { PolicyDecision } from "./policy.ts";
 
 // Anomaly detection lives in `@rullama/telemetry`. AuditLogger no longer
@@ -143,19 +145,29 @@ export function createAuditEvent(eventType: AuditEventType): AuditEvent {
   };
 }
 
-/** Builder-style helpers for AuditEvent (mutates and returns the event). */
+// Builder-style helpers for AuditEvent. Each one mutates the event in place
+// and returns it so calls can be chained: withOutcome(withAgent(e, id), "failure").
+
+/** Set `agent_id` on the event; mutates and returns the same event. */
 export function withAgent(event: AuditEvent, agentId: string): AuditEvent {
   event.agent_id = agentId;
   return event;
 }
+/** Set `action` (the operation performed, e.g. a tool name); mutates and returns the same event. */
 export function withAction(event: AuditEvent, action: string): AuditEvent {
   event.action = action;
   return event;
 }
+/** Set `target` (file path, domain, branch, …); mutates and returns the same event. */
 export function withTarget(event: AuditEvent, target: string): AuditEvent {
   event.target = target;
   return event;
 }
+/**
+ * Copy a {@link PolicyDecision} onto the event: `matched_policy` becomes
+ * `policy_id` and the decision's `reason` becomes `decision`. Mutates and
+ * returns the same event.
+ */
 export function withPolicyDecision(
   event: AuditEvent,
   decision: PolicyDecision,
@@ -164,10 +176,12 @@ export function withPolicyDecision(
   event.decision = decision.reason;
   return event;
 }
+/** Set the numeric `trust_level` (0–4, see `trustLevelToU8`) in effect at the time; mutates and returns the same event. */
 export function withTrustLevel(event: AuditEvent, level: number): AuditEvent {
   event.trust_level = level;
   return event;
 }
+/** Set `outcome` (`"success"` is the default from {@link createAuditEvent}); mutates and returns the same event. */
 export function withOutcome(
   event: AuditEvent,
   outcome: ActionOutcome,
@@ -175,6 +189,7 @@ export function withOutcome(
   event.outcome = outcome;
   return event;
 }
+/** Set `duration_ms`; mutates and returns the same event. */
 export function withDuration(
   event: AuditEvent,
   durationMs: number,
@@ -182,11 +197,13 @@ export function withDuration(
   event.duration_ms = durationMs;
   return event;
 }
+/** Set `error` AND force `outcome` to `"failure"`; mutates and returns the same event. */
 export function withError(event: AuditEvent, error: string): AuditEvent {
   event.error = error;
   event.outcome = "failure";
   return event;
 }
+/** Add (or overwrite) one `metadata` key/value pair; mutates and returns the same event. */
 export function withMetadata(
   event: AuditEvent,
   key: string,
@@ -306,6 +323,7 @@ const IMPORTANT_EVENT_TYPES: ReadonlySet<AuditEventType> = new Set([
  * Rust equivalent: `AuditLogger` struct
  */
 export class AuditLogger {
+  #lastError: Error | undefined;
   #logPath: string;
   #buffer: AuditEvent[] = [];
   #maxBufferSize: number;
@@ -325,13 +343,11 @@ export class AuditLogger {
    * Rust equivalent: `AuditLogger::with_path()`
    */
   static withPath(path: string): AuditLogger {
-    // Ensure parent directory exists
-    const parent = path.substring(0, path.lastIndexOf("/"));
-    if (parent) {
-      try {
-        Deno.mkdirSync(parent, { recursive: true });
-      } catch { /* ignore */ }
-    }
+    // Ensure parent directory exists (owner-only: the log records every
+    // path, domain and command an agent touched).
+    try {
+      Deno.mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    } catch { /* exists, or created lazily on first write */ }
     return new AuditLogger(path);
   }
 
@@ -619,25 +635,42 @@ export class AuditLogger {
   // ── Private helpers ─────────────────────────────────────────────
 
   #writeEvent(event: AuditEvent): void {
-    try {
-      const json = JSON.stringify(event);
-      Deno.writeTextFileSync(this.#logPath, json + "\n", {
-        append: true,
-        create: true,
-      });
-    } catch { /* ignore write errors */ }
+    this.#append(JSON.stringify(event) + "\n");
   }
 
   #flushBuffer(): void {
     if (this.#buffer.length === 0) return;
+    const lines = this.#buffer.map((e) => JSON.stringify(e)).join("\n") + "\n";
+    this.#buffer = [];
+    this.#append(lines);
+  }
+
+  /**
+   * Append to the log (owner-only file). A failure never throws — an audit
+   * logger must not take the agent down — but it is not silent either: it is
+   * reported once on stderr and kept in {@link lastError}.
+   */
+  #append(text: string): void {
     try {
-      const lines = this.#buffer.map((e) => JSON.stringify(e)).join("\n") +
-        "\n";
-      Deno.writeTextFileSync(this.#logPath, lines, {
+      Deno.writeTextFileSync(this.#logPath, text, {
         append: true,
         create: true,
+        mode: 0o600,
       });
-    } catch { /* ignore write errors */ }
-    this.#buffer = [];
+      this.#lastError = undefined;
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      if (this.#lastError?.message !== err.message) {
+        console.error(
+          `AuditLogger: failed to write ${this.#logPath}: ${err.message}`,
+        );
+      }
+      this.#lastError = err;
+    }
+  }
+
+  /** The most recent write failure, if the last write did not succeed. */
+  get lastError(): Error | undefined {
+    return this.#lastError;
   }
 }

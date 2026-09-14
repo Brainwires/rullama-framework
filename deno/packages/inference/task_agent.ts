@@ -15,6 +15,7 @@ import {
   type Provider,
   type Task,
   type Tool,
+  ToolContext,
   type ToolResult,
   type ToolUse,
 } from "@rullama/core";
@@ -202,6 +203,7 @@ export class TaskAgent {
   /** Total cost USD. */
   private totalCostUsd = 0;
 
+  /** Create an agent for `task`; `config` overrides `defaultTaskAgentConfig()`. */
   constructor(
     id: string,
     task: Task,
@@ -285,12 +287,17 @@ export class TaskAgent {
       },
 
       executeTool: async (toolUse: ToolUse): Promise<ToolResult> => {
-        const ctx = {
-          agentId: this.id,
-          workingDirectory: this.context.workingDirectory,
-        };
-        // deno-lint-ignore no-explicit-any
-        return await this.context.toolExecutor.execute(toolUse, ctx as any);
+        // Tools read `working_directory` / `metadata` off a real ToolContext;
+        // the previous ad-hoc `{ agentId, workingDirectory }` object left every
+        // relative path unresolvable inside an agent.
+        const ctx = new ToolContext({
+          working_directory: this.context.workingDirectory,
+          metadata: {
+            ...Object.fromEntries(this.context.metadata),
+            agent_id: this.id,
+          },
+        });
+        return await this.context.toolExecutor.execute(toolUse, ctx);
       },
 
       getLockRequirement(

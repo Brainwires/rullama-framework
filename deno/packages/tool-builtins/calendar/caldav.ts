@@ -12,10 +12,14 @@ function basicAuth(username: string, password: string): string {
 
 /** CalDAV client for interacting with CalDAV-compliant servers. */
 export class CalDavClient {
+  /** CalDAV server base URL. */
   readonly base_url: string;
+  /** Basic-auth username. */
   readonly username: string;
+  /** Basic-auth password. */
   readonly password: string;
 
+  /** Create a client for a CalDAV server using basic auth. */
   constructor(base_url: string, username: string, password: string) {
     this.base_url = base_url.replace(/\/+$/, "");
     this.username = username;
@@ -225,6 +229,7 @@ export class CalDavClient {
     return events;
   }
 
+  /** Parse one `VEVENT` block into a `CalendarEvent`, or `null` if it lacks required fields. */
   private static parseSingleVevent(vevent: string): CalendarEvent | null {
     const getProp = (name: string): string | null => {
       for (const line of vevent.split("\n")) {

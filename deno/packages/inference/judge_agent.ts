@@ -77,12 +77,19 @@ export function formatMergeStatus(status: MergeStatus): string {
 
 /** Result from a single worker in the cycle. */
 export interface WorkerResult {
+  /** ID of the task the worker executed. */
   taskId: string;
+  /** Description of the task. */
   taskDescription: string;
+  /** Whether the worker reported success. */
   success: boolean;
+  /** Worker's summary of what it did. */
   summary: string;
+  /** Iterations the worker used. */
   iterations: number;
+  /** Branch the worker committed to. */
   branchName: string;
+  /** Result of merging the worker's branch. */
   mergeStatus: MergeStatus;
 }
 
@@ -92,10 +99,15 @@ export interface WorkerResult {
 
 /** Context provided to the judge for evaluation. */
 export interface JudgeContext {
+  /** The goal the whole cycle is working toward. */
   originalGoal: string;
+  /** 1-based number of the cycle being judged. */
   cycleNumber: number;
+  /** Results of every worker in this cycle. */
   workerResults: WorkerResult[];
+  /** Why the planner chose this cycle's tasks. */
   plannerRationale: string;
+  /** Verdicts from earlier cycles. */
   previousVerdicts: JudgeVerdict[];
 }
 
@@ -105,10 +117,15 @@ export interface JudgeContext {
 
 /** Configuration for the judge agent. */
 export interface JudgeAgentConfig {
+  /** Maximum iterations the judge agent may use. */
   maxIterations: number;
+  /** Whether the judge may read files to verify claims. */
   inspectFiles: boolean;
+  /** Whether the judge may inspect git diffs. */
   inspectDiffs: boolean;
+  /** Sampling temperature for the judge model. */
   temperature: number;
+  /** Maximum tokens per judge response. */
   maxTokens: number;
 }
 
@@ -127,76 +144,9 @@ export function defaultJudgeAgentConfig(): JudgeAgentConfig {
 // System prompt generation
 // ---------------------------------------------------------------------------
 
-/** Generate the system prompt for a judge agent. */
-export function judgeAgentPrompt(
-  agentId: string,
-  workingDirectory: string,
-): string {
-  return `You are a judge agent (ID: ${agentId}).
-
-Working Directory: ${workingDirectory}
-
-# ROLE
-
-You evaluate the results of a Plan->Work cycle. Your job is to determine whether
-the original goal has been achieved, partially achieved, or failed -- and decide
-what happens next.
-
-# PROCESS
-
-1. **Review** the original goal and planner rationale
-2. **Examine** each worker's result (success/failure, summary)
-3. **Inspect** files and diffs if needed to verify quality
-4. **Decide** on a verdict
-
-# OUTPUT FORMAT
-
-You MUST output a single JSON block wrapped in \`\`\`json fences with exactly this structure:
-
-\`\`\`json
-{
-  "verdict": "<complete|continue|fresh_restart|abort>",
-  "summary": "<brief explanation of your assessment>",
-  "additional_tasks": [
-    {
-      "id": "<unique-id>",
-      "description": "<what still needs to be done>",
-      "files_involved": ["<file paths>"],
-      "depends_on": [],
-      "priority": "<urgent|high|normal|low>",
-      "estimated_iterations": null
-    }
-  ],
-  "retry_tasks": ["<task_ids that should be retried>"],
-  "hints": ["<guidance for the next planner cycle>"],
-  "reason": "<detailed reason for fresh_restart or abort>"
-}
-\`\`\`
-
-# VERDICT TYPES
-
-- **complete**: The goal is fully achieved. All work is correct and merged.
-- **continue**: Partial progress. Use \`additional_tasks\` and/or \`retry_tasks\` to specify remaining work.
-- **fresh_restart**: Significant drift or tunnel vision detected. Discard current approach and re-plan.
-  Include \`hints\` to guide the next planner. Include \`reason\`.
-- **abort**: The goal is impossible or a fatal error occurred. Include \`reason\`.
-
-# EVALUATION CRITERIA
-
-1. Does the work actually accomplish the stated goal?
-2. Are there any regressions or broken functionality?
-3. Is the code quality acceptable (no duplicates, proper structure)?
-4. Were all required files created/modified?
-5. Do merge conflicts indicate coordination problems?
-
-# AVAILABLE TOOLS
-
-You have access to (READ-ONLY):
-- list_directory: See project structure
-- read_file: Read file contents
-- search_code: Find code patterns
-- query_codebase: Semantic search`;
-}
+// The system prompt lives in system_prompts/agents.ts (the canonical wording);
+// re-exported here so `import { judgeAgentPrompt } from "./judge_agent.ts"` keeps working.
+export { judgeAgentPrompt } from "./system_prompts/agents.ts";
 
 // ---------------------------------------------------------------------------
 // Task description builder

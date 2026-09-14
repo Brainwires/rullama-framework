@@ -44,6 +44,10 @@ export class RequestContext {
   /** Arbitrary key-value metadata. */
   metadata: Map<string, unknown> = new Map();
 
+  /**
+   * Create an uninitialized context with no client info and empty metadata.
+   * @param requestId Id of the JSON-RPC request being served (`null` before the first request).
+   */
   constructor(requestId: JsonRpcId = null) {
     this.requestId = requestId;
   }
@@ -55,7 +59,38 @@ export class RequestContext {
 }
 
 /**
- * MCP server that processes JSON-RPC requests via a transport.
+ * Structurally validate `initialize` params. A client that sends `{}` (or
+ * nothing) previously crashed the serve loop on `params.clientInfo.name`.
+ */
+export function parseInitializeParams(raw: unknown): InitializeParams {
+  const p = (typeof raw === "object" && raw !== null ? raw : {}) as Record<
+    string,
+    unknown
+  >;
+  const client =
+    (typeof p.clientInfo === "object" && p.clientInfo !== null
+      ? p.clientInfo
+      : {}) as Record<string, unknown>;
+  return {
+    protocolVersion: typeof p.protocolVersion === "string"
+      ? p.protocolVersion
+      : "2024-11-05",
+    capabilities:
+      (typeof p.capabilities === "object" && p.capabilities !== null
+        ? p.capabilities
+        : {}) as InitializeParams["capabilities"],
+    clientInfo: {
+      name: typeof client.name === "string" ? client.name : "unknown",
+      version: typeof client.version === "string" ? client.version : "unknown",
+    },
+  };
+}
+
+/**
+ * MCP server that processes JSON-RPC requests via a transport: reads
+ * newline-delimited requests, runs the middleware chain, dispatches
+ * `initialize`, `notifications/initialized`, `tools/list` and `tools/call`
+ * to the {@link McpHandler}, and writes responses back (never for notifications).
  * Equivalent to Rust `McpServer`.
  */
 export class McpServer {
@@ -63,10 +98,16 @@ export class McpServer {
   private middleware: MiddlewareChain;
   private transport: ServerTransport;
 
-  constructor(handler: McpHandler) {
+  /**
+   * Create a server with an empty middleware chain.
+   * @param handler The application handler.
+   * @param transport Transport to serve on (default: stdio). Passing one here
+   *   avoids opening stdin when the server will never use it (tests, embedding).
+   */
+  constructor(handler: McpHandler, transport?: ServerTransport) {
     this.handler = handler;
     this.middleware = new MiddlewareChain();
-    this.transport = new StdioServerTransport();
+    this.transport = transport ?? new StdioServerTransport();
   }
 
   /** Set a custom transport. Returns this for chaining. */
@@ -84,7 +125,7 @@ export class McpServer {
   /** Run the server event loop until the transport closes. */
   async run(): Promise<void> {
     const ctx = new RequestContext(null);
-    console.info("MCP Relay server starting");
+    console.error("MCP server starting");
 
     while (true) {
       let line: string | null;
@@ -96,7 +137,7 @@ export class McpServer {
       }
 
       if (line === null) {
-        console.debug("Transport closed (EOF)");
+        console.error("Transport closed (EOF)");
         break;
       }
 
@@ -134,6 +175,9 @@ export class McpServer {
       // Dispatch to handler
       const response = await this.handleRequest(request, ctx);
 
+      // JSON-RPC: a notification (no id) MUST NOT be answered.
+      if (request.id === undefined || request.id === null) continue;
+
       // Run response middleware
       await this.middleware.processResponse(response, ctx);
 
@@ -143,9 +187,10 @@ export class McpServer {
     if (this.handler.onShutdown) {
       await this.handler.onShutdown();
     }
-    console.info("MCP Relay server shut down");
+    console.error("MCP server shut down");
   }
 
+  /** Route a request by `method`; unknown methods get a `MethodNotFound` error response. */
   // deno-lint-ignore require-await
   private async handleRequest(
     request: JsonRpcRequest,
@@ -175,15 +220,17 @@ export class McpServer {
     }
   }
 
+  /**
+   * Handle `initialize`: record the client info on `ctx`, mark it initialized,
+   * invoke the handler's optional `onInitialize` (failures are logged, not
+   * returned), and reply with protocol version `2024-11-05` plus the
+   * handler's capabilities and server info.
+   */
   private async handleInitialize(
     request: JsonRpcRequest,
     ctx: RequestContext,
   ): Promise<JsonRpcResponse> {
-    const params = (request.params as InitializeParams) ?? {
-      protocolVersion: "2024-11-05",
-      capabilities: {},
-      clientInfo: { name: "unknown", version: "0.5.0" },
-    };
+    const params = parseInitializeParams(request.params);
 
     ctx.clientInfo = {
       name: params.clientInfo.name,
@@ -215,6 +262,7 @@ export class McpServer {
     };
   }
 
+  /** Handle `tools/list`: reply with the handler's tools as `{ name, description, inputSchema }`. */
   private handleListTools(request: JsonRpcRequest): JsonRpcResponse {
     const toolDefs = this.handler.listTools();
 
@@ -231,6 +279,12 @@ export class McpServer {
     };
   }
 
+  /**
+   * Handle `tools/call`: reject with `InvalidParams` when `params` or
+   * `params.name` is missing, otherwise call the handler with
+   * `params.arguments` (default `{}`); a thrown error becomes an `Internal`
+   * error response.
+   */
   private async handleCallTool(
     request: JsonRpcRequest,
     ctx: RequestContext,
@@ -278,6 +332,7 @@ export class McpServer {
     }
   }
 
+  /** Serialize `response` to JSON and hand it to the transport. */
   private async writeResponse(response: JsonRpcResponse): Promise<void> {
     const json = JSON.stringify(response);
     await this.transport.writeResponse(json);

@@ -1,14 +1,15 @@
 /**
- * Audio provider clients — TTS / STT / ASR HTTP wrappers.
+ * Cloud speech clients for rullama — TTS / STT / ASR over plain `fetch()`:
+ * Azure Speech, Cartesia, Deepgram, ElevenLabs, Fish Audio, Google Cloud TTS
+ * and Murf. Every client takes an API key, accepts and returns `Uint8Array`
+ * audio payloads (Google TTS returns base64 per its API contract; Murf returns a
+ * download URL) and can be rate-limited with `withRateLimit`.
+ * Microphone capture and speaker playback are intentionally not provided —
+ * the Rust `rullama-hardware` crate covers those; bring your own audio I/O
+ * (Web Audio, WebRTC) from Deno.
+ * Equivalent to Rust's `rullama-provider-speech` crate.
  *
- * These are pure HTTP clients that accept/return `Uint8Array` audio
- * payloads. Hardware capture (microphone) and playback (speaker) are
- * intentionally not provided in Deno — the Rust framework handles those
- * via the `rullama-hardware` crate, and Deno consumers should bring
- * their own audio I/O (Web Audio API, WebRTC, etc.).
- *
- * Equivalent to the audio provider modules in Rust's `rullama-providers`:
- * azure_speech, deepgram, elevenlabs, google_tts, murf, cartesia, fish.
+ * @module
  */
 
 export {

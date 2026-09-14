@@ -80,11 +80,7 @@ async fn call_tool_text(
         .as_object()
         .cloned()
         .context("arguments must be a JSON object")?;
-    // Tools that take `Parameters<()>` reject an empty map ("invalid type:
-    // map, expected unit") so only attach arguments when non-empty.
-    if !obj.is_empty() {
-        params = params.with_arguments(obj);
-    }
+    params = params.with_arguments(obj);
     let result = client.call_tool(params).await.context("call_tool failed")?;
 
     assert!(
@@ -143,16 +139,7 @@ fn echo_job_args(name: &str, message: &str) -> Value {
     })
 }
 
-// ── 1. add_job returns a queryable job id (stands in for list_jobs) ──────
-//
-// The original plan asked for `add_job` + `list_jobs`, but `list_jobs` is
-// declared as `Parameters<()>` and rmcp's server rewrites missing MCP
-// arguments into `{}` before deserializing them, which fails on `()`
-// ("invalid type: map, expected unit"). `list_jobs` therefore isn't
-// externally callable until the scheduler switches those two tools
-// (`list_jobs`, `status`) to a real request struct. For now the test
-// asserts `add_job` round-trips via `get_job` and pins the quirk so any
-// future fix shows up as a test failure.
+// ── 1. add_job returns a queryable job id, and list_jobs shows it ────────
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn add_and_list_job() -> Result<()> {
@@ -177,17 +164,10 @@ async fn add_and_list_job() -> Result<()> {
         "get_job should contain the job name, got:\n{detail}"
     );
 
-    // Pin the `list_jobs` / `Parameters<()>` quirk. When this starts failing,
-    // list_jobs has become callable — delete this block and replace it with a
-    // real list_jobs happy-path assertion.
-    let listed_raw = call_tool_raw(&h.client, "list_jobs", json!({})).await;
-    let hit_known_quirk = matches!(
-        &listed_raw,
-        Err(e) if format!("{e:#}").contains("expected unit")
-    );
+    let listed = call_tool_text(&h.client, "list_jobs", json!({})).await?;
     assert!(
-        hit_known_quirk,
-        "expected list_jobs to hit the Parameters<()> quirk, got: {listed_raw:?}"
+        listed.contains(&id) && listed.contains("hello-job"),
+        "list_jobs should show the job we just added, got:\n{listed}"
     );
 
     Ok(())

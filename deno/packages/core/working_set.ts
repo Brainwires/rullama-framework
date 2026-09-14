@@ -7,21 +7,32 @@ export const DEFAULT_MAX_TOKENS = 100_000;
 /** A file entry in the working set.
  * Equivalent to Rust's `WorkingSetEntry` in rullama-core. */
 export interface WorkingSetEntry {
+  /** File path; also the entry's key. */
   path: string;
+  /** Estimated token cost of keeping the file in context. */
   tokens: number;
+  /** Number of times the file has been added or touched. */
   access_count: number;
+  /** Turn number of the most recent access; drives LRU and stale eviction. */
   last_access_turn: number;
+  /** Turn number at which the file entered the working set. */
   added_at_turn: number;
+  /** When true the entry is never evicted. */
   pinned: boolean;
+  /** Optional human-readable label describing why the file is in context. */
   label?: string;
 }
 
 /** Working set configuration.
  * Equivalent to Rust's `WorkingSetConfig` in rullama-core. */
 export interface WorkingSetConfig {
+  /** Maximum number of entries before LRU eviction kicks in. */
   max_files: number;
+  /** Maximum total estimated tokens before LRU eviction kicks in. */
   max_tokens: number;
+  /** Unpinned entries not accessed for this many turns are evicted as stale. */
   stale_after_turns: number;
+  /** Whether {@link WorkingSet.nextTurn} evicts stale entries automatically. */
   auto_evict: boolean;
 }
 
@@ -43,6 +54,7 @@ export class WorkingSet {
   private _currentTurn = 0;
   private _lastEviction?: string;
 
+  /** Create an empty working set; uses {@link defaultWorkingSetConfig} when no config is given. */
   constructor(config?: WorkingSetConfig) {
     this.config = config ?? defaultWorkingSetConfig();
   }
@@ -211,6 +223,7 @@ export class WorkingSet {
     return [...this.entries.values()].map((e) => e.path);
   }
 
+  /** Evict unpinned entries last accessed at or before the stale threshold. */
   private evictStale(): void {
     const threshold = Math.max(
       0,
@@ -228,6 +241,10 @@ export class WorkingSet {
     }
   }
 
+  /**
+   * Evict LRU entries until an entry of `newTokens` fits within both limits;
+   * returns an `Evicted: ...` message, or undefined if nothing was evicted.
+   */
   private maybeEvict(newTokens: number): string | undefined {
     const evictedFiles: string[] = [];
     while (this.entries.size >= this.config.max_files) {
@@ -250,6 +267,7 @@ export class WorkingSet {
     return reason;
   }
 
+  /** Key of the unpinned entry with the oldest access turn (ties broken by lowest access count). */
   private findLruCandidate(): string | undefined {
     let bestKey: string | undefined;
     let bestTurn = Infinity;

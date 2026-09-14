@@ -4,7 +4,7 @@
  * Provides a simple rate limiter that enforces a maximum number of
  * requests per minute using the token-bucket algorithm.
  *
- * Equivalent to Rust's `RateLimiter` in `rullama-providers`.
+ * Shared by `@rullama/provider` and `@rullama/provider-speech`.
  */
 
 // ---------------------------------------------------------------------------
@@ -33,12 +33,14 @@ export class RateLimiter {
     this.#tokens = requestsPerMinute;
     this.#lastRefill = Date.now();
 
-    if (requestsPerMinute > 0) {
-      this.#refillIntervalMs = 60_000 / requestsPerMinute;
-    } else {
-      // Effectively infinite wait
-      this.#refillIntervalMs = Number.MAX_SAFE_INTEGER;
+    if (!(requestsPerMinute > 0)) {
+      // A zero budget can never be satisfied; the old "infinite wait" used a
+      // setTimeout beyond 2^31 ms, which fires immediately and spins.
+      throw new Error(
+        `requestsPerMinute must be positive (got ${requestsPerMinute})`,
+      );
     }
+    this.#refillIntervalMs = 60_000 / requestsPerMinute;
   }
 
   /**
@@ -122,6 +124,7 @@ export interface RateLimitedClientOptions {
  * {@link RateLimiter} before invoking the wrapped function.
  */
 export class RateLimitedClient<TArgs extends unknown[], TResult> {
+  /** The token bucket every {@link RateLimitedClient.execute} call draws from. */
   readonly limiter: RateLimiter;
   readonly #fn: (...args: TArgs) => Promise<TResult>;
 

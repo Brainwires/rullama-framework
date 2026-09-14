@@ -87,6 +87,12 @@ export function toolCallPaidEvent(
   };
 }
 
+/**
+ * Create a `sandbox_seconds` event stamped with the current time.
+ * @param provider Sandbox provider that ran the workload.
+ * @param seconds Wall-clock seconds of sandbox time consumed.
+ * @param cost_usd Charge for that time in USD.
+ */
 export function sandboxSecondsEvent(
   agent_id: string,
   provider: string,
@@ -103,6 +109,11 @@ export function sandboxSecondsEvent(
   };
 }
 
+/**
+ * Create an `api_call` event stamped with the current time.
+ * @param service Name of the external service that was called.
+ * @param cost_usd Charge for the call in USD.
+ */
 export function apiCallEvent(
   agent_id: string,
   service: string,
@@ -111,18 +122,22 @@ export function apiCallEvent(
   return { kind: "api_call", agent_id, service, cost_usd, timestamp: nowIso() };
 }
 
+/** The `agent_id` field shared by every {@link UsageEvent} variant. */
 export function agentIdOf(e: UsageEvent): string {
   return e.agent_id;
 }
 
+/** The `cost_usd` field shared by every {@link UsageEvent} variant. */
 export function costUsdOf(e: UsageEvent): number {
   return e.cost_usd;
 }
 
+/** The ISO 8601 `timestamp` shared by every {@link UsageEvent} variant. */
 export function timestampOf(e: UsageEvent): string {
   return e.timestamp;
 }
 
+/** The discriminant `kind` of a {@link UsageEvent}. */
 export function kindOf(e: UsageEvent): UsageEvent["kind"] {
   return e.kind;
 }

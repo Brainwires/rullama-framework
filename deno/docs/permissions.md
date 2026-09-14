@@ -1,12 +1,17 @@
 # Permissions
 
-The `@rullama/permissions` package provides capability-based access control,
-policy enforcement, audit logging, trust management, and anomaly detection.
+The `@rullama/permission` package provides capability-based access control,
+policy rules, audit logging, trust management and approval types. Since v0.12.1
+these are **enforced**: `@rullama/tool-runtime`'s `EnforcingExecutor` consults
+the permission mode, the capability profile and the policy engine before every
+tool call, and `@rullama/inference`'s `AgentContext` applies it by default. See
+[tools.md](./tools.md#enforcement) for the executor side; this page covers the
+building blocks.
 
 ## Capability Profiles
 
 `AgentCapabilities` bundles fine-grained controls over filesystem, tools,
-network, git, spawning, and resource quotas.
+network, git, spawning and resource quotas.
 
 ```ts
 import {
@@ -18,7 +23,9 @@ import {
 } from "@rullama/permission";
 
 // Use a preset profile
-const caps = parseCapabilityProfile("standard_dev");
+const caps = AgentCapabilities.standardDev(); // or .readOnly() / .fullAccess()
+const profile = parseCapabilityProfile("standard_dev"); // CapabilityProfile | undefined
+const fromProfile = AgentCapabilities.fromProfile(profile!);
 
 // Or build custom capabilities
 const custom = new AgentCapabilities({
@@ -28,72 +35,72 @@ const custom = new AgentCapabilities({
 });
 ```
 
-Preset profiles: `read_only`, `standard_dev`, `full_access`.
+Preset profiles: `read_only`, `standard_dev`, `full_access`. Pass the profile to
+the executor: `enforce(executor, { capabilities: caps })` or
+`new AgentContext(..., { capabilities: caps })`.
 
 ## PolicyEngine
 
-The `PolicyEngine` evaluates requests against a set of rules to produce
-allow/deny/requires-approval decisions.
+The `PolicyEngine` evaluates a `PolicyRequest` against prioritized policies to
+produce a `PolicyDecision` (`allow` / `deny` / `require_approval`, …).
+`PolicyEngine.withDefaults()` is what the enforcing executor uses when you pass
+none: it denies `.env`, secret and credential files and requires approval for
+`git reset` / `git rebase`.
 
 ```ts
 import {
   createPolicy,
-  createPolicyRequest,
   PolicyActions,
   PolicyEngine,
+  policyRequestForGit,
 } from "@rullama/permission";
 
-const engine = new PolicyEngine();
+const engine = PolicyEngine.withDefaults();
 
-// Add a policy
-engine.addPolicy(createPolicy({
-  name: "no-force-push",
-  conditions: [{
-    field: "action",
-    operator: "equals",
-    value: "git_force_push",
-  }],
-  action: PolicyActions.deny("Force push is prohibited"),
+engine.addPolicy(createPolicy("no-force-push", {
+  description: "Force push is prohibited",
+  priority: 100,
+  conditions: [{ type: "git_op", operation: "ForcePush" }],
+  action: PolicyActions.DenyWithMessage("Force push is prohibited"),
 }));
 
-// Evaluate a request
-const request = createPolicyRequest({
-  action: "git_force_push",
-  agent: "worker-1",
-});
-const decision = engine.evaluate(request);
+const decision = engine.evaluate(policyRequestForGit("ForcePush"));
+console.log(decision.action.type, decision.reason);
 ```
 
-Helpers for common request types: `policyRequestForFile`, `policyRequestForGit`,
-`policyRequestForNetwork`, `policyRequestForTool`.
+Conditions (`PolicyCondition`): `tool`, `tool_category`, `file_path`,
+`min_trust_level`, `domain`, `git_op`, `time_range`, `and`, `or`, `not`,
+`always`. Actions (`PolicyActions`): `Allow`, `Deny`, `RequireApproval`,
+`AllowWithAudit`, `DenyWithMessage(msg)`, `Escalate`.
+
+Helpers for common requests: `createPolicyRequest`, `policyRequestForTool`,
+`policyRequestForFile`, `policyRequestForNetwork`, `policyRequestForGit`; the
+executor-side `policyRequestForToolUse` (in `@rullama/tool-runtime`) builds one
+from a `ToolUse`.
 
 See: `../examples/permissions/policy_engine.ts`.
 
 ## TrustManager
 
-`TrustManager` tracks agent trust levels based on success/failure history and
-violation severity.
+`TrustManager` tracks a `TrustFactor` per agent from success / failure history
+and violation severity, and maps the score to a `TrustLevel` (`untrusted` /
+`low` / `medium` / `high` / `system`).
 
 ```ts
-import {
-  createTrustFactor,
-  trustLevelFromScore,
-  TrustManager,
-} from "@rullama/permission";
+import { TrustManager } from "@rullama/permission";
 
-const manager = new TrustManager();
-manager.registerAgent("worker-1", createTrustFactor("worker-1"));
+const manager = TrustManager.inMemory(); // or TrustManager.withPath(file)
 
-// Record outcomes
 manager.recordSuccess("worker-1");
-manager.recordViolation("worker-1", "medium");
+manager.recordViolation("worker-1", "major"); // "minor" | "major" | "critical"
 
-// Check trust
-const factor = manager.getTrustFactor("worker-1");
-const level = trustLevelFromScore(factor.score); // "high", "medium", "low", "untrusted"
+const level = manager.getTrustLevel("worker-1");
+const factor = manager.get("worker-1"); // TrustFactor | undefined
+const stats = manager.statistics(); // TrustStatistics
 ```
 
-Types: `TrustFactor`, `TrustLevel`, `ViolationSeverity`, `ViolationCounts`.
+Types: `TrustFactor`, `TrustLevel`, `ViolationSeverity`, `ViolationCounts`,
+`TrustStatistics`.
 
 ## AuditLogger
 
@@ -104,47 +111,58 @@ import {
   AuditLogger,
   createAuditEvent,
   createAuditQuery,
+  withAction,
   withAgent,
+  withOutcome,
 } from "@rullama/permission";
 
-const logger = new AuditLogger();
+const logger = AuditLogger.create(); // or AuditLogger.withPath(file)
 
-// Log an event
-logger.log(createAuditEvent({
-  type: "tool_execution",
-  agent: "worker-1",
-  action: "bash",
-  outcome: "success",
-}));
+logger.log(
+  withOutcome(
+    withAction(
+      withAgent(createAuditEvent("tool_execution"), "worker-1"),
+      "bash",
+    ),
+    "success",
+  ),
+);
+logger.logToolExecution("worker-1", "bash", undefined, "success", 12);
 
-// Query events
-const query = withAgent(createAuditQuery(), "worker-1");
-const events = logger.query(query);
-const stats = logger.statistics();
+const events = logger.query(createAuditQuery({ agent_id: "worker-1" }));
+const stats = logger.statistics(); // AuditStatistics
 ```
+
+Wire the enforcing executor's `onDecision` callback to the logger to record
+every allow / deny / approval decision.
 
 See: `../examples/permissions/trust_audit.ts`.
 
 ## Anomaly Detection
 
-`AnomalyDetector` monitors the audit stream for statistical anomalies -- unusual
-action frequencies, time-of-day patterns, and sudden behavior changes.
+`AnomalyDetector` lives in **`@rullama/telemetry`** (not in this package). It
+watches a stream of `ObservedEvent`s for unusual action frequencies and sudden
+behaviour changes.
 
 ```ts
-import { AnomalyDetector, defaultAnomalyConfig } from "@rullama/permission";
+import { AnomalyDetector, defaultAnomalyConfig } from "@rullama/telemetry";
 
 const detector = new AnomalyDetector(defaultAnomalyConfig());
-// Feed audit events into the detector
-// detector.observe(event);
-// const anomalies = detector.detect();
+detector.observe({
+  timestamp: new Date().toISOString(),
+  event_type: "policy_violation",
+  agent_id: "worker-1",
+});
+const anomalies = detector.drainAnomalies(); // AnomalyEvent[]
 ```
-
-Types: `AnomalyConfig`, `AnomalyEvent`, `AnomalyKind`.
 
 ## Approval Workflows
 
-For sensitive operations, policies can return a "requires approval" decision.
-The approval system provides structured request/response types:
+A `require_approval` policy decision (or, in `"auto"` mode, a tool flagged
+`requires_approval`) is routed by the enforcing executor to its
+`ApprovalHandler` --
+`(toolUse, decision, context) => boolean | Promise<boolean>` -- and denied when
+no handler is configured. The structured request/response types are here:
 
 ```ts
 import type { ApprovalRequest, ApprovalResponse } from "@rullama/permission";
@@ -170,5 +188,6 @@ const caps = configToCapabilities(config);
 
 ## Further Reading
 
-- [Agents](./agents.md) for integrating permissions into agent loops
+- [Tools](./tools.md) for the enforcing executor and built-in tool limits
+- [Agents](./agents.md) for `AgentContext` enforcement defaults
 - [Extensibility](./extensibility.md) for custom policy conditions

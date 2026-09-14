@@ -13,7 +13,7 @@ import {
   ThreeStateModel,
 } from "@rullama/agent";
 
-async function main() {
+function main(): void {
   console.log("=== Three-State Model Demo ===\n");
 
   // 1. Create model
@@ -136,4 +136,4 @@ async function main() {
   console.log("\nThree-state model demo complete.");
 }
 
-await main();
+main();

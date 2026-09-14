@@ -1,16 +1,11 @@
 /**
- * Ranking quality metrics for information retrieval evaluation.
+ * Ranking-quality metrics for retrieval evaluation: `ndcgAtK` (normalized
+ * discounted cumulative gain), `mrr` (mean reciprocal rank) and `precisionAtK`.
+ * All three are pure, synchronous functions over score lists and ground-truth
+ * relevance labels, safe to call from any evaluation case.
+ * Equivalent to Rust's `rullama_eval::ranking_metrics`.
  *
- * Pure functions operating on scores and ground-truth relevance labels.
- * No async, no external dependencies — safe to call from any eval case.
- *
- * | Function | What it measures |
- * |----------|-----------------|
- * | {@link ndcgAtK}        | Normalized Discounted Cumulative Gain |
- * | {@link mrr}            | Mean Reciprocal Rank |
- * | {@link precisionAtK}   | Fraction of top-K that are relevant |
- *
- * Equivalent to Rust's `rullama_agents::eval::ranking_metrics` module.
+ * @module
  */
 
 function zip(

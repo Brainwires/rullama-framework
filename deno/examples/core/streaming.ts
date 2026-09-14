@@ -18,7 +18,7 @@ import {
 class StreamingDemoProvider implements Provider {
   readonly name = "streaming-demo";
 
-  async chat(
+  chat(
     messages: Message[],
     _tools: Tool[] | undefined,
     _options: ChatOptions,
@@ -27,11 +27,11 @@ class StreamingDemoProvider implements Provider {
     const text = lastUser?.text() ?? "";
     const reply = `Here is my response to: "${text}"`;
 
-    return {
+    return Promise.resolve({
       message: Message.assistant(reply),
       usage: createUsage(text.length, reply.length),
       finish_reason: "stop",
-    };
+    });
   }
 
   async *streamChat(
@@ -87,16 +87,16 @@ class StreamingDemoProvider implements Provider {
 class ToolStreamingProvider implements Provider {
   readonly name = "tool-streaming-demo";
 
-  async chat(
+  chat(
     _messages: Message[],
     _tools: Tool[] | undefined,
     _options: ChatOptions,
   ): Promise<ChatResponse> {
-    return {
+    return Promise.resolve({
       message: Message.assistant("I will search for that."),
       usage: createUsage(10, 10),
       finish_reason: "stop",
-    };
+    });
   }
 
   async *streamChat(

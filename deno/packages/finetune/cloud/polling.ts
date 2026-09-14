@@ -4,6 +4,7 @@
  * Equivalent to Rust's `rullama_training::cloud::polling` module.
  */
 
+import { TrainingError } from "../error.ts";
 import type { TrainingJobId, TrainingJobStatus } from "../types.ts";
 import { isTerminal } from "../types.ts";
 import type { FineTuneProvider } from "./types.ts";
@@ -34,12 +35,27 @@ export function defaultPollerConfig(): JobPollerConfig {
 
 /** Poll `provider` until `job_id` reaches a terminal state (or timeout). */
 export class JobPoller {
+  /** Backoff/timeout settings this poller runs with. */
   readonly config: JobPollerConfig;
 
+  /**
+   * Create a poller.
+   *
+   * @param config Backoff/timeout settings; defaults to {@link defaultPollerConfig}.
+   */
   constructor(config: JobPollerConfig = defaultPollerConfig()) {
     this.config = config;
   }
 
+  /**
+   * Repeatedly call `provider.getJobStatus(job_id)` — invoking
+   * `config.on_status` each time — sleeping between calls with exponential
+   * backoff, until the status is terminal.
+   *
+   * @returns The terminal status (`succeeded`, `failed`, or `cancelled`).
+   * @throws `TrainingError` (`timeout`) once `config.timeout_ms` of wall-clock
+   *   time has elapsed without a terminal status.
+   */
   async poll(
     provider: FineTuneProvider,
     job_id: TrainingJobId,
@@ -57,7 +73,10 @@ export class JobPoller {
         this.config.timeout_ms !== null &&
         Date.now() - started >= this.config.timeout_ms
       ) {
-        return status;
+        // Returning the last non-terminal status hid the timeout from callers.
+        throw TrainingError.timeout(
+          `job ${job_id.value} still ${status.status} after ${this.config.timeout_ms} ms`,
+        );
       }
 
       await new Promise((resolve) => setTimeout(resolve, interval));

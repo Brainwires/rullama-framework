@@ -1,16 +1,16 @@
 /**
- * @module @rullama/a2a
+ * Agent-to-Agent (A2A) protocol client and types for rullama — a TypeScript
+ * port of the Rust `rullama-a2a` crate. Provides {@link A2aClient}, a
+ * fetch-based client that discovers agent cards and sends, streams, lists and
+ * cancels tasks over either the JSON-RPC or the REST binding, plus the full
+ * A2A v1.0 type system (messages, parts, tasks, agent cards, security schemes,
+ * push-notification configs, streaming events), the JSON-RPC method-name
+ * constants, {@link A2aError} with the spec error codes, and
+ * {@link parseSseStream}. This package is client-only: {@link A2aHandler} is
+ * the interface an agent server would implement, but no server transport or
+ * router ships here.
  *
- * rullama A2A - Agent-to-Agent protocol client and types.
- * TypeScript port of the Rust `rullama-a2a` crate.
- *
- * Implements Google's A2A protocol (v1.0) for inter-agent communication
- * with JSON-RPC and REST transports.
- *
- * - **A2aClient**: Connect to A2A agents, send messages, stream responses
- * - **Types**: Full A2A protocol type system (messages, tasks, agent cards)
- * - **SSE**: Server-Sent Events parser for streaming
- * - **Handler**: Interface for implementing A2A agent servers
+ * @module
  */
 
 // Core types

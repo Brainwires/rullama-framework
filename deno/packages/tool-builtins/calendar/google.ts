@@ -72,6 +72,7 @@ export class GoogleCalendarClient {
     );
   }
 
+  /** Exchange the refresh token for a fresh access token. */
   private static async refreshAccessToken(
     client_id: string,
     client_secret: string,

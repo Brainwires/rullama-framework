@@ -12,7 +12,7 @@ import {
   type ValidationCheck,
   type ValidationConfig,
   ValidatorAgent,
-} from "@rullama/agent";
+} from "@rullama/inference";
 
 async function main() {
   console.log("=== Validation Loop Demo ===\n");

@@ -147,6 +147,7 @@ export class CallGraph {
     return this.buildTree(rootId, maxDepth, new Set());
   }
 
+  /** Recursively build the callee subtree for `nodeId`, stopping at `depth` and on cycles. */
   private buildTree(
     nodeId: string,
     depth: number,

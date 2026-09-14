@@ -12,7 +12,7 @@ import {
   type ResolutionStrategy,
 } from "@rullama/agent";
 
-async function main() {
+function main(): void {
   console.log("=== Optimistic Concurrency Demo ===\n");
 
   // 1. Create controller (default: FirstWriterWins)
@@ -113,4 +113,4 @@ async function main() {
   console.log("\nOptimistic concurrency demo complete.");
 }
 
-await main();
+main();

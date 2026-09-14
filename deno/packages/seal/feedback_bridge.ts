@@ -17,10 +17,15 @@ import type { LearningCoordinator, PatternHint } from "./learning.ts";
 
 /** Statistics from processing a batch of feedback signals. */
 export interface FeedbackProcessingStats {
+  /** Signals turned into learning outcomes (positive + negative). */
   processed: number;
+  /** Signals with `thumbs_up` polarity, each recorded as a successful outcome. */
   positive: number;
+  /** Signals with `thumbs_down` polarity, each recorded as a failed outcome. */
   negative: number;
+  /** Signals that carried a correction text, each stored as a `PatternHint`. */
   corrections_applied: number;
+  /** Audit events skipped because their `polarity` metadata was missing or unrecognised. */
   skipped: number;
 }
 
@@ -40,10 +45,19 @@ function emptyStats(): FeedbackProcessingStats {
  */
 export class FeedbackBridge {
   private audit_logger: AuditLogger;
-  // Public so tests can inspect learning state (matches Rust field visibility
-  // via the `bridge.learning.global.get_pattern_hints()` pattern used there).
+  /**
+   * The coordinator that receives outcomes and pattern hints. Public so tests
+   * can inspect learning state (matches Rust field visibility via the
+   * `bridge.learning.global.get_pattern_hints()` pattern used there).
+   */
   public learning: LearningCoordinator;
 
+  /**
+   * Wire an audit logger to a learning coordinator; nothing is read until a
+   * `process*` method is called.
+   * @param audit_logger Source of feedback signals and `user_feedback` audit events.
+   * @param learning Coordinator that outcomes and correction hints are written into.
+   */
   constructor(audit_logger: AuditLogger, learning: LearningCoordinator) {
     this.audit_logger = audit_logger;
     this.learning = learning;
@@ -93,6 +107,11 @@ export class FeedbackBridge {
     return stats;
   }
 
+  /**
+   * Record one signal as a pattern-less query outcome (`thumbs_up` → success
+   * with result count 1, otherwise failure with 0), apply any correction as a
+   * hint, and bump the matching counters in `stats`.
+   */
   private applySignal(
     signal: FeedbackSignal,
     stats: FeedbackProcessingStats,
@@ -116,6 +135,11 @@ export class FeedbackBridge {
     stats.processed += 1;
   }
 
+  /**
+   * Store a user correction in global memory as a `PatternHint` with
+   * `context_pattern` `run:<run_id>`, confidence `1.0` and source
+   * `"user_feedback"`.
+   */
   private applyCorrection(correction: string, run_id: string): void {
     const hint: PatternHint = {
       context_pattern: `run:${run_id}`,

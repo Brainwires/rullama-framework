@@ -7,6 +7,9 @@
 
 import type { ServerTransport } from "./traits.ts";
 
+/** Longest single JSON-RPC line accepted (16 MiB); a longer one is a protocol error. */
+export const MAX_LINE_BYTES = 16 * 1024 * 1024;
+
 /**
  * Stdio-based server transport (stdin/stdout).
  * Reads newline-delimited JSON from stdin and writes to stdout.
@@ -18,9 +21,14 @@ export class StdioServerTransport implements ServerTransport {
   private encoder = new TextEncoder();
   private done = false;
 
-  constructor() {
+  /**
+   * Start decoding `input` as UTF-8 immediately; a stream error marks the
+   * transport done so {@link readRequest} drains and returns `null`.
+   * @param input Byte stream to read requests from (default: stdin).
+   */
+  constructor(input: ReadableStream<Uint8Array> = Deno.stdin.readable) {
     const decoder = new TextDecoderStream();
-    Deno.stdin.readable.pipeTo(decoder.writable).catch(() => {
+    input.pipeTo(decoder.writable).catch(() => {
       this.done = true;
     });
     this.reader = decoder.readable.getReader();
@@ -33,10 +41,15 @@ export class StdioServerTransport implements ServerTransport {
       if (newlineIndex !== -1) {
         const line = this.buffer.slice(0, newlineIndex).trim();
         this.buffer = this.buffer.slice(newlineIndex + 1);
-        if (line.length === 0) {
-          return null;
-        }
+        // A blank line is not a message and not EOF: keep reading.
+        if (line.length === 0) continue;
         return line;
+      }
+      if (this.buffer.length > MAX_LINE_BYTES) {
+        this.buffer = "";
+        throw new Error(
+          `line exceeds ${MAX_LINE_BYTES} bytes without a newline; dropping input`,
+        );
       }
 
       if (this.done) {

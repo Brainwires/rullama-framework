@@ -66,6 +66,7 @@ alt-folder-name = []
 [dev-dependencies]
 serde_json = { workspace = true }
 tempfile = "3"
+tokio = { workspace = true, features = ["macros", "rt"] }
 
 [package.metadata.docs.rs]
 all-features = true

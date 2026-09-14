@@ -101,11 +101,9 @@ export function instantiateTemplate(
     : new Map(Object.entries(substitutions));
 
   for (const [varName, value] of subs) {
-    const placeholder = `{{${varName}}}`;
-    // Replace all occurrences
-    while (result.includes(placeholder)) {
-      result = result.replace(placeholder, value);
-    }
+    // split/join replaces every occurrence in one pass, so a value that itself
+    // contains the placeholder cannot make the substitution loop forever.
+    result = result.split(`{{${varName}}}`).join(value);
   }
   return result;
 }

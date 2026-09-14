@@ -1,4 +1,4 @@
-import { assert, type assertEquals } from "@std/assert";
+import { assert } from "@std/assert";
 import {
   allEnabled,
   defaultLocalInferenceConfig,

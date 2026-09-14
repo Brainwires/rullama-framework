@@ -37,15 +37,23 @@ export type TruthSource =
 
 /** A behavioral truth entry (shape matches Rust `BehavioralTruth`). */
 export interface BehavioralTruth {
+  /** What kind of behaviour the truth describes. */
   category: TruthCategory;
+  /** Situation in which the rule applies. */
   context_pattern: string;
+  /** The guidance itself. */
   rule: string;
+  /** Why the rule holds (e.g. how many successful executions produced it). */
   rationale: string;
+  /** How the truth was obtained. */
   source: TruthSource;
+  /** Confidence in `[0, 1]`. */
   confidence: number;
+  /** Who authored it, for `manual` truths; `undefined` for machine-derived ones. */
   author: string | undefined;
 }
 
+/** Build a {@link BehavioralTruth} with `confidence` fixed at `1.0`. */
 export function newBehavioralTruth(
   category: TruthCategory,
   context_pattern: string,
@@ -70,9 +78,13 @@ export type ScoredTruth = [BehavioralTruth, number];
 
 /** A personal fact entry. */
 export interface PersonalFact {
+  /** Fact key (e.g. `recent_entity:<name>`). */
   key: string;
+  /** Fact value. */
   value: string;
+  /** Confidence in `[0, 1]`; facts below 0.5 are omitted from PKS context. */
   confidence: number;
+  /** Soft-delete flag; deleted facts are skipped by {@link SealKnowledgeCoordinator.getPksContext}. */
   deleted: boolean;
 }
 
@@ -81,21 +93,26 @@ export interface PersonalFact {
  * Deno consumers inject an object matching this shape (e.g., an RPC bridge).
  */
 export interface BehavioralKnowledgeCache {
+  /** Up to `limit` truths relevant to `query` with confidence `>= min_confidence`, each paired with a relevance score. */
   getMatchingTruthsWithScores(
     query: string,
     min_confidence: number,
     limit: number,
   ): Promise<ScoredTruth[]>;
+  /** Truths with confidence `>= min_confidence` observed within the last `days` days. */
   getReliableTruths(
     min_confidence: number,
     days: number,
   ): Promise<BehavioralTruth[]>;
+  /** Enqueue a new truth for submission to the knowledge store. */
   queueSubmission(truth: BehavioralTruth): Promise<void>;
 }
 
 /** Personal knowledge cache — concrete implementation lives Rust-side. */
 export interface PersonalKnowledgeCache {
+  /** Every stored fact, including soft-deleted ones. */
   getAllFacts(): Promise<PersonalFact[]>;
+  /** Insert or replace the fact at `key`; `local_only` keeps it from being synced upstream. */
   upsertFactSimple(
     key: string,
     value: string,
@@ -106,6 +123,11 @@ export interface PersonalKnowledgeCache {
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 
+/**
+ * How SEAL and PKS should be combined when resolving entities. Stored in
+ * {@link IntegrationConfig} for parity with Rust; the coordinator does not
+ * yet branch on it.
+ */
 export type EntityResolutionStrategy =
   | { kind: "seal_first" }
   | { kind: "pks_context_first" }
@@ -113,22 +135,40 @@ export type EntityResolutionStrategy =
 
 /** Configuration for SEAL + Knowledge integration. */
 export interface IntegrationConfig {
+  /** Master switch; when `false` every coordinator method is a no-op. */
   enabled: boolean;
+  /** Allow SEAL to write to the knowledge system (pattern promotion, tool-failure truths). */
   seal_to_knowledge: boolean;
+  /** Allow the knowledge system to feed SEAL (BKS → pattern hints). */
   knowledge_to_seal: boolean;
+  /** Minimum SEAL quality before BKS context is offered; validated to `[0, 1]`, not yet consulted by the coordinator. */
   min_seal_quality_for_bks_boost: number;
+  /** Minimum `SealProcessingResult.quality_score` for {@link SealKnowledgeCoordinator.getPksContext} to return context. */
   min_seal_quality_for_pks_boost: number;
+  /** Minimum `QueryPattern.reliability()` to promote a pattern into BKS; validated to `[0, 1]`. */
   pattern_promotion_threshold: number;
+  /** Minimum successes + failures before a pattern can be promoted. */
   min_pattern_uses: number;
+  /** When `false`, {@link SealKnowledgeCoordinator.syncBksToSeal} loads nothing. */
   cache_bks_in_seal: boolean;
+  /** Entity-resolution blending strategy (stored, not yet applied). */
   entity_resolution_strategy: EntityResolutionStrategy;
+  /** Weight of SEAL quality in {@link SealKnowledgeCoordinator.harmonizeConfidence}; the three weights must sum to 1. */
   seal_weight: number;
+  /** Weight of BKS confidence in `harmonizeConfidence`. */
   bks_weight: number;
+  /** Weight of PKS confidence in `harmonizeConfidence`. */
   pks_weight: number;
 }
 
+/** Default `pattern_promotion_threshold` (`0.8`). */
 export const DEFAULT_PATTERN_PROMOTION_THRESHOLD = 0.8;
 
+/**
+ * Defaults: everything enabled, BKS boost at quality 0.7, PKS boost at 0.5,
+ * promotion at reliability 0.8 after 5 uses, hybrid resolution (0.6/0.4),
+ * confidence weights SEAL 0.5 / BKS 0.3 / PKS 0.2.
+ */
 export function defaultIntegrationConfig(): IntegrationConfig {
   return {
     enabled: true,
@@ -150,14 +190,21 @@ export function defaultIntegrationConfig(): IntegrationConfig {
   };
 }
 
+/** Defaults with `knowledge_to_seal` off — SEAL writes to knowledge but reads nothing back. */
 export function integrationConfigSealToKnowledgeOnly(): IntegrationConfig {
   return { ...defaultIntegrationConfig(), knowledge_to_seal: false };
 }
 
+/** Defaults with `enabled` off — every coordinator method becomes a no-op. */
 export function integrationConfigDisabled(): IntegrationConfig {
   return { ...defaultIntegrationConfig(), enabled: false };
 }
 
+/**
+ * Throw an `Error` unless `min_seal_quality_for_bks_boost` and
+ * `pattern_promotion_threshold` are in `[0, 1]` and the three confidence
+ * weights sum to 1.0 (±0.01).
+ */
 export function validateIntegrationConfig(c: IntegrationConfig): void {
   if (
     c.min_seal_quality_for_bks_boost < 0 || c.min_seal_quality_for_bks_boost > 1
@@ -186,8 +233,13 @@ export function validateIntegrationConfig(c: IntegrationConfig): void {
 export class SealKnowledgeCoordinator {
   private bks_cache: BehavioralKnowledgeCache;
   private pks_cache: PersonalKnowledgeCache;
+  /** The validated configuration this coordinator was built with. */
   readonly integrationConfig: IntegrationConfig;
 
+  /**
+   * Create a coordinator over the given caches; `config` is validated with
+   * {@link validateIntegrationConfig} and an invalid one throws.
+   */
   constructor(
     bks_cache: BehavioralKnowledgeCache,
     pks_cache: PersonalKnowledgeCache,
@@ -374,14 +426,16 @@ export class SealKnowledgeCoordinator {
     await this.bks_cache.queueSubmission(truth);
   }
 
-  /** Accessors mirroring Rust `get_pks_cache` / `get_bks_cache`. */
+  /** The injected personal-knowledge cache (mirrors Rust `get_pks_cache`). */
   getPksCache(): PersonalKnowledgeCache {
     return this.pks_cache;
   }
+  /** The injected behavioral-knowledge cache (mirrors Rust `get_bks_cache`). */
   getBksCache(): BehavioralKnowledgeCache {
     return this.bks_cache;
   }
 
+  /** `definition` questions map to `command_usage`; every other type to `task_strategy`. */
   private inferCategory(qt: QuestionType): TruthCategory {
     switch (qt) {
       case "definition":
@@ -395,11 +449,13 @@ export class SealKnowledgeCoordinator {
     }
   }
 
+  /** Render a pattern as a rule sentence: `For '<type>' queries about <types>, use pattern: <template>`. */
   private generalizePatternToRule(pattern: QueryPattern): string {
     const typesStr = pattern.required_types.join(", ");
     return `For '${pattern.question_type}' queries about ${typesStr}, use pattern: ${pattern.template}`;
   }
 
+  /** Convert a truth to a {@link PatternHint} with source `"bks"`; always succeeds (the `undefined` mirrors Rust's `Option`). */
   private truthToPatternHint(t: BehavioralTruth): PatternHint | undefined {
     return {
       context_pattern: t.context_pattern,

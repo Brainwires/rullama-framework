@@ -137,6 +137,10 @@ export interface SecurityScheme {
   mtlsSecurityScheme?: MutualTlsSecurityScheme;
 }
 
+/**
+ * Security scheme that authenticates with an API key sent in a query
+ * parameter, header or cookie.
+ */
 export interface ApiKeySecurityScheme {
   /** Parameter name. */
   name: string;
@@ -146,6 +150,10 @@ export interface ApiKeySecurityScheme {
   description?: string;
 }
 
+/**
+ * Security scheme using an HTTP `Authorization` header (e.g. `Bearer` or
+ * `Basic`), per RFC 7235.
+ */
 export interface HttpAuthSecurityScheme {
   /** Auth scheme name (e.g. `Bearer`). */
   scheme: string;
@@ -155,6 +163,10 @@ export interface HttpAuthSecurityScheme {
   description?: string;
 }
 
+/**
+ * Security scheme using OAuth 2.0; the supported grant types are declared
+ * in {@link OAuthFlows}.
+ */
 export interface OAuth2SecurityScheme {
   /** OAuth2 flow configuration. */
   flows: OAuthFlows;
@@ -164,6 +176,10 @@ export interface OAuth2SecurityScheme {
   oauth2MetadataUrl?: string;
 }
 
+/**
+ * Security scheme using OpenID Connect discovery to locate the
+ * authorization server.
+ */
 export interface OpenIdConnectSecurityScheme {
   /** OIDC discovery URL. */
   openIdConnectUrl: string;
@@ -171,6 +187,10 @@ export interface OpenIdConnectSecurityScheme {
   description?: string;
 }
 
+/**
+ * Security scheme requiring the client to present a certificate (mutual
+ * TLS); it carries no configuration beyond a description.
+ */
 export interface MutualTlsSecurityScheme {
   /** Description. */
   description?: string;
@@ -193,6 +213,10 @@ export interface OAuthFlows {
   deviceCode?: DeviceCodeOAuthFlow;
 }
 
+/**
+ * Configuration for the OAuth 2.0 authorization-code grant (optionally
+ * with PKCE).
+ */
 export interface AuthorizationCodeOAuthFlow {
   /** Authorization URL. */
   authorizationUrl: string;
@@ -206,6 +230,10 @@ export interface AuthorizationCodeOAuthFlow {
   pkceRequired?: boolean;
 }
 
+/**
+ * Configuration for the OAuth 2.0 client-credentials grant (machine-to-
+ * machine, no user involved).
+ */
 export interface ClientCredentialsOAuthFlow {
   /** Token URL. */
   tokenUrl: string;
@@ -215,6 +243,9 @@ export interface ClientCredentialsOAuthFlow {
   scopes: Record<string, string>;
 }
 
+/**
+ * Configuration for the deprecated OAuth 2.0 implicit grant.
+ */
 export interface ImplicitOAuthFlow {
   /** Authorization URL. */
   authorizationUrl?: string;
@@ -224,6 +255,9 @@ export interface ImplicitOAuthFlow {
   scopes: Record<string, string>;
 }
 
+/**
+ * Configuration for the deprecated OAuth 2.0 resource-owner password grant.
+ */
 export interface PasswordOAuthFlow {
   /** Token URL. */
   tokenUrl?: string;
@@ -233,6 +267,10 @@ export interface PasswordOAuthFlow {
   scopes: Record<string, string>;
 }
 
+/**
+ * Configuration for the OAuth 2.0 device-authorization grant (RFC 8628),
+ * used by input-constrained clients.
+ */
 export interface DeviceCodeOAuthFlow {
   /** Device authorization URL. */
   deviceAuthorizationUrl: string;

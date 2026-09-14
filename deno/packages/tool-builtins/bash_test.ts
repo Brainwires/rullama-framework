@@ -1,5 +1,5 @@
-import { assertEquals, assertStringIncludes } from "@std/assert";
-import { BashTool } from "./bash.ts";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
+import { BashTool, scrubEnv } from "./bash.ts";
 import { ToolContext } from "@rullama/core";
 
 Deno.test("BashTool - getTools returns 1 tool", () => {
@@ -77,4 +77,70 @@ Deno.test("BashTool - transform command with head limit", () => {
     autoLimit: false,
   });
   assertStringIncludes(result, "head -n 50");
+});
+
+Deno.test("BashTool - the timeout is enforced", async () => {
+  const context = new ToolContext({ working_directory: Deno.cwd() });
+  const started = Date.now();
+  const result = await BashTool.execute(
+    "t",
+    "execute_command",
+    { command: "sleep 5", timeout: 1, output_mode: "full" },
+    context,
+  );
+  assert(result.is_error, result.content);
+  assertStringIncludes(result.content, "timed out");
+  assert(Date.now() - started < 4_000, "must not wait for the sleep to finish");
+});
+
+Deno.test("BashTool - credential-looking environment variables are withheld", async () => {
+  const context = new ToolContext({ working_directory: Deno.cwd() });
+  Deno.env.set("RULLAMA_TEST_API_KEY", "sk-should-not-leak");
+  Deno.env.set("RULLAMA_TEST_PLAIN", "visible");
+  try {
+    const result = await BashTool.execute(
+      "e",
+      "execute_command",
+      { command: "printenv | sort", output_mode: "full", timeout: 10 },
+      context,
+    );
+    assert(!result.is_error, result.content);
+    assert(!result.content.includes("sk-should-not-leak"));
+    assertStringIncludes(result.content, "RULLAMA_TEST_PLAIN=visible");
+  } finally {
+    Deno.env.delete("RULLAMA_TEST_API_KEY");
+    Deno.env.delete("RULLAMA_TEST_PLAIN");
+  }
+});
+
+Deno.test("scrubEnv drops secrets and keeps the rest", () => {
+  const out = scrubEnv({
+    PATH: "/bin",
+    HOME: "/h",
+    ANTHROPIC_API_KEY: "x",
+    OPENAI_API_KEY: "x",
+    AWS_SECRET_ACCESS_KEY: "x",
+    AWS_REGION: "us-east-1",
+    GITHUB_TOKEN: "x",
+    DB_PASSWORD: "x",
+    NODE_ENV: "test",
+  });
+  assertEquals(Object.keys(out).sort(), ["HOME", "NODE_ENV", "PATH"]);
+});
+
+Deno.test("BashTool - output is capped", async () => {
+  const context = new ToolContext({ working_directory: Deno.cwd() });
+  const result = await BashTool.execute(
+    "c",
+    "execute_command",
+    {
+      command: "head -c 600000 /dev/zero | tr '\\0' 'x'",
+      output_mode: "full",
+      timeout: 10,
+    },
+    context,
+  );
+  assert(!result.is_error, result.content);
+  assertStringIncludes(result.content, "[output truncated at");
+  assert(result.content.length < 300_000);
 });

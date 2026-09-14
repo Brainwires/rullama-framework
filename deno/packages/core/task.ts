@@ -27,22 +27,38 @@ function nowTimestamp(): number {
 /** A task being executed by an agent (supports tree structure).
  * Equivalent to Rust's `Task` in rullama-core. */
 export class Task {
+  /** Caller-supplied task identifier. */
   id: string;
+  /** What the task is meant to accomplish. */
   description: string;
+  /** Current lifecycle status. */
   status: TaskStatus;
+  /** Plan the task was created for, if any. */
   plan_id?: string;
+  /** ID of the parent task; undefined for a root task. */
   parent_id?: string;
+  /** IDs of subtasks. */
   children: string[];
+  /** IDs of tasks that must finish before this one can start. */
   depends_on: string[];
+  /** Scheduling priority (defaults to `"normal"`). */
   priority: TaskPriority;
+  /** Agent the task is assigned to, if any. */
   assigned_to?: string;
+  /** Number of agent iterations spent on the task so far. */
   iterations: number;
+  /** Outcome summary set on completion, or the error/reason on failure or skip. */
   summary?: string;
+  /** Unix timestamp (seconds) when the task was created. */
   created_at: number;
+  /** Unix timestamp (seconds) of the last mutation. */
   updated_at: number;
+  /** Unix timestamp (seconds) when work began (set by {@link Task.start}). */
   started_at?: number;
+  /** Unix timestamp (seconds) when the task completed or was skipped. */
   completed_at?: number;
 
+  /** Create a pending, normal-priority task. */
   constructor(id: string, description: string) {
     const now = nowTimestamp();
     this.id = id;
@@ -172,8 +188,12 @@ export class Task {
 /** Agent response after processing.
  * Equivalent to Rust's `AgentResponse` in rullama-core. */
 export interface AgentResponse {
+  /** Final text the agent produced. */
   message: string;
+  /** True when the agent finished its task rather than stopping early. */
   is_complete: boolean;
+  /** Tasks the agent created or updated while running. */
   tasks: Task[];
+  /** Number of agent loop iterations used. */
   iterations: number;
 }

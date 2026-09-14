@@ -17,6 +17,9 @@ import type {
   Record as BwRecord,
   ScoredRecord,
 } from "../types.ts";
+import type { FilterBuildOptions } from "./sql_guards.ts";
+import * as sql from "./sql_builder.ts";
+import type { SqlDialect } from "./sql_builder.ts";
 
 const DEFAULT_URL = "mysql://localhost:3306/rullama";
 
@@ -67,101 +70,37 @@ export function fieldValueToParam(fv: FieldValue): unknown {
   }
 }
 
-/**
- * Convert a Filter tree into a MySQL WHERE fragment with `?` placeholders.
- *
- * Returns `[sql, values]` where `values` are the bind parameters.
- */
+/** The MySQL dialect: `` `ident` ``, `?` placeholders, JSON vectors. */
+const MYSQL_DIALECT: SqlDialect = {
+  quote: (id) => `\`${id}\``,
+  placeholder: () => "?",
+  mapFieldType,
+  fieldValueToParam,
+  countSuffix: " AS cnt",
+};
+
+/** Translate a Filter into a WHERE fragment + values (`?` placeholders). */
 export function filterToSql(
   filter: Filter,
+  options?: FilterBuildOptions,
 ): [string, FieldValue[]] {
-  switch (filter.kind) {
-    case "Eq":
-      return [`\`${filter.field}\` = ?`, [filter.value]];
-    case "Ne":
-      return [`\`${filter.field}\` != ?`, [filter.value]];
-    case "Lt":
-      return [`\`${filter.field}\` < ?`, [filter.value]];
-    case "Lte":
-      return [`\`${filter.field}\` <= ?`, [filter.value]];
-    case "Gt":
-      return [`\`${filter.field}\` > ?`, [filter.value]];
-    case "Gte":
-      return [`\`${filter.field}\` >= ?`, [filter.value]];
-    case "NotNull":
-      return [`\`${filter.field}\` IS NOT NULL`, []];
-    case "IsNull":
-      return [`\`${filter.field}\` IS NULL`, []];
-    case "In": {
-      if (filter.values.length === 0) return ["1 = 0", []];
-      const placeholders = filter.values.map(() => "?");
-      return [
-        `\`${filter.field}\` IN (${placeholders.join(", ")})`,
-        [...filter.values],
-      ];
-    }
-    case "And": {
-      if (filter.filters.length === 0) return ["1 = 1", []];
-      const parts: string[] = [];
-      const allVals: FieldValue[] = [];
-      for (const f of filter.filters) {
-        const [sql, vals] = filterToSql(f);
-        parts.push(sql);
-        allVals.push(...vals);
-      }
-      return [`(${parts.join(" AND ")})`, allVals];
-    }
-    case "Or": {
-      if (filter.filters.length === 0) return ["1 = 0", []];
-      const parts: string[] = [];
-      const allVals: FieldValue[] = [];
-      for (const f of filter.filters) {
-        const [sql, vals] = filterToSql(f);
-        parts.push(sql);
-        allVals.push(...vals);
-      }
-      return [`(${parts.join(" OR ")})`, allVals];
-    }
-    case "Raw":
-      return [filter.expression, []];
-  }
+  return sql.filterToSql(MYSQL_DIALECT, filter, 1, options);
 }
 
-/** Build a CREATE TABLE IF NOT EXISTS DDL statement (MySQL dialect). */
+/** Build a CREATE TABLE IF NOT EXISTS DDL statement. */
 export function buildCreateTable(
   tableName: string,
   schema: FieldDef[],
 ): string {
-  const cols = schema.map((f, i) => {
-    const mysqlType = mapFieldType(f.fieldType);
-    const nullable = f.nullable ? "" : " NOT NULL";
-    const pk = i === 0 ? " PRIMARY KEY" : "";
-    return `\`${f.name}\` ${mysqlType}${nullable}${pk}`;
-  });
-  return `CREATE TABLE IF NOT EXISTS \`${tableName}\` (${cols.join(", ")})`;
+  return sql.buildCreateTable(MYSQL_DIALECT, tableName, schema);
 }
 
-/** Build an INSERT INTO statement with `?` placeholders. Returns [sql, params]. */
+/** Build a multi-row INSERT. Returns [sql, params]. */
 export function buildInsert(
   tableName: string,
   records: BwRecord[],
 ): [string, unknown[]] {
-  if (records.length === 0) return ["", []];
-  const colNames = records[0].map(([name]) => name);
-  const quotedCols = colNames.map((c) => `\`${c}\``);
-  const allParams: unknown[] = [];
-  const rowGroups: string[] = [];
-  for (const rec of records) {
-    const placeholders = rec.map(() => "?");
-    for (const [, fv] of rec) {
-      allParams.push(fieldValueToParam(fv));
-    }
-    rowGroups.push(`(${placeholders.join(", ")})`);
-  }
-  const sql = `INSERT INTO \`${tableName}\` (${quotedCols.join(", ")}) VALUES ${
-    rowGroups.join(", ")
-  }`;
-  return [sql, allParams];
+  return sql.buildInsert(MYSQL_DIALECT, tableName, records);
 }
 
 /** Build a SELECT * with optional WHERE / LIMIT. Returns [sql, params]. */
@@ -169,43 +108,27 @@ export function buildSelect(
   tableName: string,
   filter?: Filter,
   limit?: number,
+  options?: FilterBuildOptions,
 ): [string, unknown[]] {
-  let sql = `SELECT * FROM \`${tableName}\``;
-  const params: unknown[] = [];
-  if (filter) {
-    const [whereSql, vals] = filterToSql(filter);
-    sql += ` WHERE ${whereSql}`;
-    params.push(...vals.map(fieldValueToParam));
-  }
-  if (limit !== undefined) sql += ` LIMIT ${limit}`;
-  return [sql, params];
+  return sql.buildSelect(MYSQL_DIALECT, tableName, filter, limit, options);
 }
 
 /** Build a DELETE FROM with WHERE. Returns [sql, params]. */
 export function buildDelete(
   tableName: string,
   filter: Filter,
+  options?: FilterBuildOptions,
 ): [string, unknown[]] {
-  const [whereSql, vals] = filterToSql(filter);
-  return [
-    `DELETE FROM \`${tableName}\` WHERE ${whereSql}`,
-    vals.map(fieldValueToParam),
-  ];
+  return sql.buildDelete(MYSQL_DIALECT, tableName, filter, options);
 }
 
 /** Build a SELECT COUNT(*) with optional WHERE. Returns [sql, params]. */
 export function buildCount(
   tableName: string,
   filter?: Filter,
+  options?: FilterBuildOptions,
 ): [string, unknown[]] {
-  let sql = `SELECT COUNT(*) AS cnt FROM \`${tableName}\``;
-  const params: unknown[] = [];
-  if (filter) {
-    const [whereSql, vals] = filterToSql(filter);
-    sql += ` WHERE ${whereSql}`;
-    params.push(...vals.map(fieldValueToParam));
-  }
-  return [sql, params];
+  return sql.buildCount(MYSQL_DIALECT, tableName, filter, options);
 }
 
 /** Compute cosine similarity between two number arrays. */
@@ -280,6 +203,8 @@ function rowToRecord(row: Record<string, unknown>): BwRecord {
 export interface MySqlConfig {
   /** MySQL connection URI (e.g. "mysql://user:pass@host:3306/db"). */
   uri?: string;
+  /** Allow `Filter.kind === "Raw"` (verbatim SQL). Default: false. */
+  allowRawFilters?: boolean;
 }
 
 /**
@@ -291,7 +216,16 @@ export interface MySqlConfig {
 export class MySqlDatabase implements StorageBackend {
   private pool: mysql.Pool;
 
+  private readonly filterOptions: FilterBuildOptions;
+
+  /**
+   * Open a `mysql2` connection pool.
+   *
+   * @param config Connection URI (default `mysql://localhost:3306/rullama`)
+   *   and whether `Raw` filters are permitted (default `false`).
+   */
   constructor(config?: MySqlConfig) {
+    this.filterOptions = { allowRaw: config?.allowRawFilters ?? false };
     const uri = config?.uri ?? DEFAULT_URL;
     this.pool = mysql.createPool(uri);
   }
@@ -320,20 +254,25 @@ export class MySqlDatabase implements StorageBackend {
     filter?: Filter,
     limit?: number,
   ): Promise<BwRecord[]> {
-    const [sql, params] = buildSelect(tableName, filter, limit);
+    const [sql, params] = buildSelect(
+      tableName,
+      filter,
+      limit,
+      this.filterOptions,
+    );
     // deno-lint-ignore no-explicit-any
     const [rows] = await this.pool.execute(sql, params as any);
     return (rows as Record<string, unknown>[]).map(rowToRecord);
   }
 
   async delete(tableName: string, filter: Filter): Promise<void> {
-    const [sql, params] = buildDelete(tableName, filter);
+    const [sql, params] = buildDelete(tableName, filter, this.filterOptions);
     // deno-lint-ignore no-explicit-any
     await this.pool.execute(sql, params as any);
   }
 
   async count(tableName: string, filter?: Filter): Promise<number> {
-    const [sql, params] = buildCount(tableName, filter);
+    const [sql, params] = buildCount(tableName, filter, this.filterOptions);
     // deno-lint-ignore no-explicit-any
     const [rows] = await this.pool.execute(sql, params as any);
     const first = (rows as Record<string, unknown>[])[0];
@@ -352,7 +291,7 @@ export class MySqlDatabase implements StorageBackend {
     let params: unknown[];
 
     if (filter) {
-      const [whereSql, vals] = filterToSql(filter);
+      const [whereSql, vals] = filterToSql(filter, this.filterOptions);
       sql =
         `SELECT * FROM \`${tableName}\` WHERE ${whereSql} AND \`${vectorColumn}\` IS NOT NULL`;
       params = vals.map(fieldValueToParam);

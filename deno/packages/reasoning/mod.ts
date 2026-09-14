@@ -1,28 +1,21 @@
 /**
- * @module @rullama/reasoning
+ * Provider-agnostic reasoning primitives for rullama (Layer 3 —
+ * Intelligence). Provides the Tier-1 local-inference scorers —
+ * {@link ComplexityScorer}, {@link LocalRouter}, {@link LocalValidator} and
+ * {@link RetrievalClassifier} — each of which calls a `@rullama/core`
+ * `Provider` and ships a pure heuristic fallback, plus the plan parser
+ * ({@link parsePlanSteps} / {@link stepsToTasks}), the
+ * {@link LocalInferenceConfig} feature flags with {@link InferenceTimer}, and
+ * the `OutputParser` family re-exported from `@rullama/core`. The Rust crate's
+ * `strategies`, `strategy_selector`, `summarizer`, `relevance_scorer` and
+ * `entity_enhancer` modules are not ported yet. Equivalent to Rust's
+ * `rullama-reasoning` crate.
  *
- * Layer 3 — Intelligence. Provider-agnostic reasoning primitives for the
- * rullama.
- *
- * ## What's here
- *
- * - **Parsers** — `OutputParser` (re-exported from `@rullama/core`) and
- *   {@link parsePlanSteps} / {@link stepsToTasks}.
- * - **Local scorers** — `ComplexityScorer`, `LocalRouter`, `LocalValidator`,
- *   `RetrievalClassifier`. Each takes a `Provider` and falls back to a
- *   pattern-based heuristic when the LLM call fails.
- * - **Config + timer** — `LocalInferenceConfig`, `InferenceTimer`.
- *
- * ## Intentionally deferred
- *
- * The Rust crate additionally ships `strategies`, `strategy_selector`,
- * `summarizer`, `relevance_scorer`, and `entity_enhancer`. These are
- * scheduled for a follow-up port — the current Deno slice covers the
- * Tier-1 fast path (routing, validation, complexity, retrieval gating)
- * plus the parsers the rest of the framework consumes.
- *
- * Equivalent to Rust's `rullama-reasoning` crate.
+ * @module
  */
+
+// Core types that appear in this package's public signatures.
+export type { Provider, Task } from "@rullama/core";
 
 // Parsers — OutputParser already lives in @rullama/core (see plan §B1).
 export {

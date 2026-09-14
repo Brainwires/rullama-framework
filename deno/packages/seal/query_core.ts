@@ -7,11 +7,7 @@
  * Equivalent to Rust's `rullama_agents::seal::query_core` module.
  */
 
-import type {
-  EdgeType,
-  EntityType,
-  RelationshipGraphT,
-} from "@rullama/core";
+import type { EdgeType, EntityType, RelationshipGraphT } from "./types.ts";
 
 // ─── Regex statics ──────────────────────────────────────────────────────────
 
@@ -216,11 +212,17 @@ export type QuestionType =
 
 /** A complete query core with metadata. */
 export interface QueryCore {
+  /** Classification produced by `QueryCoreExtractor.classifyQuestion`. */
   question_type: QuestionType;
+  /** Root expression to execute (a join, count, superlative, or bare variable). */
   root: QueryExpr;
+  /** `[name, type]` pairs of known entities whose names occur in the question. */
   entities: [string, EntityType][];
+  /** The natural-language question the core was extracted from. */
   original: string;
+  /** The coreference-rewritten question, set by `SealProcessor.process` only when it differs from `original`. */
   resolved: string | undefined;
+  /** Extraction confidence; {@link newQueryCore} always sets `1.0`. */
   confidence: number;
 }
 
@@ -301,17 +303,25 @@ function predicateToDebug(p: FilterPredicate): string {
 
 /** A single result value. */
 export interface QueryResultValue {
+  /** Entity name (or literal from a `values` op). */
   value: string;
+  /** Entity type when known; `undefined` for literal `values`. */
   entity_type: EntityType | undefined;
+  /** Ranking score — graph node importance, edge weight, or `1.0` for constants/literals. */
   score: number;
+  /** Named properties consulted by `property` filter predicates; empty from the built-in executor. */
   metadata: Map<string, string>;
 }
 
 /** Result of executing a query core. */
 export interface QueryResult {
+  /** Matched values; empty for `count` results. */
   values: QueryResultValue[];
+  /** Number of matches; set for value and `count` results, `undefined` for an empty/error result. */
   count: number | undefined;
+  /** `false` only when the query failed (see `error`). */
   success: boolean;
+  /** Failure message when `success` is `false`. */
   error: string | undefined;
 }
 
@@ -533,12 +543,22 @@ export class QueryCoreExtractor {
 
 /** Query executor for running query cores against a relationship graph. */
 export class QueryExecutor {
+  /**
+   * Bind the executor to a graph.
+   * @param graph The relationship graph that joins, variables and edge lookups run against.
+   */
   constructor(private graph: RelationshipGraphT) {}
 
+  /** Execute the core's root expression against the graph. */
   execute(query: QueryCore): QueryResult {
     return this.executeExpr(query.root);
   }
 
+  /**
+   * Evaluate one expression: a bare variable yields up to 100 nodes from
+   * `graph.search("")` scored by importance, a constant yields itself with
+   * score 1.0, and an op is delegated to {@link executeOp}.
+   */
   private executeExpr(expr: QueryExpr): QueryResult {
     switch (expr.kind) {
       case "variable": {
@@ -564,6 +584,13 @@ export class QueryExecutor {
     }
   }
 
+  /**
+   * Evaluate an operation. `join` walks the neighbours of the constant side
+   * (object preferred over subject) filtered by the relation's edge type;
+   * `and` intersects, `or` unions by value; `filter` applies the predicate;
+   * `count` returns only a count; `superlative` keeps the single best-scored
+   * value.
+   */
   private executeOp(op: QueryOp): QueryResult {
     switch (op.kind) {
       case "join": {

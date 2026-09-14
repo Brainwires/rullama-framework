@@ -13,20 +13,35 @@ import type { AnalyticsSink } from "./sink.ts";
 
 /** Aggregated outcome metrics for a single agent. */
 export interface OutcomeMetrics {
+  /** Agent these counters belong to; `"__global__"` collects `provider_call` events, which carry no agent id. */
   agent_id: string;
+  /** Number of `agent_run` events recorded (successful or not). */
   total_runs: number;
+  /** Runs whose `agent_run` event had `success: true`. */
   success_count: number;
+  /** Runs whose `agent_run` event had `success: false`. */
   failure_count: number;
+  /** Sum of `total_iterations` over all runs. */
   total_iterations: number;
+  /** Tool calls counted from `agent_run.total_tool_calls` plus one per `tool_call` event carrying this agent id. */
   total_tool_calls: number;
+  /** Tool calls that errored: `agent_run.tool_error_count` plus `tool_call` events with `is_error`. */
   tool_error_count: number;
+  /** Number of `provider_call` events (only ever incremented on the `"__global__"` entry). */
   provider_call_count: number;
+  /** Prompt tokens summed from `agent_run` events (per agent) or `provider_call` events (global). */
   total_tokens_prompt: number;
+  /** Completion tokens summed from `agent_run` events (per agent) or `provider_call` events (global). */
   total_tokens_completion: number;
+  /** Cumulative cost in USD from `agent_run` events (per agent) or `provider_call` events (global). */
   total_cost_usd: number;
+  /** Sum of `provider_call.duration_ms` (global entry only); divides {@link avgProviderLatencyMs}. */
   total_provider_duration_ms: number;
+  /** Sum of `agent_run.duration_ms`; divides {@link avgRunDurationMs}. */
   total_run_duration_ms: number;
+  /** Prompt tokens served from the provider's cache (`provider_call.cache_read_input_tokens`, global entry only). */
   total_cache_read_tokens: number;
+  /** Prompt tokens charged to populate the provider's cache (`provider_call.cache_creation_input_tokens`, global entry only). */
   total_cache_creation_tokens: number;
 }
 
@@ -52,28 +67,37 @@ function freshMetrics(agent_id: string): OutcomeMetrics {
 
 // Derived ratios / averages ---------------------------------------------------
 
+/** Fraction of runs that succeeded (`success_count / total_runs`), 0 when there were no runs. */
 export function successRate(m: OutcomeMetrics): number {
   return m.total_runs === 0 ? 0 : m.success_count / m.total_runs;
 }
 
+/** Mean cost per run in USD (`total_cost_usd / total_runs`), 0 when there were no runs. */
 export function avgCostPerRunUsd(m: OutcomeMetrics): number {
   return m.total_runs === 0 ? 0 : m.total_cost_usd / m.total_runs;
 }
 
+/** Mean run duration in milliseconds (`total_run_duration_ms / total_runs`), 0 when there were no runs. */
 export function avgRunDurationMs(m: OutcomeMetrics): number {
   return m.total_runs === 0 ? 0 : m.total_run_duration_ms / m.total_runs;
 }
 
+/** Mean provider call latency in milliseconds (`total_provider_duration_ms / provider_call_count`), 0 with no calls. */
 export function avgProviderLatencyMs(m: OutcomeMetrics): number {
   return m.provider_call_count === 0
     ? 0
     : m.total_provider_duration_ms / m.provider_call_count;
 }
 
+/** Fraction of tool calls that errored (`tool_error_count / total_tool_calls`), 0 with no tool calls. */
 export function toolErrorRate(m: OutcomeMetrics): number {
   return m.total_tool_calls === 0 ? 0 : m.tool_error_count / m.total_tool_calls;
 }
 
+/**
+ * Fraction of prompt tokens served from the provider cache:
+ * `cache_read / (prompt + cache_read)`, 0 when both are zero.
+ */
 export function cacheHitRate(m: OutcomeMetrics): number {
   const denom = m.total_tokens_prompt + m.total_cache_read_tokens;
   return denom === 0 ? 0 : m.total_cache_read_tokens / denom;
@@ -106,6 +130,7 @@ export class MetricsRegistry implements AnalyticsSink {
     this.entries.clear();
   }
 
+  /** Get the live (mutable) entry for `agent_id`, creating a zeroed one on first use. */
   private entry(agent_id: string): OutcomeMetrics {
     let m = this.entries.get(agent_id);
     if (!m) {

@@ -120,6 +120,7 @@ export function symbolIdToStorageId(id: SymbolId): string {
 
 /** A definition of a symbol in the codebase. */
 export interface Definition {
+  /** Identity of the symbol (name, kind, file, start position). */
   symbolId: SymbolId;
   /** Absolute root path of the indexed codebase. */
   rootPath?: string;
@@ -150,15 +151,23 @@ export function definitionToStorageId(def: Definition): string {
 export interface Reference {
   /** File path where the reference occurs. */
   filePath: string;
+  /** Absolute root path of the indexed codebase. */
   rootPath?: string;
+  /** Project name (for multi-project support). */
   project?: string;
+  /** Line where the reference starts (1-based). */
   startLine: number;
+  /** Line where the reference ends (1-based). */
   endLine: number;
+  /** Column where the reference starts (0-based). */
   startCol: number;
+  /** Column where the reference ends (0-based). */
   endCol: number;
   /** Storage ID of the target symbol being referenced. */
   targetSymbolId: string;
+  /** How the symbol is referenced (call, import, type, …). */
   referenceKind: ReferenceKind;
+  /** Unix timestamp (ms) of when the reference was indexed. */
   indexedAt: number;
 }
 
@@ -185,10 +194,15 @@ export interface CallEdge {
 
 /** A node in the call graph (for tree display). */
 export interface CallGraphNode {
+  /** Symbol name. */
   name: string;
+  /** Kind of symbol. */
   kind: SymbolKind;
+  /** File that defines the symbol. */
   filePath: string;
+  /** Line of the definition (1-based). */
   line: number;
+  /** Symbols this node calls. */
   children: CallGraphNode[];
 }
 
@@ -196,8 +210,12 @@ export interface CallGraphNode {
 
 /** Per-language statistics from a code analysis run. */
 export interface LanguageStats {
+  /** Language name. */
   language: string;
+  /** Files analysed in this language. */
   fileCount: number;
+  /** Symbols found. */
   symbolCount: number;
+  /** References found. */
   referenceCount: number;
 }

@@ -1,7 +1,7 @@
 // Example: Skill Registry
 // Demonstrates SKILL.md creation, skill discovery with SkillRegistry,
 // query matching with SkillRouter, and lazy-loading full skill instructions.
-// Run: deno run --allow-read --allow-write --allow-env deno/examples/skills/skill_registry.ts
+// Run: deno run --allow-read --allow-write --allow-env deno/examples/agents/skill_registry.ts
 
 import {
   createSkillMetadata,
@@ -10,11 +10,9 @@ import {
   hasToolRestrictions,
   isToolAllowed,
   type Skill,
-  type SkillMetadata,
   SkillRegistry,
   SkillRouter,
-  type SkillSource,
-} from "@rullama/agent";
+} from "@rullama/skills";
 
 async function main(): Promise<void> {
   // -----------------------------------------------------------------------
@@ -22,9 +20,7 @@ async function main(): Promise<void> {
   // -----------------------------------------------------------------------
   console.log("=== 1. Setup: Creating SKILL.md files ===\n");
 
-  const tempDir = `${
-    Deno.env.get("TMPDIR") ?? "/tmp"
-  }/rullama-skills-example`;
+  const tempDir = `${Deno.env.get("TMPDIR") ?? "/tmp"}/rullama-skills-example`;
   try {
     await Deno.mkdir(tempDir, { recursive: true });
   } catch (e) {

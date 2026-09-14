@@ -16,7 +16,6 @@ export type ProviderType =
   | "google"
   | "groq"
   | "ollama"
-  | "rullama"
   | "together"
   | "fireworks"
   | "anyscale"
@@ -39,8 +38,6 @@ export function parseProviderType(s: string): ProviderType | undefined {
       return "groq";
     case "ollama":
       return "ollama";
-    case "rullama":
-      return "rullama";
     case "together":
       return "together";
     case "fireworks":
@@ -77,8 +74,6 @@ export function defaultModel(provider: ProviderType): string {
       return "llama-3.3-70b-versatile";
     case "ollama":
       return "llama3.3";
-    case "rullama":
-      return "gpt-5-mini";
     case "together":
       return "meta-llama/Llama-3.1-8B-Instruct";
     case "fireworks":

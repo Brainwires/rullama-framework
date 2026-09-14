@@ -1,8 +1,12 @@
 /**
- * Smart Tool Router
+ * Keyword-based smart tool routing. `analyzeQuery` / `analyzeMessages` map a
+ * user query (or the recent conversation) to the `ToolCategory`s it mentions
+ * using pattern lists, and `getSmartTools` / `getSmartToolsWithMcp` /
+ * `getToolsForCategories` narrow a `ToolRegistry` to those categories so the
+ * provider sees fewer tool definitions. No model call is involved.
+ * Equivalent to Rust's `rullama_tool_runtime::smart_router`.
  *
- * Analyzes user queries to determine which tool categories are relevant.
- * Uses pure keyword-based pattern matching (no AI/inference dependencies).
+ * @module
  */
 
 import type { Tool } from "@rullama/core";

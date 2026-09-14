@@ -8,81 +8,26 @@
  *    propagated through conversation history.
  */
 
+import { containsSecrets, redactSecrets } from "@rullama/core";
+
 // ---- Sensitive data patterns ----
-
-interface SensitivePattern {
-  regex: RegExp;
-  label: string;
-}
-
-const SENSITIVE_PATTERNS: SensitivePattern[] = [
-  // OpenAI-style API keys: sk-..., sk-proj-...
-  { regex: /sk-(?:proj-|org-)?[A-Za-z0-9_-]{20,}/g, label: "api-key" },
-  // Anthropic API keys
-  { regex: /sk-ant-[A-Za-z0-9_-]{20,}/g, label: "api-key" },
-  // GitHub personal access tokens / fine-grained PATs
-  { regex: /gh[pousr]_[A-Za-z0-9_]{20,}/g, label: "github-token" },
-  // GitLab personal access tokens
-  { regex: /glpat-[A-Za-z0-9_-]{20,}/g, label: "gitlab-token" },
-  // AWS access key IDs
-  { regex: /AKIA[0-9A-Z]{16}/g, label: "aws-access-key" },
-  // AWS secret access keys (heuristic)
-  {
-    regex: /(?:aws[_-]?secret[_-]?access[_-]?key)\s*[=:]\s*[A-Za-z0-9/+]{40}/gi,
-    label: "aws-secret",
-  },
-  // Generic Bearer tokens
-  { regex: /(?:bearer)\s+[A-Za-z0-9\-._~+/]{20,}=*/gi, label: "bearer-token" },
-  // JWTs (three base64url segments)
-  {
-    regex: /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
-    label: "jwt",
-  },
-  // Private key PEM blocks
-  {
-    regex:
-      /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/g,
-    label: "private-key",
-  },
-  // Email addresses
-  {
-    regex: /\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}\b/g,
-    label: "email",
-  },
-  // Generic patterns: password=VALUE or password: VALUE
-  {
-    regex:
-      /(?:password|passwd|secret|credential|api[_-]?key|access[_-]?token)\s*[=:]\s*\S{4,}/gi,
-    label: "credential",
-  },
-];
+// The pattern table lives in @rullama/core (`SENSITIVE_PATTERNS`) so telemetry
+// and the tool runtime redact the same things; these two are thin aliases.
 
 /**
  * Returns true if `text` appears to contain sensitive data such as API keys,
- * tokens, credentials, or PII.
+ * tokens, credentials, or PII. Alias of `containsSecrets` from `@rullama/core`.
  */
 export function containsSensitiveData(text: string): boolean {
-  for (const pattern of SENSITIVE_PATTERNS) {
-    // Reset regex lastIndex for global patterns
-    pattern.regex.lastIndex = 0;
-    if (pattern.regex.test(text)) {
-      return true;
-    }
-  }
-  return false;
+  return containsSecrets(text);
 }
 
 /**
- * Redact sensitive data from text.
- * Each match is replaced with [REDACTED: <label>].
+ * Redact sensitive data from `text`, replacing each match with
+ * `[REDACTED: <label>]`. Alias of `redactSecrets` from `@rullama/core`.
  */
 export function redactSensitiveData(text: string): string {
-  let result = text;
-  for (const pattern of SENSITIVE_PATTERNS) {
-    pattern.regex.lastIndex = 0;
-    result = result.replace(pattern.regex, `[REDACTED: ${pattern.label}]`);
-  }
-  return result;
+  return redactSecrets(text);
 }
 
 // ---- Injection detection patterns ----

@@ -414,10 +414,15 @@ export function classifyError(
 
 /** Outcome of a tool execution (for SEAL learning). */
 export interface ToolOutcome {
+  /** Name of the tool that ran. */
   toolName: string;
+  /** Whether the final attempt succeeded. */
   success: boolean;
+  /** Number of retries before the outcome. */
   retries: number;
+  /** Category of the final error, if it failed. */
   errorCategory?: ToolErrorCategory;
+  /** Total execution time in milliseconds. */
   executionTimeMs: number;
 }
 

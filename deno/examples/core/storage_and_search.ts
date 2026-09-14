@@ -17,7 +17,7 @@ import {
   SerializablePlan,
 } from "@rullama/core";
 
-async function main() {
+function main(): void {
   console.log("=== Storage, Search, and Output Parsing ===");
 
   // 1. Output parsers for structured LLM responses
@@ -266,15 +266,8 @@ async function main() {
   try {
     throw FrameworkError.providerAuth("demo", "expired token");
   } catch (e: unknown) {
-    if (
-      e instanceof FrameworkError &&
-      (e as FrameworkError).kind.type === "provider_auth"
-    ) {
-      console.log(
-        `\n  Caught provider auth error for: ${
-          (e as FrameworkError).kind.provider
-        }`,
-      );
+    if (e instanceof FrameworkError && e.kind.type === "provider_auth") {
+      console.log(`\n  Caught provider auth error for: ${e.kind.provider}`);
     }
   }
 
@@ -283,4 +276,4 @@ async function main() {
   );
 }
 
-await main();
+main();

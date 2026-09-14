@@ -328,25 +328,42 @@ impl Clone for CachedEmbeddingProvider {
 mod tests {
     use super::*;
 
+    /// The first embed call downloads the ONNX weights through hf-hub, which
+    /// holds a file lock on the blob and gives waiters only a few seconds
+    /// before failing with "Lock acquisition failed". Parallel test threads
+    /// each triggering that lazy download race for the lock, so every test
+    /// first warms the on-disk cache exactly once; later loads read the
+    /// cached blob without locking.
+    fn warmed<T>(f: impl FnOnce() -> T) -> T {
+        static WARM: std::sync::Once = std::sync::Once::new();
+        WARM.call_once(|| {
+            FastEmbedManager::new()
+                .unwrap()
+                .embed_batch_vec(vec!["warm-up".to_string()])
+                .unwrap();
+        });
+        f()
+    }
+
     // ── FastEmbedManager tests ──────────────────────────────────────────
 
     #[test]
     fn test_fastembed_creation() {
-        let manager = FastEmbedManager::new().unwrap();
+        let manager = warmed(FastEmbedManager::new).unwrap();
         assert_eq!(manager.dimension(), 384);
         assert_eq!(manager.model_name(), "all-MiniLM-L6-v2");
     }
 
     #[test]
     fn test_fastembed_embed_single() {
-        let manager = FastEmbedManager::new().unwrap();
+        let manager = warmed(FastEmbedManager::new).unwrap();
         let embedding = manager.embed("Hello, world!").unwrap();
         assert_eq!(embedding.len(), 384);
     }
 
     #[test]
     fn test_fastembed_embed_batch() {
-        let manager = FastEmbedManager::new().unwrap();
+        let manager = warmed(FastEmbedManager::new).unwrap();
         let texts = vec![
             "fn main() { println!(\"Hello, world!\"); }".to_string(),
             "pub struct Vector { x: f32, y: f32 }".to_string(),
@@ -360,26 +377,26 @@ mod tests {
 
     #[test]
     fn test_fastembed_empty_batch() {
-        let manager = FastEmbedManager::new().unwrap();
+        let manager = warmed(FastEmbedManager::new).unwrap();
         let embeddings = manager.embed_batch_vec(vec![]).unwrap();
         assert_eq!(embeddings.len(), 0);
     }
 
     #[test]
     fn test_fastembed_default() {
-        let manager = FastEmbedManager::default();
+        let manager = warmed(FastEmbedManager::default);
         assert_eq!(manager.dimension(), 384);
     }
 
     #[test]
     fn test_fastembed_from_model_name() {
-        let manager = FastEmbedManager::from_model_name("all-MiniLM-L6-v2").unwrap();
+        let manager = warmed(|| FastEmbedManager::from_model_name("all-MiniLM-L6-v2")).unwrap();
         assert_eq!(manager.dimension(), 384);
     }
 
     #[test]
     fn test_fastembed_unknown_model_fallback() {
-        let manager = FastEmbedManager::from_model_name("unknown-model").unwrap();
+        let manager = warmed(|| FastEmbedManager::from_model_name("unknown-model")).unwrap();
         assert_eq!(manager.dimension(), 384);
         assert_eq!(manager.model_name(), "all-MiniLM-L6-v2");
     }
@@ -388,13 +405,13 @@ mod tests {
 
     #[test]
     fn test_cached_provider_creation() {
-        let provider = CachedEmbeddingProvider::new().unwrap();
+        let provider = warmed(CachedEmbeddingProvider::new).unwrap();
         assert_eq!(provider.dimension(), 384);
     }
 
     #[test]
     fn test_cached_provider_embed_single() {
-        let provider = CachedEmbeddingProvider::new().unwrap();
+        let provider = warmed(CachedEmbeddingProvider::new).unwrap();
         let embedding = provider.embed("Hello, world!").unwrap();
 
         assert_eq!(embedding.len(), 384);
@@ -406,7 +423,7 @@ mod tests {
 
     #[test]
     fn test_cached_provider_embed_batch() {
-        let provider = CachedEmbeddingProvider::new().unwrap();
+        let provider = warmed(CachedEmbeddingProvider::new).unwrap();
         let texts = vec![
             "First message".to_string(),
             "Second message".to_string(),
@@ -423,7 +440,7 @@ mod tests {
 
     #[test]
     fn test_cached_provider_clone() {
-        let provider = CachedEmbeddingProvider::new().unwrap();
+        let provider = warmed(CachedEmbeddingProvider::new).unwrap();
         let cloned = provider.clone();
 
         assert_eq!(provider.dimension(), cloned.dimension());
@@ -431,7 +448,7 @@ mod tests {
 
     #[test]
     fn test_cached_provider_caching() {
-        let provider = CachedEmbeddingProvider::new().unwrap();
+        let provider = warmed(CachedEmbeddingProvider::new).unwrap();
 
         // First call should compute and cache
         let embedding1 = provider.embed_cached("test query").unwrap();

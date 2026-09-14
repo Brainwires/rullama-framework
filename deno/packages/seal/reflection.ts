@@ -6,7 +6,7 @@
  * Equivalent to Rust's `rullama_agents::seal::reflection` module.
  */
 
-import type { RelationshipGraphT } from "@rullama/core";
+import type { RelationshipGraphT } from "./types.ts";
 import type { LearningCoordinator } from "./learning.ts";
 import {
   type QueryCore,
@@ -21,6 +21,7 @@ import {
 
 // ─── ErrorType ──────────────────────────────────────────────────────────────
 
+/** Classification of a problem found while validating or reflecting on a query. */
 export type ErrorType =
   | { kind: "empty_result" }
   | { kind: "result_overflow" }
@@ -31,6 +32,7 @@ export type ErrorType =
   | { kind: "timeout" }
   | { kind: "unknown"; message: string };
 
+/** Human-readable description of an error type (matches the Rust `Display` text). */
 export function errorTypeDescription(e: ErrorType): string {
   switch (e.kind) {
     case "empty_result":
@@ -72,6 +74,7 @@ export function errorTypeKey(e: ErrorType): string {
 
 // ─── Severity ───────────────────────────────────────────────────────────────
 
+/** Issue severity, ordered `info` < `warning` < `error` < `critical`. */
 export type Severity = "info" | "warning" | "error" | "critical";
 
 const SEVERITY_ORDER: Record<Severity, number> = {
@@ -81,16 +84,22 @@ const SEVERITY_ORDER: Record<Severity, number> = {
   critical: 3,
 };
 
+/** `true` when `a` is at least as severe as `b`. */
 export function severityAtLeast(a: Severity, b: Severity): boolean {
   return SEVERITY_ORDER[a] >= SEVERITY_ORDER[b];
 }
 
+/** Comparator for severities: negative when `a` is milder than `b`, zero when equal, positive when more severe. */
 export function severityCompare(a: Severity, b: Severity): number {
   return SEVERITY_ORDER[a] - SEVERITY_ORDER[b];
 }
 
 // ─── SuggestedFix ───────────────────────────────────────────────────────────
 
+/**
+ * A remedy attached to an {@link Issue}. Only `resolve_entity` is acted on by
+ * `ReflectionModule.attemptCorrection`; the others are advisory.
+ */
 export type SuggestedFix =
   | { kind: "retry_with_query"; query: QueryCore }
   | { kind: "expand_scope"; relation: string }
@@ -99,6 +108,7 @@ export type SuggestedFix =
   | { kind: "add_relation"; from: string; to: string; relation: string }
   | { kind: "manual_intervention"; message: string };
 
+/** Human-readable description of a suggested fix. */
 export function suggestedFixDescription(f: SuggestedFix): string {
   switch (f.kind) {
     case "retry_with_query":
@@ -120,23 +130,31 @@ export function suggestedFixDescription(f: SuggestedFix): string {
 
 /** An issue detected during reflection. */
 export class Issue {
+  /** What kind of problem this is. */
   error_type: ErrorType;
+  /** How serious the problem is. */
   severity: Severity;
+  /** Human-readable explanation. */
   message: string;
+  /** Remedies added via {@link withFix}, in insertion order. */
   suggested_fixes: SuggestedFix[] = [];
+  /** Optional origin label (e.g. the relation name), set via {@link withSource}. */
   source: string | undefined;
 
+  /** Create an issue with no fixes and no source. */
   constructor(error_type: ErrorType, severity: Severity, message: string) {
     this.error_type = error_type;
     this.severity = severity;
     this.message = message;
   }
 
+  /** Append a suggested fix and return `this` for chaining. */
   withFix(fix: SuggestedFix): Issue {
     this.suggested_fixes.push(fix);
     return this;
   }
 
+  /** Set the source label and return `this` for chaining. */
   withSource(source: string): Issue {
     this.source = source;
     return this;
@@ -145,9 +163,13 @@ export class Issue {
 
 /** Record of a correction attempt. */
 export interface CorrectionRecord {
+  /** The issue the correction addressed. */
   issue: Issue;
+  /** The fix that was applied. */
   fix_applied: SuggestedFix;
+  /** Whether applying the fix produced a corrected query. */
   success: boolean;
+  /** Unix time (seconds) the correction was recorded. */
   timestamp: number;
 }
 
@@ -155,24 +177,34 @@ export interface CorrectionRecord {
 
 /** Reflection report. */
 export class ReflectionReport {
+  /** Deep copy of the analysed query core. */
   query: QueryCore;
+  /** Deep copy of the analysed execution result. */
   result: QueryResult;
+  /** Issues found by `ReflectionModule.analyze`. */
   issues: Issue[] = [];
+  /** Quality in `[0, 1]`: 0 on an error result, 0.3 on an empty result, 0.6 on overflow, minus 0.2 per missing entity. */
   quality_score = 1.0;
+  /** Set to `true` once `ReflectionModule.attemptCorrection` has run on a report with issues. */
   correction_attempted = false;
+  /** Query produced by a successful `resolve_entity` correction, if any. */
   corrected_query: QueryCore | undefined;
+  /** Result of re-executing `corrected_query`; never set by this module (callers may fill it in). */
   corrected_result: QueryResult | undefined;
 
+  /** Start a report for `query`/`result` with no issues and quality 1.0. */
   constructor(query: QueryCore, result: QueryResult) {
     this.query = query;
     this.result = result;
   }
 
+  /** `true` when `quality_score >= 0.5` and no issue is `error` or `critical`. */
   isAcceptable(): boolean {
     return this.quality_score >= 0.5 &&
       !this.issues.some((i) => severityAtLeast(i.severity, "error"));
   }
 
+  /** The highest severity among `issues`, or `undefined` when there are none. */
   maxSeverity(): Severity | undefined {
     if (this.issues.length === 0) return undefined;
     let max = this.issues[0].severity;
@@ -185,13 +217,19 @@ export class ReflectionReport {
 
 // ─── ReflectionConfig ───────────────────────────────────────────────────────
 
+/** Tuning knobs for {@link ReflectionModule}. */
 export interface ReflectionConfig {
+  /** Result count above which a `result_overflow` warning is raised. */
   max_results: number;
+  /** Minimum expected result count; stored for parity with Rust but not consulted by `analyze`. */
   min_results: number;
+  /** Retry budget for corrections; stored for parity with Rust but not consulted by `attemptCorrection`. */
   max_retries: number;
+  /** When `false`, `attemptCorrection` returns `false` without doing anything. */
   auto_correct: boolean;
 }
 
+/** Defaults: `max_results` 100, `min_results` 1, `max_retries` 2, `auto_correct` true. */
 export function defaultReflectionConfig(): ReflectionConfig {
   return {
     max_results: 100,
@@ -209,6 +247,7 @@ export class ReflectionModule {
   private error_patterns: Map<string, number> = new Map();
   private correction_history: CorrectionRecord[] = [];
 
+  /** Create a module with empty error statistics and correction history. */
   constructor(config: ReflectionConfig = defaultReflectionConfig()) {
     this.config = config;
   }
@@ -281,6 +320,12 @@ export class ReflectionModule {
     return report;
   }
 
+  /**
+   * Explain an empty result: an `entity_not_found` error for the first entity
+   * missing from the graph, else a `relation_mismatch` error when the joined
+   * relation has no edges for the constant entity, else a plain
+   * `empty_result` warning suggesting scope expansion.
+   */
   private analyzeEmptyResult(
     query: QueryCore,
     graph: RelationshipGraphT,
@@ -311,6 +356,10 @@ export class ReflectionModule {
     ).withFix({ kind: "expand_scope", relation: "All" });
   }
 
+  /**
+   * For a root `join` with a constant side, return a message when the graph
+   * has no edge of the relation's type on that entity; otherwise `undefined`.
+   */
   private checkRelationshipApplicability(
     expr: QueryExpr,
     graph: RelationshipGraphT,
@@ -333,6 +382,7 @@ export class ReflectionModule {
     return undefined;
   }
 
+  /** Names of up to 5 graph nodes returned by `graph.search(name, 5)`. */
   private findSimilarEntities(
     name: string,
     graph: RelationshipGraphT,
@@ -340,6 +390,7 @@ export class ReflectionModule {
     return graph.search(name, 5).map((n) => n.entity_name);
   }
 
+  /** Walk the query's root expression with {@link validateExpr}. */
   private validateRelationships(
     query: QueryCore,
     graph: RelationshipGraphT,
@@ -348,6 +399,10 @@ export class ReflectionModule {
     this.validateExpr(query.root, graph, report);
   }
 
+  /**
+   * Recursively add a `relation_mismatch` warning for every `join` whose
+   * relation is `custom` (no graph edge type), descending into nested ops.
+   */
   private validateExpr(
     expr: QueryExpr,
     graph: RelationshipGraphT,
@@ -447,6 +502,11 @@ export class ReflectionModule {
     return false;
   }
 
+  /**
+   * Deep-copy `query` with every occurrence of `original` (in `entities` and
+   * in constant expressions) replaced by `replacement`. Never returns
+   * `undefined` in practice; the type mirrors the Rust `Option`.
+   */
   substituteEntity(
     query: QueryCore,
     original: string,
@@ -460,6 +520,7 @@ export class ReflectionModule {
     return corrected;
   }
 
+  /** Append a {@link CorrectionRecord} stamped with the current Unix time. */
   private recordCorrection(
     issue: Issue,
     fix: SuggestedFix,
@@ -473,6 +534,11 @@ export class ReflectionModule {
     });
   }
 
+  /**
+   * Feed the report into learning: records a pattern-less outcome whose
+   * success is `report.isAcceptable()` and whose result count is the number
+   * of values in the report.
+   */
   provideFeedback(
     report: ReflectionReport,
     coordinator: LearningCoordinator,
@@ -488,17 +554,19 @@ export class ReflectionModule {
     );
   }
 
+  /** Copy of the per-error-type counters (keys from `errorTypeKey`) accumulated across `analyze` calls. */
   getErrorStats(): Map<string, number> {
     return new Map(this.error_patterns);
   }
 
+  /** Fraction of recorded corrections that succeeded; 0 when none were recorded. */
   correctionSuccessRate(): number {
     if (this.correction_history.length === 0) return 0;
     const successes = this.correction_history.filter((r) => r.success).length;
     return successes / this.correction_history.length;
   }
 
-  // Expose recordCorrection for tests (matches Rust helper usage).
+  /** Test hook that exposes {@link recordCorrection} (matches Rust helper usage). */
   recordCorrectionForTest(
     issue: Issue,
     fix: SuggestedFix,

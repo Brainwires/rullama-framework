@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert/equals";
+import { assertEquals, assertThrows } from "@std/assert";
 import { assert } from "@std/assert/assert";
 import { RateLimitedClient, RateLimiter } from "./rate_limiter.ts";
 
@@ -8,10 +8,8 @@ Deno.test("RateLimiter: creation sets correct values", () => {
   assertEquals(limiter.availableTokens(), 60);
 });
 
-Deno.test("RateLimiter: zero rpm", () => {
-  const limiter = new RateLimiter(0);
-  assertEquals(limiter.maxRequestsPerMinute(), 0);
-  assertEquals(limiter.availableTokens(), 0);
+Deno.test("RateLimiter: zero rpm is rejected (it could never be satisfied)", () => {
+  assertThrows(() => new RateLimiter(0), Error, "must be positive");
 });
 
 Deno.test("RateLimiter: acquire consumes token", async () => {

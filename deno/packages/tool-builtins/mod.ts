@@ -9,6 +9,15 @@
  * framework lives in `@rullama/tool-runtime`.
  */
 
+// Concrete executor over the built-in tools (+ enforcement)
+export {
+  type BuiltinExecutorOptions,
+  BuiltinToolExecutor,
+  createBuiltinExecutor,
+  DEFAULT_TOOL_PROVIDERS,
+  type ToolProvider,
+} from "./executor.ts";
+
 export { BashTool } from "./bash.ts";
 export type { OutputMode, StderrMode } from "./bash.ts";
 

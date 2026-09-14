@@ -10,6 +10,14 @@
  * Equivalent to Rust `AgentNetworkClientError`.
  */
 export class AgentNetworkClientError extends Error {
+  /**
+   * Create a relay-client error.
+   *
+   * @param kind Failure category (process spawn/exit, protocol or JSON-RPC
+   *   error, timeout, use before `initialize`, or raw I/O).
+   * @param message Human-readable detail.
+   * @param code JSON-RPC error code when `kind` is `"JsonRpc"`.
+   */
   constructor(
     readonly kind:
       | "SpawnFailed"
@@ -79,6 +87,7 @@ export class AgentNetworkClient {
     return new AgentNetworkClient(process);
   }
 
+  /** Allocate the next JSON-RPC request id (monotonic, starting at 1). */
   private nextId(): number {
     return this.requestId++;
   }

@@ -11,7 +11,7 @@ import {
   type McpServerConfig,
 } from "@rullama/mcp-client";
 
-async function main(): Promise<void> {
+function main(): void {
   console.log("=== MCP Client Example ===\n");
 
   // -----------------------------------------------------------------------
@@ -50,6 +50,14 @@ async function main(): Promise<void> {
   const json = JSON.stringify(filesystemServer, null, 2);
   console.log("  Serialized config:");
   console.log(`  ${json}`);
+  console.log();
+
+  // McpConfigManager.create() starts with an empty in-memory list;
+  // McpConfigManager.load() / addServer() persist to the user config file.
+  const configManager = McpConfigManager.create();
+  console.log(
+    `  McpConfigManager: ${configManager.getServers().length} server(s) configured`,
+  );
   console.log();
 
   // -----------------------------------------------------------------------
@@ -189,4 +197,4 @@ async function main(): Promise<void> {
   );
 }
 
-await main();
+main();

@@ -17,8 +17,10 @@ export type FrameworkErrorKind =
 /** Core framework error with typed error kinds.
  * Equivalent to Rust's `FrameworkError` in rullama-core. */
 export class FrameworkError extends Error {
+  /** The typed error variant this instance carries. */
   readonly kind: FrameworkErrorKind;
 
+  /** Build an error whose `message` is derived from `kind`. */
   constructor(kind: FrameworkErrorKind) {
     // Build message from kind
     let msg: string;

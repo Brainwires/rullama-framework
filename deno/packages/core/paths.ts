@@ -1,10 +1,11 @@
 /**
- * Centralized platform-specific path computation.
- *
- * Provides consistent path handling across Windows, macOS, and Linux,
- * following the XDG Base Directory specification on Unix-like systems.
- *
+ * Centralized platform-specific path computation. The `PlatformPaths`
+ * namespace resolves the per-user data, cache and config directories on
+ * Windows, macOS and Linux (XDG Base Directory on Unix-like systems) and
+ * namespaces per-project files under them.
  * Equivalent to Rust's `rullama_core::paths::PlatformPaths`.
+ *
+ * @module
  */
 
 import { join } from "@std/path";

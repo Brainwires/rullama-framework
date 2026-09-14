@@ -4,7 +4,8 @@
  * Tool execution framework for the rullama.
  * Equivalent to Rust's `rullama-tool-runtime` crate (post-0.11.0 split).
  *
- * Provides the registry, executor trait, error taxonomy, sanitization,
+ * Provides the registry, executor trait, the enforcing executor (permission
+ * mode, capabilities, policy, pre-hooks, output filtering), error taxonomy, sanitization,
  * smart routing, transaction manager, plus OpenAPI / OAuth / validation /
  * tool-search / tool-embedding building blocks. Concrete built-in tools
  * (Bash, FileOps, Git, Web, Search, SemanticSearch, Calendar) live in
@@ -39,8 +40,44 @@ export {
   type ToolPreHook,
 } from "./executor.ts";
 
+// Enforcement (permission mode, capabilities, policy, pre-hooks, output filtering)
+export {
+  type ApprovalHandler,
+  DEFAULT_EXTERNAL_CONTENT_TOOLS,
+  domainForToolUse,
+  enforce,
+  type EnforcementEvent,
+  type EnforcementOptions,
+  type EnforcementOutcome,
+  EnforcingExecutor,
+  filePathForToolUse,
+  gitOperationForToolUse,
+  policyRequestForToolUse,
+} from "./enforcement.ts";
+
 // Tool registry
 export { type ToolCategory, ToolRegistry } from "./registry.ts";
+
+// Guards shared with the built-in tools (path confinement, bounded regex, safe names)
+export {
+  compileBoundedRegex,
+  confinePath,
+  confinePathLexical,
+  isWithin,
+  MAX_REGEX_LENGTH,
+  PathEscapeError,
+  safeFileName,
+} from "./guards.ts";
+
+// SSRF-resistant fetch for model-chosen URLs
+export {
+  checkUrl,
+  DEFAULT_MAX_BODY_BYTES,
+  isPrivateAddress,
+  readCappedText,
+  safeFetch,
+  type SafeFetchOptions,
+} from "./safe_fetch.ts";
 
 // Sanitization
 export {
@@ -78,6 +115,7 @@ export {
   executeOpenApiTool,
   executeOpenApiToolWithEndpoint,
   type HttpMethod,
+  OPENAPI_TIMEOUT_MS,
   type OpenApiEndpoint,
   type OpenApiParam,
   type OpenApiToolDef,
@@ -93,6 +131,7 @@ export {
   InMemoryTokenStore,
   isTokenExpired,
   newPkceChallenge,
+  newState,
   OAuthClient,
   type OAuthConfig,
   type OAuthFlow,

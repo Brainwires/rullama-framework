@@ -65,6 +65,7 @@ export interface SuiteConfig {
   catch_errors_as_failures: boolean;
 }
 
+/** Default suite configuration: 10 trials, sequential, errors counted as failures. */
 export function defaultSuiteConfig(): SuiteConfig {
   return { n_trials: 10, max_parallel: 1, catch_errors_as_failures: true };
 }
@@ -73,6 +74,7 @@ export function defaultSuiteConfig(): SuiteConfig {
 
 /** N-trial Monte Carlo evaluation runner. */
 export class EvaluationSuite {
+  /** The configuration this suite runs with. */
   readonly config: SuiteConfig;
 
   /** Create a suite that runs each case `n_trials` times sequentially. */
@@ -166,6 +168,7 @@ export class EvaluationSuite {
     return { case_results, stats };
   }
 
+  /** Convert a thrown error into a failed trial (or rethrow, per `catch_errors_as_failures`). */
   private resolveError(e: unknown, trial_id: number): TrialResult {
     const msg = e instanceof Error ? e.message : String(e);
     if (this.config.catch_errors_as_failures) {

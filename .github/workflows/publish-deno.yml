@@ -1,0 +1,129 @@
+# Publish @rullama/* Deno packages to JSR — one package per tag, like denext.
+#
+# Publishing from GitHub Actions with `id-token: write` lets JSR record build
+# provenance (the "hasProvenance" score factor); no token secret is needed once
+# each package is linked to this repo on jsr.io (OIDC trust).
+#
+# deno/ is a Deno WORKSPACE of 27 members. Each package publishes INDEPENDENTLY,
+# keyed by its tag prefix, so a release never re-cuts every package — only the
+# one you tagged. `deno publish --config deno/packages/<name>/deno.json` scopes
+# the publish to exactly that member.
+#
+#   git tag core-v0.12.2 && git push origin core-v0.12.2
+#   git tag tool-runtime-v0.12.2 && git push origin tool-runtime-v0.12.2
+#   git tag provider-v0.12.2 && git push origin provider-v0.12.2
+#
+# Bump the version in that package's deno.json first (JSR rejects re-publishing
+# a version); the job fails if the tag's version and the deno.json disagree.
+# Publish in dependency order when several packages change together — a member
+# whose sibling dependency is not yet on JSR at that version fails to publish:
+#   core → (call-policy, permission, storage, telemetry, mcp-client, …)
+#        → tool-runtime → tool-builtins → inference → skills/seal/network …
+#
+# `deno task publish:changes` (deno/scripts/publish-changes.ts) works out which
+# packages need publishing, then creates and pushes their tags in dependency
+# order, waiting for each run — that is the normal way to release.
+
+name: Publish Deno packages
+
+on:
+  push:
+    tags:
+      - "a2a-v*" # @rullama/a2a
+      - "agent-v*" # @rullama/agent
+      - "call-policy-v*" # @rullama/call-policy
+      - "core-v*" # @rullama/core
+      - "eval-v*" # @rullama/eval
+      - "finetune-v*" # @rullama/finetune
+      - "inference-v*" # @rullama/inference
+      - "knowledge-v*" # @rullama/knowledge
+      - "mcp-client-v*" # @rullama/mcp-client
+      - "mcp-server-v*" # @rullama/mcp-server
+      - "mdap-v*" # @rullama/mdap
+      - "memory-v*" # @rullama/memory
+      - "network-v*" # @rullama/network
+      - "permission-v*" # @rullama/permission
+      - "prompting-v*" # @rullama/prompting
+      - "provider-v*" # @rullama/provider
+      - "provider-speech-v*" # @rullama/provider-speech
+      - "rag-v*" # @rullama/rag
+      - "reasoning-v*" # @rullama/reasoning
+      - "seal-v*" # @rullama/seal
+      - "session-v*" # @rullama/session
+      - "skills-v*" # @rullama/skills
+      - "storage-v*" # @rullama/storage
+      - "stores-v*" # @rullama/stores
+      - "telemetry-v*" # @rullama/telemetry
+      - "tool-builtins-v*" # @rullama/tool-builtins
+      - "tool-runtime-v*" # @rullama/tool-runtime
+
+permissions:
+  contents: read
+  id-token: write # JSR OIDC provenance
+
+jobs:
+  publish:
+    name: JSR
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deno
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Cache Deno dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/deno
+          key: ${{ runner.os }}-deno-${{ hashFiles('deno/deno.lock') }}
+          restore-keys: ${{ runner.os }}-deno-
+
+      - name: Resolve package config from the tag
+        id: pkg
+        run: |
+          case "$GITHUB_REF_NAME" in
+            a2a-v*) pkg=a2a ;;
+            agent-v*) pkg=agent ;;
+            call-policy-v*) pkg=call-policy ;;
+            core-v*) pkg=core ;;
+            eval-v*) pkg=eval ;;
+            finetune-v*) pkg=finetune ;;
+            inference-v*) pkg=inference ;;
+            knowledge-v*) pkg=knowledge ;;
+            mcp-client-v*) pkg=mcp-client ;;
+            mcp-server-v*) pkg=mcp-server ;;
+            mdap-v*) pkg=mdap ;;
+            memory-v*) pkg=memory ;;
+            network-v*) pkg=network ;;
+            permission-v*) pkg=permission ;;
+            prompting-v*) pkg=prompting ;;
+            provider-v*) pkg=provider ;;
+            provider-speech-v*) pkg=provider-speech ;;
+            rag-v*) pkg=rag ;;
+            reasoning-v*) pkg=reasoning ;;
+            seal-v*) pkg=seal ;;
+            session-v*) pkg=session ;;
+            skills-v*) pkg=skills ;;
+            storage-v*) pkg=storage ;;
+            stores-v*) pkg=stores ;;
+            telemetry-v*) pkg=telemetry ;;
+            tool-builtins-v*) pkg=tool-builtins ;;
+            tool-runtime-v*) pkg=tool-runtime ;;
+            *) echo "::error::unrecognized tag '$GITHUB_REF_NAME'"; exit 1 ;;
+          esac
+          version="${GITHUB_REF_NAME#*-v}"
+          cfg="packages/$pkg/deno.json"
+          v=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('$cfg')).version)")
+          if [ "$v" != "$version" ]; then
+            echo "::error::$cfg is version $v but the tag says $version — bump it first"; exit 1
+          fi
+          echo "config=$cfg" >> "$GITHUB_OUTPUT"
+          echo "Publishing @rullama/$pkg@$version ($cfg)"
+
+      - name: Gate (fmt, lint, type-check, doc-lint, tests)
+        run: deno task check
+
+      - name: Publish to JSR (with provenance)
+        run: deno publish --config ${{ steps.pkg.outputs.config }}

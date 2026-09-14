@@ -10,12 +10,12 @@ import {
   defaultDecomposeContext,
   estimateCallCost,
   estimateMdap,
-  type MdapSubtask,
   MODEL_COSTS,
   type ModelCosts,
-} from "@rullama/agent";
+  type Subtask,
+} from "@rullama/mdap";
 
-async function main() {
+function main(): void {
   console.log("=== Task Decomposition & MDAP Cost Estimation ===\n");
 
   // 1. Build a decomposition context and create subtasks manually
@@ -28,7 +28,7 @@ async function main() {
   };
 
   // Create subtasks with full control over fields
-  const subtasks: MdapSubtask[] = [
+  const subtasks: Subtask[] = [
     {
       id: "step-1",
       description: "Read the current handler code in src/handlers.rs",
@@ -197,4 +197,4 @@ async function main() {
   console.log("\n=== Done ===");
 }
 
-await main();
+main();

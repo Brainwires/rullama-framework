@@ -1,8 +1,14 @@
 /**
- * RAG module -- Retrieval-Augmented Generation client, types, and requests.
+ * Retrieval-augmented generation contract for rullama. Defines the
+ * `RagClient` interface (index a codebase, hybrid BM25 + vector query, filtered
+ * `advancedSearch`, git-history search, statistics, clear) together with its
+ * request / response types and the `DEFAULT_*` limits, and re-exports the
+ * code-analysis surface (`RepoMap`, `buildCallGraph`, `findReferences`, symbol
+ * ids) from `./code_analysis/mod.ts`. No `RagClient` implementation ships here —
+ * the indexing service (LanceDB + tantivy + ONNX) stays in the Rust
+ * `rullama-rag` crate and Deno callers talk to it through this interface.
  *
- * Provides types for semantic code search with hybrid BM25+vector search,
- * file indexing, git history search, and advanced filtered search.
+ * @module
  */
 
 // ---------------------------------------------------------------------------

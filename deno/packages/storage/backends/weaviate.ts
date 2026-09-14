@@ -7,11 +7,7 @@
  * @module
  */
 
-import type {
-  ChunkMetadata,
-  DatabaseStats,
-  SearchResult,
-} from "@rullama/core";
+import type { ChunkMetadata, DatabaseStats, SearchResult } from "@rullama/core";
 import type { VectorDatabase } from "../traits.ts";
 
 const DEFAULT_URL = "http://localhost:8080";
@@ -210,9 +206,18 @@ export function deterministicUuid(
  * Does not implement StorageBackend -- it is RAG-only.
  */
 export class WeaviateDatabase implements VectorDatabase {
+  /** Weaviate endpoint with any trailing slash removed. */
   readonly baseUrl: string;
+  /** Weaviate class (collection) that holds the embeddings. */
   readonly className: string;
 
+  /**
+   * Create a client for a Weaviate instance. Nothing is contacted until
+   * {@link WeaviateDatabase.initialize} is called.
+   *
+   * @param url Base URL of the Weaviate server (default `http://localhost:8080`).
+   * @param className Class to read and write (default `CodeEmbedding`).
+   */
   constructor(url?: string, className?: string) {
     this.baseUrl = (url ?? DEFAULT_URL).replace(/\/$/, "");
     this.className = className ?? DEFAULT_CLASS_NAME;
@@ -225,6 +230,7 @@ export class WeaviateDatabase implements VectorDatabase {
 
   // -- private helpers ----------------------------------------------------
 
+  /** POST a GraphQL query to `/v1/graphql` and return the parsed reply; throws on a non-2xx status. */
   private async graphql(query: string): Promise<Record<string, unknown>> {
     const res = await fetch(`${this.baseUrl}/v1/graphql`, {
       method: "POST",
@@ -240,6 +246,10 @@ export class WeaviateDatabase implements VectorDatabase {
     return await res.json() as Record<string, unknown>;
   }
 
+  /**
+   * Send a JSON request to the REST API. A 404 is not an error (it is
+   * returned as `{ status: 404 }`, as is a 204); any other non-2xx throws.
+   */
   private async restRequest(
     path: string,
     method: string,
@@ -265,6 +275,7 @@ export class WeaviateDatabase implements VectorDatabase {
     return await res.json() as Record<string, unknown>;
   }
 
+  /** GET `/v1/schema/{className}` and report whether it answers 2xx. */
   private async classExists(): Promise<boolean> {
     const res = await fetch(
       `${this.baseUrl}/v1/schema/${this.className}`,

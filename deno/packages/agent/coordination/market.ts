@@ -110,8 +110,11 @@ export function replenishBudget(budget: AgentBudget): void {
 
 /** Information about the current holder of a resource. */
 export interface CurrentHolder {
+  /** Agent that won the allocation. */
   agentId: string;
+  /** When the resource was allocated (epoch ms). */
   acquiredAt: number;
+  /** `acquiredAt + estimatedDurationMs` of the winning bid (epoch ms). */
   expectedRelease?: number;
 }
 
@@ -163,30 +166,47 @@ export function isAllocated(
 
 /** Record of an allocation for history. */
 export interface AllocationRecord {
+  /** Resource that was allocated. */
   resourceId: string;
+  /** Agent that received it. */
   winner: string;
+  /** Budget points charged to the winner. */
   price: number;
+  /** Number of bids in the auction when it was decided. */
   competingBids: number;
+  /** When the allocation happened (epoch ms). */
   allocatedAt: number;
 }
 
 /** Status of a specific resource's market. */
 export interface MarketStatus {
+  /** Resource the auction is for. */
   resourceId: string;
+  /** Agent currently holding the resource, or null if free. */
   currentHolder: string | null;
+  /** Bids waiting for the next `allocate` call. */
   pendingBids: number;
+  /** `bidScore` of the first pending bid (sorted highest-first after an allocation), or null with no bids. */
   highestScore: number | null;
+  /** Milliseconds since the auction was opened by its first bid. */
   auctionAgeMs: number;
 }
 
 /** Overall market statistics. */
 export interface MarketStats {
+  /** Auctions that have been opened and not garbage-collected (they are never removed). */
   activeAuctions: number;
+  /** Sum of pending bids across all auctions. */
   totalPendingBids: number;
+  /** Agents with a registered budget. */
   registeredAgents: number;
+  /** Allocation records retained in history (bounded by `maxHistory`). */
   totalAllocations: number;
+  /** Sum of prices over retained allocation records. */
   totalRevenue: number;
+  /** `totalRevenue / totalAllocations`, or 0 with no history. */
   avgPrice: number;
+  /** Mean `competingBids` over retained allocation records, or 0 with no history. */
   avgCompetition: number;
 }
 
@@ -249,6 +269,11 @@ export class MarketAllocator {
   private pricing: PricingStrategy;
   private maxHistory: number;
 
+  /**
+   * Create an allocator with no agents or auctions.
+   * @param pricing How the winner's price is computed; defaults to second-price.
+   * @param maxHistory Maximum allocation records retained (oldest dropped first; default 1000).
+   */
   constructor(pricing?: PricingStrategy, maxHistory = 1000) {
     this.pricing = pricing ?? defaultPricingStrategy();
     this.maxHistory = maxHistory;
@@ -446,6 +471,12 @@ export class MarketAllocator {
 
   // ── Private ─────────────────────────────────────────────────────────────
 
+  /**
+   * Price for the (already score-sorted) bid list under the configured
+   * strategy: top bid's `maxBid`; the lower of the top two (or 1 with a single
+   * bid); a fixed per-resource price (1 if unlisted); `basePrice * (1 +
+   * bids * demandMultiplier)` floored; or 0 when free.
+   */
   private calculatePrice(bids: ResourceBid[]): number {
     switch (this.pricing.kind) {
       case "first_price":
@@ -471,6 +502,7 @@ export class MarketAllocator {
     }
   }
 
+  /** Append an `AllocationRecord`, trimming the oldest entries beyond `maxHistory`. */
   private recordAllocation(
     resourceId: string,
     winner: string,

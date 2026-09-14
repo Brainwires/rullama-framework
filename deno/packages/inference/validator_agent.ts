@@ -89,10 +89,13 @@ export interface ValidatorAgentResult {
  * a structured result to the orchestrator.
  */
 export class ValidatorAgent {
+  /** Unique validator ID. */
   readonly id: string;
+  /** Configuration (checks, working directory, timeout). */
   readonly config: ValidatorAgentConfig;
   private _status: ValidatorAgentStatus = { kind: "idle" };
 
+  /** Create a validator agent with `id` and `config`. */
   constructor(id: string, config: ValidatorAgentConfig) {
     this.id = id;
     this.config = config;
@@ -110,10 +113,12 @@ export class ValidatorAgent {
     this._status = { kind: "validating" };
 
     let validationResult: ValidationResult;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      // Create a timeout promise
+      // Create a timeout promise; the timer is cleared once the race settles so
+      // a finished validation does not keep the event loop alive.
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(
+        timer = setTimeout(
           () =>
             reject(
               new Error(
@@ -132,6 +137,8 @@ export class ValidatorAgent {
       const msg = err instanceof Error ? err.message : String(err);
       this._status = { kind: "error", message: msg };
       throw err;
+    } finally {
+      clearTimeout(timer);
     }
 
     const success = validationResult.passed;

@@ -46,6 +46,7 @@ export type CalendarProvider =
 
 /** Configuration for the calendar tool. */
 export interface CalendarConfig {
+  /** Backend to call (Google Calendar or CalDAV). */
   provider: CalendarProvider;
   /** Default calendar ID to operate on (default: "primary"). */
   default_calendar_id: string;
@@ -64,6 +65,7 @@ export class CalendarTool {
     ];
   }
 
+  /** Definition of the `calendar_list_events` tool. */
   private static listEventsTool(): Tool {
     return {
       name: "calendar_list_events",
@@ -90,6 +92,7 @@ export class CalendarTool {
     };
   }
 
+  /** Definition of the `calendar_create_event` tool. */
   private static createEventTool(): Tool {
     return {
       name: "calendar_create_event",
@@ -121,6 +124,7 @@ export class CalendarTool {
     };
   }
 
+  /** Definition of the `calendar_update_event` tool. */
   private static updateEventTool(): Tool {
     return {
       name: "calendar_update_event",
@@ -150,6 +154,7 @@ export class CalendarTool {
     };
   }
 
+  /** Definition of the `calendar_delete_event` tool. */
   private static deleteEventTool(): Tool {
     return {
       name: "calendar_delete_event",
@@ -165,6 +170,7 @@ export class CalendarTool {
     };
   }
 
+  /** Definition of the `calendar_find_free_time` tool. */
   private static findFreeTimeTool(): Tool {
     return {
       name: "calendar_find_free_time",
@@ -206,7 +212,8 @@ export class CalendarTool {
     }
   }
 
-  private static async dispatch(
+  /** Route a tool call to its handler by name. */
+  private static dispatch(
     tool_name: string,
     input: Record<string, unknown>,
     context: ToolContext,
@@ -223,12 +230,15 @@ export class CalendarTool {
       case "calendar_find_free_time":
         return CalendarTool.handleFindFreeTime(input, context);
       default:
-        throw new Error(`Unknown calendar tool: ${tool_name}`);
+        return Promise.reject(
+          new Error(`Unknown calendar tool: ${tool_name}`),
+        );
     }
   }
 
   // ── Handler implementations ───────────────────────────────────────────────
 
+  /** List events in a time range. */
   private static async handleListEvents(
     input: Record<string, unknown>,
     context: ToolContext,
@@ -261,6 +271,7 @@ export class CalendarTool {
     return JSON.stringify(events, null, 2);
   }
 
+  /** Create an event from the tool input. */
   private static async handleCreateEvent(
     input: Record<string, unknown>,
     context: ToolContext,
@@ -286,6 +297,7 @@ export class CalendarTool {
     return JSON.stringify(event, null, 2);
   }
 
+  /** Update an existing event from the tool input. */
   private static async handleUpdateEvent(
     input: Record<string, unknown>,
     context: ToolContext,
@@ -315,6 +327,7 @@ export class CalendarTool {
     return JSON.stringify(event, null, 2);
   }
 
+  /** Delete an event by ID. */
   private static async handleDeleteEvent(
     input: Record<string, unknown>,
     context: ToolContext,
@@ -341,6 +354,7 @@ export class CalendarTool {
     return `Event '${event_id}' deleted successfully`;
   }
 
+  /** Find free slots between the requested times. */
   private static async handleFindFreeTime(
     input: Record<string, unknown>,
     context: ToolContext,
@@ -371,6 +385,7 @@ export class CalendarTool {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
+  /** Read the calendar configuration from the tool context metadata. */
   private static getConfig(context: ToolContext): CalendarConfig {
     const raw = context.metadata["calendar_config"];
     if (!raw) {
@@ -381,6 +396,7 @@ export class CalendarTool {
     return JSON.parse(raw) as CalendarConfig;
   }
 
+  /** Validate and normalise event fields from tool input. */
   private static parseEventInput(
     input: Record<string, unknown>,
   ): CalendarEvent {

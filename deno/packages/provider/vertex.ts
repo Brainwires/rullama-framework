@@ -15,9 +15,10 @@ import {
   type Provider,
   type StreamChunk,
   type Tool,
+  toolInputJsonSchema,
   type Usage,
 } from "@rullama/core";
-import { parseNDJSONStream } from "./sse.ts";
+import { parseSSEStream } from "./sse.ts";
 
 // ---------------------------------------------------------------------------
 // JWT / Google OAuth2 service account auth
@@ -234,9 +235,7 @@ export function convertTools(tools: Tool[]): VertexTool {
     functionDeclarations: tools.map((t) => ({
       name: t.name,
       description: t.description,
-      parameters: t.input_schema.properties
-        ? { type: "object", properties: t.input_schema.properties }
-        : { type: "object" },
+      parameters: toolInputJsonSchema(t.input_schema),
     })),
   };
 }
@@ -321,6 +320,16 @@ export class VertexAiProvider implements Provider {
   private readonly credentials: ServiceAccountCredentials;
   private cachedToken?: { token: string; expiresAt: number };
 
+  /**
+   * Create a provider that mints OAuth2 access tokens from a service account.
+   *
+   * @param region Vertex AI location (e.g. `us-central1`); also selects the regional host.
+   * @param projectId Google Cloud project that owns the endpoint.
+   * @param model Gemini model id (e.g. `gemini-2.0-flash`).
+   * @param credentials Service-account `client_email`, `private_key` and `token_uri`
+   *   used to sign the JWT assertion.
+   * @param providerName Value reported as `name` (default: `"vertex-ai"`).
+   */
   constructor(
     region: string,
     projectId: string,
@@ -444,7 +453,7 @@ export class VertexAiProvider implements Provider {
       throw new Error("Vertex AI streaming response has no body");
     }
 
-    for await (const data of parseNDJSONStream(response.body)) {
+    for await (const data of parseSSEStream(response.body)) {
       let chunk: VertexResponse;
       try {
         chunk = JSON.parse(data);
@@ -486,6 +495,9 @@ export class VertexAiProvider implements Provider {
   // Internal helpers
   // -----------------------------------------------------------------------
 
+  /** Build the Gemini `generateContent` body: `contents` from the messages,
+   * `systemInstruction` (from `options.system` or a leading system message),
+   * `generationConfig` from the sampling options, and function declarations. */
   private buildRequestBody(
     messages: Message[],
     tools: Tool[] | undefined,

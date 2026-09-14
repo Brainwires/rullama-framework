@@ -1,9 +1,13 @@
 /**
- * Prompting Technique Definitions
+ * Definitions of the 15 prompting techniques from "Adaptive Selection of
+ * Prompting Techniques" (arXiv:2510.18162). Provides the `PromptingTechnique`,
+ * `TechniqueCategory`, `ComplexityLevel` and `TaskCharacteristic` string unions,
+ * the `TECHNIQUE_METADATA` table describing each technique, and the lookup and
+ * filter helpers (`getTechniqueMetadata`, `getTechniquesByCategory`,
+ * `getTechniquesByComplexity`, `getTechniquesBySealQuality`, `parseTechniqueId`).
+ * Equivalent to Rust's `rullama_prompting::techniques`.
  *
- * This module defines the 15 prompting techniques from the paper
- * "Adaptive Selection of Prompting Techniques" (arXiv:2510.18162),
- * with SEAL quality integration for intelligent technique filtering.
+ * @module
  */
 
 // ---------------------------------------------------------------------------

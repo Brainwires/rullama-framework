@@ -1,11 +1,11 @@
 // Example: Tool Transactions
 // Demonstrates the TransactionManager for two-phase commit file write operations.
 // Stage files, inspect pending state, then commit or rollback.
-// Run: deno run --allow-read --allow-write --allow-env deno/examples/tool-system/tool_transactions.ts
+// Run: deno run --allow-read --allow-write --allow-env deno/examples/tools/tool_transactions.ts
 
-import { TransactionManager } from "@rullama/tools";
+import { TransactionManager } from "@rullama/tool-runtime";
 
-async function main() {
+function main(): void {
   console.log("=== Tool Transactions Example ===\n");
 
   // 1. Create a transaction manager
@@ -17,9 +17,7 @@ async function main() {
   // 2. Stage multiple file writes
   console.log("=== Staging Writes ===\n");
 
-  const targetDir = `${
-    Deno.env.get("TMPDIR") ?? "/tmp"
-  }/rullama-txn-example`;
+  const targetDir = `${Deno.env.get("TMPDIR") ?? "/tmp"}/rullama-txn-example`;
   Deno.mkdirSync(targetDir, { recursive: true });
 
   const writes = [
@@ -135,4 +133,4 @@ async function main() {
   console.log("\nDone.");
 }
 
-await main();
+main();

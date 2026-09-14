@@ -5,6 +5,263 @@ All notable changes to the rullama framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.12.1] - 2026-09-11
+
+### Deno/TypeScript port (`deno/`, `@rullama/*` 0.12.1)
+
+Deno-only release (the Rust crates are unchanged). Security and correctness patch driven by the 2026-09-11 production-readiness
+audit. No renames; the one behaviour change is called out first.
+
+#### Behaviour change: tool permissions are now enforced
+
+`@rullama/permission`'s policy engine, capability profiles and the
+`requires_approval` tool flag, and `@rullama/tool-runtime`'s output
+sanitizer, were **advisory** — no execution path called any of them.
+
+- **`@rullama/tool-runtime`**: new `EnforcingExecutor` / `enforce()` wraps any
+  `ToolExecutor` and applies, in order: permission mode (`read-only` admits
+  only read/search/planning tools), an optional `AgentCapabilities` profile,
+  the `PolicyEngine` (default `PolicyEngine.withDefaults()`: denies `.env`,
+  `*secret*` and `credentials*` files, asks before `git reset`/`git rebase`),
+  every `ToolPreHook`, and output filtering (secret redaction on every result;
+  web-fetch results wrapped as untrusted external content). An
+  `ApprovalHandler` decides `require_approval` outcomes and, in `auto` mode,
+  gates tools flagged `requires_approval`; with no handler configured a policy
+  approval request is a rejection while flagged tools still run.
+  `policyRequestForToolUse` derives the file path / domain / git operation a
+  call targets from its input.
+- **`@rullama/tool-builtins`**: new `BuiltinToolExecutor` (dispatches to the
+  built-in tool classes by name) and `createBuiltinExecutor()` — the built-in
+  tool set behind the enforcing executor, the recommended default.
+- **`@rullama/inference`**: `AgentContext` wraps the executor it is given with
+  `enforce()` **by default**; pass `enforcement: false` (6th constructor
+  argument) to opt out. `preExecuteHook` is finally consulted. `TaskAgent`
+  now hands tools a real `ToolContext` (`working_directory`, `metadata`) —
+  it previously passed `{ workingDirectory }`, so relative paths never
+  resolved inside an agent.
+
+#### Security (built-in tools and the tool runtime)
+
+- **`execute_command`** (`@rullama/tool-builtins`): the advertised timeout
+  never fired — an `AbortController` was created but not passed to
+  `Deno.Command`. It now kills the whole process tree (children first, so a
+  forked `sleep`/`curl` cannot keep the output pipe open); credential-looking
+  environment variables (`*KEY*`, `*SECRET*`, `*TOKEN*`, `AWS_*`, …) are
+  withheld from the child (`scrubEnv`, `SECRET_ENV_PATTERN`); stdout/stderr
+  are capped at 256 KiB each.
+- **`read_file` / `write_file` / `edit_file` / `delete_file` /
+  `list_directory` / `search_files` / `create_directory`**: paths are confined
+  to the working directory — `../`, foreign absolute paths and symlinks that
+  point outside it are refused (`PathEscapeError`); `read_file` returns at
+  most 1 MiB; `search_files` converts its glob with `globToRegExp` instead of
+  a hand-rolled replace that let regex metacharacters through.
+- **`git_push` / `git_pull` / `git_fetch` / `git_branch`**: remote, branch
+  and name arguments must match `SAFE_REF_PATTERN` (no leading `-`, no `..`,
+  no `ext::sh -c …` remote helpers); file lists cannot contain option-like
+  entries and are passed after `--`; git runs with
+  `GIT_ALLOW_PROTOCOL=https:ssh:file:git`, `GIT_PROTOCOL_FROM_USER=0`,
+  `GIT_TERMINAL_PROMPT=0`.
+- **`fetch_url`**: goes through the new `safeFetch` — `http(s)` only, the
+  host is resolved and loopback / link-local (cloud metadata) / private /
+  CGNAT / multicast addresses are refused, every redirect hop is re-checked,
+  30 s deadline, 1 MiB body cap (`readCappedText`).
+- **`search_code`**: model-supplied regexes are capped at 200 characters
+  (`compileBoundedRegex`), the search root is confined to the working
+  directory, files over 1 MiB are skipped.
+- **`TransactionManager`** (`@rullama/tool-runtime`): the staging file name
+  is percent-encoded so a key like `../../x` cannot leave the staging
+  directory; `create(stagingDir, projectRoot)` optionally refuses targets
+  outside `projectRoot`.
+- **`pkceAuthorizationUrl`**: built with `URLSearchParams`, so `state`,
+  `scope` and `redirect_uri` are percent-encoded (a `state` containing
+  `&redirect_uri=` could inject a second parameter). New `newState()` helper.
+- **OpenAPI-generated tools**: requests have a 30 s deadline and a capped
+  body.
+- **`@rullama/provider-speech`** `MurfClient.downloadAudio`: only public
+  `https` URLs (the URL comes from the vendor's response).
+- New shared guards in `@rullama/tool-runtime`: `confinePath` /
+  `confinePathLexical` / `isWithin`, `compileBoundedRegex`, `safeFileName`,
+  `safeFetch` / `checkUrl` / `isPrivateAddress` / `readCappedText`.
+
+#### Security (storage, memory, MCP server, telemetry, permission)
+
+- **`@rullama/storage`**: table and column names are validated as plain
+  identifiers before they are interpolated (values were already bound);
+  `LIMIT` must be a non-negative integer; `Filter.kind === "Raw"` is
+  **disabled by default** — pass `{ allowRaw: true }` to the builders or
+  `allowRawFilters: true` to a backend to re-enable it. Applies to Postgres,
+  MySQL and SurrealDB (new `backends/sql_guards.ts`).
+- **`@rullama/memory`**: `maxHotMessages` / `maxWarmSummaries` were declared
+  and never enforced; the oldest entries are now evicted past the cap.
+- **`@rullama/call-policy`**: `MemoryCache` is a bounded LRU
+  (`new MemoryCache(maxEntries)`, default 1000) instead of an unbounded map.
+- **`@rullama/mcp-server`**: rate limiting is keyed per client and the bucket
+  map is bounded (the tool name is attacker-controlled); the auth token is
+  compared in constant time and stripped from `params` before the handler and
+  logging see it; the stdio transport skips blank lines (a blank line used to
+  be treated as EOF and stopped the server) and rejects a line over 16 MiB
+  without a newline; `initialize` params are structurally validated
+  (`parseInitializeParams` — `{}` used to crash the serve loop); notifications
+  get no response (JSON-RPC 2.0 §4.1); server logs go to stderr, never to the
+  protocol channel. `McpServer` accepts a transport in its constructor.
+- **`@rullama/core`**: new `secrets.ts` — `SENSITIVE_PATTERNS`,
+  `redactSecrets`, `containsSecrets` — the one secret table, now shared by
+  `@rullama/tool-runtime`'s sanitizer and `@rullama/telemetry`'s
+  `redactSecrets` (which previously missed `sk-ant-`, `ghp_`, `AKIA`, JWTs
+  and PEM blocks).
+- **`@rullama/permission`**: `PathPattern` escapes `[`/`]` and a pattern that
+  does not compile matches nothing (it used to fall back to substring
+  matching, turning a broken deny rule into a no-op); the trust store and the
+  audit log are written owner-only (`0600`, directories `0700`) with a
+  portable `dirname`, and write failures are reported on stderr and exposed as
+  `lastError` instead of being swallowed.
+- **`@rullama/network`**: README states plainly that the layer is an
+  unauthenticated transport (no envelope signatures or replay protection —
+  planned for 0.13).
+- **`@rullama/storage`** internals: the Postgres and MySQL builders
+  (`filterToSql`, `buildCreateTable`, `buildInsert`, `buildSelect`,
+  `buildDelete`, `buildCount`) are one dialect-parameterised implementation
+  (`backends/sql_builder.ts`); the per-backend exports and their SQL output
+  are unchanged.
+
+#### Providers (`@rullama/provider`, `@rullama/call-policy`, `@rullama/finetune`)
+
+- **Tool schemas were truncated** in five of six chat providers: Anthropic,
+  OpenAI (Chat + Responses), Gemini and Bedrock sent `input_schema.properties`
+  alone, so models never saw `type: "object"` or `required`. All providers now
+  send the full object via `toolInputJsonSchema` (new in `@rullama/core`).
+- **`ChatProviderFactory.create()`** returned an Anthropic provider aimed at
+  `api.anthropic.com` for `provider: "bedrock"` and a Gemini provider for
+  `"vertex-ai"` (it dispatched on wire protocol alone). Both now go to their
+  own signers. Anthropic accepts a `baseUrl` (4th constructor argument /
+  `base_url` in the config) for gateways.
+- **OpenAI Chat Completions tool calling** works in all three directions:
+  assistant `tool_use` blocks → `tool_calls`, `tool_result` blocks →
+  `role: "tool"` messages, response `tool_calls` → `tool_use` blocks, and
+  streamed argument fragments → `tool_input_delta`. Reasoning models
+  (`o1`/`o3`/`o4`/`gpt-5` families, `isReasoningModel`) get
+  `max_completion_tokens` and no `temperature`/`top_p`; `isO1Model` is a
+  deprecated alias. `stop` is honoured by every provider.
+- **Bedrock streaming** parses the real AWS event-stream framing
+  (`eventstream.ts`) instead of SSE, so it yields chunks at all; **Vertex
+  streaming** parses the SSE it asks for (`?alt=sse`) instead of NDJSON.
+- **Streamed usage** from Anthropic and Bedrock reports the prompt tokens
+  (from `message_start`) instead of 0.
+- **`OpenAiResponsesProvider` is stateless**: it no longer feeds its own last
+  response id back as `previous_response_id` (a shared instance cross-linked
+  conversations). Chain explicitly with `withPreviousResponseId(id)`.
+- **Gemini** sends the API key in the `x-goog-api-key` header, not the query
+  string, and emits one terminal `done` chunk.
+- **`createModelLister`** is implemented (it threw "not yet implemented"):
+  one authenticated `GET` of the registry's `models_url`, parsed per vendor
+  shape (`parseModelListing`), with a 15 s deadline. The registry's `auth`
+  scheme, previously never read, drives the request headers.
+- The registry's `default_model` values and `defaultModel()` agreed on
+  nothing for four providers; they are now identical and a test keeps them so.
+- `ChatOptions.model` (new, optional) names the model for multi-model
+  providers and keys decorator state; the circuit breaker's default model key
+  uses it (it was always `"default"`, so one model's failures opened the
+  circuit for all). `ResilienceError.circuitOpen` no longer receives the
+  composite key as the model. `maxOutputTokens()` on every decorator returns
+  `undefined` for "no limit" as `Provider` documents, instead of `Infinity`.
+- **`CachedProvider`** takes a `scope` (tenant / user / session) that
+  partitions cache keys, so one principal's cached completion is never served
+  to another sending the same prompt.
+- **`RateLimiter`** lives in `@rullama/core` (re-exported by
+  `@rullama/provider`; `@rullama/provider-speech` used a byte-identical copy);
+  a zero budget is rejected at construction instead of spinning.
+- Internals: the Anthropic Messages format (conversion, parsing, body,
+  stream mapping) is one module shared by the Anthropic and Bedrock providers
+  (`anthropic_format.ts`); every provider POSTs through `postJson`; response
+  content collapsing is shared (`content.ts`); the four `@rullama/call-policy`
+  decorators extend a `ProviderDecorator` base (exported for custom
+  decorators).
+- **`@rullama/finetune`**: DPO alignment is actually sent (`method.type =
+  "dpo"` for OpenAI, `training_method` for Together; ORPO and Fireworks
+  refuse honestly); `uploadDataset` honours `DataFormat`; `JobPoller.poll`
+  throws `TrainingError("timeout")` instead of returning a non-terminal
+  status; `TrainingJobId` is exported as a value.
+
+#### Correctness
+
+- **`@rullama/mcp-client`**: cancellation sends MCP's `notifications/cancelled`
+  (it sent `$/cancelRequest`, an LSP method no MCP server knows —
+  `cancellationNotification` builds it); `initialize` offers protocol
+  `2025-06-18` and accepts the server's choice among `2025-06-18`,
+  `2025-03-26`, `2024-11-05` (`SUPPORTED_PROTOCOL_VERSIONS`), rejecting
+  anything else instead of pinning the first revision; the stdio line
+  framing is a tested, exported `lineSplitter()`.
+- **`@rullama/inference`**: `judgeAgentPrompt` / `plannerAgentPrompt` have one
+  implementation (the drifted copies in `judge_agent.ts` / `planner_agent.ts`
+  are gone; those modules re-export the canonical one — the `canonical*`
+  aliases are deprecated). `runValidation` reports a `no_duplicates` /
+  `syntax_valid` check as a warning issue instead of silently passing it, and
+  `passed` reflects errors only.
+- **`@rullama/stores`**: `instantiateTemplate` no longer loops forever when a
+  value contains its own placeholder.
+- **`@rullama/storage`**: `PostgresDatabase.searchWithEmbeddings` returns the
+  hits' stored embeddings (it returned empty arrays); `surealType` typo.
+- **`@rullama/network`**: `defaultBridgeConfig()` no longer points at a
+  vendor's hosted relay; `backendUrl` is required and validated by
+  `RemoteBridge`.
+- **`@rullama/inference`**: `ValidatorAgent.validate` never cleared its
+  timeout timer, keeping the event loop alive after validation finished.
+- **`@rullama/mcp-server`**: `RequestContext` (a class) was re-exported as a
+  type only, so consumers could not construct one.
+- **`@rullama/mdap`**: `MdapResult<T>` (an alias of `T`) is deprecated.
+- **`@rullama/eval`**: the module doc names the right package and no longer
+  `{@link}`s file names.
+
+#### Fixed
+
+- **CI**: the Deno job had failed on every run since 2026-07-01 — `tests/`
+  imported the pre-0.11 package names and the package suites never ran in
+  CI. `deno task check` (fmt, lint, type-check, 1600+ tests) is now the
+  single gate, run locally and in CI.
+- **`@rullama/provider`**: the discontinued relay provider is gone from
+  `ProviderType`, `parseProviderType` and `defaultModel`.
+- **`@rullama/provider-speech`**: one `vendorFetch` helper replaces fifteen
+  copies of the fetch/`res.ok`/throw block, and every vendor request now has
+  a 60 s timeout (`AbortSignal.timeout`).
+- Lint: `RegressionSuite.new()` → `create()`, `SessionId.new()` → `from()`
+  (the old names remain, deprecated, until 0.13); six `async` methods that
+  never awaited now return promises directly.
+
+#### Publishing and documentation
+
+- Every package ships a `LICENSE` (MIT) and a `publish.exclude` so test files
+  no longer go to JSR.
+- `deno task doc-lint` runs `deno doc --lint` over all 74 published
+  entrypoints and is part of `deno task check`; every entrypoint starts with
+  a `@module` doc block and every exported symbol is documented (the JSR
+  "has docs" score factors).
+- `.github/workflows/publish-deno.yml`: per-package tags — pushing
+  `<package>-v<version>` (e.g. `tool-runtime-v0.12.2`) publishes that one
+  package from GitHub Actions with OIDC provenance, exactly like denext.
+  `deno task publish:changes` finds the packages whose version is not on
+  JSR (and flags packages that changed without a bump), then tags and pushes
+  them in dependency order, waiting for each run. `deno/scripts/publish.sh
+  [--package <name>]` is the manual fallback; the two 0.12.0-era scripts are
+  gone.
+- `deno task jsr:scores` writes `docs/jsr-scores.md` from JSR's score API.
+- Root `deno.json` no longer pins `@rullama/*` to `jsr:` (workspace members
+  resolve locally; the pins only put unhashed entries in `deno.lock`); the
+  lockfile is regenerated and the pre-JSR `deno.land/std` entries are gone.
+  `deno task check` also type-checks `examples/`.
+- Package READMEs use the current package names and carry a compiling
+  example; `docs/` no longer references the pre-0.11 package names, missing
+  classes (`ChatAgent`, `JudgeAgent`, `PlannerAgent`, `CycleOrchestrator`)
+  or interfaces that do not match the code.
+
+#### Tooling
+
+- **fallow** adopted at the repo root (scoped to `deno/`): `fallow.toml`,
+  versioned `.githooks/pre-commit` (`deno task hooks:install`), Claude Code
+  PreToolUse gate, `AGENTS.md`/`CLAUDE.md`, a `fallow` CI job, and
+  `deno task coverage:fallow` for measured CRAP coverage.
+
 ## [0.11.0] - 2026-05-15
 
 ### Refactored (BREAKING)

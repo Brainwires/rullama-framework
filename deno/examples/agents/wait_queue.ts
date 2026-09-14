@@ -10,7 +10,7 @@ import {
   type WaitQueueEvent,
 } from "@rullama/agent";
 
-async function main() {
+function main(): void {
   console.log("=== Wait Queue Demo ===\n");
 
   // 1. Create a wait queue
@@ -132,4 +132,4 @@ async function main() {
   console.log("\nWait queue demo complete.");
 }
 
-await main();
+main();

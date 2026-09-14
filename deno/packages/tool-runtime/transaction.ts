@@ -1,29 +1,17 @@
 /**
- * Two-phase commit transaction manager for file write operations.
+ * Two-phase commit for file writes. `TransactionManager` implements
+ * `@rullama/core`'s `StagingBackend`: `stage()` writes content to a temporary
+ * directory without touching the target, `commit()` moves every staged file into
+ * place (creating parent directories, falling back to copy + delete across
+ * filesystems) and `rollback()` discards the staged files. Target paths are
+ * confined to the working directory.
+ * Equivalent to Rust's `rullama_tool_runtime::transaction`.
  *
- * TransactionManager implements StagingBackend from @rullama/core.
- *
- * ## Protocol
- *
- * 1. **Stage** - calls to stage() write content to a temporary directory with a
- *    key-addressed filename. The target path is not touched.
- *
- * 2. **Commit** - commit() moves each staged file to its target path. Parent
- *    directories are created as needed. On cross-filesystem moves a
- *    copy+delete fallback is used.
- *
- * 3. **Rollback** - rollback() deletes all staged files from the temp dir
- *    without touching any target path.
- *
- * A TransactionManager is single-use per transaction: after commit() or
- * rollback() the queue is empty and new stages can be accepted.
+ * @module
  */
 
-import type {
-  CommitResult,
-  StagedWrite,
-  StagingBackend,
-} from "@rullama/core";
+import type { CommitResult, StagedWrite, StagingBackend } from "@rullama/core";
+import { confinePathLexical, safeFileName } from "./guards.ts";
 
 interface StagedEntry {
   stagedPath: string;
@@ -34,24 +22,28 @@ interface StagedEntry {
 /** Filesystem-backed two-phase commit transaction manager. */
 export class TransactionManager implements StagingBackend {
   #stagingDir: string;
+  #projectRoot: string | undefined;
   #staged: Map<string, StagedEntry> = new Map();
 
-  private constructor(stagingDir: string) {
+  private constructor(stagingDir: string, projectRoot?: string) {
     this.#stagingDir = stagingDir;
+    this.#projectRoot = projectRoot;
   }
 
   /**
    * Create a new manager using a temporary directory.
    * The staging directory is `<tmpdir>/rullama-txn-<random>` and is created
    * on construction.
+   *
+   * @param stagingDir Where staged files live (default: a fresh temp dir).
+   * @param projectRoot When given, `stage()` throws a `PathEscapeError` for any
+   *   `target_path` that resolves outside this directory.
    */
-  static create(stagingDir?: string): TransactionManager {
+  static create(stagingDir?: string, projectRoot?: string): TransactionManager {
     const dir = stagingDir ??
-      `${
-        Deno.env.get("TMPDIR") ?? "/tmp"
-      }/rullama-txn-${crypto.randomUUID()}`;
+      `${Deno.env.get("TMPDIR") ?? "/tmp"}/rullama-txn-${crypto.randomUUID()}`;
     Deno.mkdirSync(dir, { recursive: true });
-    return new TransactionManager(dir);
+    return new TransactionManager(dir, projectRoot);
   }
 
   /** The temp directory used for staging. */
@@ -69,8 +61,12 @@ export class TransactionManager implements StagingBackend {
       return false;
     }
 
-    const safeName = `${write.key}.staged`;
-    const stagedPath = `${this.#stagingDir}/${safeName}`;
+    if (this.#projectRoot !== undefined) {
+      // Throws PathEscapeError when the target leaves the project root.
+      confinePathLexical(this.#projectRoot, write.target_path);
+    }
+    // Percent-encoded: a key such as `../../x` cannot leave the staging dir.
+    const stagedPath = `${this.#stagingDir}/${safeFileName(write.key)}.staged`;
 
     try {
       Deno.writeTextFileSync(stagedPath, write.content);

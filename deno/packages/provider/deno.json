@@ -1,6 +1,13 @@
 {
   "name": "@rullama/provider",
   "license": "MIT",
-  "version": "0.11.0",
-  "exports": "./mod.ts"
+  "version": "0.12.1",
+  "exports": "./mod.ts",
+  "publish": {
+    "exclude": [
+      "**/*_test.ts",
+      "test_util.ts",
+      "__readme_check.ts"
+    ]
+  }
 }

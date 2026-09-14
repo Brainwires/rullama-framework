@@ -9,11 +9,7 @@
  */
 
 import pg from "pg";
-import type {
-  ChunkMetadata,
-  DatabaseStats,
-  SearchResult,
-} from "@rullama/core";
+import type { ChunkMetadata, DatabaseStats, SearchResult } from "@rullama/core";
 import type { StorageBackend, VectorDatabase } from "../traits.ts";
 import type {
   FieldDef,
@@ -22,6 +18,9 @@ import type {
   Record as BwRecord,
   ScoredRecord,
 } from "../types.ts";
+import { assertIdentifier, type FilterBuildOptions } from "./sql_guards.ts";
+import * as sql from "./sql_builder.ts";
+import type { SqlDialect } from "./sql_builder.ts";
 
 const DEFAULT_TABLE = "code_embeddings";
 const DEFAULT_URL = "postgresql://localhost:5432/rullama";
@@ -74,70 +73,22 @@ export function fieldValueToParam(fv: FieldValue): unknown {
   }
 }
 
-/**
- * Convert a Filter tree into a parameterised SQL WHERE fragment.
- *
- * Returns `[sql, values]` where `values` are the bind parameters.
- * `paramOffset` is the 1-based starting parameter index.
- */
+/** The Postgres dialect: `"ident"`, `$n` placeholders, pgvector column type. */
+const PG_DIALECT: SqlDialect = {
+  quote: (id) => `"${id}"`,
+  placeholder: (i) => `$${i}`,
+  mapFieldType,
+  fieldValueToParam,
+  countSuffix: "",
+};
+
+/** Translate a Filter into a WHERE fragment + values (placeholders from `paramOffset`). */
 export function filterToSql(
   filter: Filter,
   paramOffset: number,
+  options?: FilterBuildOptions,
 ): [string, FieldValue[]] {
-  switch (filter.kind) {
-    case "Eq":
-      return [`"${filter.field}" = $${paramOffset}`, [filter.value]];
-    case "Ne":
-      return [`"${filter.field}" != $${paramOffset}`, [filter.value]];
-    case "Lt":
-      return [`"${filter.field}" < $${paramOffset}`, [filter.value]];
-    case "Lte":
-      return [`"${filter.field}" <= $${paramOffset}`, [filter.value]];
-    case "Gt":
-      return [`"${filter.field}" > $${paramOffset}`, [filter.value]];
-    case "Gte":
-      return [`"${filter.field}" >= $${paramOffset}`, [filter.value]];
-    case "NotNull":
-      return [`"${filter.field}" IS NOT NULL`, []];
-    case "IsNull":
-      return [`"${filter.field}" IS NULL`, []];
-    case "In": {
-      if (filter.values.length === 0) return ["1 = 0", []];
-      const placeholders = filter.values.map((_, i) => `$${paramOffset + i}`);
-      return [
-        `"${filter.field}" IN (${placeholders.join(", ")})`,
-        [...filter.values],
-      ];
-    }
-    case "And": {
-      if (filter.filters.length === 0) return ["1 = 1", []];
-      const parts: string[] = [];
-      const allVals: FieldValue[] = [];
-      let offset = paramOffset;
-      for (const f of filter.filters) {
-        const [sql, vals] = filterToSql(f, offset);
-        offset += vals.length;
-        parts.push(sql);
-        allVals.push(...vals);
-      }
-      return [`(${parts.join(" AND ")})`, allVals];
-    }
-    case "Or": {
-      if (filter.filters.length === 0) return ["1 = 0", []];
-      const parts: string[] = [];
-      const allVals: FieldValue[] = [];
-      let offset = paramOffset;
-      for (const f of filter.filters) {
-        const [sql, vals] = filterToSql(f, offset);
-        offset += vals.length;
-        parts.push(sql);
-        allVals.push(...vals);
-      }
-      return [`(${parts.join(" OR ")})`, allVals];
-    }
-    case "Raw":
-      return [filter.expression, []];
-  }
+  return sql.filterToSql(PG_DIALECT, filter, paramOffset, options);
 }
 
 /** Build a CREATE TABLE IF NOT EXISTS DDL statement. */
@@ -145,39 +96,15 @@ export function buildCreateTable(
   tableName: string,
   schema: FieldDef[],
 ): string {
-  const cols = schema.map((f, i) => {
-    const pgType = mapFieldType(f.fieldType);
-    const nullable = f.nullable ? "" : " NOT NULL";
-    const pk = i === 0 ? " PRIMARY KEY" : "";
-    return `"${f.name}" ${pgType}${nullable}${pk}`;
-  });
-  return `CREATE TABLE IF NOT EXISTS "${tableName}" (${cols.join(", ")})`;
+  return sql.buildCreateTable(PG_DIALECT, tableName, schema);
 }
 
-/** Build an INSERT INTO statement with $N placeholders. Returns [sql, params]. */
+/** Build a multi-row INSERT. Returns [sql, params]. */
 export function buildInsert(
   tableName: string,
   records: BwRecord[],
 ): [string, unknown[]] {
-  if (records.length === 0) return ["", []];
-  const colNames = records[0].map(([name]) => name);
-  const quotedCols = colNames.map((c) => `"${c}"`);
-  const allParams: unknown[] = [];
-  const rowGroups: string[] = [];
-  let idx = 1;
-  for (const rec of records) {
-    const placeholders: string[] = [];
-    for (const [, fv] of rec) {
-      placeholders.push(`$${idx}`);
-      allParams.push(fieldValueToParam(fv));
-      idx++;
-    }
-    rowGroups.push(`(${placeholders.join(", ")})`);
-  }
-  const sql = `INSERT INTO "${tableName}" (${quotedCols.join(", ")}) VALUES ${
-    rowGroups.join(", ")
-  }`;
-  return [sql, allParams];
+  return sql.buildInsert(PG_DIALECT, tableName, records);
 }
 
 /** Build a SELECT * with optional WHERE / LIMIT. Returns [sql, params]. */
@@ -185,46 +112,41 @@ export function buildSelect(
   tableName: string,
   filter?: Filter,
   limit?: number,
+  options?: FilterBuildOptions,
 ): [string, unknown[]] {
-  let sql = `SELECT * FROM "${tableName}"`;
-  const params: unknown[] = [];
-  if (filter) {
-    const [whereSql, vals] = filterToSql(filter, 1);
-    sql += ` WHERE ${whereSql}`;
-    params.push(...vals.map(fieldValueToParam));
-  }
-  if (limit !== undefined) sql += ` LIMIT ${limit}`;
-  return [sql, params];
+  return sql.buildSelect(PG_DIALECT, tableName, filter, limit, options);
 }
 
 /** Build a DELETE FROM with WHERE. Returns [sql, params]. */
 export function buildDelete(
   tableName: string,
   filter: Filter,
+  options?: FilterBuildOptions,
 ): [string, unknown[]] {
-  const [whereSql, vals] = filterToSql(filter, 1);
-  return [
-    `DELETE FROM "${tableName}" WHERE ${whereSql}`,
-    vals.map(fieldValueToParam),
-  ];
+  return sql.buildDelete(PG_DIALECT, tableName, filter, options);
 }
 
 /** Build a SELECT COUNT(*) with optional WHERE. Returns [sql, params]. */
 export function buildCount(
   tableName: string,
   filter?: Filter,
+  options?: FilterBuildOptions,
 ): [string, unknown[]] {
-  let sql = `SELECT COUNT(*) FROM "${tableName}"`;
-  const params: unknown[] = [];
-  if (filter) {
-    const [whereSql, vals] = filterToSql(filter, 1);
-    sql += ` WHERE ${whereSql}`;
-    params.push(...vals.map(fieldValueToParam));
-  }
-  return [sql, params];
+  return sql.buildCount(PG_DIALECT, tableName, filter, options);
 }
 
-/** Parse a pg Row into a Record using column metadata. */
+/** Connection and safety options for {@link PostgresDatabase}. */
+export interface PostgresConfig {
+  /** Full connection string, e.g. "postgresql://user:pass@host:5432/db". */
+  connectionString?: string;
+  /** pg.PoolConfig for fine-grained control. */
+  poolConfig?: pg.PoolConfig;
+  /** Name of the embeddings table (default: "code_embeddings"). */
+  tableName?: string;
+  /** Allow `Filter.kind === "Raw"` (verbatim SQL). Default: false. */
+  allowRawFilters?: boolean;
+}
+
 function rowToRecord(
   row: { [key: string]: unknown },
   fields: pg.FieldDef[],
@@ -274,18 +196,12 @@ function rowToRecord(
   return record;
 }
 
-// ---------------------------------------------------------------------------
-// PostgresDatabase
-// ---------------------------------------------------------------------------
-
-/** Configuration for PostgresDatabase. */
-export interface PostgresConfig {
-  /** Full connection string, e.g. "postgresql://user:pass@host:5432/db". */
-  connectionString?: string;
-  /** pg.PoolConfig for fine-grained control. */
-  poolConfig?: pg.PoolConfig;
-  /** Name of the embeddings table (default: "code_embeddings"). */
-  tableName?: string;
+/** Parse pgvector's text form `[1,2,3]` into numbers (empty on anything else). */
+export function parseVectorText(text: string): number[] {
+  if (!text.startsWith("[") || !text.endsWith("]")) return [];
+  return text.slice(1, -1).split(",").map(Number).filter((n) =>
+    Number.isFinite(n)
+  );
 }
 
 /**
@@ -293,15 +209,31 @@ export interface PostgresConfig {
  * and VectorDatabase.
  */
 export class PostgresDatabase implements StorageBackend, VectorDatabase {
+  /** The underlying `pg` connection pool (shared by both interfaces). */
   readonly pool: pg.Pool;
+  /** Table the VectorDatabase methods read and write (StorageBackend methods take their own table name). */
   readonly tableName: string;
 
+  private readonly filterOptions: FilterBuildOptions;
+
+  /**
+   * Open a `pg` pool. Nothing is contacted until the first query.
+   *
+   * @param config `poolConfig` wins over `connectionString`; the connection
+   *   string defaults to `postgresql://localhost:5432/rullama`, the embeddings
+   *   table to `code_embeddings` (validated as a plain identifier), and `Raw`
+   *   filters are disabled unless `allowRawFilters` is `true`.
+   */
   constructor(config?: PostgresConfig) {
     const connString = config?.connectionString ?? DEFAULT_URL;
     this.pool = config?.poolConfig
       ? new pg.Pool(config.poolConfig)
       : new pg.Pool({ connectionString: connString });
-    this.tableName = config?.tableName ?? DEFAULT_TABLE;
+    this.tableName = assertIdentifier(
+      config?.tableName ?? DEFAULT_TABLE,
+      "table name",
+    );
+    this.filterOptions = { allowRaw: config?.allowRawFilters ?? false };
   }
 
   /** Return the default connection URL. */
@@ -336,7 +268,12 @@ export class PostgresDatabase implements StorageBackend, VectorDatabase {
     filter?: Filter,
     limit?: number,
   ): Promise<BwRecord[]> {
-    const [sql, params] = buildSelect(tableName, filter, limit);
+    const [sql, params] = buildSelect(
+      tableName,
+      filter,
+      limit,
+      this.filterOptions,
+    );
     const result = await this.pool.query(sql, params);
     return result.rows.map((row: { [key: string]: unknown }) =>
       rowToRecord(row, result.fields)
@@ -344,12 +281,12 @@ export class PostgresDatabase implements StorageBackend, VectorDatabase {
   }
 
   async delete(tableName: string, filter: Filter): Promise<void> {
-    const [sql, params] = buildDelete(tableName, filter);
+    const [sql, params] = buildDelete(tableName, filter, this.filterOptions);
     await this.pool.query(sql, params);
   }
 
   async count(tableName: string, filter?: Filter): Promise<number> {
-    const [sql, params] = buildCount(tableName, filter);
+    const [sql, params] = buildCount(tableName, filter, this.filterOptions);
     const result = await this.pool.query(sql, params);
     return parseInt(result.rows[0].count, 10);
   }
@@ -366,7 +303,7 @@ export class PostgresDatabase implements StorageBackend, VectorDatabase {
     const filterParams: unknown[] = [];
 
     if (filter) {
-      const [sql, vals] = filterToSql(filter, 2); // $1 = vector
+      const [sql, vals] = filterToSql(filter, 2, this.filterOptions); // $1 = vector
       whereClause = `WHERE ${sql}`;
       filterParams.push(...vals.map(fieldValueToParam));
     }
@@ -490,28 +427,21 @@ export class PostgresDatabase implements StorageBackend, VectorDatabase {
     return embeddings.length;
   }
 
-  // deno-lint-ignore require-await
-  async search(
-    queryVector: number[],
-    queryText: string,
-    limit: number,
-    minScore: number,
-    project?: string,
-    rootPath?: string,
-    _hybrid?: boolean,
+  search(
+    ...args: Parameters<VectorDatabase["searchFiltered"]>
   ): Promise<SearchResult[]> {
-    return this.searchFiltered(
-      queryVector,
-      queryText,
-      limit,
-      minScore,
-      project,
-      rootPath,
-      _hybrid,
-    );
+    return this.searchFiltered(...args);
   }
 
   async searchFiltered(
+    ...args: Parameters<VectorDatabase["searchFiltered"]>
+  ): Promise<SearchResult[]> {
+    const [results] = await this.searchFilteredWithEmbeddings(...args);
+    return results;
+  }
+
+  /** {@link searchFiltered}, also returning each hit's stored embedding. */
+  async searchFilteredWithEmbeddings(
     queryVector: number[],
     _queryText: string,
     limit: number,
@@ -522,12 +452,13 @@ export class PostgresDatabase implements StorageBackend, VectorDatabase {
     fileExtensions?: string[],
     languages?: string[],
     pathPatterns?: string[],
-  ): Promise<SearchResult[]> {
+  ): Promise<[SearchResult[], number[][]]> {
     const vecStr = `[${queryVector.join(",")}]`;
     const sql = `
       SELECT
         file_path, root_path, project, start_line, end_line,
         language, extension, indexed_at, content,
+        embedding::text AS embedding_text,
         1.0 - (embedding <=> $1::vector) AS vector_score
       FROM ${this.tableName}
       WHERE 1=1
@@ -547,10 +478,19 @@ export class PostgresDatabase implements StorageBackend, VectorDatabase {
       limit,
     ]);
 
-    let results: SearchResult[] = result.rows
-      .filter((r: { [key: string]: unknown }) =>
-        Number(r.vector_score) >= minScore
-      )
+    let rows: { [key: string]: unknown }[] = result.rows.filter((
+      r: { [key: string]: unknown },
+    ) => Number(r.vector_score) >= minScore);
+    // Post-filter by path patterns (simple substring match fallback).
+    if (pathPatterns && pathPatterns.length > 0) {
+      rows = rows.filter((r) =>
+        pathPatterns.some((p) => String(r.file_path).includes(p))
+      );
+    }
+    const embeddings = rows.map((r) =>
+      parseVectorText(String(r.embedding_text ?? ""))
+    );
+    const results: SearchResult[] = rows
       .map((r: { [key: string]: unknown }) => ({
         file_path: String(r.file_path),
         root_path: r.root_path != null ? String(r.root_path) : undefined,
@@ -565,14 +505,7 @@ export class PostgresDatabase implements StorageBackend, VectorDatabase {
         indexed_at: Number(r.indexed_at),
       }));
 
-    // Post-filter by path patterns (simple substring match fallback).
-    if (pathPatterns && pathPatterns.length > 0) {
-      results = results.filter((r) =>
-        pathPatterns.some((p) => r.file_path.includes(p))
-      );
-    }
-
-    return results;
+    return [results, embeddings];
   }
 
   async deleteByFile(filePath: string): Promise<number> {
@@ -632,7 +565,7 @@ export class PostgresDatabase implements StorageBackend, VectorDatabase {
     );
   }
 
-  async searchWithEmbeddings(
+  searchWithEmbeddings(
     queryVector: number[],
     queryText: string,
     limit: number,
@@ -641,7 +574,7 @@ export class PostgresDatabase implements StorageBackend, VectorDatabase {
     rootPath?: string,
     hybrid?: boolean,
   ): Promise<[SearchResult[], number[][]]> {
-    const results = await this.search(
+    return this.searchFilteredWithEmbeddings(
       queryVector,
       queryText,
       limit,
@@ -650,7 +583,5 @@ export class PostgresDatabase implements StorageBackend, VectorDatabase {
       rootPath,
       hybrid,
     );
-    const emptyEmbeddings = results.map(() => [] as number[]);
-    return [results, emptyEmbeddings];
   }
 }

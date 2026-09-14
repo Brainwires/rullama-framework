@@ -12,32 +12,49 @@ import {
   type TrainingJobStatus,
   type TrainingJobSummary,
 } from "../types.ts";
+import { datasetFile } from "./types.ts";
 import type {
   CloudFineTuneConfig,
   DataFormat,
   FineTuneProvider,
 } from "./types.ts";
 
+/** Default OpenAI API root used when no `base_url` is passed. */
 export const OPENAI_API_BASE = "https://api.openai.com/v1";
 
+/**
+ * OpenAI implementation of {@link FineTuneProvider} over `/files` + `/fine_tuning/jobs`.
+ */
 export class OpenAiFineTune implements FineTuneProvider {
+  /** Provider key used by `TrainingManager`. */
   readonly name = "openai";
+  /** API root every request URL is built from. */
   readonly base_url: string;
+  /** Bearer token sent in the `Authorization` header of every request. */
   private readonly api_key: string;
 
+  /**
+   * Create a provider bound to one API key.
+   *
+   * @param api_key OpenAI API key.
+   * @param base_url Override the API root (e.g. a proxy or a test server).
+   */
   constructor(api_key: string, base_url: string = OPENAI_API_BASE) {
     this.api_key = api_key;
     this.base_url = base_url;
   }
 
+  /** `<base_url>/files` — the Files API endpoint. */
   private filesUrl(): string {
     return `${this.base_url}/files`;
   }
 
+  /** `<base_url>/fine_tuning/jobs` — the fine-tuning jobs endpoint. */
   private finetuneUrl(): string {
     return `${this.base_url}/fine_tuning/jobs`;
   }
 
+  /** Chat models OpenAI accepts for fine-tuning (gpt-4o-mini, gpt-4o, gpt-4-0613, gpt-3.5-turbo). */
   supportedBaseModels(): string[] {
     return [
       "gpt-4o-mini-2024-07-18",
@@ -48,6 +65,7 @@ export class OpenAiFineTune implements FineTuneProvider {
     ];
   }
 
+  /** OpenAI supports DPO (`method.type = "dpo"`); ORPO is not offered. */
   supportsDpo(): boolean {
     return true;
   }
@@ -97,17 +115,21 @@ export class OpenAiFineTune implements FineTuneProvider {
     }
   }
 
+  /**
+   * Multipart-upload the bytes to `/files` with `purpose=fine-tune`, using the MIME type and file name from `datasetFile(format)`.
+   *
+   * @returns The OpenAI file id (`file-…`).
+   *
+   * @throws `TrainingError` (`api`) on a non-2xx response, (`upload`) if the response has no `id`.
+   */
   async uploadDataset(
     data: Uint8Array,
-    _format: DataFormat,
+    format: DataFormat,
   ): Promise<DatasetId> {
     const form = new FormData();
     form.append("purpose", "fine-tune");
-    form.append(
-      "file",
-      new Blob([data as BlobPart], { type: "application/json" }),
-      "training_data.jsonl",
-    );
+    const { mime, name } = datasetFile(format);
+    form.append("file", new Blob([data as BlobPart], { type: mime }), name);
     const res = await fetch(this.filesUrl(), {
       method: "POST",
       headers: { Authorization: `Bearer ${this.api_key}` },
@@ -126,6 +148,11 @@ export class OpenAiFineTune implements FineTuneProvider {
     return new DatasetId(id);
   }
 
+  /**
+   * POST `/fine_tuning/jobs`. Sends `n_epochs`, `batch_size`, and `learning_rate_multiplier` (= `learning_rate / 2e-5`), plus `validation_file`, `suffix`, and DPO `beta` when set. `config.lora` is ignored — OpenAI exposes no LoRA knobs.
+   *
+   * @throws `TrainingError` (`validation`) for `orpo` alignment, (`api`) on a non-2xx response, (`provider`) if the response has no `id`.
+   */
   async createJob(config: CloudFineTuneConfig): Promise<TrainingJobId> {
     const body: Record<string, unknown> = {
       training_file: config.training_dataset.value,
@@ -133,6 +160,8 @@ export class OpenAiFineTune implements FineTuneProvider {
       hyperparameters: {
         n_epochs: config.hyperparams.epochs,
         batch_size: config.hyperparams.batch_size,
+        // OpenAI takes a multiplier over its own base rate, not an absolute LR;
+        // 2e-5 is that base, so the default hyperparams map to 1.0.
         learning_rate_multiplier: config.hyperparams.learning_rate / 2e-5,
       },
     };
@@ -140,6 +169,18 @@ export class OpenAiFineTune implements FineTuneProvider {
       body.validation_file = config.validation_dataset.value;
     }
     if (config.suffix) body.suffix = config.suffix;
+    const alignment = config.alignment;
+    if (alignment.kind === "dpo") {
+      // https://platform.openai.com/docs/guides/direct-preference-optimization
+      body.method = {
+        type: "dpo",
+        dpo: { hyperparameters: { beta: alignment.beta } },
+      };
+    } else if (alignment.kind !== "none") {
+      throw TrainingError.validation(
+        `${this.name} does not support ${alignment.kind} alignment`,
+      );
+    }
 
     const res = await fetch(this.finetuneUrl(), {
       method: "POST",
@@ -163,6 +204,11 @@ export class OpenAiFineTune implements FineTuneProvider {
     return new TrainingJobIdClass(id);
   }
 
+  /**
+   * GET `/fine_tuning/jobs/{id}` and map the `status` field via {@link OpenAiFineTune.parseJobStatus}.
+   *
+   * @throws `TrainingError` (`job_not_found`) on 404, (`api`) on other non-2xx responses.
+   */
   async getJobStatus(job_id: TrainingJobId): Promise<TrainingJobStatus> {
     const res = await fetch(`${this.finetuneUrl()}/${job_id.value}`, {
       headers: { Authorization: `Bearer ${this.api_key}` },
@@ -180,6 +226,7 @@ export class OpenAiFineTune implements FineTuneProvider {
     return OpenAiFineTune.parseJobStatus(status_str, body);
   }
 
+  /** POST `/fine_tuning/jobs/{id}/cancel`; throws `TrainingError` (`api`) on a non-2xx response. */
   async cancelJob(job_id: TrainingJobId): Promise<void> {
     const res = await fetch(`${this.finetuneUrl()}/${job_id.value}/cancel`, {
       method: "POST",
@@ -196,6 +243,9 @@ export class OpenAiFineTune implements FineTuneProvider {
     }
   }
 
+  /**
+   * GET `/fine_tuning/jobs` and map each entry to a summary. Entries missing `id`/`model`/`status`/`created_at` are skipped; `metrics` is always `null`.
+   */
   async listJobs(): Promise<TrainingJobSummary[]> {
     const res = await fetch(this.finetuneUrl(), {
       headers: { Authorization: `Bearer ${this.api_key}` },
@@ -230,6 +280,7 @@ export class OpenAiFineTune implements FineTuneProvider {
     return out;
   }
 
+  /** DELETE `/models/{model_id}`; throws `TrainingError` (`api`) on a non-2xx response. */
   async deleteModel(model_id: string): Promise<void> {
     const res = await fetch(`${this.base_url}/models/${model_id}`, {
       method: "DELETE",

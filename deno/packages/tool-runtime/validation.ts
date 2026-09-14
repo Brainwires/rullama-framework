@@ -1,6 +1,13 @@
 /**
- * Validation tool implementation.
- * Provides build/compile checks, syntax validation, and duplicate detection.
+ * `ValidationTool`: the `check_duplicates`, `verify_build` and
+ * `check_syntax` tools used by validation loops to gate an agent's completion.
+ * Duplicate detection scans exports across a working set (`isExportLine` /
+ * `extractExportName`); `verify_build` runs the build command of a detected or
+ * named build system (npm, cargo, go, python, gradle, maven, make, …) and
+ * `check_syntax` runs a per-language syntax check, both with bounded timeouts.
+ * Equivalent to Rust's `rullama_tool_runtime::validation`.
+ *
+ * @module
  */
 
 // deno-lint-ignore-file no-explicit-any
@@ -39,6 +46,7 @@ export class ValidationTool {
     ];
   }
 
+  /** Definition of the `check_duplicates` tool. */
   private static checkDuplicatesTool(): Tool {
     return {
       name: "check_duplicates",
@@ -57,6 +65,7 @@ export class ValidationTool {
     };
   }
 
+  /** Definition of the `verify_build` tool. */
   private static verifyBuildTool(): Tool {
     return {
       name: "verify_build",
@@ -80,6 +89,7 @@ export class ValidationTool {
     };
   }
 
+  /** Definition of the `check_syntax` tool. */
   private static checkSyntaxTool(): Tool {
     return {
       name: "check_syntax",
@@ -139,6 +149,7 @@ export class ValidationTool {
 
   // ── check_duplicates ────────────────────────────────────────────────
 
+  /** Run `check_duplicates` over the given files. */
   private static async checkDuplicates(
     toolUseId: string,
     filePath: string,
@@ -195,6 +206,7 @@ export class ValidationTool {
 
   // ── verify_build ────────────────────────────────────────────────────
 
+  /** Run `verify_build` for the detected or named build system. */
   private static async verifyBuild(
     toolUseId: string,
     workingDirectory: string,
@@ -252,6 +264,7 @@ export class ValidationTool {
 
   // ── check_syntax ────────────────────────────────────────────────────
 
+  /** Run `check_syntax` for the file's language. */
   private static async checkSyntax(
     toolUseId: string,
     filePath: string,

@@ -2,7 +2,7 @@
 // Demonstrates the discovery layer (register, deregister, lookup), PeerTable
 // management (upsert, remove, topic subscriptions), and routing strategies
 // (direct, broadcast, content-based) for message delivery.
-// Run: deno run deno/examples/agent-network/peer_discovery.ts
+// Run: deno run deno/examples/network/peer_discovery.ts
 
 import {
   type AgentIdentity,
@@ -14,7 +14,6 @@ import {
   directEnvelope,
   DirectRouter,
   type Discovery,
-  type DiscoveryProtocol,
   displayTransportAddress,
   hasCapability,
   jsonPayload,

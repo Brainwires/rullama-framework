@@ -1,11 +1,12 @@
 /**
- * Temperature Optimization
+ * Per-cluster sampling-temperature optimization. `TemperatureOptimizer`
+ * starts from the paper's defaults (low temperature for logical tasks, high for
+ * linguistic ones), records outcomes per cluster and temperature with
+ * `TemperaturePerformance`, and returns the best-scoring temperature once
+ * enough samples exist.
+ * Equivalent to Rust's `rullama_prompting::temperature`.
  *
- * Adaptive temperature selection per task cluster, based on the paper's findings:
- * - Low temp (0.0): Best for logical tasks (Zebra Puzzles, Web of Lies, Boolean Expressions)
- * - High temp (1.3): Best for linguistic tasks (Hyperbaton - adjective order judgment)
- *
- * Temperature performance is tracked per cluster and adapted over time.
+ * @module
  */
 
 import type { TaskCluster } from "./cluster.ts";
@@ -89,6 +90,7 @@ export class TemperatureOptimizer {
   /** Minimum samples before trusting a temperature setting. */
   private readonly minSamples: number;
 
+  /** Create an optimizer; `options` set the candidate temperatures and minimum samples. */
   constructor(options?: {
     candidates?: number[];
     minSamples?: number;

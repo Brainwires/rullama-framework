@@ -1,8 +1,12 @@
 /**
- * Task Clustering System
+ * Task clustering for technique selection. `TaskClusterManager` groups task
+ * embeddings into `TaskCluster`s by cosine similarity (a simplification of the
+ * Rust k-means implementation), tracks SEAL quality metrics per cluster, and
+ * finds the best-matching cluster for a new task; `cosineSimilarity`,
+ * `euclideanDistance` and `computeCentroid` are the vector helpers it uses.
+ * Equivalent to Rust's `rullama_prompting::clustering`.
  *
- * Distance-based task clustering using cosine similarity for semantic grouping.
- * Simplified from the Rust implementation (no k-means dependency).
+ * @module
  */
 
 import type { ComplexityLevel, PromptingTechnique } from "./techniques.ts";
@@ -33,13 +37,21 @@ export interface TaskCluster {
 
 /** Options for creating a TaskCluster (mutable fields before freezing). */
 export interface TaskClusterInit {
+  /** Unique cluster ID. */
   id: string;
+  /** Human-readable description of the cluster. */
   description: string;
+  /** Centroid embedding of the cluster. */
   embedding: number[];
+  /** Techniques recommended for this cluster. */
   techniques: PromptingTechnique[];
+  /** Representative task descriptions. */
   exampleTasks: string[];
+  /** SEAL query cores associated with the cluster. */
   sealQueryCores?: string[];
+  /** Average SEAL quality score (0-1) observed for the cluster. */
   avgSealQuality?: number;
+  /** Complexity level the cluster's tasks usually need. */
   recommendedComplexity?: ComplexityLevel;
 }
 
@@ -86,6 +98,7 @@ export class TaskClusterManager {
   private clusters: TaskCluster[] = [];
   private readonly embeddingDim: number;
 
+  /** Create a manager for embeddings of `embeddingDim` dimensions (default 768). */
   constructor(embeddingDim: number = 768) {
     this.embeddingDim = embeddingDim;
   }

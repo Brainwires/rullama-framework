@@ -7,13 +7,12 @@ import {
   createTemplate,
   extractVariables,
   instantiateTemplate,
-  markUsed,
   TemplateStore,
   withCategory,
   withTags,
-} from "@rullama/storage";
+} from "@rullama/stores";
 
-async function main() {
+function main(): void {
   console.log("=== Plan Templates Example ===\n");
 
   // 1. Create a template store
@@ -152,4 +151,4 @@ async function main() {
   console.log("\nDone.");
 }
 
-await main();
+main();

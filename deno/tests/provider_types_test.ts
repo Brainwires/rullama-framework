@@ -1,22 +1,17 @@
 /**
  * Cross-package integration test: Provider factory and registry.
  *
- * Verifies that @rullama/providers factory creates correct provider types,
+ * Verifies that @rullama/provider factory creates correct provider types,
  * and that the registry lookup returns correct entries for each ProviderType.
  */
 
-import {
-  assert,
-  assertEquals,
-  assertThrows,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals, assertThrows } from "@std/assert";
 import {
   ChatProviderFactory,
   defaultModel,
   lookup,
   parseProviderType,
   PROVIDER_REGISTRY,
-  type ProviderEntry,
   type ProviderType,
   requiresApiKey,
 } from "@rullama/provider";
@@ -36,7 +31,6 @@ Deno.test("PROVIDER_REGISTRY contains all expected providers", () => {
     "fireworks",
     "anyscale",
     "openai-responses",
-    "rullama",
   ];
 
   for (const pt of expectedProviders) {

@@ -13,7 +13,7 @@ async function openStore(): Promise<
 Deno.test("DenoKv roundtrip", async () => {
   const { store, kv } = await openStore();
   try {
-    const id = SessionId.new("u1");
+    const id = SessionId.from("u1");
     await store.save(id, [Message.user("hi")]);
     const loaded = await store.load(id);
     assert(loaded);
@@ -31,12 +31,12 @@ Deno.test("DenoKv survives reopen (file-backed)", async () => {
     {
       const kv = await Deno.openKv(path);
       const store = new DenoKvSessionStore(kv);
-      await store.save(SessionId.new("persist"), [Message.user("keep me")]);
+      await store.save(SessionId.from("persist"), [Message.user("keep me")]);
       kv.close();
     }
     const kv = await Deno.openKv(path);
     const store = new DenoKvSessionStore(kv);
-    const loaded = await store.load(SessionId.new("persist"));
+    const loaded = await store.load(SessionId.from("persist"));
     assert(loaded);
     assertEquals(loaded.length, 1);
     assertEquals(loaded[0].text(), "keep me");
@@ -49,11 +49,11 @@ Deno.test("DenoKv survives reopen (file-backed)", async () => {
 Deno.test("DenoKv list and delete", async () => {
   const { store, kv } = await openStore();
   try {
-    await store.save(SessionId.new("a"), [Message.user("x")]);
-    await store.save(SessionId.new("b"), [Message.user("y")]);
+    await store.save(SessionId.from("a"), [Message.user("x")]);
+    await store.save(SessionId.from("b"), [Message.user("y")]);
     const list = await store.list();
     assertEquals(list.length, 2);
-    await store.delete(SessionId.new("a"));
+    await store.delete(SessionId.from("a"));
     assertEquals((await store.list()).length, 1);
   } finally {
     kv.close();
@@ -63,7 +63,7 @@ Deno.test("DenoKv list and delete", async () => {
 Deno.test("DenoKv load returns null for unknown", async () => {
   const { store, kv } = await openStore();
   try {
-    assertEquals(await store.load(SessionId.new("missing")), null);
+    assertEquals(await store.load(SessionId.from("missing")), null);
   } finally {
     kv.close();
   }
@@ -72,7 +72,7 @@ Deno.test("DenoKv load returns null for unknown", async () => {
 Deno.test("DenoKv save preserves created_at across overwrites", async () => {
   const { store, kv } = await openStore();
   try {
-    const id = SessionId.new("stable");
+    const id = SessionId.from("stable");
     await store.save(id, [Message.user("first")]);
     const firstList = await store.list();
     const firstCreated = firstList[0].created_at;

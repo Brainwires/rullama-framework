@@ -15,7 +15,7 @@ import {
   withTarget,
 } from "@rullama/permission";
 
-async function main() {
+function main(): void {
   console.log("=== Trust & Audit Example ===\n");
 
   // 1. Setup
@@ -119,4 +119,4 @@ async function main() {
   console.log("\n=== Done ===");
 }
 
-await main();
+main();

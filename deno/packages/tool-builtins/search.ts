@@ -1,11 +1,21 @@
 /**
- * Regex-based code pattern search tool.
- * Respects .gitignore via git ls-files fallback.
+ * The `search_code` tool: regex search across a directory tree, honouring
+ * `.gitignore` through `git ls-files` when available. The search root is
+ * confined to the working directory, the pattern is compiled with
+ * `compileBoundedRegex` (length-limited to resist ReDoS), files larger than
+ * `MAX_SEARCH_FILE_BYTES` are skipped and results stop at 100 matches.
+ * Equivalent to Rust's `rullama_tool_builtins::search`.
+ *
+ * @module
  */
 
 // deno-lint-ignore-file no-explicit-any
 
 import { objectSchema, type ToolContext, ToolResult } from "@rullama/core";
+import { compileBoundedRegex, confinePath } from "@rullama/tool-runtime";
+
+/** Files larger than this are skipped by `search_code`. */
+export const MAX_SEARCH_FILE_BYTES = 1024 * 1024;
 import type { Tool } from "@rullama/core";
 
 /** Regex-based code search tool. */
@@ -15,6 +25,7 @@ export class SearchTool {
     return [SearchTool.searchCodeTool()];
   }
 
+  /** Definition of the `search_code` tool. */
   private static searchCodeTool(): Tool {
     return {
       name: "search_code",
@@ -62,16 +73,18 @@ export class SearchTool {
     }
   }
 
+  /** Run `search_code`: confine the root, compile the bounded regex, walk the tree. */
   private static async searchCode(
     input: any,
     context: ToolContext,
   ): Promise<string> {
     const pattern: string = input.pattern;
-    const searchPath = input.path === "." || !input.path
-      ? context.working_directory
-      : input.path;
+    const searchPath = await confinePath(
+      context.working_directory,
+      input.path === "." || !input.path ? "." : String(input.path),
+    );
 
-    const regex = new RegExp(pattern);
+    const regex = compileBoundedRegex(pattern);
     const matches: string[] = [];
     const MAX_MATCHES = 100;
 
@@ -125,6 +138,7 @@ async function searchDir(
 
       const filePath = `${dir}/${entry.name}`;
       try {
+        if ((await Deno.stat(filePath)).size > MAX_SEARCH_FILE_BYTES) continue;
         const content = await Deno.readTextFile(filePath);
         const lines = content.split("\n");
         for (let i = 0; i < lines.length; i++) {

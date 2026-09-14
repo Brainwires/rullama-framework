@@ -243,9 +243,9 @@ mod tests {
     #[cfg(target_os = "linux")]
     fn test_data_dir_with_xdg_data_home() {
         // Test that XDG_DATA_HOME is respected
-        let original = env::var("XDG_DATA_HOME").ok();
+        let original = std::env::var("XDG_DATA_HOME").ok();
         unsafe {
-            env::set_var("XDG_DATA_HOME", "/custom/data");
+            std::env::set_var("XDG_DATA_HOME", "/custom/data");
         }
 
         let dir = PlatformPaths::data_dir();
@@ -254,8 +254,8 @@ mod tests {
         // Restore original value
         unsafe {
             match original {
-                Some(val) => env::set_var("XDG_DATA_HOME", val),
-                None => env::remove_var("XDG_DATA_HOME"),
+                Some(val) => std::env::set_var("XDG_DATA_HOME", val),
+                None => std::env::remove_var("XDG_DATA_HOME"),
             }
         }
     }
@@ -264,12 +264,12 @@ mod tests {
     #[cfg(target_os = "linux")]
     fn test_data_dir_fallback_to_home() {
         // Test fallback to HOME/.local/share when XDG_DATA_HOME is not set
-        let xdg_original = env::var("XDG_DATA_HOME").ok();
-        let home_original = env::var("HOME").ok();
+        let xdg_original = std::env::var("XDG_DATA_HOME").ok();
+        let home_original = std::env::var("HOME").ok();
 
         unsafe {
-            env::remove_var("XDG_DATA_HOME");
-            env::set_var("HOME", "/home/testuser");
+            std::env::remove_var("XDG_DATA_HOME");
+            std::env::set_var("HOME", "/home/testuser");
         }
 
         let dir = PlatformPaths::data_dir();
@@ -278,12 +278,12 @@ mod tests {
         // Restore original values
         unsafe {
             match xdg_original {
-                Some(val) => env::set_var("XDG_DATA_HOME", val),
-                None => env::remove_var("XDG_DATA_HOME"),
+                Some(val) => std::env::set_var("XDG_DATA_HOME", val),
+                None => std::env::remove_var("XDG_DATA_HOME"),
             }
             match home_original {
-                Some(val) => env::set_var("HOME", val),
-                None => env::remove_var("HOME"),
+                Some(val) => std::env::set_var("HOME", val),
+                None => std::env::remove_var("HOME"),
             }
         }
     }
@@ -292,9 +292,9 @@ mod tests {
     #[cfg(target_os = "linux")]
     fn test_cache_dir_with_xdg_cache_home() {
         // Test that XDG_CACHE_HOME is respected
-        let original = env::var("XDG_CACHE_HOME").ok();
+        let original = std::env::var("XDG_CACHE_HOME").ok();
         unsafe {
-            env::set_var("XDG_CACHE_HOME", "/custom/cache");
+            std::env::set_var("XDG_CACHE_HOME", "/custom/cache");
         }
 
         let dir = PlatformPaths::cache_dir();
@@ -303,8 +303,8 @@ mod tests {
         // Restore original value
         unsafe {
             match original {
-                Some(val) => env::set_var("XDG_CACHE_HOME", val),
-                None => env::remove_var("XDG_CACHE_HOME"),
+                Some(val) => std::env::set_var("XDG_CACHE_HOME", val),
+                None => std::env::remove_var("XDG_CACHE_HOME"),
             }
         }
     }
@@ -313,12 +313,12 @@ mod tests {
     #[cfg(target_os = "linux")]
     fn test_cache_dir_fallback_to_home() {
         // Test fallback to HOME/.cache when XDG_CACHE_HOME is not set
-        let xdg_original = env::var("XDG_CACHE_HOME").ok();
-        let home_original = env::var("HOME").ok();
+        let xdg_original = std::env::var("XDG_CACHE_HOME").ok();
+        let home_original = std::env::var("HOME").ok();
 
         unsafe {
-            env::remove_var("XDG_CACHE_HOME");
-            env::set_var("HOME", "/home/testuser");
+            std::env::remove_var("XDG_CACHE_HOME");
+            std::env::set_var("HOME", "/home/testuser");
         }
 
         let dir = PlatformPaths::cache_dir();
@@ -327,12 +327,12 @@ mod tests {
         // Restore original values
         unsafe {
             match xdg_original {
-                Some(val) => env::set_var("XDG_CACHE_HOME", val),
-                None => env::remove_var("XDG_CACHE_HOME"),
+                Some(val) => std::env::set_var("XDG_CACHE_HOME", val),
+                None => std::env::remove_var("XDG_CACHE_HOME"),
             }
             match home_original {
-                Some(val) => env::set_var("HOME", val),
-                None => env::remove_var("HOME"),
+                Some(val) => std::env::set_var("HOME", val),
+                None => std::env::remove_var("HOME"),
             }
         }
     }
@@ -341,9 +341,9 @@ mod tests {
     #[cfg(target_os = "linux")]
     fn test_config_dir_with_xdg_config_home() {
         // Test that XDG_CONFIG_HOME is respected
-        let original = env::var("XDG_CONFIG_HOME").ok();
+        let original = std::env::var("XDG_CONFIG_HOME").ok();
         unsafe {
-            env::set_var("XDG_CONFIG_HOME", "/custom/config");
+            std::env::set_var("XDG_CONFIG_HOME", "/custom/config");
         }
 
         let dir = PlatformPaths::config_dir();
@@ -352,8 +352,8 @@ mod tests {
         // Restore original value
         unsafe {
             match original {
-                Some(val) => env::set_var("XDG_CONFIG_HOME", val),
-                None => env::remove_var("XDG_CONFIG_HOME"),
+                Some(val) => std::env::set_var("XDG_CONFIG_HOME", val),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
             }
         }
     }
@@ -363,12 +363,12 @@ mod tests {
     #[ignore = "modifies HOME / XDG_CONFIG_HOME; races other env-touching tests under cargo test parallelism"]
     fn test_config_dir_fallback_to_home() {
         // Test fallback to HOME/.config when XDG_CONFIG_HOME is not set
-        let xdg_original = env::var("XDG_CONFIG_HOME").ok();
-        let home_original = env::var("HOME").ok();
+        let xdg_original = std::env::var("XDG_CONFIG_HOME").ok();
+        let home_original = std::env::var("HOME").ok();
 
         unsafe {
-            env::remove_var("XDG_CONFIG_HOME");
-            env::set_var("HOME", "/home/testuser");
+            std::env::remove_var("XDG_CONFIG_HOME");
+            std::env::set_var("HOME", "/home/testuser");
         }
 
         let dir = PlatformPaths::config_dir();
@@ -377,12 +377,12 @@ mod tests {
         // Restore original values
         unsafe {
             match xdg_original {
-                Some(val) => env::set_var("XDG_CONFIG_HOME", val),
-                None => env::remove_var("XDG_CONFIG_HOME"),
+                Some(val) => std::env::set_var("XDG_CONFIG_HOME", val),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
             }
             match home_original {
-                Some(val) => env::set_var("HOME", val),
-                None => env::remove_var("HOME"),
+                Some(val) => std::env::set_var("HOME", val),
+                None => std::env::remove_var("HOME"),
             }
         }
     }

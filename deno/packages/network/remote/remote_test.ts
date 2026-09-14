@@ -608,27 +608,34 @@ Deno.test("assessConnectionQuality", () => {
 // Bridge Tests
 // ============================================================================
 
-Deno.test("BridgeConfig defaults", () => {
+Deno.test("BridgeConfig defaults: no backend URL is baked in, and the bridge refuses to start without one", () => {
   const config = defaultBridgeConfig();
-  assert(config.backendUrl.startsWith("https://"));
+  assertEquals(config.backendUrl, "");
   assertEquals(config.heartbeatIntervalSecs, 5);
   assertEquals(config.version, "unknown");
+  assertThrows(() => new RemoteBridge(config), Error, "backendUrl");
+});
+
+/** A config pointing at a relay of our own. */
+const relayConfig = () => ({
+  ...defaultBridgeConfig(),
+  backendUrl: "https://relay.test",
 });
 
 Deno.test("RemoteBridge - initial state", () => {
-  const bridge = new RemoteBridge(defaultBridgeConfig());
+  const bridge = new RemoteBridge(relayConfig());
   assertEquals(bridge.state, "disconnected");
   assert(!bridge.isReady);
   assertEquals(bridge.getUserId(), undefined);
 });
 
 Deno.test("RemoteBridge - protocol version", () => {
-  const bridge = new RemoteBridge(defaultBridgeConfig());
+  const bridge = new RemoteBridge(relayConfig());
   assertEquals(bridge.protocolVersion(), PROTOCOL_VERSION);
 });
 
 Deno.test("RemoteBridge - capabilities", () => {
-  const bridge = new RemoteBridge(defaultBridgeConfig());
+  const bridge = new RemoteBridge(relayConfig());
   // Default capabilities
   assert(bridge.hasCapability("streaming"));
   assert(bridge.hasCapability("tools"));
@@ -636,14 +643,14 @@ Deno.test("RemoteBridge - capabilities", () => {
 });
 
 Deno.test("RemoteBridge - command result queue", () => {
-  const bridge = new RemoteBridge(defaultBridgeConfig());
+  const bridge = new RemoteBridge(relayConfig());
 
   bridge.queueCommandResult({ type: "pong", timestamp: 12345 });
   // Internal queue is not directly accessible, but we verify it doesn't throw.
 });
 
 Deno.test("RemoteBridge - queueResult helper", () => {
-  const bridge = new RemoteBridge(defaultBridgeConfig());
+  const bridge = new RemoteBridge(relayConfig());
 
   bridge.queueResult("cmd-1", { ok: true, value: { done: true } });
   bridge.queueResult("cmd-2", { ok: false, error: "something went wrong" });
@@ -651,13 +658,13 @@ Deno.test("RemoteBridge - queueResult helper", () => {
 });
 
 Deno.test("RemoteBridge - shutdown sets state", () => {
-  const bridge = new RemoteBridge(defaultBridgeConfig());
+  const bridge = new RemoteBridge(relayConfig());
   bridge.shutdown();
   assertEquals(bridge.state, "shutting_down");
 });
 
 Deno.test("RemoteBridge - state change handler", () => {
-  const bridge = new RemoteBridge(defaultBridgeConfig());
+  const bridge = new RemoteBridge(relayConfig());
   const states: string[] = [];
   bridge.setStateChangeHandler((state) => states.push(state));
 

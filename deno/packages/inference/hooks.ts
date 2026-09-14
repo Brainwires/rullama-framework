@@ -12,12 +12,7 @@
  * @module
  */
 
-import type {
-  ChatResponse,
-  Message,
-  ToolResult,
-  ToolUse,
-} from "@rullama/core";
+import type { ChatResponse, Message, ToolResult, ToolUse } from "@rullama/core";
 import { estimateTokensFromSize } from "@rullama/core";
 
 // Re-export TaskAgentConfig as an opaque type reference for DelegationRequest.
@@ -113,6 +108,7 @@ export interface DelegationResult {
  * summarization or context injection).
  */
 export class ConversationView {
+  /** Wrap the live conversation history (mutations are visible to the loop). */
   constructor(private messages: Message[]) {}
 
   /** Number of messages in the conversation. */

@@ -24,9 +24,14 @@ export const DEFAULT_CAPACITY = 1024;
  * dropped from the front once the buffer is full.
  */
 export class MemoryAnalyticsSink implements AnalyticsSink {
+  /** Maximum number of events retained; the oldest is evicted once exceeded. */
   readonly capacity: number;
   private readonly buf: AnalyticsEvent[] = [];
 
+  /**
+   * Create an empty sink.
+   * @param capacity Ring-buffer size (default {@link DEFAULT_CAPACITY}).
+   */
   constructor(capacity: number = DEFAULT_CAPACITY) {
     this.capacity = capacity;
   }
@@ -46,6 +51,7 @@ export class MemoryAnalyticsSink implements AnalyticsSink {
     return this.buf.length;
   }
 
+  /** `true` when no events are buffered. */
   isEmpty(): boolean {
     return this.buf.length === 0;
   }

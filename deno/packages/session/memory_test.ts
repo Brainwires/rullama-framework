@@ -5,7 +5,7 @@ import { SessionId } from "./types.ts";
 
 Deno.test("roundtrip save load delete", async () => {
   const store = new InMemorySessionStore();
-  const id = SessionId.new("alice");
+  const id = SessionId.from("alice");
 
   assertEquals(await store.load(id), null);
 
@@ -23,7 +23,7 @@ Deno.test("roundtrip save load delete", async () => {
 
 Deno.test("save overwrites atomically", async () => {
   const store = new InMemorySessionStore();
-  const id = SessionId.new("bob");
+  const id = SessionId.from("bob");
   await store.save(id, [Message.user("one")]);
   await store.save(id, [Message.user("two"), Message.user("three")]);
   const loaded = await store.load(id);
@@ -34,8 +34,8 @@ Deno.test("save overwrites atomically", async () => {
 
 Deno.test("list returns known sessions", async () => {
   const store = new InMemorySessionStore();
-  await store.save(SessionId.new("a"), [Message.user("x")]);
-  await store.save(SessionId.new("b"), [Message.user("y")]);
+  await store.save(SessionId.from("a"), [Message.user("x")]);
+  await store.save(SessionId.from("b"), [Message.user("y")]);
   const list = await store.list();
   assertEquals(list.length, 2);
   const ids = list.map((r) => r.id.asStr());
@@ -44,12 +44,12 @@ Deno.test("list returns known sessions", async () => {
 
 Deno.test("delete unknown is noop", async () => {
   const store = new InMemorySessionStore();
-  await store.delete(SessionId.new("never-existed"));
+  await store.delete(SessionId.from("never-existed"));
 });
 
 Deno.test("load returns a defensive copy", async () => {
   const store = new InMemorySessionStore();
-  const id = SessionId.new("defensive");
+  const id = SessionId.from("defensive");
   await store.save(id, [Message.user("first")]);
   const first = await store.load(id);
   assert(first);
@@ -66,7 +66,7 @@ Deno.test("load returns a defensive copy", async () => {
 Deno.test("listPaginated slices results", async () => {
   const store = new InMemorySessionStore();
   for (const x of ["a", "b", "c", "d"]) {
-    await store.save(SessionId.new(x), [Message.user(x)]);
+    await store.save(SessionId.from(x), [Message.user(x)]);
     // Ensure distinct updated_at timestamps when tests run fast.
     await new Promise((r) => setTimeout(r, 2));
   }

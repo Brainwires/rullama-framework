@@ -1,14 +1,11 @@
 /**
- * Long-horizon stability test cases.
+ * Long-horizon stability cases that simulate 15+ step agent runs without a
+ * live provider. `LoopDetectionSimCase` checks that loop detection fires after
+ * N identical tool calls, `GoalPreservationCase` checks that the original goal
+ * text survives the run, and `longHorizonStabilitySuite` bundles them.
+ * Equivalent to Rust's `rullama_eval::stability_tests`.
  *
- * Simulates 15+ step agent executions to verify that:
- * - Loop detection fires correctly after N consecutive identical tool calls.
- * - The original goal text is preserved (re-injected) throughout the run.
- * - Memory retrieval quality stays stable via deterministic replay.
- *
- * All cases are pure unit simulations — no live AI provider needed.
- *
- * Equivalent to Rust's `rullama_agents::eval::stability_tests` module.
+ * @module
  */
 
 import type { EvaluationCase } from "./case.ts";
@@ -26,11 +23,17 @@ import {
  * algorithm fires at the expected iteration.
  */
 export class LoopDetectionSimCase implements EvaluationCase {
+  /** Case name reported in results. */
   readonly nameVal: string;
+  /** Number of simulated agent steps. */
   readonly n_steps: number;
+  /** Tool name that starts repeating. */
   readonly looping_tool: string;
+  /** Step index at which the loop begins. */
   readonly loop_starts_at: number;
+  /** Loop-detection window size. */
   readonly window_size: number;
+  /** Whether detection is expected to fire. */
   readonly expect_detection: boolean;
 
   private constructor(
@@ -146,11 +149,16 @@ export class LoopDetectionSimCase implements EvaluationCase {
  * re-injected into the conversation context at the expected iterations.
  */
 export class GoalPreservationCase implements EvaluationCase {
+  /** Case name reported in results. */
   readonly nameVal: string;
+  /** Number of simulated iterations. */
   readonly n_iterations: number;
+  /** How often (in iterations) the goal is re-validated. */
   readonly revalidation_interval: number;
+  /** The goal text that must survive the run. */
   readonly goal_text: string;
 
+  /** Create a goal-preservation case over `n_iterations` with the given re-validation interval. */
   constructor(n_iterations: number, revalidation_interval: number) {
     this.nameVal =
       `goal_preservation_${n_iterations}iter_every${revalidation_interval}`;

@@ -126,9 +126,18 @@ export function parseScore(output: string): number | null {
 
 /** Provider-backed complexity scorer with heuristic fallback. */
 export class ComplexityScorer {
+  /** Provider used for the LLM-backed {@link score} call. */
   readonly provider: Provider;
+  /** Model id this scorer was configured for (advisory; the provider picks the model it was built with). */
   readonly model_id: string;
 
+  /**
+   * Create a scorer bound to one provider.
+   *
+   * @param provider Any `@rullama/core` `Provider`; called with a
+   *   deterministic, 10-token chat request per score.
+   * @param model_id Model id recorded on the scorer for logging/config.
+   */
   constructor(provider: Provider, model_id: string) {
     this.provider = provider;
     this.model_id = model_id;

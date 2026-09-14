@@ -82,23 +82,33 @@ export function failureResult(operationId: string): OperationResult {
 
 /** Snapshot of a file's state for restoration. */
 export interface FileState {
+  /** Path of the captured file. */
   path: string;
+  /** Hash of the file content at capture time. */
   contentHash: string;
+  /** Full original content, when it was captured for restoration. */
   originalContent?: string;
 }
 
 /** Snapshot of git state for restoration. */
 export interface GitCheckpoint {
+  /** Commit hash HEAD pointed at when the checkpoint was taken. */
   headCommit: string;
+  /** Paths that were staged in the index. */
   stagedFiles: string[];
+  /** Branch that was checked out. */
   branch: string;
 }
 
 /** Checkpoint for state restoration. */
 export interface Checkpoint {
+  /** Caller-supplied checkpoint identifier. */
   id: string;
+  /** When the checkpoint was created (epoch ms). */
   timestamp: number;
+  /** File snapshots captured in this checkpoint (empty from `createCheckpoint`). */
   fileStates: FileState[];
+  /** Git snapshot, if the checkpoint covers repository state. */
   gitState?: GitCheckpoint;
 }
 
@@ -144,31 +154,42 @@ export type CompensationOutcome = "success" | "failed" | "skipped";
 
 /** Status of a single compensation action. */
 export interface CompensationStatus {
+  /** The operation's `description()` at the time it was compensated. */
   description: string;
+  /** Whether the compensation ran, threw, or was skipped. */
   status: CompensationOutcome;
+  /** Stringified error for `"failed"`, or the skip reason for `"skipped"`. */
   error?: string;
 }
 
 /** Report of compensation actions. */
 export class CompensationReport {
+  /** ID of the saga that was compensated. */
   readonly sagaId: string;
+  /** One entry per compensated operation, in the order they were undone (reverse of execution). */
   readonly operations: CompensationStatus[] = [];
+  /** When the report was created (epoch ms). */
   readonly startedAt: number;
+  /** Set by `markCompleted` (epoch ms); undefined while compensation is in flight. */
   completedAt?: number;
 
+  /** Start an empty report for `sagaId`, stamping `startedAt` with the current time. */
   constructor(sagaId: string) {
     this.sagaId = sagaId;
     this.startedAt = Date.now();
   }
 
+  /** Append a `"success"` entry for an operation whose `compensate()` resolved. */
   addSuccess(description: string): void {
     this.operations.push({ description, status: "success" });
   }
 
+  /** Append a `"failed"` entry with the error text from a rejected `compensate()`. */
   addFailure(description: string, error: string): void {
     this.operations.push({ description, status: "failed", error });
   }
 
+  /** Append a `"skipped"` entry; `reason` is stored in the `error` field. */
   addSkipped(description: string, reason: string): void {
     this.operations.push({ description, status: "skipped", error: reason });
   }
@@ -194,6 +215,7 @@ export class CompensationReport {
     return `${successful} successful, ${failed} failed, ${skipped} skipped (total: ${this.operations.length})`;
   }
 
+  /** Stamp `completedAt` with the current time. */
   markCompleted(): void {
     this.completedAt = Date.now();
   }
@@ -205,9 +227,13 @@ export class CompensationReport {
 
 /** Saga executor that manages compensating transactions. */
 export class SagaExecutor {
+  /** Generated as `saga-<agentId>-<startedAt>`. */
   readonly sagaId: string;
+  /** Agent that owns this saga. */
   readonly agentId: string;
+  /** Human-readable description supplied at construction. */
   readonly description: string;
+  /** When the saga was created (epoch ms). */
   readonly startedAt: number;
   private completedOps: Array<{
     op: CompensableOperation;
@@ -218,6 +244,7 @@ export class SagaExecutor {
     (summary: string, allSuccessful: boolean) => void
   > = [];
 
+  /** Create a saga in the `"running"` state with no completed operations. */
   constructor(agentId: string, description: string) {
     this.agentId = agentId;
     this.description = description;

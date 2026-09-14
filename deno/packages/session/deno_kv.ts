@@ -42,12 +42,20 @@ const KEY_PREFIX = ["rullama", "session"] as const;
 
 /** Session store backed by Deno KV. */
 export class DenoKvSessionStore implements SessionStore {
+  /** The underlying Deno KV handle. The store does not close it — the caller owns its lifetime. */
   readonly kv: Deno.Kv;
 
+  /**
+   * Wrap an already-open Deno KV instance. Requires the `kv` unstable
+   * feature (`"unstable": ["kv"]` in `deno.json` or `--unstable-kv`).
+   *
+   * @param kv Handle from `Deno.openKv(...)`.
+   */
   constructor(kv: Deno.Kv) {
     this.kv = kv;
   }
 
+  /** Build the KV key `["rullama", "session", <id>]` for a session. */
   private key(id: SessionId): Deno.KvKey {
     return [...KEY_PREFIX, id.value];
   }

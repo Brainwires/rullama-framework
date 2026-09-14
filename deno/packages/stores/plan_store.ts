@@ -127,22 +127,36 @@ function fromRecord(r: Record): PlanMetadata {
 
 /** Interface for plan store operations. */
 export interface PlanStoreI {
+  /** Create the backing `plans` table (including its embedding vector column) if it does not already exist. */
   ensureTable(): Promise<void>;
+  /** Insert the plan, replacing any stored plan with the same `plan_id`. */
   save(plan: PlanMetadata): Promise<void>;
+  /** Look up a plan by `plan_id`; `undefined` when none has that id. */
   get(planId: string): Promise<PlanMetadata | undefined>;
+  /** Every plan whose `conversation_id` matches, newest `created_at` first. */
   getByConversation(conversationId: string): Promise<PlanMetadata[]>;
+  /** The `limit` most recently created plans, newest first. */
   listRecent(limit: number): Promise<PlanMetadata[]>;
+  /** Delete one plan by `plan_id` (no-op when absent). */
   delete(planId: string): Promise<void>;
+  /** Delete every plan belonging to a conversation. */
   deleteByConversation(conversationId: string): Promise<void>;
 }
 
 /** Store for managing execution plans. */
 export class PlanStore implements PlanStoreI {
+  /**
+   * Create a store over `backend`; call {@link ensureTable} before use.
+   * @param backend Storage backend that holds the `plans` table.
+   * @param embeddings Provider used to embed plans for {@link search}; its
+   *   `dimension` fixes the width of the table's `embedding` column.
+   */
   constructor(
     private readonly backend: StorageBackend,
     private readonly embeddings: EmbeddingProvider,
   ) {}
 
+  /** Create the `plans` table on the backend, sized to the embedding provider's `dimension`. */
   async ensureTable(): Promise<void> {
     await this.backend.ensureTable(
       TABLE_NAME,
@@ -150,6 +164,11 @@ export class PlanStore implements PlanStoreI {
     );
   }
 
+  /**
+   * Delete any stored row with the same `plan_id`, then insert `plan`. When
+   * `plan.embedding` is unset it is computed from `title` + `task_description`
+   * first and written back onto the passed object.
+   */
   async save(plan: PlanMetadata): Promise<void> {
     try {
       await this.delete(plan.plan_id);
@@ -164,12 +183,14 @@ export class PlanStore implements PlanStoreI {
     await this.backend.insert(TABLE_NAME, [toRecord(plan)]);
   }
 
+  /** Query the backend for the single record whose `plan_id` matches. */
   async get(planId: string): Promise<PlanMetadata | undefined> {
     const filter = Filters.Eq("plan_id", FieldValues.Utf8(planId));
     const records = await this.backend.query(TABLE_NAME, filter, 1);
     return records.length > 0 ? fromRecord(records[0]) : undefined;
   }
 
+  /** Query every record whose `conversation_id` matches and sort by `created_at` descending. */
   async getByConversation(conversationId: string): Promise<PlanMetadata[]> {
     const filter = Filters.Eq(
       "conversation_id",
@@ -181,6 +202,10 @@ export class PlanStore implements PlanStoreI {
     return plans;
   }
 
+  /**
+   * Fetch up to `2 * limit` rows from the backend (unordered), sort them by
+   * `created_at` descending, and return the first `limit`.
+   */
   async listRecent(limit: number): Promise<PlanMetadata[]> {
     const records = await this.backend.query(TABLE_NAME, undefined, limit * 2);
     const plans = records.map(fromRecord);
@@ -188,11 +213,13 @@ export class PlanStore implements PlanStoreI {
     return plans.slice(0, limit);
   }
 
+  /** Delete the record whose `plan_id` matches. */
   async delete(planId: string): Promise<void> {
     const filter = Filters.Eq("plan_id", FieldValues.Utf8(planId));
     await this.backend.delete(TABLE_NAME, filter);
   }
 
+  /** Delete every record whose `conversation_id` matches. */
   async deleteByConversation(conversationId: string): Promise<void> {
     const filter = Filters.Eq(
       "conversation_id",
@@ -201,7 +228,12 @@ export class PlanStore implements PlanStoreI {
     await this.backend.delete(TABLE_NAME, filter);
   }
 
-  /** Search plans by semantic similarity. */
+  /**
+   * Search plans by semantic similarity: embeds `query` and runs a vector
+   * search on the `embedding` column.
+   * @param limit Maximum number of plans to return.
+   * @returns Matching plans in the backend's ranking order (scores are not returned).
+   */
   async search(query: string, limit: number): Promise<PlanMetadata[]> {
     const queryEmbedding = await this.embeddings.embed(query);
     const scored = await this.backend.vectorSearch(
@@ -218,19 +250,23 @@ export class PlanStore implements PlanStoreI {
 export class InMemoryPlanStore implements PlanStoreI {
   private plans: Map<string, PlanMetadata> = new Map();
 
+  /** No-op: there is no table to create in memory. */
   async ensureTable(): Promise<void> {
     await Promise.resolve();
   }
 
+  /** Store `plan` by reference (no copy) under its `plan_id`, replacing any existing entry. */
   async save(plan: PlanMetadata): Promise<void> {
     this.plans.set(plan.plan_id, plan);
     await Promise.resolve();
   }
 
+  /** Return the stored plan for `planId`, if any. */
   async get(planId: string): Promise<PlanMetadata | undefined> {
     return await Promise.resolve(this.plans.get(planId));
   }
 
+  /** Stored plans whose `conversation_id` matches, sorted by `created_at` descending. */
   async getByConversation(conversationId: string): Promise<PlanMetadata[]> {
     const plans = [...this.plans.values()]
       .filter((p) => p.conversation_id === conversationId);
@@ -238,17 +274,20 @@ export class InMemoryPlanStore implements PlanStoreI {
     return await Promise.resolve(plans);
   }
 
+  /** All stored plans sorted by `created_at` descending, truncated to `limit`. */
   async listRecent(limit: number): Promise<PlanMetadata[]> {
     const plans = [...this.plans.values()];
     plans.sort((a, b) => b.created_at - a.created_at);
     return await Promise.resolve(plans.slice(0, limit));
   }
 
+  /** Remove the plan from the map (no-op when absent). */
   async delete(planId: string): Promise<void> {
     this.plans.delete(planId);
     await Promise.resolve();
   }
 
+  /** Remove every stored plan whose `conversation_id` matches. */
   async deleteByConversation(conversationId: string): Promise<void> {
     for (const [id, p] of this.plans) {
       if (p.conversation_id === conversationId) this.plans.delete(id);

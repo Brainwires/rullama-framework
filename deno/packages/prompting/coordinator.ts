@@ -170,6 +170,7 @@ export class PromptingLearningCoordinator {
   private readonly promotionThreshold: number;
   private readonly minUsesForPromotion: number;
 
+  /** Create a coordinator; `options` tune the promotion threshold and minimum uses. */
   constructor(options?: {
     promotionThreshold?: number;
     minUsesForPromotion?: number;

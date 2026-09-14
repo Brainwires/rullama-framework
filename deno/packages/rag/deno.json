@@ -1,9 +1,16 @@
 {
   "name": "@rullama/rag",
   "license": "MIT",
-  "version": "0.11.0",
+  "version": "0.12.1",
   "exports": {
     ".": "./mod.ts",
     "./code-analysis": "./code_analysis/mod.ts"
+  },
+  "publish": {
+    "exclude": [
+      "**/*_test.ts",
+      "test_util.ts",
+      "__readme_check.ts"
+    ]
   }
 }

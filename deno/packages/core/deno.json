@@ -1,11 +1,18 @@
 {
   "name": "@rullama/core",
   "license": "MIT",
-  "version": "0.11.0",
+  "version": "0.12.1",
   "exports": {
     ".": "./mod.ts",
     "./confidence": "./confidence.ts",
     "./paths": "./paths.ts",
     "./file_context": "./file_context.ts"
+  },
+  "publish": {
+    "exclude": [
+      "**/*_test.ts",
+      "test_util.ts",
+      "__readme_check.ts"
+    ]
   }
 }

@@ -8,13 +8,23 @@ Stores and retrieves agent conversation transcripts (`Message[]`) keyed by an
 opaque `SessionId`. Backends are interchangeable — swap them out without
 touching the rest of your code.
 
+## Install
+
+```sh
+deno add jsr:@rullama/session
+```
+
 ## Backends
 
-- **`InMemorySessionStore`** — in-process Map, nothing persists across restarts.
-  Use for tests and ephemeral sessions.
+- **`InMemorySessionStore`** — in-process `Map`, nothing persists across
+  restarts. No permissions or unstable features needed; use it for tests,
+  ephemeral sessions, and embedding.
 - **`DenoKvSessionStore`** — Deno KV-backed, persists to disk when opened
   against a file path, in-memory when opened with `":memory:"`. Replaces the
-  Rust crate's SQLite backend with an idiomatic Deno-native option.
+  Rust crate's SQLite backend with an idiomatic Deno-native option. Deno KV is
+  an **unstable** API: enable the `kv` feature with `"unstable": ["kv"]` in your
+  `deno.json` (or run with `--unstable-kv`). The store wraps an already-open
+  `Deno.Kv` and never closes it — you own the handle's lifetime.
 
 Want a different backend (Postgres, Redis, filesystem-JSON)? Implement the
 `SessionStore` interface directly — there are five async methods.
@@ -31,13 +41,21 @@ import {
 
 // In-memory — great for tests.
 const mem = new InMemorySessionStore();
-await mem.save(new SessionId("alice"), [Message.user("hi")]);
+await mem.save(SessionId.from("alice"), [Message.user("hi")]);
+const transcript = await mem.load(SessionId.from("alice")); // Message[] | null
 
-// Disk-backed — survives restarts.
+// Disk-backed — survives restarts (needs the `kv` unstable feature).
 const kv = await Deno.openKv("./sessions.kv");
 const store = new DenoKvSessionStore(kv);
-await store.save(new SessionId("bob"), [Message.user("ping")]);
+await store.save(SessionId.from("bob"), [Message.user("ping")]);
+for (const rec of await store.listPaginated({ offset: 0, limit: 10 })) {
+  console.log(rec.id.asStr(), rec.message_count, rec.updated_at);
+}
+kv.close();
 ```
+
+Every backend throws `SessionError` (with `kind` of `"serialization"` or
+`"storage"`) for failures it can classify.
 
 ## API
 

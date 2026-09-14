@@ -1,8 +1,11 @@
 /**
- * Tool Registry - Composable container for tool definitions
+ * `ToolRegistry`, a composable container for `Tool` definitions. Tools can be
+ * registered one at a time or in bulk, looked up by name, filtered by
+ * `ToolCategory`, split into the initial set and the deferred set (loaded on
+ * demand through tool search), and searched by keyword.
+ * Equivalent to Rust's `rullama_tool_runtime::registry`.
  *
- * Provides a `ToolRegistry` that stores tool definitions and supports
- * deferred loading, category filtering, and search.
+ * @module
  */
 
 import type { Tool } from "@rullama/core";

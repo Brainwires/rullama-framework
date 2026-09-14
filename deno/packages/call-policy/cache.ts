@@ -13,6 +13,7 @@
  * Equivalent to Rust's `rullama_resilience::cache` module.
  */
 
+import { ProviderDecorator } from "./decorator.ts";
 import type {
   ChatOptions,
   ChatResponse,
@@ -27,15 +28,19 @@ import { Message as MessageClass } from "@rullama/core";
 
 /** Key used to address a cached response. */
 export interface CacheKey {
+  /** Lower-case hex SHA-256 digest of the serialised call inputs. */
   value: string;
 }
 
 /** Wire representation of a cached response. */
 export interface CachedResponse {
+  /** Role of the cached message (normally `"assistant"`). */
   role: Role;
   /** Message payload as plain text (block messages are rendered to a string). */
   text: string;
+  /** Token usage reported by the provider for the original call. */
   usage: Usage;
+  /** Provider's finish reason for the original call, when it reported one. */
   finish_reason?: string;
 }
 
@@ -66,27 +71,67 @@ function cachedResponseToChat(cr: CachedResponse): ChatResponse {
 
 /** Pluggable storage backend. */
 export interface CacheBackend {
+  /** Look up a cached response; resolves `null` on a miss. */
   get(key: CacheKey): Promise<CachedResponse | null>;
+  /** Store (or overwrite) the response for `key`. Failures are swallowed by {@link CachedProvider}. */
   put(key: CacheKey, resp: CachedResponse): Promise<void>;
 }
 
-/** In-memory cache — the default backend. */
-export class MemoryCache implements CacheBackend {
-  private readonly entries = new Map<string, CachedResponse>();
+/** Default {@link MemoryCache} capacity. */
+export const DEFAULT_MEMORY_CACHE_ENTRIES = 1000;
 
-  get(key: CacheKey): Promise<CachedResponse | null> {
-    return Promise.resolve(this.entries.get(key.value) ?? null);
+/**
+ * In-memory cache — the default backend. Bounded: least-recently-used entries
+ * are evicted once `maxEntries` is exceeded, so a long-running process with
+ * many distinct prompts cannot grow without limit.
+ */
+export class MemoryCache implements CacheBackend {
+  /** Entries in recency order — oldest first, so eviction pops from the front. */
+  private readonly entries = new Map<string, CachedResponse>();
+  /** Maximum number of entries retained before LRU eviction. */
+  readonly maxEntries: number;
+
+  /**
+   * Create an empty LRU cache.
+   *
+   * @param maxEntries Capacity; must be a positive integer (throws otherwise).
+   */
+  constructor(maxEntries: number = DEFAULT_MEMORY_CACHE_ENTRIES) {
+    if (!Number.isInteger(maxEntries) || maxEntries < 1) {
+      throw new Error(
+        `maxEntries must be a positive integer (got ${maxEntries})`,
+      );
+    }
+    this.maxEntries = maxEntries;
   }
 
+  /** Look up `key`, marking the entry most-recently-used on a hit. */
+  get(key: CacheKey): Promise<CachedResponse | null> {
+    const hit = this.entries.get(key.value);
+    if (hit !== undefined) {
+      // Refresh recency: Map iteration order is insertion order.
+      this.entries.delete(key.value);
+      this.entries.set(key.value, hit);
+    }
+    return Promise.resolve(hit ?? null);
+  }
+
+  /** Insert or refresh `key`, evicting least-recently-used entries past `maxEntries`. */
   put(key: CacheKey, resp: CachedResponse): Promise<void> {
+    this.entries.delete(key.value);
     this.entries.set(key.value, resp);
+    while (this.entries.size > this.maxEntries) {
+      this.entries.delete(this.entries.keys().next().value as string);
+    }
     return Promise.resolve();
   }
 
+  /** Number of entries currently held. */
   size(): number {
     return this.entries.size;
   }
 
+  /** `true` when no entries are held. */
   isEmpty(): boolean {
     return this.entries.size === 0;
   }
@@ -106,9 +151,14 @@ export async function cacheKeyFor(
   messages: Message[],
   tools: Tool[] | undefined,
   options: ChatOptions,
+  scope?: string,
 ): Promise<CacheKey> {
   const enc = new TextEncoder();
   const parts: Uint8Array[] = [];
+
+  // A scope (tenant, user, session) keeps one caller's cached completions
+  // from being served to another who sends the same prompt.
+  if (scope !== undefined) parts.push(enc.encode(`\x00scope:${scope}`));
 
   // Serialise messages via Message.toJSON (skips undefined fields).
   const msgs_json = JSON.stringify(messages.map((m) => m.toJSON()));
@@ -138,13 +188,25 @@ export async function cacheKeyFor(
 }
 
 /** A Provider decorator that deduplicates identical chat() calls. */
-export class CachedProvider implements Provider {
-  readonly inner: Provider;
+export class CachedProvider extends ProviderDecorator {
+  /** Storage the responses are read from and written to. */
   readonly backend: CacheBackend;
+  /** Cache-key scope (tenant / user / session); see {@link cacheKeyFor}. */
+  readonly scope: string | undefined;
 
-  constructor(inner: Provider, backend: CacheBackend) {
-    this.inner = inner;
+  /**
+   * Wrap `inner` with a content-addressed response cache.
+   *
+   * @param inner Provider whose `chat` responses are cached.
+   * @param backend Where responses are stored ({@link MemoryCache} or your own).
+   * @param scope Partition the cache: entries written under one scope are
+   *   never returned for another. Set it per tenant or per user whenever one
+   *   provider instance serves more than one principal.
+   */
+  constructor(inner: Provider, backend: CacheBackend, scope?: string) {
+    super(inner);
     this.backend = backend;
+    this.scope = scope;
   }
 
   /** Convenience constructor using an in-memory backend. */
@@ -155,20 +217,17 @@ export class CachedProvider implements Provider {
     return { provider: new CachedProvider(inner, cache), cache };
   }
 
-  get name(): string {
-    return this.inner.name;
-  }
-
-  maxOutputTokens(): number {
-    return this.inner.maxOutputTokens?.() ?? Infinity;
-  }
-
+  /**
+   * Serve the response from the backend when the {@link cacheKeyFor} key hits;
+   * otherwise forward to the wrapped provider and store the result. A failing
+   * `backend.put` is ignored — the live response is still returned.
+   */
   async chat(
     messages: Message[],
     tools: Tool[] | undefined,
     options: ChatOptions,
   ): Promise<ChatResponse> {
-    const key = await cacheKeyFor(messages, tools, options);
+    const key = await cacheKeyFor(messages, tools, options, this.scope);
     const hit = await this.backend.get(key);
     if (hit !== null) {
       return cachedResponseToChat(hit);
@@ -182,6 +241,7 @@ export class CachedProvider implements Provider {
     return resp;
   }
 
+  /** Pass-through: streaming is never cached (see the module docs for why). */
   streamChat(
     messages: Message[],
     tools: Tool[] | undefined,

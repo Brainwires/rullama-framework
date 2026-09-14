@@ -4,7 +4,6 @@
 
 import {
   defaultToolInputSchema,
-  IdempotencyRegistry,
   Message,
   objectSchema,
   type Tool,
@@ -14,7 +13,7 @@ import {
   ToolResult,
 } from "@rullama/core";
 
-async function main() {
+function main(): void {
   console.log("=== Tool Definition and Usage ===");
 
   // 1. Define tools with JSON Schema input specifications
@@ -192,4 +191,4 @@ async function main() {
   );
 }
 
-await main();
+main();

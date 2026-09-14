@@ -7,7 +7,22 @@
  * @module
  */
 
-import { Task, type TaskPriority } from "@rullama/core";
+import {
+  Task as CoreTask,
+  type TaskPriority as CoreTaskPriority,
+  type TaskStatus as CoreTaskStatus,
+} from "@rullama/core";
+
+/**
+ * A task record as created by `TaskManager.createTask`: the `Task` class of
+ * `@rullama/core`, aliased here so this package's signatures are documented
+ * without an extra import.
+ */
+export type Task = CoreTask;
+/** Scheduling priority of a task (`@rullama/core`'s `TaskPriority`). */
+export type TaskPriority = CoreTaskPriority;
+/** Lifecycle status of a task (`@rullama/core`'s `TaskStatus`). */
+export type TaskStatus = CoreTaskStatus;
 
 // ---------------------------------------------------------------------------
 // Task node (internal)
@@ -31,18 +46,27 @@ interface TaskNode {
 
 /** Aggregate statistics about managed tasks. */
 export interface TaskStats {
+  /** Number of tasks ever created in this manager. */
   total: number;
+  /** Pending tasks whose dependencies are all satisfied (startable). */
   pending: number;
+  /** Tasks currently in the `inprogress` status. */
   inProgress: number;
+  /** Tasks that finished via `completeTask` (skipped tasks are counted separately). */
   completed: number;
+  /** Tasks that ended via `failTask`. */
   failed: number;
+  /** Tasks ended via `skipTask` (stored as completed with a skip reason). */
   skipped: number;
+  /** Pending tasks that cannot start because a dependency is not yet completed. */
   blocked: number;
 }
 
 /** Time statistics about managed tasks. */
 export interface TimeStats {
+  /** Sum of (completedAt - startedAt) over tasks that both started and ended, rounded to whole seconds. */
   totalDurationSecs: number;
+  /** Mean duration per started-and-ended task in whole seconds; undefined when none have finished. */
   averageDurationSecs?: number;
 }
 
@@ -64,7 +88,7 @@ export class TaskManager {
     _priority?: TaskPriority,
   ): string {
     const id = `task-${this.nextId++}`;
-    const task = new Task(id, description);
+    const task = new CoreTask(id, description);
 
     if (parentId && !this.tasks.has(parentId)) {
       throw new Error(`Parent task ${parentId} does not exist`);
