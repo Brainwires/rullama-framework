@@ -15,6 +15,11 @@
 // and, unless --no-wait, the script waits for each publish workflow run to succeed
 // before pushing the next tag: a dependent published before its dependency lands
 // on JSR is rejected by JSR.
+//
+// --push is resumable. A tag already on origin is not re-created: its last publish
+// run is re-run instead. A package that fails to publish does not stop the others;
+// only the packages that depend on it are skipped, and the script exits 1 with the
+// list, so fixing the cause and running --push again finishes the release.
 
 import { dirname, fromFileUrl, join } from "@std/path";
 
@@ -153,7 +158,12 @@ function bump(version: string, kind: "patch" | "minor" | "major"): string {
     : `${maj}.${min}.${pat + 1}`;
 }
 
-type RunInfo = { status: string; conclusion: string; url: string };
+type RunInfo = {
+  databaseId: number;
+  status: string;
+  conclusion: string;
+  url: string;
+};
 
 /** The newest publish-deno.yml run for `tag`, or null while GitHub has none yet. */
 function latestRun(tag: string): RunInfo | null {
@@ -167,7 +177,7 @@ function latestRun(tag: string): RunInfo | null {
     "--limit",
     "1",
     "--json",
-    "status,conclusion,url",
+    "databaseId,status,conclusion,url",
   ]);
   return (JSON.parse(raw || "[]") as RunInfo[])[0] ?? null;
 }
@@ -193,6 +203,80 @@ async function waitForRun(tag: string): Promise<void> {
     if (info?.status === "completed") return settle(tag, info);
   }
   throw new Error(`timed out waiting for the publish run of ${tag}`);
+}
+
+const REPO = join(ROOT, "..");
+
+/** True when `tag` is already on origin (an earlier --push got that far). */
+function remoteHasTag(tag: string): boolean {
+  const ref = `refs/tags/${tag}`;
+  return run("git", ["ls-remote", "--tags", "origin", ref], REPO) !== "";
+}
+
+/** Re-run the last publish run of a tag that is already on origin. */
+function rerunPublish(tag: string): void {
+  const last = latestRun(tag);
+  if (!last) {
+    throw new Error(`${tag} is on origin but has no publish run to re-run`);
+  }
+  run("gh", ["run", "rerun", String(last.databaseId)]);
+  console.log(`re-running ${last.url} (${tag} is already on origin)`);
+}
+
+/** Create and push `tag`; when origin already has it, re-run its publish run. */
+function release(pkg: Pkg, tag: string): void {
+  if (remoteHasTag(tag)) return rerunPublish(tag);
+  if (!run("git", ["tag", "-l", tag], REPO)) {
+    run("git", [
+      "tag",
+      "-a",
+      tag,
+      "-m",
+      `@rullama/${pkg.name} ${pkg.version}`,
+    ], REPO);
+  }
+  run("git", ["push", "origin", tag], REPO);
+  console.log(`pushed ${tag}`);
+}
+
+async function publishOne(pkg: Pkg, wait: boolean): Promise<void> {
+  const tag = `${pkg.name}-v${pkg.version}`;
+  release(pkg, tag);
+  if (wait) await waitForRun(tag);
+}
+
+/** Publish one package unless a dependency already failed; false when it did not publish. */
+async function tryPublish(
+  pkg: Pkg,
+  failed: Set<string>,
+  wait: boolean,
+): Promise<boolean> {
+  const blocker = pkg.deps.find((d) => failed.has(d));
+  if (blocker) {
+    console.log(
+      `skipped ${pkg.name}: depends on ${blocker}, which did not publish`,
+    );
+    return false;
+  }
+  try {
+    await publishOne(pkg, wait);
+    return true;
+  } catch (e) {
+    console.error(`  ✗ ${(e as Error).message}`);
+    return false;
+  }
+}
+
+/**
+ * Publish `pkgs` in order. A failure skips only the packages that depend on
+ * it; the rest still publish. Returns the names that did not publish.
+ */
+async function publishAll(pkgs: Pkg[], wait: boolean): Promise<string[]> {
+  const failed = new Set<string>();
+  for (const pkg of pkgs) {
+    if (!(await tryPublish(pkg, failed, wait))) failed.add(pkg.name);
+  }
+  return [...failed];
 }
 
 // ---------------------------------------------------------------------------
@@ -276,15 +360,13 @@ if (run("git", ["status", "--porcelain"], join(ROOT, "..")) !== "") {
     "working tree is dirty — commit first so the tags point at committed code",
   );
 }
-for (const pkg of toPublish) {
-  const tag = `${pkg.name}-v${pkg.version}`;
-  run(
-    "git",
-    ["tag", "-a", tag, "-m", `@rullama/${pkg.name} ${pkg.version}`],
-    join(ROOT, ".."),
+const notPublished = await publishAll(toPublish, wait);
+if (notPublished.length) {
+  console.log(
+    `\nnot published: ${
+      notPublished.join(", ")
+    }. Fix the cause, then run --push again.`,
   );
-  run("git", ["push", "origin", tag], join(ROOT, ".."));
-  console.log(`pushed ${tag}`);
-  if (wait) await waitForRun(tag);
+  Deno.exit(1);
 }
 console.log("\ndone");
