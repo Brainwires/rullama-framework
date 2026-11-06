@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-11-06
+
+### Deno/TypeScript port (`@rullama/mcp-server`, `@rullama/mcp-client` 0.12.2)
+
+Deno-only patch for the two MCP packages (the Rust crates and the other 25
+`@rullama/*` packages are unchanged and keep 0.12.1). Additive: existing APIs
+keep working; the behaviour changes are listed first.
+
+#### Behaviour changes
+
+- **`@rullama/mcp-server`**: requests on one connection are now dispatched
+  **concurrently** (middleware still runs in arrival order; responses are
+  written one at a time, matched by `id`). A slow `tools/call` no longer stalls
+  `tools/list` or other calls.
+- **`@rullama/mcp-server`**: `initialize` negotiates the protocol revision —
+  it echoes the client's `protocolVersion` when it is `2025-06-18`,
+  `2025-03-26` or `2024-11-05`, otherwise answers with the latest — instead
+  of always replying `2024-11-05`.
+- **`@rullama/mcp-server`**: a notification is never answered, including when
+  middleware rejects it (an `AuthMiddleware` rejection of
+  `notifications/initialized` used to write an error with no `id`). Non-object
+  input (e.g. a JSON array) gets a `-32600 Invalid Request` error.
+- **`@rullama/mcp-server`**: `new McpServer(handler)` no longer opens stdin in
+  the constructor; the default `StdioServerTransport` is created by `run()`.
+- **`@rullama/mcp-client`**: `McpClient` reads responses on a background loop
+  and matches them by `id` (it used to treat the next line as the answer), so
+  calls may be in flight concurrently and complete in any order.
+  `notifications/initialized` is now sent as a proper notification (no
+  `"id": null`).
+
+#### Added — `@rullama/mcp-server`
+
+- **Socket transports**: `UnixSocketServerTransport.listen(path, options)`
+  (replaces a stale socket file, refuses a live one with `AddrInUse` and a
+  non-socket with `AlreadyExists`, `chmod 0600` by default, removes the file on
+  `close()`) and `TcpServerTransport.listen({ hostname, port })` (loopback by
+  default). Both yield one `SocketServerTransport` per connection
+  (`AcceptedConnection`), newline-delimited JSON-RPC like stdio — `nc -U
+  <path>` works as a stdio shim. Optional `preAuth` hook: checks the first
+  line (e.g. a token) before MCP starts and returns
+  `{ ok: true, identity }` or `{ ok: false, reason }`.
+- **Per-connection serving**: `McpServer.serve(listener, { handlerFactory,
+  onSession, abortOnEof, closeSessionsOnStop })`,
+  `McpServer.serveConnection(transport, { connection, handler, abortOnEof })`
+  returning an `McpServerSession`, and `McpServer.sessions`.
+- **`RequestContext`** gains `signal` (aborted by `notifications/cancelled` or
+  disconnect), `connection` (`ConnectionInfo`: id, transport, socket path,
+  addresses, host-defined `identity`), `protocolVersion`, `session` and
+  `notify()`. `McpHandler.listTools(ctx?)`, `onInitialize(params, ctx?)` and
+  `onShutdown(connection?)` receive the connection (optional parameters).
+- **`McpServerSession`**: `notify()`, `notifyToolsListChanged()`,
+  `sendLogMessage(level, data, logger?)` (honours `logging/setLevel`),
+  `close()`, `done`, `clientInfo`, `protocolVersion`, `inFlight`. Handles
+  `ping` and `notifications/cancelled` (the cancelled request's response is
+  suppressed). On client EOF the session closes its transport and runs
+  `onShutdown` once per connection.
+- `negotiateProtocolVersion()`, `LoggingLevel`, `LineReader`, re-exported
+  `LATEST_PROTOCOL_VERSION` / `SUPPORTED_PROTOCOL_VERSIONS` (shared with the
+  client); `ServerTransport.close?()` (optional).
+
+#### Added — `@rullama/mcp-client`
+
+- `SocketTransport.connectUnix(path, { preAuthLine })` /
+  `connectTcp(host, port, { preAuthLine })`, the `ClientTransport` interface
+  (`Transport` now wraps any implementation), and
+  `McpClient.connectTransport(name, transport)`.
+- `McpClient.request(server, method, params?, { signal, onNotification })`,
+  `ping()`, `onNotification(handler)` (returns an unsubscribe function),
+  `getProtocolVersion()`; `callTool` / `listTools` take the same options.
+  Aborting a request's `signal` rejects it and sends `notifications/cancelled`.
+  A server `ping` is answered; other server→client requests get
+  method-not-found. Losing the connection rejects every in-flight request.
+- `cancellationNotification()` is exported from the package root.
+
 ## [0.12.1] - 2026-09-11
 
 ### Deno/TypeScript port (`deno/`, `@rullama/*` 0.12.1)
