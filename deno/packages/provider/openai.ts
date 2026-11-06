@@ -21,6 +21,7 @@ import {
   type Usage,
 } from "@rullama/core";
 import { parseSSEStream } from "./sse.ts";
+import { withSystemPrompt } from "./system_prompt.ts";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
@@ -215,7 +216,8 @@ export class OpenAiChatProvider implements Provider {
   // Internal helpers
   // -----------------------------------------------------------------------
 
-  /** Build the Chat Completions body: converted messages, sampling options
+  /** Build the Chat Completions body: converted messages (with
+   * `options.system` as the leading system message), sampling options
    * (`max_completion_tokens` only for reasoning models), function tools, and
    * `stream: true` when streaming. */
   private buildRequestBody(
@@ -224,7 +226,11 @@ export class OpenAiChatProvider implements Provider {
     options: ChatOptions,
     stream: boolean,
   ): Record<string, any> {
-    const openaiMessages = convertMessages(messages);
+    const openaiMessages = withSystemPrompt(
+      convertMessages(messages),
+      options.system,
+      (content) => ({ role: "system", content }),
+    );
 
     const body: Record<string, any> = {
       model: this.model,

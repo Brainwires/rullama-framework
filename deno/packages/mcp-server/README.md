@@ -70,6 +70,8 @@ registry.register(
     Promise.resolve({
       content: [{ type: "text", text: `Echo: ${args.message}` }],
     }),
+  // Optional Tool fields, emitted in tools/list.
+  { annotations: { readOnlyHint: true, openWorldHint: false } },
 );
 
 const handler: McpHandler = {

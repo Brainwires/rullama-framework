@@ -17,6 +17,7 @@ import {
   type Usage,
 } from "@rullama/core";
 import { parseNDJSONStream } from "./sse.ts";
+import { withSystemPrompt } from "./system_prompt.ts";
 
 const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 
@@ -171,15 +172,20 @@ export class OllamaChatProvider implements Provider {
   // Internal helpers
   // -----------------------------------------------------------------------
 
-  /** Build the `/api/chat` body: converted messages, `temperature` / `top_p`
-   * under `options`, tools in OpenAI function form, and the `stream` flag. */
+  /** Build the `/api/chat` body: converted messages (with `options.system`
+   * as the leading system message), `temperature` / `top_p` under `options`,
+   * tools in OpenAI function form, and the `stream` flag. */
   private buildRequestBody(
     messages: Message[],
     tools: Tool[] | undefined,
     options: ChatOptions,
     stream: boolean,
   ): Record<string, any> {
-    const ollamaMessages = convertMessages(messages);
+    const ollamaMessages = withSystemPrompt(
+      convertMessages(messages),
+      options.system,
+      (content) => ({ role: "system", content }),
+    );
 
     const body: Record<string, any> = {
       model: this.model,

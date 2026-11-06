@@ -18,8 +18,13 @@ export {
   type ToolProvider,
 } from "./executor.ts";
 
-export { BashTool } from "./bash.ts";
-export type { OutputMode, StderrMode } from "./bash.ts";
+export { BashTool, classifyCommand } from "./bash.ts";
+export type {
+  CommandClassification,
+  CommandVerdict,
+  OutputMode,
+  StderrMode,
+} from "./bash.ts";
 
 export { FileOpsTool } from "./file_ops.ts";
 

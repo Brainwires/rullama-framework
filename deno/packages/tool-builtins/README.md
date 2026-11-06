@@ -17,7 +17,9 @@ Native-only tools (`code_exec` / `interpreters`, `sandbox_executor`, `browser`,
 
 - `execute_command`: timeout (default 30 s) kills the whole process tree; child
   env scrubbed of credential-like variables (`scrubEnv`); stdout / stderr capped
-  at `MAX_OUTPUT_BYTES`; destructive patterns blocked.
+  at `MAX_OUTPUT_BYTES`; destructive commands refused. `classifyCommand(cmd)`
+  (v0.12.2) rates a command `block` / `warn` / `ok` with reasons — use it to ask
+  for confirmation on `warn` (`sudo`, `curl | sh`, `git push --force`, …).
 - File tools: every path confined to the working directory; reads capped at
   `MAX_READ_BYTES`.
 - `search_code`: bounded regex (`compileBoundedRegex`), 1 MiB file cap, 100

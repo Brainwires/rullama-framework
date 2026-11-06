@@ -3,8 +3,8 @@
  * tool context's working directory. Each command gets a timeout (default 30 s)
  * after which the whole process tree is killed, a child environment scrubbed of
  * credential-like variables (`scrubEnv` / `SECRET_ENV_PATTERN`), stdout and
- * stderr capped at `MAX_OUTPUT_BYTES`, and a block list of destructive
- * patterns; output can be filtered or truncated via `OutputMode` / `StderrMode`.
+ * stderr capped at `MAX_OUTPUT_BYTES`, and destructive commands refused
+ * (`validateCommand`, backed by `classifyCommand`); output can be filtered or truncated via `OutputMode` / `StderrMode`.
  * Equivalent to Rust's `rullama_tool_builtins::bash`.
  *
  * @module
@@ -14,6 +14,13 @@
 
 import { objectSchema, type ToolContext, ToolResult } from "@rullama/core";
 import type { Tool } from "@rullama/core";
+import { classifyCommand } from "./command_safety.ts";
+
+export {
+  classifyCommand,
+  type CommandClassification,
+  type CommandVerdict,
+} from "./command_safety.ts";
 
 /** Output limiting mode for proactive context management. */
 export type OutputMode =
@@ -70,7 +77,9 @@ const INTERACTIVE_COMMANDS = [
   "redis-cli",
 ];
 
-/** Dangerous command patterns. */
+/** Substrings `validateCommand` has always refused, kept verbatim so it
+ * never blocks less than before; {@link classifyCommand} does the real
+ * parsing. */
 const DANGEROUS_PATTERNS = [
   "rm -rf /",
   "mkfs",
@@ -285,7 +294,18 @@ export class BashTool {
     return INTERACTIVE_COMMANDS.includes(effective);
   }
 
-  /** Validate command for dangerous patterns. */
+  /**
+   * Throw if `command` is destructive enough to refuse outright.
+   *
+   * Throws when {@link classifyCommand} returns `block`, and also on the
+   * original raw substrings (`rm -rf /`, `mkfs`, `> /dev/sda`,
+   * `dd if=/dev/zero`, the classic fork bomb) wherever they appear — even
+   * quoted or as a prefix such as `rm -rf /tmp/x` — so it blocks everything
+   * it blocked before. Warn-level commands pass; call
+   * {@link classifyCommand} to see them.
+   *
+   * @throws Error `"Command contains potentially dangerous pattern: …"`.
+   */
   static validateCommand(command: string): void {
     for (const pattern of DANGEROUS_PATTERNS) {
       if (command.includes(pattern)) {
@@ -293,6 +313,12 @@ export class BashTool {
           `Command contains potentially dangerous pattern: ${pattern}`,
         );
       }
+    }
+    const { verdict, reasons } = classifyCommand(command);
+    if (verdict === "block") {
+      throw new Error(
+        `Command contains potentially dangerous pattern: ${reasons.join("; ")}`,
+      );
     }
   }
 
