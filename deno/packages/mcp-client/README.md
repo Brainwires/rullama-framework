@@ -5,10 +5,38 @@ servers, discover and call tools, read resources, and fetch prompts.
 
 The client offers protocol version `2025-06-18` when it initializes and accepts
 servers that answer with `2025-06-18`, `2025-03-26` or `2024-11-05`
-(`LATEST_PROTOCOL_VERSION` / `SUPPORTED_PROTOCOL_VERSIONS`). Only the **stdio**
-transport is implemented: each server is spawned as a subprocess and spoken to
-over newline-delimited JSON-RPC on its stdin/stdout. There is no HTTP, SSE or
-WebSocket transport yet.
+(`LATEST_PROTOCOL_VERSION` / `SUPPORTED_PROTOCOL_VERSIONS`). Transports:
+**stdio** (`connect(config)` spawns the server as a subprocess) and **unix
+socket / TCP**
+(`connectTransport(name, await SocketTransport.connectUnix(path))`), both
+newline-delimited JSON-RPC. There is no HTTP, SSE or WebSocket transport yet.
+
+Each connection has a background reader that matches responses to requests by
+`id`, so calls can run concurrently on one connection and complete in any order.
+Server notifications go to `onNotification(handler)` subscribers (and to a
+call's own `onNotification`); a server `ping` is answered automatically. Every
+request method takes an optional `{ signal }`: aborting it rejects the promise
+and sends `notifications/cancelled`.
+
+```ts
+import { McpClient, SocketTransport } from "@rullama/mcp-client";
+
+const client = new McpClient("my-agent", "1.0.0");
+await client.connectTransport(
+  "hub",
+  await SocketTransport.connectUnix("/tmp/hub-tile-1.sock"),
+);
+client.onNotification((server, n) => console.log(server, n.method));
+
+const ac = new AbortController();
+const slow = client.callTool("hub", "wait_for_message", {}, {
+  signal: ac.signal,
+});
+console.log(await client.listTools("hub")); // not blocked by `slow`
+ac.abort(); // rejects `slow`, server receives notifications/cancelled
+await slow.catch(() => {});
+await client.disconnect("hub");
+```
 
 Equivalent to the Rust `rullama-mcp` crate.
 
@@ -58,10 +86,11 @@ and saves the same config shape from `~/.rullama/mcp-config.json`.
 
 | Export                                                    | Description                                                         |
 | --------------------------------------------------------- | ------------------------------------------------------------------- |
-| `McpClient`                                               | Client that manages stdio connections to one or more MCP servers    |
+| `McpClient`                                               | Client managing concurrent connections to one or more MCP servers   |
 | `LATEST_PROTOCOL_VERSION` / `SUPPORTED_PROTOCOL_VERSIONS` | Protocol version offered on initialize and the versions accepted    |
 | `McpConfigManager` / `McpServerConfig`                    | Load, add, remove and save server configurations on disk            |
 | `StdioTransport`                                          | Subprocess transport speaking newline-delimited JSON-RPC            |
-| `Transport`                                               | Thin wrapper around a `StdioTransport` (the only transport today)   |
+| `SocketTransport`                                         | Unix-socket / TCP transport (`connectUnix`, `connectTcp`)           |
+| `ClientTransport` / `Transport`                           | Transport interface / thin wrapper around any `ClientTransport`     |
 | JSON-RPC types                                            | `JsonRpcRequest`, `JsonRpcResponse`, `JsonRpcNotification`, helpers |
 | MCP types                                                 | `McpTool`, `McpResource`, `McpPrompt`, `CallToolResult`, etc.       |

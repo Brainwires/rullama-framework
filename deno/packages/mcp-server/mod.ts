@@ -3,7 +3,9 @@
  *
  * MCP-compliant tool server framework: `McpServer`, `McpHandler`,
  * `McpToolRegistry`, `MiddlewareChain` (Auth, Logging, RateLimit,
- * ToolFilter), and stdio transport.
+ * ToolFilter), and stdio / unix-socket / TCP transports. Requests on one
+ * connection are dispatched concurrently; `notifications/cancelled` aborts
+ * `RequestContext.signal`.
  *
  * Extracted from `@rullama/network` in v0.11.0 to mirror Rust's standalone
  * `rullama-mcp-server` crate. Consumers building a pure MCP server no
@@ -21,7 +23,22 @@ export {
 
 export { type McpHandler } from "./handler.ts";
 
-export { type ClientInfo, McpServer, RequestContext } from "./server.ts";
+export {
+  type ClientInfo,
+  type LoggingLevel,
+  McpServer,
+  McpServerSession,
+  negotiateProtocolVersion,
+  RequestContext,
+  type ServeConnectionOptions,
+  type ServeOptions,
+} from "./server.ts";
+
+// Protocol revisions, shared with the client.
+export {
+  LATEST_PROTOCOL_VERSION,
+  SUPPORTED_PROTOCOL_VERSIONS,
+} from "@rullama/mcp-client";
 
 // Middleware
 export * from "./middleware/mod.ts";

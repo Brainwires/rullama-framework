@@ -6,7 +6,11 @@
  */
 
 import type { McpServerConfig } from "./config.ts";
-import { StdioTransport, Transport } from "./transport.ts";
+import {
+  type ClientTransport,
+  StdioTransport,
+  Transport,
+} from "./transport.ts";
 import type {
   CallToolParams,
   CallToolResult,
@@ -14,8 +18,9 @@ import type {
   GetPromptResult,
   InitializeParams,
   InitializeResult,
+  JsonRpcId,
   JsonRpcNotification,
-  JsonRpcRequest,
+  JsonRpcResponse,
   ListPromptsResult,
   ListResourcesResult,
   ListToolsResult,
@@ -53,6 +58,28 @@ export const SUPPORTED_PROTOCOL_VERSIONS: readonly string[] = [
   "2024-11-05",
 ];
 
+/** Per-request options for {@link McpClient.request} and the typed helpers. */
+export interface RequestOptions {
+  /**
+   * Abort the request: the promise rejects with the signal's reason and a
+   * `notifications/cancelled` is sent so the server stops working on it.
+   */
+  signal?: AbortSignal;
+  /** Receives every server notification that arrives while this request is pending. */
+  onNotification?: (notification: JsonRpcNotification) => void;
+}
+
+/** Handler for server notifications on any connection (see {@link McpClient.onNotification}). */
+export type NotificationHandler = (
+  serverName: string,
+  notification: JsonRpcNotification,
+) => void;
+
+interface Pending {
+  resolve: (response: JsonRpcResponse) => void;
+  reject: (error: unknown) => void;
+}
+
 /**
  * Active connection to an MCP server.
  * Equivalent to Rust `McpConnection`.
@@ -66,7 +93,19 @@ interface McpConnection {
   serverInfo: ServerInfo;
   /** Server capabilities from initialization. */
   capabilities: ServerCapabilities;
+  /** Protocol revision the server answered `initialize` with. */
+  protocolVersion: string;
+  /** In-flight requests by id. */
+  pending: Map<string, Pending>;
+  /** Per-request notification listeners (see {@link RequestOptions.onNotification}). */
+  listeners: Set<(notification: JsonRpcNotification) => void>;
+  /** Set once the connection is unusable; new requests reject with it. */
+  closedError: Error | null;
+  /** The background reader; settles when the connection ends. */
+  reader: Promise<void>;
 }
+
+const idKey = (id: JsonRpcId): string => JSON.stringify(id);
 
 /**
  * MCP Client — manages connections to MCP servers.
@@ -74,12 +113,19 @@ interface McpConnection {
  *
  * Provides methods to connect to MCP servers, list/call tools,
  * list/read resources, and list/get prompts.
+ *
+ * Each connection has a background reader that matches responses to requests
+ * by `id`, so any number of calls may be in flight at once on one connection
+ * and their responses may arrive in any order. Server notifications go to
+ * {@link onNotification} handlers (and to a pending call's own
+ * `onNotification`); a server `ping` is answered automatically.
  */
 export class McpClient {
   #connections: Map<string, McpConnection> = new Map();
   #requestId = 1;
   #clientName: string;
   #clientVersion: string;
+  #handlers = new Set<NotificationHandler>();
 
   /**
    * Create a new MCP client with the given name and version.
@@ -109,21 +155,48 @@ export class McpClient {
       config.args,
       config.env,
     );
-    const transport = new Transport(stdioTransport);
+    await this.connectTransport(config.name, stdioTransport);
+  }
 
-    // Send initialize request
-    const initResult = await this.#initialize(transport);
-
-    // Create connection
+  /**
+   * Connect to an MCP server over an already-open transport (e.g.
+   * `await SocketTransport.connectUnix(path)`) and run the `initialize`
+   * handshake. On failure the transport is closed and the error rethrown.
+   * @param serverName Handle every later call uses.
+   * @param transport The connected transport.
+   */
+  async connectTransport(
+    serverName: string,
+    transport: ClientTransport,
+  ): Promise<void> {
+    const wrapped = transport instanceof Transport
+      ? transport
+      : new Transport(transport);
     const connection: McpConnection = {
-      serverName: config.name,
-      transport,
-      serverInfo: initResult.serverInfo,
-      capabilities: initResult.capabilities,
+      serverName,
+      transport: wrapped,
+      serverInfo: { name: "", version: "" },
+      capabilities: {},
+      protocolVersion: "",
+      pending: new Map(),
+      listeners: new Set(),
+      closedError: null,
+      reader: Promise.resolve(),
     };
+    connection.reader = this.#readLoop(connection);
 
-    // Store connection
-    this.#connections.set(config.name, connection);
+    try {
+      const result = await this.#initialize(connection);
+      connection.serverInfo = result.serverInfo;
+      connection.capabilities = result.capabilities;
+      connection.protocolVersion = result.protocolVersion;
+    } catch (e) {
+      this.#shutdown(connection, new Error("initialize failed"));
+      await wrapped.close().catch(() => {});
+      throw e;
+    }
+
+    this.#connections.set(serverName, connection);
   }
 
   /**
@@ -134,7 +207,9 @@ export class McpClient {
     const connection = this.#connections.get(serverName);
     if (connection) {
       this.#connections.delete(serverName);
+      this.#shutdown(connection, new Error(`Disconnected from ${serverName}`));
       await connection.transport.close();
+      await connection.reader;
     }
   }
 
@@ -155,27 +230,58 @@ export class McpClient {
   }
 
   /**
+   * Subscribe to server notifications from every connection (e.g.
+   * `notifications/tools/list_changed`, `notifications/message`,
+   * `notifications/progress`). Returns an unsubscribe function.
+   */
+  onNotification(handler: NotificationHandler): () => void {
+    this.#handlers.add(handler);
+    return () => this.#handlers.delete(handler);
+  }
+
+  /**
+   * Send any JSON-RPC request and resolve with its `result`. A JSON-RPC
+   * error rejects as `Error("<method> failed: <message> (code: <code>)")`.
+   * @param serverName Connection to use.
+   * @param method JSON-RPC method.
+   * @param params Optional params.
+   * @param options Cancellation signal and per-request notification listener.
+   */
+  async request(
+    serverName: string,
+    method: string,
+    params?: unknown,
+    options: RequestOptions = {},
+  ): Promise<unknown> {
+    const connection = this.#getConnection(serverName);
+    const response = await this.#send(connection, method, params, options);
+    if (response.error) {
+      throw new Error(
+        `${method} failed: ${response.error.message} (code: ${response.error.code})`,
+      );
+    }
+    return response.result;
+  }
+
+  /** Ping the server (`ping`); resolves when it answers. */
+  async ping(serverName: string, options: RequestOptions = {}): Promise<void> {
+    await this.request(serverName, "ping", undefined, options);
+  }
+
+  /**
    * List available tools from a server.
    * Equivalent to Rust `McpClient::list_tools`.
    */
-  async listTools(serverName: string): Promise<McpTool[]> {
-    const connection = this.#getConnection(serverName);
-
-    const request = createJsonRpcRequest(
-      this.#nextRequestId(),
+  async listTools(
+    serverName: string,
+    options: RequestOptions = {},
+  ): Promise<McpTool[]> {
+    const result = await this.request(
+      serverName,
       "tools/list",
-    );
-
-    await connection.transport.sendRequest(request);
-    const response = await connection.transport.receiveResponse();
-
-    if (response.error) {
-      throw new Error(
-        `tools/list failed: ${response.error.message} (code: ${response.error.code})`,
-      );
-    }
-
-    const result = response.result as ListToolsResult;
+      undefined,
+      options,
+    ) as ListToolsResult;
     return result.tools;
   }
 
@@ -187,8 +293,18 @@ export class McpClient {
     serverName: string,
     toolName: string,
     args?: Record<string, unknown>,
+    options: RequestOptions = {},
   ): Promise<CallToolResult> {
-    return await this.callToolWithNotifications(serverName, toolName, args);
+    const params: CallToolParams = {
+      name: toolName,
+      ...(args ? { arguments: args } : {}),
+    };
+    return await this.request(
+      serverName,
+      "tools/call",
+      params,
+      options,
+    ) as CallToolResult;
   }
 
   /**
@@ -203,42 +319,7 @@ export class McpClient {
     args?: Record<string, unknown>,
     onNotification?: (notification: JsonRpcNotification) => void,
   ): Promise<CallToolResult> {
-    const connection = this.#getConnection(serverName);
-
-    const params: CallToolParams = {
-      name: toolName,
-      ...(args ? { arguments: args } : {}),
-    };
-
-    const request = createJsonRpcRequest(
-      this.#nextRequestId(),
-      "tools/call",
-      params,
-    );
-
-    await connection.transport.sendRequest(request);
-
-    // Wait for response, forwarding any notifications that arrive
-    while (true) {
-      const message = await connection.transport.receiveMessage();
-
-      if (message.type === "response") {
-        const response = message.response;
-        if (response.error) {
-          throw new Error(
-            `tools/call failed: ${response.error.message} (code: ${response.error.code})`,
-          );
-        }
-        return response.result as CallToolResult;
-      }
-
-      if (message.type === "notification") {
-        if (onNotification) {
-          onNotification(message.notification);
-        }
-        // Continue waiting for the response
-      }
-    }
+    return await this.callTool(serverName, toolName, args, { onNotification });
   }
 
   /**
@@ -246,23 +327,10 @@ export class McpClient {
    * Equivalent to Rust `McpClient::list_resources`.
    */
   async listResources(serverName: string): Promise<McpResource[]> {
-    const connection = this.#getConnection(serverName);
-
-    const request = createJsonRpcRequest(
-      this.#nextRequestId(),
+    const result = await this.request(
+      serverName,
       "resources/list",
-    );
-
-    await connection.transport.sendRequest(request);
-    const response = await connection.transport.receiveResponse();
-
-    if (response.error) {
-      throw new Error(
-        `resources/list failed: ${response.error.message} (code: ${response.error.code})`,
-      );
-    }
-
-    const result = response.result as ListResourcesResult;
+    ) as ListResourcesResult;
     return result.resources;
   }
 
@@ -274,25 +342,12 @@ export class McpClient {
     serverName: string,
     uri: string,
   ): Promise<ReadResourceResult> {
-    const connection = this.#getConnection(serverName);
-
     const params: ReadResourceParams = { uri };
-    const request = createJsonRpcRequest(
-      this.#nextRequestId(),
+    return await this.request(
+      serverName,
       "resources/read",
       params,
-    );
-
-    await connection.transport.sendRequest(request);
-    const response = await connection.transport.receiveResponse();
-
-    if (response.error) {
-      throw new Error(
-        `resources/read failed: ${response.error.message} (code: ${response.error.code})`,
-      );
-    }
-
-    return response.result as ReadResourceResult;
+    ) as ReadResourceResult;
   }
 
   /**
@@ -300,23 +355,10 @@ export class McpClient {
    * Equivalent to Rust `McpClient::list_prompts`.
    */
   async listPrompts(serverName: string): Promise<McpPrompt[]> {
-    const connection = this.#getConnection(serverName);
-
-    const request = createJsonRpcRequest(
-      this.#nextRequestId(),
+    const result = await this.request(
+      serverName,
       "prompts/list",
-    );
-
-    await connection.transport.sendRequest(request);
-    const response = await connection.transport.receiveResponse();
-
-    if (response.error) {
-      throw new Error(
-        `prompts/list failed: ${response.error.message} (code: ${response.error.code})`,
-      );
-    }
-
-    const result = response.result as ListPromptsResult;
+    ) as ListPromptsResult;
     return result.prompts;
   }
 
@@ -329,28 +371,15 @@ export class McpClient {
     promptName: string,
     args?: Record<string, unknown>,
   ): Promise<GetPromptResult> {
-    const connection = this.#getConnection(serverName);
-
     const params: GetPromptParams = {
       name: promptName,
       ...(args ? { arguments: args } : {}),
     };
-    const request = createJsonRpcRequest(
-      this.#nextRequestId(),
+    return await this.request(
+      serverName,
       "prompts/get",
       params,
-    );
-
-    await connection.transport.sendRequest(request);
-    const response = await connection.transport.receiveResponse();
-
-    if (response.error) {
-      throw new Error(
-        `prompts/get failed: ${response.error.message} (code: ${response.error.code})`,
-      );
-    }
-
-    return response.result as GetPromptResult;
+    ) as GetPromptResult;
   }
 
   /**
@@ -371,13 +400,19 @@ export class McpClient {
     return { ...connection.capabilities };
   }
 
+  /** The protocol revision negotiated with a server. */
+  getProtocolVersion(serverName: string): string {
+    return this.#getConnection(serverName).protocolVersion;
+  }
+
   /**
    * Tell the server to stop working on an in-flight request.
    *
    * MCP cancellation is the `notifications/cancelled` notification (no `id`,
    * never answered) carrying the `requestId` to cancel. The previous
    * implementation sent `$/cancelRequest`, which is an LSP method that no MCP
-   * server recognises.
+   * server recognises. Prefer {@link RequestOptions.signal}, which also
+   * settles the local promise.
    */
   async cancelRequest(
     serverName: string,
@@ -409,11 +444,148 @@ export class McpClient {
     return connection;
   }
 
+  /** Send a request on `connection` and resolve with the response matching its id. */
+  #send(
+    connection: McpConnection,
+    method: string,
+    params: unknown,
+    options: RequestOptions,
+  ): Promise<JsonRpcResponse> {
+    if (connection.closedError) return Promise.reject(connection.closedError);
+    const { signal, onNotification } = options;
+    if (signal?.aborted) return Promise.reject(signal.reason);
+
+    const id = this.#nextRequestId();
+    const key = idKey(id);
+    return new Promise<JsonRpcResponse>((resolve, reject) => {
+      const onAbort = () => {
+        cleanup();
+        reject(signal!.reason);
+        connection.transport
+          .sendRequest(
+            cancellationNotification(
+              id,
+              signal!.reason instanceof Error
+                ? signal!.reason.message
+                : String(signal!.reason ?? "aborted"),
+            ),
+          )
+          .catch(() => {});
+      };
+      const cleanup = () => {
+        connection.pending.delete(key);
+        if (onNotification) connection.listeners.delete(onNotification);
+        signal?.removeEventListener("abort", onAbort);
+      };
+      connection.pending.set(key, {
+        resolve: (r) => {
+          cleanup();
+          resolve(r);
+        },
+        reject: (e) => {
+          cleanup();
+          reject(e);
+        },
+      });
+      if (onNotification) connection.listeners.add(onNotification);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      connection.transport
+        .sendRequest(createJsonRpcRequest(id, method, params))
+        .catch((e) => {
+          cleanup();
+          reject(e);
+        });
+    });
+  }
+
+  /** Read messages until the connection ends, routing each by kind and id. */
+  async #readLoop(connection: McpConnection): Promise<void> {
+    // Start on the next microtask, after `connection.reader` is assigned.
+    await Promise.resolve();
+    while (connection.closedError === null) {
+      let message;
+      try {
+        message = await connection.transport.receiveMessage();
+      } catch (e) {
+        if (e instanceof SyntaxError) continue; // a garbled line, not EOF
+        this.#shutdown(
+          connection,
+          new Error(
+            `MCP server ${connection.serverName} connection closed: ${
+              e instanceof Error ? e.message : String(e)
+            }`,
+          ),
+        );
+        break;
+      }
+
+      if (message.type === "notification") {
+        this.#dispatchNotification(connection, message.notification);
+        continue;
+      }
+      const response = message.response as JsonRpcResponse & {
+        method?: unknown;
+      };
+      if (typeof response.method === "string") {
+        this.#answerServerRequest(connection, response.id, response.method);
+        continue;
+      }
+      // Responses for unknown ids (e.g. cancelled requests) are dropped.
+      connection.pending.get(idKey(response.id))?.resolve(response);
+    }
+  }
+
+  /** Mark the connection dead and fail every in-flight request. */
+  #shutdown(connection: McpConnection, error: Error): void {
+    if (connection.closedError === null) connection.closedError = error;
+    for (const pending of [...connection.pending.values()]) {
+      pending.reject(connection.closedError);
+    }
+    connection.pending.clear();
+  }
+
+  #dispatchNotification(
+    connection: McpConnection,
+    notification: JsonRpcNotification,
+  ): void {
+    if (typeof notification.method !== "string") return; // e.g. an id:null error
+    for (const listener of [...connection.listeners]) {
+      try {
+        listener(notification);
+      } catch (e) {
+        console.error(`MCP notification listener failed: ${e}`);
+      }
+    }
+    for (const handler of [...this.#handlers]) {
+      try {
+        handler(connection.serverName, notification);
+      } catch (e) {
+        console.error(`MCP notification handler failed: ${e}`);
+      }
+    }
+  }
+
+  /** Answer a server→client request: `ping` succeeds, anything else is method-not-found. */
+  #answerServerRequest(
+    connection: McpConnection,
+    id: JsonRpcId,
+    method: string,
+  ): void {
+    const reply: JsonRpcResponse = method === "ping"
+      ? { jsonrpc: "2.0", id, result: {} }
+      : {
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32601, message: `Method not found: ${method}` },
+      };
+    connection.transport.sendRequest(reply).catch(() => {});
+  }
+
   /**
    * Initialize handshake with server.
    * Equivalent to Rust `McpClient::initialize`.
    */
-  async #initialize(transport: Transport): Promise<InitializeResult> {
+  async #initialize(connection: McpConnection): Promise<InitializeResult> {
     const params: InitializeParams = {
       protocolVersion: LATEST_PROTOCOL_VERSION,
       capabilities: {},
@@ -423,14 +595,7 @@ export class McpClient {
       },
     };
 
-    const request = createJsonRpcRequest(
-      this.#nextRequestId(),
-      "initialize",
-      params,
-    );
-
-    await transport.sendRequest(request);
-    const response = await transport.receiveResponse();
+    const response = await this.#send(connection, "initialize", params, {});
 
     if (response.error) {
       throw new Error(
@@ -452,12 +617,9 @@ export class McpClient {
     }
 
     // Send initialized notification
-    const notification: JsonRpcRequest = {
-      jsonrpc: "2.0",
-      id: null,
-      method: "notifications/initialized",
-    };
-    await transport.sendRequest(notification);
+    await connection.transport.sendRequest(
+      createJsonRpcNotification("notifications/initialized"),
+    );
 
     return result;
   }

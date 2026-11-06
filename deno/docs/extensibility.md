@@ -24,7 +24,7 @@ to the component, done.
 | `BrainClient`         | `@rullama/knowledge`     | Knowledge storage interface                          |
 | `RagClient`           | `@rullama/rag`           | Semantic code search interface                       |
 | `Middleware`          | `@rullama/mcp-server`    | MCP server request processing                        |
-| `ServerTransport`     | `@rullama/mcp-server`    | MCP server I/O (stdio ships)                         |
+| `ServerTransport`     | `@rullama/mcp-server`    | MCP server I/O (stdio, unix socket, TCP ship)        |
 | `Discovery`           | `@rullama/network`       | Peer discovery protocol                              |
 | `A2aHandler`          | `@rullama/a2a`           | A2A agent server handler (no server transport ships) |
 | `AnalyticsSink`       | `@rullama/telemetry`     | Analytics event destination                          |

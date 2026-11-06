@@ -1,8 +1,11 @@
 /**
  * Model Context Protocol (MCP) client for rullama. Provides {@link McpClient},
- * which spawns MCP servers as subprocesses over a stdio transport, negotiates
+ * which spawns MCP servers as subprocesses over a stdio transport (or connects
+ * to one over a unix socket / TCP with {@link SocketTransport}), negotiates
  * protocol version `2025-06-18` (and accepts `2025-03-26` / `2024-11-05`), and
- * lists/calls tools, reads resources and fetches prompts. Also exports the
+ * lists/calls tools, reads resources and fetches prompts — with any number of
+ * requests in flight per connection, responses matched by id, notifications
+ * routed to handlers and `AbortSignal` cancellation. Also exports the
  * JSON-RPC 2.0 and MCP wire types, the {@link StdioTransport} / {@link Transport}
  * layer, and {@link McpConfigManager} for the on-disk server list
  * (`~/.rullama/mcp-config.json`). Equivalent to Rust's `rullama-mcp` crate.
@@ -12,8 +15,11 @@
 
 // Client
 export {
+  cancellationNotification,
   LATEST_PROTOCOL_VERSION,
   McpClient,
+  type NotificationHandler,
+  type RequestOptions,
   SUPPORTED_PROTOCOL_VERSIONS,
 } from "./client.ts";
 
@@ -21,7 +27,13 @@ export {
 export { McpConfigManager, type McpServerConfig } from "./config.ts";
 
 // Transport
-export { StdioTransport, Transport } from "./transport.ts";
+export {
+  type ClientTransport,
+  type OutgoingMessage,
+  SocketTransport,
+  StdioTransport,
+  Transport,
+} from "./transport.ts";
 
 // JSON-RPC types (always available)
 export type {
