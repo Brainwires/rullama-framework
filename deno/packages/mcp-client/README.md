@@ -3,11 +3,11 @@
 Model Context Protocol (MCP) client for the rullama. Connect to external MCP
 servers, discover and call tools, read resources, and fetch prompts.
 
-The client offers protocol version `2025-06-18` when it initializes and accepts
-servers that answer with `2025-06-18`, `2025-03-26` or `2024-11-05`
-(`LATEST_PROTOCOL_VERSION` / `SUPPORTED_PROTOCOL_VERSIONS`). Transports:
-**stdio** (`connect(config)` spawns the server as a subprocess) and **unix
-socket / TCP**
+The client offers protocol version `2025-11-25` when it initializes and accepts
+servers that answer with `2025-11-25`, `2025-06-18`, `2025-03-26` or
+`2024-11-05` (`LATEST_PROTOCOL_VERSION` / `SUPPORTED_PROTOCOL_VERSIONS`).
+Transports: **stdio** (`connect(config)` spawns the server as a subprocess) and
+**unix socket / TCP**
 (`connectTransport(name, await SocketTransport.connectUnix(path))`), both
 newline-delimited JSON-RPC. There is no HTTP, SSE or WebSocket transport yet.
 

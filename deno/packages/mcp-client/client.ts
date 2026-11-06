@@ -46,13 +46,14 @@ export function cancellationNotification(
 }
 
 /** The MCP protocol revision this client offers in `initialize`. */
-export const LATEST_PROTOCOL_VERSION = "2025-06-18";
+export const LATEST_PROTOCOL_VERSION = "2025-11-25";
 
 /**
  * Protocol revisions this client can talk to. The server answers `initialize`
  * with the revision it wants to use; anything outside this list is rejected.
  */
 export const SUPPORTED_PROTOCOL_VERSIONS: readonly string[] = [
+  "2025-11-25",
   "2025-06-18",
   "2025-03-26",
   "2024-11-05",

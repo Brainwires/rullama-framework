@@ -133,7 +133,7 @@ Deno.test({
       await SocketTransport.connectUnix(path),
     );
     assertEquals(client.getServerInfo("tile").name, "qutty-hub");
-    assertEquals(client.getProtocolVersion("tile"), "2025-06-18");
+    assertEquals(client.getProtocolVersion("tile"), "2025-11-25");
     assertEquals((await client.listTools("tile")).map((t) => t.name), [
       "whoami",
       "wait",

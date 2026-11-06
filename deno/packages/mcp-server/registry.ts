@@ -20,6 +20,16 @@ export interface McpToolDef {
   description: string;
   /** JSON Schema for tool input. */
   inputSchema: Record<string, unknown>;
+  /** Optional display name (MCP 2025-06-18+). */
+  title?: string;
+  /** Optional JSON Schema of `structuredContent` results (MCP 2025-06-18+). */
+  outputSchema?: Record<string, unknown>;
+  /** Optional behaviour hints (`readOnlyHint`, `destructiveHint`, …). */
+  annotations?: Record<string, unknown>;
+  /** Optional icons (`{ src, mimeType?, sizes?, theme? }`, MCP 2025-11-25). */
+  icons?: Record<string, unknown>[];
+  /** Optional protocol metadata passed through unchanged. */
+  _meta?: Record<string, unknown>;
 }
 
 /**
