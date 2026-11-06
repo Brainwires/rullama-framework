@@ -6,6 +6,7 @@
  */
 
 import {
+  type CallToolResult,
   createJsonRpcNotification,
   type InitializeParams,
   type InitializeResult,
@@ -24,7 +25,14 @@ import {
   type AcceptedConnection,
   nextConnectionId,
 } from "./transport/socket.ts";
-import { AgentNetworkError } from "./error.ts";
+import {
+  DEFAULT_PRE_AUTH_TIMEOUT_MS,
+  type PreAuthHook,
+  readFirstLine,
+  runPreAuth,
+} from "./transport/admission.ts";
+import type { McpToolDef } from "./registry.ts";
+import { AgentNetworkError, ErrorCode } from "./error.ts";
 
 /**
  * Information about a connected MCP client.
@@ -160,6 +168,36 @@ export function negotiateProtocolVersion(
   return supported[0] ?? LATEST_PROTOCOL_VERSION;
 }
 
+/**
+ * What a {@link FirstLineHook} decided about a connection's first line.
+ *
+ * - `"mcp"`: hand the line to MCP (as-is, or `line` instead) and serve the
+ *   connection normally.
+ * - `"consume"`: drop the line (it was a host-protocol preamble, e.g. a token)
+ *   and serve MCP from the next line.
+ * - `"close"`: write `reply` (one raw line or several; a newline is appended
+ *   to each) and close the connection without starting MCP.
+ *
+ * `identity`, when given with `"mcp"` / `"consume"`, replaces
+ * `ConnectionInfo.identity` for the rest of the connection.
+ */
+export type FirstLineDecision =
+  | { action: "mcp"; line?: string; identity?: unknown }
+  | { action: "consume"; identity?: unknown }
+  | { action: "close"; reply?: string | readonly string[] };
+
+/**
+ * Interceptor for the first line a client sends on a connection, before MCP
+ * sees it. Lets a host multiplex a one-shot line protocol of its own on the
+ * MCP socket (answer and close) or authenticate the connection, then fall
+ * through to MCP. Not called when the client closes before sending a line; a
+ * throwing hook closes the connection.
+ */
+export type FirstLineHook = (
+  line: string,
+  info: ConnectionInfo,
+) => FirstLineDecision | Promise<FirstLineDecision>;
+
 /** Options for {@link McpServer.serveConnection}. */
 export interface ServeConnectionOptions {
   /**
@@ -176,6 +214,26 @@ export interface ServeConnectionOptions {
    * listeners served with {@link McpServer.serve} default to `true`.
    */
   abortOnEof?: boolean;
+  /**
+   * Pre-authenticate the connection on its first line, exactly like a socket
+   * listener's `preAuth` (the line is consumed; a rejected client gets one
+   * `-32003 Unauthorized` line and is closed; a returned `identity` lands on
+   * `ctx.connection.identity`). Mutually exclusive with {@link firstLine}.
+   */
+  preAuth?: PreAuthHook;
+  /**
+   * Inspect the first line and decide: hand it to MCP, consume it, or reply
+   * and close (see {@link FirstLineDecision}). Mutually exclusive with
+   * {@link preAuth}.
+   */
+  firstLine?: FirstLineHook;
+  /**
+   * How long the client has to send its first line when {@link preAuth} or
+   * {@link firstLine} is set; on timeout the connection is treated as closed
+   * (rejected, for `preAuth`). Default 10 000 ms with `preAuth`, no limit
+   * with `firstLine`.
+   */
+  firstLineTimeoutMs?: number;
 }
 
 /** Options for {@link McpServer.serve}. */
@@ -195,6 +253,64 @@ export interface ServeOptions {
    * (default `true`), so closing a listener tears its connections down.
    */
   closeSessionsOnStop?: boolean;
+  /**
+   * First-line interceptor for every connection (see
+   * {@link ServeConnectionOptions.firstLine}). Runs after a listener's own
+   * `preAuth`, on the next line the client sends.
+   */
+  firstLine?: FirstLineHook;
+  /** See {@link ServeConnectionOptions.firstLineTimeoutMs}. */
+  firstLineTimeoutMs?: number;
+}
+
+/** First revision whose clients expect tool failures as `isError` results (SEP-1303). */
+const TOOL_EXECUTION_ERRORS_SINCE = "2025-11-25";
+
+/**
+ * Errors a handler throws that stay JSON-RPC protocol errors even on
+ * revisions that report tool failures as results: the call never reached a
+ * tool (unknown tool, refused, throttled).
+ */
+const PROTOCOL_ERROR_CODES: ReadonlySet<number> = new Set([
+  ErrorCode.MethodNotFound,
+  ErrorCode.ToolNotFound,
+  ErrorCode.RateLimited,
+  ErrorCode.Unauthorized,
+]);
+
+/** Optional `Tool` fields passed through `tools/list` when a handler sets them. */
+const OPTIONAL_TOOL_FIELDS = [
+  "title",
+  "outputSchema",
+  "annotations",
+  "icons",
+  "_meta",
+] as const;
+
+/** The wire form of a tool: the required fields plus whichever optional ones are set. */
+function toWireTool(t: McpToolDef): Record<string, unknown> {
+  const wire: Record<string, unknown> = {
+    name: t.name,
+    description: t.description,
+    inputSchema: t.inputSchema,
+  };
+  for (const key of OPTIONAL_TOOL_FIELDS) {
+    if (t[key] !== undefined) wire[key] = t[key];
+  }
+  return wire;
+}
+
+/**
+ * Message of the `MethodNotFound` answer to `server/discover`. The method
+ * belongs to the stateless 2026-07-28 revision (SEP-2575); this server speaks
+ * the initialize-based revisions, and on stdio-style transports a dual-era
+ * client treats any non-modern error to its `server/discover` probe as "legacy
+ * server" and falls back to `initialize`.
+ */
+function discoverUnsupportedMessage(): string {
+  return `Method not found: server/discover (this server uses the initialize handshake; supported protocol versions: ${
+    SUPPORTED_PROTOCOL_VERSIONS.join(", ")
+  })`;
 }
 
 interface InFlight {
@@ -237,6 +353,7 @@ export class McpServerSession {
   #handler: McpHandler;
   #middleware: MiddlewareChain;
   #abortOnEof: boolean;
+  #options: ServeConnectionOptions;
   #clientInfo: ClientInfo | null = null;
   #protocolVersion: string | null = null;
   #initialized = false;
@@ -266,6 +383,12 @@ export class McpServerSession {
     this.#handler = handler;
     this.#middleware = middleware;
     this.#abortOnEof = options.abortOnEof ?? false;
+    if (options.preAuth && options.firstLine) {
+      throw new TypeError(
+        "serveConnection: `preAuth` and `firstLine` are mutually exclusive",
+      );
+    }
+    this.#options = options;
     this.connection = options.connection ??
       { id: nextConnectionId("conn"), transport: "custom" };
     this.done = this.#run();
@@ -355,8 +478,9 @@ export class McpServerSession {
   async #run(): Promise<void> {
     // Let the creator attach to the session before the first dispatch.
     await Promise.resolve();
+    const opening = await this.#openingLine();
     for (
-      let line = await this.#read();
+      let line = opening;
       line !== null;
       line = await this.#read()
     ) {
@@ -367,6 +491,68 @@ export class McpServerSession {
       }
     }
     await this.#finish();
+  }
+
+  /**
+   * Run the first-line hooks (if any) and return the first line for MCP, or
+   * `null` when the connection should end without MCP (rejected, answered by
+   * the host protocol, or closed before sending anything).
+   */
+  async #openingLine(): Promise<string | null> {
+    const { preAuth, firstLine, firstLineTimeoutMs } = this.#options;
+    if (preAuth) {
+      const admitted = await runPreAuth(
+        this.#transport,
+        this.connection,
+        preAuth,
+        firstLineTimeoutMs ?? DEFAULT_PRE_AUTH_TIMEOUT_MS,
+      );
+      return admitted && !this.#closing ? await this.#read() : null;
+    }
+    if (!firstLine) return await this.#read();
+    const line = firstLineTimeoutMs === undefined
+      ? await this.#read()
+      : await this.#readWithin(firstLineTimeoutMs);
+    if (line === null) return null;
+    try {
+      return await this.#applyFirstLine(
+        line,
+        await firstLine(line, this.connection),
+      );
+    } catch (e) {
+      console.error(`firstLine hook failed on ${this.connection.id}: ${e}`);
+      return null;
+    }
+  }
+
+  /** Carry out a {@link FirstLineDecision}; returns the first line for MCP or `null`. */
+  async #applyFirstLine(
+    line: string,
+    decision: FirstLineDecision,
+  ): Promise<string | null> {
+    if (decision.action === "close") {
+      const reply = decision.reply ?? [];
+      for (const text of typeof reply === "string" ? [reply] : reply) {
+        await this.#sendRaw(text);
+      }
+      return null;
+    }
+    if (decision.identity !== undefined) {
+      this.connection.identity = decision.identity;
+    }
+    if (decision.action === "consume") return await this.#read();
+    return decision.line ?? line;
+  }
+
+  /** {@link #read} with a deadline; `null` on timeout. */
+  async #readWithin(ms: number): Promise<string | null> {
+    if (this.#closing) return null;
+    try {
+      return await readFirstLine(this.#transport, ms);
+    } catch (e) {
+      if (!this.#closing) console.error(`Transport read error: ${e}`);
+      return null;
+    }
   }
 
   /** The next request line, or `null` once the session should stop reading. */
@@ -481,6 +667,21 @@ export class McpServerSession {
       this.#cancel(request.params);
       return true;
     }
+    if (request.method === "server/discover") {
+      // A 2026-07-28 (stateless) probe: answer MethodNotFound right away, so
+      // a dual-era client falls back to `initialize` instead of timing out.
+      if (!isNotification(request)) {
+        await this.#send({
+          jsonrpc: "2.0",
+          id: request.id,
+          error: {
+            code: ErrorCode.MethodNotFound,
+            message: discoverUnsupportedMessage(),
+          },
+        });
+      }
+      return true;
+    }
     if (request.method !== "ping") return false;
     if (!isNotification(request)) {
       await this.#send({ jsonrpc: "2.0", id: request.id, result: {} });
@@ -554,8 +755,12 @@ export class McpServerSession {
 
   /** Serialize `message` and queue it behind every earlier write. */
   #send(message: object): Promise<boolean> {
+    return this.#sendRaw(JSON.stringify(message));
+  }
+
+  /** Queue one raw line (no trailing newline) behind every earlier write. */
+  #sendRaw(json: string): Promise<boolean> {
     if (!this.#writable) return Promise.resolve(false);
-    const json = JSON.stringify(message);
     const result = this.#writeChain.then(async () => {
       if (!this.#writable) return false;
       try {
@@ -643,14 +848,14 @@ export class McpServerSession {
     return { jsonrpc: "2.0", id: request.id, result };
   }
 
-  /** Handle `tools/list`: reply with the handler's tools as `{ name, description, inputSchema }`. */
+  /**
+   * Handle `tools/list`: reply with the handler's tools as
+   * `{ name, description, inputSchema }` plus any optional `Tool` fields the
+   * handler set (`title`, `outputSchema`, `annotations`, `icons`, `_meta`).
+   */
   #listTools(request: JsonRpcRequest, ctx: RequestContext): JsonRpcResponse {
     try {
-      const tools = this.#handler.listTools(ctx).map((t) => ({
-        name: t.name,
-        description: t.description,
-        inputSchema: t.inputSchema,
-      }));
+      const tools = this.#handler.listTools(ctx).map(toWireTool);
       return { jsonrpc: "2.0", id: request.id, result: { tools } };
     } catch (e) {
       return {
@@ -664,8 +869,12 @@ export class McpServerSession {
   /**
    * Handle `tools/call`: reject with `InvalidParams` when `params` or
    * `params.name` is missing, otherwise call the handler with
-   * `params.arguments` (default `{}`); a thrown error becomes an `Internal`
-   * error response.
+   * `params.arguments` (default `{}`). A thrown error becomes an `Internal`
+   * error response — except on protocol revision 2025-11-25 and later, where
+   * it is returned as a tool execution error (`isError: true` result, so the
+   * model can self-correct, SEP-1303) unless it is an {@link AgentNetworkError}
+   * for an unknown tool, a refusal or a rate limit, which is answered with
+   * that error's own code.
    */
   async #callTool(
     request: JsonRpcRequest,
@@ -693,6 +902,20 @@ export class McpServerSession {
       const result = await this.#handler.callTool(toolName, args, ctx);
       return { jsonrpc: "2.0", id: request.id, result };
     } catch (e) {
+      if (usesToolExecutionErrors(ctx.protocolVersion)) {
+        // The call never reached a tool: keep the error's own code.
+        if (
+          e instanceof AgentNetworkError && PROTOCOL_ERROR_CODES.has(e.code)
+        ) {
+          return { jsonrpc: "2.0", id: request.id, error: e.toJsonRpcError() };
+        }
+        const text = e instanceof Error ? e.message : String(e);
+        const result: CallToolResult = {
+          content: [{ type: "text", text }],
+          isError: true,
+        };
+        return { jsonrpc: "2.0", id: request.id, result };
+      }
       const error = AgentNetworkError.internal(String(e));
       return { jsonrpc: "2.0", id: request.id, error: error.toJsonRpcError() };
     }
@@ -710,6 +933,12 @@ export class McpServerSession {
     this.#logLevel = level as LoggingLevel;
     return { jsonrpc: "2.0", id: request.id, result: {} };
   }
+}
+
+/** Whether `protocolVersion` reports tool failures as `isError` results. */
+function usesToolExecutionErrors(protocolVersion: string | null): boolean {
+  return protocolVersion !== null &&
+    protocolVersion >= TOOL_EXECUTION_ERRORS_SINCE;
 }
 
 function invalidRequest(id: JsonRpcId): JsonRpcResponse {
@@ -799,25 +1028,28 @@ export class McpServer {
   }
 
   /**
-   * Serve every connection a listener yields (e.g. a
-   * `UnixSocketServerTransport`), one session each, until the listener is
-   * closed. Resolves after the listener stops and (by default) its sessions
+   * Serve every connection a listener yields (a `UnixSocketServerTransport`,
+   * a `StreamServerListener` over the host's own sockets, or any
+   * `AsyncIterable<AcceptedConnection<ServerTransport>>`), one session each,
+   * until the listener is closed or ends. Resolves after the listener stops and (by default) its sessions
    * have been closed.
    */
   async serve(
-    listener: AsyncIterable<AcceptedConnection>,
+    listener: AsyncIterable<AcceptedConnection<ServerTransport>>,
     options: ServeOptions = {},
   ): Promise<void> {
     const mine = new Set<McpServerSession>();
     const starting = new Set<Promise<void>>();
-    const start = async ({ transport, info }: AcceptedConnection) => {
+    const start = async (
+      { transport, info }: AcceptedConnection<ServerTransport>,
+    ) => {
       let handler = this.handler;
       if (options.handlerFactory) {
         try {
           handler = await options.handlerFactory(info);
         } catch (e) {
           console.error(`handlerFactory failed for ${info.id}: ${e}`);
-          await transport.close();
+          await transport.close?.();
           return;
         }
       }
@@ -825,6 +1057,8 @@ export class McpServer {
         connection: info,
         handler,
         abortOnEof: options.abortOnEof ?? true,
+        firstLine: options.firstLine,
+        firstLineTimeoutMs: options.firstLineTimeoutMs,
       });
       mine.add(session);
       session.done.finally(() => mine.delete(session));

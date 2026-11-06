@@ -241,6 +241,10 @@ export interface ServerInfo {
   name: string;
   /** Server version. */
   version: string;
+  /** Optional display name (MCP 2025-06-18+). */
+  title?: string;
+  /** Optional human-readable description (MCP 2025-11-25). */
+  description?: string;
 }
 
 // =============================================================================

@@ -7,6 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-11-06
+
+### Deno/TypeScript port (`@rullama/mcp-server`, `@rullama/mcp-client` 0.12.3)
+
+Deno-only patch for the two MCP packages (the Rust crates and the other 25
+`@rullama/*` packages are unchanged). Driven by embedding `@rullama/mcp-server`
+as an MCP hub inside a least-privilege desktop app (FFI allowed; no
+`--allow-write`, `--allow-run` or `--allow-sys`), which could not use
+`UnixSocketServerTransport.listen` / `McpServer.serve`. Additive and backward
+compatible: the behaviour changes affect only connections that negotiate the
+new `2025-11-25` revision, plus the reply to `server/discover`.
+
+#### Behaviour changes
+
+- **Protocol `2025-11-25`** is now supported and the latest:
+  `SUPPORTED_PROTOCOL_VERSIONS` = `2025-11-25`, `2025-06-18`, `2025-03-26`,
+  `2024-11-05`; `LATEST_PROTOCOL_VERSION` = `2025-11-25`. `McpClient` offers it
+  in `initialize`; the server echoes it, and answers an unknown/newer request
+  (e.g. `2026-07-28`) with `2025-11-25` instead of `2025-06-18`.
+- **`@rullama/mcp-server`**: on a `2025-11-25` connection a `tools/call` whose
+  handler throws returns a tool execution error
+  (`{ content: [{ type: "text",
+  text }], isError: true }`) instead of a
+  `-32603` JSON-RPC error, per SEP-1303 (input validation and other tool
+  failures go back to the model so it can self-correct). An `AgentNetworkError`
+  for an unknown tool, a refusal or a rate limit stays a JSON-RPC error and
+  keeps its own code. Connections on older revisions are unchanged.
+- **`@rullama/mcp-server`**: `server/discover` — the stateless `2026-07-28`
+  revision's capability probe (SEP-2575), which Claude Code 2.1.x sends before
+  `initialize` — is answered immediately, before middleware, with `-32601`
+  Method not found naming the supported revisions. This server implements the
+  `initialize`-based ("legacy") revisions; the 2026-07-28 stdio binding tells a
+  dual-era client to treat any non-modern error to the probe as a legacy server
+  and fall back to `initialize`. The reply never uses a modern error code (such
+  as `-32022` UnsupportedProtocolVersion), which would stop that fallback.
+- **`@rullama/mcp-server`**: `tools/list` passes a tool's optional `title`,
+  `outputSchema`, `annotations`, `icons` (2025-11-25) and `_meta` through (they
+  were dropped). `McpToolDef` gains these optional fields.
+
+#### Added — `@rullama/mcp-server`
+
+- **`StreamServerTransport`**
+  (`StreamServerTransport.from({ readable, write,
+  close? })`): a server
+  transport over any host-provided byte stream — `readable` is a
+  `ReadableStream<Uint8Array>` or any `AsyncIterable<Uint8Array>`;
+  `write(bytes)` may resolve to a byte count and short writes are continued.
+  Same `LineReader` framing as stdio/sockets. `SocketServerTransport` is now a
+  `StreamServerTransport` over a `Deno.Conn` (same API).
+- **`StreamServerListener`**: adapts a host's own accept loop
+  (`AsyncIterable<StreamConnection>`, i.e. `{ readable, write, close?, info? }`)
+  into a listener for `McpServer.serve`, with the same `identity`, `preAuth` and
+  `preAuthTimeoutMs` options as the socket listeners. Needs no permissions.
+- `McpServer.serve` accepts any
+  `AsyncIterable<AcceptedConnection<ServerTransport>>`; `AcceptedConnection` is
+  generic (defaults to `SocketServerTransport`, so existing code is unchanged).
+- **First-line hooks on `serveConnection`**: `preAuth` (the listener pre-auth
+  hook, now usable on any connection) or `firstLine(line, info)` returning
+  `{ action: "mcp", line?, identity? }`, `{ action: "consume", identity? }` or
+  `{ action: "close", reply? }` — lets a host run a one-shot line protocol of
+  its own on the MCP socket (answer and close) or hand the line back to MCP.
+  `firstLineTimeoutMs`; `serve(listener, { firstLine })` too. New types
+  `FirstLineHook`, `FirstLineDecision`.
+- **`IdentityToolFilterMiddleware`**
+  (`new IdentityToolFilterMiddleware((tool,
+  identity, ctx) => boolean | Promise<boolean>)`,
+  `.allowFor(identity => names
+  | "*" | undefined)`): per-request tool policy
+  from `ctx.connection.identity` — hides disallowed tools from `tools/list` and
+  rejects their `tools/call` with `-32001`. Fails closed if the predicate
+  throws.
+- README: "Embedding with your own sockets (least privilege)".
+
+#### Added — `@rullama/mcp-client`
+
+- `ServerInfo` gains optional `title` and `description` (2025-11-25
+  `Implementation.description`).
+
 ## [0.12.2] - 2026-11-06
 
 ### Deno/TypeScript port (`@rullama/mcp-server`, `@rullama/mcp-client` 0.12.2)

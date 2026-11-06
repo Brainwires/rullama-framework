@@ -80,20 +80,26 @@ async function initialized(handler: McpHandler) {
 }
 
 Deno.test("negotiateProtocolVersion echoes a supported version, else the latest", () => {
+  assertEquals(negotiateProtocolVersion("2025-11-25"), "2025-11-25");
   assertEquals(negotiateProtocolVersion("2025-06-18"), "2025-06-18");
   assertEquals(negotiateProtocolVersion("2025-03-26"), "2025-03-26");
   assertEquals(negotiateProtocolVersion("2024-11-05"), "2024-11-05");
-  assertEquals(negotiateProtocolVersion("2099-01-01"), "2025-06-18");
+  // A stateless-era client (e.g. one that probed server/discover first)
+  // asking for 2026-07-28 gets the newest initialize-based revision.
+  assertEquals(negotiateProtocolVersion("2026-07-28"), "2025-11-25");
+  assertEquals(negotiateProtocolVersion("2099-01-01"), "2025-11-25");
   assertEquals(negotiateProtocolVersion("x", ["b", "a"]), "b");
 });
 
 Deno.test("initialize replies with the negotiated protocol version", async () => {
   for (
     const [asked, expected] of [
+      ["2025-11-25", "2025-11-25"],
       ["2025-06-18", "2025-06-18"],
       ["2025-03-26", "2025-03-26"],
       ["2024-11-05", "2024-11-05"],
-      ["1999-01-01", "2025-06-18"],
+      ["2026-07-28", "2025-11-25"],
+      ["1999-01-01", "2025-11-25"],
     ]
   ) {
     const t = new MemoryTransport();

@@ -303,3 +303,14 @@ Deno.test("McpClient - an unsupported server protocol version fails connectTrans
   );
   assertEquals(client.isConnected("s"), false);
 });
+
+Deno.test("the newest supported protocol revision is 2025-11-25 and is offered first", () => {
+  assertEquals(LATEST_PROTOCOL_VERSION, "2025-11-25");
+  assertEquals(SUPPORTED_PROTOCOL_VERSIONS[0], LATEST_PROTOCOL_VERSION);
+  assertEquals(SUPPORTED_PROTOCOL_VERSIONS, [
+    "2025-11-25",
+    "2025-06-18",
+    "2025-03-26",
+    "2024-11-05",
+  ]);
+});

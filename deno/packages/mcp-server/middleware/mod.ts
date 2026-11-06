@@ -93,4 +93,8 @@ export class MiddlewareChain {
 export { AuthMiddleware } from "./auth.ts";
 export { LoggingMiddleware } from "./logging.ts";
 export { RateLimitMiddleware } from "./rate_limit.ts";
-export { ToolFilterMiddleware } from "./tool_filter.ts";
+export {
+  IdentityToolFilterMiddleware,
+  type IdentityToolPredicate,
+  ToolFilterMiddleware,
+} from "./tool_filter.ts";

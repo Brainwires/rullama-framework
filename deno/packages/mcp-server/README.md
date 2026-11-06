@@ -10,7 +10,8 @@ What it implements:
   for any stream). A session handles `initialize` (protocol-version
   negotiation), `ping`, `tools/list`, `tools/call`, `logging/setLevel` and
   `notifications/cancelled`, dispatching requests concurrently; every other
-  method (resources, prompts, sampling, …) gets a method-not-found error.
+  method (resources, prompts, sampling, `server/discover`, …) gets a
+  method-not-found error.
 - **`McpHandler`** -- the interface your application implements (`serverInfo`,
   `capabilities`, `listTools`, `callTool`, optional `onInitialize` /
   `onShutdown`). `RequestContext` carries the per-request `signal`, the
@@ -18,11 +19,16 @@ What it implements:
 - **`McpToolRegistry`** -- tool registration and dispatch by name.
 - **`MiddlewareChain`** with `AuthMiddleware` (bearer token, constant-time
   compare), `LoggingMiddleware`, `RateLimitMiddleware` (per-second, optional
-  per-tool limits) and `ToolFilterMiddleware` (allow / deny lists).
+  per-tool limits), `ToolFilterMiddleware` (allow / deny lists) and
+  `IdentityToolFilterMiddleware` (per-connection-identity tool visibility and
+  call rejection).
 - **Transports** -- `StdioServerTransport` (stdin/stdout),
   `UnixSocketServerTransport` (listener on a socket path) and
   `TcpServerTransport` (listener on a host/port, with an optional first-line
   pre-auth hook), all newline-delimited JSON-RPC with a 16 MiB line cap.
+  `StreamServerTransport` / `StreamServerListener` wrap sockets the host opens
+  itself (FFI, a pre-opened `Deno.Conn`, pipes) — see
+  [Embedding with your own sockets](#embedding-with-your-own-sockets-least-privilege).
   Implement `ServerTransport` for anything else.
 
 The MCP _client_ is `@rullama/mcp-client`; this package imports its wire types.
@@ -173,8 +179,24 @@ gets one `-32003 Unauthorized` line and is disconnected. The
   is not sent. `ping` is answered (before middleware, so it works pre-auth).
   `logging/setLevel` sets the floor for `session.sendLogMessage`.
 - `initialize` echoes the client's `protocolVersion` when supported
-  (`2025-06-18`, `2025-03-26`, `2024-11-05` — `SUPPORTED_PROTOCOL_VERSIONS`,
-  shared with `@rullama/mcp-client`), otherwise answers with the latest.
+  (`2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05` —
+  `SUPPORTED_PROTOCOL_VERSIONS`, shared with `@rullama/mcp-client`), otherwise
+  answers with the latest (`2025-11-25`).
+- On a `2025-11-25` connection a tool that throws is reported as a tool
+  execution error —
+  `{ content: [{ type: "text", text: message }], isError:
+  true }` — so the
+  model can correct itself (SEP-1303); an `AgentNetworkError` for an unknown
+  tool, a refusal or a rate limit stays a JSON-RPC error with its own code.
+  Older revisions keep the `-32603` error. `tools/list` passes the optional
+  `title`, `outputSchema`, `annotations`, `icons` and `_meta` fields of a tool
+  through.
+- `server/discover` (the stateless `2026-07-28` revision's probe, sent first by
+  e.g. Claude Code 2.1.x) is answered immediately with `-32601` Method not
+  found, before middleware. This server speaks the `initialize`-based revisions,
+  and the spec's stdio fallback rule is that a dual-era client treats any
+  non-modern error to that probe as "legacy server" and continues with
+  `initialize`.
 - Client EOF: with `serve()` (default `abortOnEof: true`) in-flight requests are
   aborted; with `run()` / `serveConnection()` (default `false`) they finish and
   their responses are still written. Either way the transport is closed and the
@@ -183,3 +205,101 @@ gets one `-32003 Unauthorized` line and is disconnected. The
   `sendLogMessage(level, data, logger?)` and `ctx.notify(...)` send
   server-initiated notifications; they resolve `false` once the connection is
   gone.
+
+## Embedding with your own sockets (least privilege)
+
+`UnixSocketServerTransport.listen` binds with `Deno.listen` and stats, chmods
+and removes the socket file, so it needs `--allow-read` and `--allow-write` on
+the path. A host that runs with fewer permissions — e.g. a packaged desktop app
+with FFI but no `--allow-write`, `--allow-run` or `--allow-sys` — can open its
+sockets another way and still get the same per-connection session handling
+(framing, concurrent dispatch, cancellation, pre-auth, identity, `onShutdown`).
+Nothing below touches the file system or the network.
+
+- `StreamServerTransport.from({ readable, write, close? })` — one connection.
+  `readable` is a `ReadableStream<Uint8Array>` or any
+  `AsyncIterable<Uint8Array>`; `write(bytes)` may resolve to a byte count, and a
+  short count is continued like `write(2)` (so `conn.write.bind(conn)` works
+  as-is). Serve it with `server.serveConnection(transport, options)`.
+- `new StreamServerListener(source, { transport, identity, preAuth })` — adapts
+  your accept loop (`AsyncIterable<{ readable, write, close?, info? }>`) into a
+  listener for `server.serve(...)`. `McpServer.serve` accepts any
+  `AsyncIterable<AcceptedConnection<ServerTransport>>`, so you can also build
+  the `{ transport, info }` pairs yourself.
+
+```ts ignore
+import {
+  IdentityToolFilterMiddleware,
+  McpServer,
+  StreamServerListener,
+} from "@rullama/mcp-server";
+
+// Your FFI layer: socket()/bind()/listen() once, then accept() per client.
+declare function ffiAccept(listenFd: number): Promise<number>;
+declare function ffiRead(fd: number): Promise<Uint8Array | null>; // null = EOF
+declare function ffiWrite(fd: number, bytes: Uint8Array): Promise<number>;
+declare function ffiClose(fd: number): void;
+declare const listenFd: number;
+
+async function* fdChunks(fd: number) {
+  for (let c = await ffiRead(fd); c !== null; c = await ffiRead(fd)) yield c;
+}
+
+async function* accepted() {
+  while (true) {
+    const fd = await ffiAccept(listenFd);
+    yield {
+      readable: fdChunks(fd),
+      write: (bytes: Uint8Array) => ffiWrite(fd, bytes), // partial counts ok
+      close: () => ffiClose(fd),
+      info: { transport: "unix", path: "/run/app/tile-1.sock" },
+    };
+  }
+}
+
+const server = new McpServer(handler).withMiddleware(
+  // Hide/refuse admin tools unless the connection's identity allows them.
+  new IdentityToolFilterMiddleware((tool, identity) =>
+    !tool.startsWith("admin_") ||
+    (identity as { admin?: boolean } | undefined)?.admin === true
+  ),
+);
+
+const listener = new StreamServerListener(accepted(), {
+  identity: { tile: "1", admin: false },
+});
+await server.serve(listener, {
+  // A non-MCP one-shot line protocol on the same socket.
+  firstLine: (line) =>
+    line.startsWith('{"app":"hook"')
+      ? { action: "close", reply: JSON.stringify({ ok: true }) }
+      : { action: "mcp" },
+});
+```
+
+### First-line hooks on any connection
+
+`serveConnection(transport, { preAuth })` runs the same first-line pre-auth as
+the socket listeners (line consumed; `{ ok: false }` → one `-32003
+Unauthorized`
+line and close; `identity` → `ctx.connection.identity`).
+`serveConnection(transport, { firstLine })` (also
+`serve(listener, {
+firstLine })`) instead sees the first line and returns
+`{ action: "mcp", line?, identity? }` (hand it to MCP),
+`{ action: "consume",
+identity? }` (drop it, MCP starts with the next line) or
+`{ action: "close",
+reply? }` (write the reply line(s), close without MCP).
+`firstLineTimeoutMs` bounds the wait (default 10 s for `preAuth`, none for
+`firstLine`).
+
+### Per-identity tool filtering
+
+`new IdentityToolFilterMiddleware((tool, identity, ctx) => boolean)` decides per
+request from `ctx.connection.identity`: tools the caller may not use are removed
+from its `tools/list` result and its `tools/call` for them is rejected with
+`-32001`.
+`IdentityToolFilterMiddleware.allowFor(identity => names |
+"*" | undefined)` is
+the allow-list shorthand. A throwing predicate fails closed.
