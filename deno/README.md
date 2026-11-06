@@ -26,8 +26,8 @@ was a clean break from 0.10.x.
 | `@rullama/provider`        | LLM chat providers (Anthropic, OpenAI, Google, Bedrock, Vertex, Ollama)                                                                                        |
 | `@rullama/provider-speech` | TTS/STT/ASR clients (Azure, Cartesia, Deepgram, ElevenLabs, Fish, Google TTS, Murf)                                                                            |
 | `@rullama/call-policy`     | Provider decorators — retry / budget / circuit-breaker / cache                                                                                                 |
-| `@rullama/mcp-client`      | Model Context Protocol client (stdio transport) + `McpConfigManager`                                                                                           |
-| `@rullama/mcp-server`      | MCP tool-server framework (initialize / tools/list / tools/call) + middleware pipeline + stdio transport                                                       |
+| `@rullama/mcp-client`      | Model Context Protocol client (stdio + unix-socket/TCP transports, concurrent requests) + `McpConfigManager`                                                   |
+| `@rullama/mcp-server`      | MCP tool-server framework (initialize / tools/list / tools/call, concurrent dispatch) + middleware pipeline + stdio / unix-socket / TCP transports             |
 | `@rullama/network`         | Agent-to-agent networking: identity, routing, discovery, peer table, remote bridge (unauthenticated transport)                                                 |
 | `@rullama/storage`         | StorageBackend trait + Postgres/MySQL/Qdrant/SurrealDB/Pinecone/Weaviate/Milvus + embeddings                                                                   |
 | `@rullama/stores`          | Domain stores: message, conversation, task, plan, agent state, plan templates                                                                                  |

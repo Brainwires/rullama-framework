@@ -204,8 +204,9 @@ Not ported:
 ## MCP server — partial
 
 `@rullama/mcp-server` ports the registry, handler trait, middleware chain (Auth,
-Logging, RateLimit, ToolFilter) and the stdio transport. The server handles
-exactly four MCP methods — `initialize`, `notifications/initialized`,
-`tools/list` and `tools/call` — and answers method-not-found for everything else
-(resources, prompts, sampling, logging). Only `StdioServerTransport` ships;
-implement `ServerTransport` for anything else.
+Logging, RateLimit, ToolFilter) and the stdio transport, plus Deno-only
+unix-socket / TCP listeners (`UnixSocketServerTransport`, `TcpServerTransport`).
+The server handles `initialize`, `notifications/initialized`, `ping`,
+`tools/list`, `tools/call`, `logging/setLevel` and `notifications/cancelled`,
+and answers method-not-found for everything else (resources, prompts, sampling).
+Rust's `HttpServerTransport` is not ported.

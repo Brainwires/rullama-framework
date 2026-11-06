@@ -3,9 +3,11 @@
 Two packages cover inter-agent networking since v0.11.0:
 
 - `@rullama/mcp-server` -- the MCP tool-server framework (`McpServer`,
-  `McpToolRegistry`, the middleware chain, the stdio transport). It implements
-  four MCP methods: `initialize`, `notifications/initialized`, `tools/list` and
-  `tools/call`. Resources, prompts and sampling are not served.
+  `McpToolRegistry`, the middleware chain, stdio / unix-socket / TCP
+  transports). It implements `initialize` (with protocol-version negotiation),
+  `notifications/initialized`, `ping`, `tools/list`, `tools/call`,
+  `logging/setLevel` and `notifications/cancelled`, dispatching requests on a
+  connection concurrently. Resources, prompts and sampling are not served.
 - `@rullama/network` -- agent identity and capability cards, message envelopes,
   routing strategies, a peer table, peer discovery, the remote relay bridge and
   a stdio relay client. It re-exports `AgentNetworkError` / `ErrorCode` from
@@ -62,9 +64,13 @@ const server = new McpServer(handler) // stdio transport by default
 await server.run(); // until the transport closes
 ```
 
-Pass a custom `ServerTransport` (`readRequest()` / `writeResponse()`) to the
-constructor or `withTransport()` to embed the server elsewhere; the shipped
-transport is `StdioServerTransport` only.
+Pass a custom `ServerTransport` (`readRequest()` / `writeResponse()`, optional
+`close()`) to the constructor or `withTransport()` to embed the server
+elsewhere, or serve many connections at once:
+`server.serve(await UnixSocketServerTransport.listen(path, { identity }))` (or
+`TcpServerTransport.listen({ port, preAuth })`) runs one `McpServerSession` per
+connection, and `ctx.connection` tells the handler which one a request came
+from. See the `@rullama/mcp-server` README.
 
 See: `../examples/network/mcp_server.ts`.
 
