@@ -18,7 +18,9 @@
 export { AgentNetworkError, ErrorCode } from "./error.ts";
 
 export {
+  type McpToolAnnotations,
   type McpToolDef,
+  type McpToolOptions,
   McpToolRegistry,
   type ToolHandler,
 } from "./registry.ts";
