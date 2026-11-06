@@ -10,26 +10,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added — `rullama-audio-ffi` (new crate, `publish = false`)
 
 - C ABI (`cdylib` + `rlib`) over rullama-hardware's local audio for hosts that
-  `dlopen` it (e.g. Deno's `Deno.dlopen`): cpal microphone capture (resampled
-  to 16 kHz mono, capped at 120 s, RMS level meter), whisper.cpp
-  speech-to-text via whisper-rs (English, greedy, logging silenced), WebRTC VAD
-  silence trimming, synchronous WAV transcription, capture-to-WAV for cloud STT
-  engines, and stoppable WAV playback. 16 `rla_*` functions, header
-  `crates/rullama-audio-ffi/include/rullama_audio.h`. The macOS dylib's install
-  name is `@rpath/librullama_audio_ffi.dylib`. Optional `metal` feature.
+  `dlopen` it (e.g. Deno's `Deno.dlopen`): cpal microphone capture (mixed to
+  mono, capped at 120 s, RMS level meter, resampled to 16 kHz on stop),
+  whisper.cpp speech-to-text via whisper-rs (English, greedy, logging
+  silenced), WebRTC VAD silence trimming, synchronous WAV transcription,
+  capture-to-WAV for cloud STT engines, and stoppable WAV playback. 17 `rla_*`
+  functions, header `crates/rullama-audio-ffi/include/rullama_audio.h`. The
+  macOS dylib's install name is `@rpath/librullama_audio_ffi.dylib`. Optional
+  `metal` feature.
+- No library-allocated memory crosses the boundary (caller-owned buffers,
+  full length returned, UTF-8-safe truncation); every entry point catches
+  panics; all state is mutex-guarded so calls may come from any thread.
+- `rla_cancel` / `rla_shutdown` abort a whisper inference in flight through
+  whisper.cpp's abort callback; `rla_shutdown` also stops playback, joins the
+  worker threads and unloads the model, for hosts that unload the library.
+  WAV inputs are limited to 256 MiB.
+- `tests/abi.rs` checks the header's prototypes and constants against the Rust
+  exports.
 
 ### Fixed
 
 - `rullama-provider`: the `native` feature now enables `tokio/macros`, which
-  `tokio::select!` in the Ollama streaming path needs. Before this, building a
-  crate that depends on `rullama-provider` on its own (without another
-  workspace member turning the feature on) failed.
+  `tokio::select!` in the Ollama streaming path needs. On its own
+  (`cargo check -p rullama-provider --features native`, or
+  `cargo check -p rullama-hardware --features audio`) the crate failed to
+  compile; workspace builds only passed because another member turned the
+  tokio feature on.
 
 ### CI
 
-- The Linux jobs install `cmake clang libclang-dev` for whisper.cpp
-  (whisper-rs-sys), which the workspace now builds through
-  `rullama-audio-ffi`.
+- The Linux jobs that build the whole workspace install `cmake clang
+  libclang-dev` for whisper.cpp (whisper-rs-sys runs cmake and bindgen), which
+  the workspace now builds through `rullama-audio-ffi`.
 
 ## [0.12.3] - 2026-11-06
 

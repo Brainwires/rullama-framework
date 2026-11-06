@@ -6,7 +6,9 @@
 
 use std::collections::VecDeque;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::thread::JoinHandle;
 
 use crate::dsp;
 use crate::error::{self, ErrorSlot};
@@ -54,7 +56,10 @@ pub trait AudioSource: Send + Sync {
 /// Speech-to-text over 16 kHz mono `f32`.
 pub trait Transcriber: Send + Sync {
     /// Transcribe; the returned text is final (trimmed, no timestamps).
-    fn transcribe(&self, samples_16k: &[f32]) -> Result<String, String>;
+    ///
+    /// Implementations should poll `cancel` and give up (with any `Err`) soon
+    /// after it becomes `true`; the result is discarded then.
+    fn transcribe(&self, samples_16k: &[f32], cancel: &AtomicBool) -> Result<String, String>;
 }
 
 /// Receives mono samples from a capture source (any thread).
@@ -131,9 +136,17 @@ enum Phase {
     },
     Transcribing {
         job: u64,
+        // Set to abort the inference when the job is abandoned.
+        cancel: Arc<AtomicBool>,
     },
     Done(String),
-    Failed,
+    Failed(String),
+}
+
+/// A transcription worker thread, kept so it can be aborted and joined.
+struct Worker {
+    cancel: Arc<AtomicBool>,
+    thread: JoinHandle<()>,
 }
 
 struct Inner {
@@ -141,6 +154,25 @@ struct Inner {
     transcriber: Option<Arc<dyn Transcriber>>,
     job: u64,
     last_captured_ms: u32,
+    /// Worker threads that may still be running (finished ones are pruned).
+    workers: Vec<Worker>,
+    /// Cancel flags of `transcribe_now` calls in flight on caller threads.
+    sync_jobs: Vec<Arc<AtomicBool>>,
+}
+
+/// Removes a `transcribe_now` cancel flag from the engine when the call ends,
+/// even if the transcriber panics.
+struct SyncJob<'a> {
+    inner: &'a Mutex<Inner>,
+    cancel: Arc<AtomicBool>,
+}
+
+impl Drop for SyncJob<'_> {
+    fn drop(&mut self) {
+        lock(self.inner)
+            .sync_jobs
+            .retain(|c| !Arc::ptr_eq(c, &self.cancel));
+    }
 }
 
 /// The state machine. One global instance backs the C ABI.
@@ -151,11 +183,15 @@ pub struct Engine {
 }
 
 /// Transcribe already-prepared audio: empty when there is too little speech.
-fn run_transcriber(t: &dyn Transcriber, prepared: &dsp::Trimmed) -> Result<String, String> {
+fn run_transcriber(
+    t: &dyn Transcriber,
+    prepared: &dsp::Trimmed,
+    cancel: &AtomicBool,
+) -> Result<String, String> {
     if prepared.is_too_short() {
         return Ok(String::new());
     }
-    t.transcribe(&prepared.samples)
+    t.transcribe(&prepared.samples, cancel)
 }
 
 impl Engine {
@@ -167,6 +203,8 @@ impl Engine {
                 transcriber: None,
                 job: 0,
                 last_captured_ms: 0,
+                workers: Vec::new(),
+                sync_jobs: Vec::new(),
             })),
             source,
             errors,
@@ -239,16 +277,22 @@ impl Engine {
         };
         inner.job += 1;
         let job = inner.job;
-        inner.phase = Phase::Transcribing { job };
-        drop(inner);
+        let cancel = Arc::new(AtomicBool::new(false));
+        inner.phase = Phase::Transcribing {
+            job,
+            cancel: Arc::clone(&cancel),
+        };
+        // Threads of abandoned jobs that have since finished need no tracking.
+        inner.workers.retain(|w| !w.thread.is_finished());
 
         let shared = Arc::clone(&self.inner);
         let errors = self.errors;
+        let flag = Arc::clone(&cancel);
         let spawned = std::thread::Builder::new()
             .name("rla-transcribe".into())
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    run_transcriber(transcriber.as_ref(), &dsp::prepare(&samples, rate))
+                    run_transcriber(transcriber.as_ref(), &dsp::prepare(&samples, rate), &flag)
                 }))
                 .unwrap_or_else(|p| {
                     Err(format!(
@@ -257,24 +301,27 @@ impl Engine {
                     ))
                 });
                 let mut inner = lock(&shared);
-                if matches!(inner.phase, Phase::Transcribing { job: j } if j == job) {
+                if matches!(inner.phase, Phase::Transcribing { job: j, .. } if j == job) {
                     inner.phase = match result {
                         Ok(text) => Phase::Done(text),
                         Err(e) => {
-                            errors.set(e);
-                            Phase::Failed
+                            errors.set(e.clone());
+                            Phase::Failed(e)
                         }
                     };
                 }
             });
-        if let Err(e) = spawned {
-            lock(&self.inner).phase = Phase::Failed;
-            return self.fail(
-                error::ERROR,
-                format!("cannot start transcription thread: {e}"),
-            );
+        match spawned {
+            Ok(thread) => {
+                inner.workers.push(Worker { cancel, thread });
+                error::OK
+            }
+            Err(e) => {
+                let msg = format!("cannot start transcription thread: {e}");
+                inner.phase = Phase::Failed(msg.clone());
+                self.fail(error::ERROR, msg)
+            }
         }
-        error::OK
     }
 
     /// `rla_capture_stop_wav`: stop without transcribing, write the trimmed
@@ -293,11 +340,42 @@ impl Engine {
         }
     }
 
-    /// `rla_cancel`.
+    /// `rla_cancel`: stop a capture (its stream is closed before this
+    /// returns) or abort a transcription in flight (its worker exits soon
+    /// after; the result is dropped either way).
     pub fn cancel(&self) -> i32 {
         let mut inner = lock(&self.inner);
+        if let Phase::Transcribing { cancel, .. } = &inner.phase {
+            cancel.store(true, Ordering::SeqCst);
+        }
         inner.phase = Phase::Idle;
         inner.last_captured_ms = 0;
+        error::OK
+    }
+
+    /// `rla_shutdown`: cancel everything, unload the model, abort synchronous
+    /// transcriptions on other threads, and join every worker thread, so no
+    /// thread of this engine is running when it returns (synchronous
+    /// `transcribe_now` callers return soon after with an error).
+    pub fn shutdown(&self) -> i32 {
+        let workers = {
+            let mut inner = lock(&self.inner);
+            for w in &inner.workers {
+                w.cancel.store(true, Ordering::SeqCst);
+            }
+            for c in &inner.sync_jobs {
+                c.store(true, Ordering::SeqCst);
+            }
+            // Dropping a capture handle closes the stream and joins its thread.
+            inner.phase = Phase::Idle;
+            inner.transcriber = None;
+            inner.last_captured_ms = 0;
+            std::mem::take(&mut inner.workers)
+        };
+        // The lock is released: workers take it once to publish (and drop) their result.
+        for w in workers {
+            let _ = w.thread.join();
+        }
         error::OK
     }
 
@@ -308,7 +386,7 @@ impl Engine {
             Phase::Capturing { .. } => STATE_CAPTURING,
             Phase::Transcribing { .. } => STATE_TRANSCRIBING,
             Phase::Done(_) => STATE_DONE,
-            Phase::Failed => STATE_ERROR,
+            Phase::Failed(_) => STATE_ERROR,
         }
     }
 
@@ -345,7 +423,9 @@ impl Engine {
                 }
                 len
             }
-            Phase::Failed => {
+            Phase::Failed(msg) => {
+                // Re-publish: another call may have replaced the last error since.
+                self.errors.set(msg.clone());
                 inner.phase = Phase::Idle;
                 error::ERROR
             }
@@ -355,14 +435,25 @@ impl Engine {
 
     /// Synchronous transcription of 16 kHz-resampled-and-trimmed audio, without
     /// touching the capture state. `Err` carries the return code.
+    ///
+    /// [`Engine::shutdown`] aborts it (it then returns `Err(-1)`).
     pub fn transcribe_now(&self, mono: &[f32], rate: u32) -> Result<String, i32> {
-        let Some(t) = lock(&self.inner).transcriber.clone() else {
-            return Err(self.fail(
-                error::NO_MODEL,
-                "no speech model loaded (call rla_stt_load)",
-            ));
+        let job = SyncJob {
+            inner: &self.inner,
+            cancel: Arc::new(AtomicBool::new(false)),
         };
-        run_transcriber(t.as_ref(), &dsp::prepare(mono, rate))
+        let t = {
+            let mut inner = lock(&self.inner);
+            let Some(t) = inner.transcriber.clone() else {
+                return Err(self.fail(
+                    error::NO_MODEL,
+                    "no speech model loaded (call rla_stt_load)",
+                ));
+            };
+            inner.sync_jobs.push(Arc::clone(&job.cancel));
+            t
+        };
+        run_transcriber(t.as_ref(), &dsp::prepare(mono, rate), &job.cancel)
             .map_err(|e| self.fail(error::ERROR, e))
     }
 }
@@ -423,6 +514,7 @@ mod tests {
         text: Result<String, String>,
         gate: Option<Mutex<mpsc::Receiver<()>>>,
         calls: AtomicUsize,
+        aborted: AtomicUsize,
     }
 
     impl FakeTranscriber {
@@ -431,16 +523,29 @@ mod tests {
                 text: Ok(text.into()),
                 gate: None,
                 calls: AtomicUsize::new(0),
+                aborted: AtomicUsize::new(0),
             })
         }
     }
 
     impl Transcriber for FakeTranscriber {
-        fn transcribe(&self, samples: &[f32]) -> Result<String, String> {
+        fn transcribe(&self, samples: &[f32], cancel: &AtomicBool) -> Result<String, String> {
             assert!(!samples.is_empty());
             self.calls.fetch_add(1, Ordering::SeqCst);
             if let Some(g) = &self.gate {
-                let _ = lock(g).recv();
+                // Wait for the release signal or for cancellation, like
+                // whisper.cpp's abort callback.
+                let gate = lock(g);
+                loop {
+                    match gate.recv_timeout(Duration::from_millis(5)) {
+                        Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    }
+                    if cancel.load(Ordering::SeqCst) {
+                        self.aborted.fetch_add(1, Ordering::SeqCst);
+                        return Err("cancelled".into());
+                    }
+                }
             }
             self.text.clone()
         }
@@ -568,45 +673,137 @@ mod tests {
             text: Err("model exploded".into()),
             gate: None,
             calls: AtomicUsize::new(0),
+            aborted: AtomicUsize::new(0),
         }));
         assert_eq!(engine.capture_start(), 0);
         assert_eq!(engine.capture_stop(), 0);
         wait_for(&engine, STATE_ERROR);
         assert_eq!(errs.get(), "model exploded");
         assert_eq!(engine.capture_start(), error::WRONG_STATE);
+        // The take re-publishes the job's error over the one set since.
+        assert_eq!(errs.get(), "capture_start: not idle");
         assert_eq!(take(&engine, 16).0, error::ERROR);
+        assert_eq!(errs.get(), "model exploded");
         assert_eq!(engine.state(), STATE_IDLE);
     }
 
-    #[test]
-    fn cancel_abandons_transcription_in_flight() {
-        let (src, _) = source(phrase_16k(), 16_000);
-        let engine = Engine::new(src, errors());
+    fn gated(text: &str) -> (Arc<FakeTranscriber>, mpsc::Sender<()>) {
         let (release, gate) = mpsc::channel();
         let t = Arc::new(FakeTranscriber {
-            text: Ok("late".into()),
+            text: Ok(text.into()),
             gate: Some(Mutex::new(gate)),
             calls: AtomicUsize::new(0),
+            aborted: AtomicUsize::new(0),
         });
+        (t, release)
+    }
+
+    fn wait_until(what: &str, cond: impl Fn() -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !cond() {
+            assert!(Instant::now() < deadline, "timed out waiting for {what}");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn cancel_aborts_transcription_in_flight() {
+        let (src, _) = source(phrase_16k(), 16_000);
+        let engine = Engine::new(src, errors());
+        let (t, _release) = gated("late");
         engine.set_transcriber(t.clone());
         assert_eq!(engine.capture_start(), 0);
         assert_eq!(engine.capture_stop(), 0);
         assert_eq!(engine.state(), STATE_TRANSCRIBING);
         assert_eq!(engine.capture_start(), error::WRONG_STATE);
+        wait_until("the job to start", || t.calls.load(Ordering::SeqCst) == 1);
         assert_eq!(engine.cancel(), 0);
         assert_eq!(engine.state(), STATE_IDLE);
-        // A new capture starts while the old job is still running.
+        // A new capture starts while the old worker is still winding down.
         assert_eq!(engine.capture_start(), 0);
-        release.send(()).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while t.calls.load(Ordering::SeqCst) == 0 {
-            assert!(Instant::now() < deadline);
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        std::thread::sleep(Duration::from_millis(100));
-        // The stale result was dropped.
+        // The cancel flag reached the transcriber, which gave up.
+        wait_until("the abort", || t.aborted.load(Ordering::SeqCst) == 1);
+        std::thread::sleep(Duration::from_millis(50));
+        // The stale (failed) result was dropped.
         assert_eq!(engine.state(), STATE_CAPTURING);
         assert_eq!(engine.cancel(), 0);
+    }
+
+    #[test]
+    fn stale_result_after_cancel_is_dropped() {
+        // A transcriber that ignores the cancel flag and returns late.
+        struct Stubborn(Mutex<mpsc::Receiver<()>>);
+        impl Transcriber for Stubborn {
+            fn transcribe(&self, _: &[f32], _: &AtomicBool) -> Result<String, String> {
+                let _ = lock(&self.0).recv();
+                Ok("late".into())
+            }
+        }
+        let (src, _) = source(phrase_16k(), 16_000);
+        let engine = Engine::new(src, errors());
+        let (release, gate) = mpsc::channel();
+        engine.set_transcriber(Arc::new(Stubborn(Mutex::new(gate))));
+        assert_eq!(engine.capture_start(), 0);
+        assert_eq!(engine.capture_stop(), 0);
+        assert_eq!(engine.cancel(), 0);
+        assert_eq!(engine.capture_start(), 0);
+        release.send(()).unwrap();
+        wait_until("the worker to exit", || {
+            lock(&engine.inner)
+                .workers
+                .iter()
+                .all(|w| w.thread.is_finished())
+        });
+        assert_eq!(engine.state(), STATE_CAPTURING);
+        assert_eq!(engine.cancel(), 0);
+    }
+
+    #[test]
+    fn shutdown_stops_capture_aborts_and_joins_workers_and_unloads() {
+        let (src, stopped) = source(phrase_16k(), 16_000);
+        let engine = Engine::new(src, errors());
+        let mut opened = 0;
+        for round in 0..4 {
+            let (t, _release) = gated("x");
+            engine.set_transcriber(t.clone());
+            assert_eq!(engine.capture_start(), 0);
+            opened += 1;
+            assert_eq!(engine.capture_stop(), 0);
+            wait_until("the job to start", || t.calls.load(Ordering::SeqCst) == 1);
+            if round % 2 == 0 {
+                // Abandon the job and leave a new capture running.
+                assert_eq!(engine.cancel(), 0);
+                assert_eq!(engine.capture_start(), 0);
+                opened += 1;
+            } else {
+                // Shut down mid-transcription.
+                assert_eq!(engine.state(), STATE_TRANSCRIBING);
+            }
+
+            assert_eq!(engine.shutdown(), 0);
+            assert_eq!(engine.state(), STATE_IDLE);
+            assert!(!engine.has_transcriber());
+            assert_eq!(t.aborted.load(Ordering::SeqCst), 1);
+            assert!(lock(&engine.inner).workers.is_empty());
+            // Every capture opened so far was closed.
+            assert_eq!(stopped.load(Ordering::SeqCst), opened);
+        }
+        // Idempotent when idle.
+        assert_eq!(engine.shutdown(), 0);
+    }
+
+    #[test]
+    fn shutdown_aborts_synchronous_transcription() {
+        let (src, _) = source(vec![], 16_000);
+        let engine = Arc::new(Engine::new(src, errors()));
+        let (t, _release) = gated("never");
+        engine.set_transcriber(t.clone());
+        let e2 = Arc::clone(&engine);
+        let call = std::thread::spawn(move || e2.transcribe_now(&phrase_16k(), 16_000));
+        wait_until("the call to start", || t.calls.load(Ordering::SeqCst) == 1);
+        assert_eq!(engine.shutdown(), 0);
+        assert_eq!(call.join().unwrap(), Err(error::ERROR));
+        assert!(lock(&engine.inner).sync_jobs.is_empty());
     }
 
     #[test]

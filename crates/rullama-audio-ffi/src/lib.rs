@@ -9,6 +9,16 @@
 //! (message via [`rla_last_error`]), `-2` wrong state, `-3` no model loaded,
 //! `-4` no audio device. Every entry point catches panics and all state sits
 //! behind mutexes, so the functions may be called from any thread.
+//!
+//! Ownership: the library never hands out memory for the caller to free.
+//! [`rla_version`] returns a static string; every other output is copied into
+//! a caller-owned `(buf, cap)` buffer, and the return value is the full byte
+//! length (without the NUL), so `len >= cap` means it was truncated.
+//!
+//! The last-error slot is process-wide (not per thread), so a host that calls
+//! from several threads should read it right after the failing call and
+//! serialize its calls if it needs exact attribution. Call [`rla_shutdown`]
+//! before unloading the library.
 
 use std::ffi::{CStr, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -246,6 +256,19 @@ pub extern "C" fn rla_play_stop() -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn rla_playing() -> i32 {
     guard(0, || i32::from(PLAYER.playing()))
+}
+
+/// Release everything before the host unloads the library: stop capture and
+/// playback (their streams are closed and threads joined), abort and join any
+/// transcription worker, abort `rla_transcribe_wav` calls in flight on other
+/// threads (they return -1), and unload the model. The library stays usable
+/// afterwards (load a model again). Always 0.
+#[unsafe(no_mangle)]
+pub extern "C" fn rla_shutdown() -> i32 {
+    guard(error::OK, || {
+        PLAYER.stop();
+        ENGINE.shutdown()
+    })
 }
 
 #[cfg(test)]

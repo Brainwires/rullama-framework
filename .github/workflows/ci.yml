@@ -196,7 +196,7 @@ jobs:
           toolchain: "1.91"
       - uses: Swatinem/rust-cache@v2
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libasound2-dev libssl-dev pkg-config libdbus-1-dev cmake clang libclang-dev
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libasound2-dev libssl-dev pkg-config libdbus-1-dev
       - name: Test with ${{ matrix.backend }}
         run: cargo test -p rullama-storage --features ${{ matrix.backend }}
 

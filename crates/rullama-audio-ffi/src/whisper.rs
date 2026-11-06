@@ -4,8 +4,10 @@
 //! async; the C ABI loads once (`rla_stt_load`) and transcribes synchronously,
 //! so this wraps a persistent `WhisperContext` directly.
 
+use std::ffi::c_void;
 use std::path::Path;
 use std::sync::Once;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
@@ -22,6 +24,19 @@ const MAX_THREADS: usize = 4;
 fn silence_whisper_logs() {
     static ONCE: Once = Once::new();
     ONCE.call_once(whisper_rs::install_logging_hooks);
+}
+
+/// ggml abort callback: `data` is the `&AtomicBool` cancel flag passed to
+/// [`WhisperTranscriber::transcribe`], which outlives the `full()` call.
+///
+/// whisper-rs's `set_abort_callback_safe` is not used: in 0.15 it leaks the
+/// boxed closure on every call and its trampoline reads the box as the wrong
+/// type.
+unsafe extern "C" fn abort_if_cancelled(data: *mut c_void) -> bool {
+    // SAFETY: `data` is the `&AtomicBool` installed in `transcribe`, alive for
+    // the whole inference that calls back into here.
+    let flag = unsafe { &*data.cast::<AtomicBool>() };
+    flag.load(Ordering::Relaxed)
 }
 
 /// A loaded ggml whisper model.
@@ -71,7 +86,7 @@ fn join_segments<'a>(segments: impl Iterator<Item = &'a str>) -> String {
 }
 
 impl Transcriber for WhisperTranscriber {
-    fn transcribe(&self, samples: &[f32]) -> Result<String, String> {
+    fn transcribe(&self, samples: &[f32], cancel: &AtomicBool) -> Result<String, String> {
         let mut padded;
         let input = if samples.len() < MIN_INPUT_SAMPLES {
             padded = samples.to_vec();
@@ -95,9 +110,17 @@ impl Transcriber for WhisperTranscriber {
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
         params.set_suppress_blank(true);
-        state
-            .full(params, input)
-            .map_err(|e| format!("whisper inference failed: {e}"))?;
+        // SAFETY: the callback only reads the flag through `data`, and `cancel`
+        // outlives `state.full` (the only place whisper.cpp invokes it).
+        unsafe {
+            params.set_abort_callback(Some(abort_if_cancelled));
+            params.set_abort_callback_user_data(std::ptr::from_ref(cancel).cast_mut().cast());
+        }
+        let ran = state.full(params, input);
+        if cancel.load(Ordering::Relaxed) {
+            return Err("transcription cancelled".to_string());
+        }
+        ran.map_err(|e| format!("whisper inference failed: {e}"))?;
 
         let texts: Vec<String> = (0..state.full_n_segments())
             .filter_map(|i| state.get_segment(i))

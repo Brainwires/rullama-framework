@@ -58,8 +58,22 @@ pub fn decode_wav_pcm(bytes: &[u8]) -> Result<Pcm, String> {
     Ok(buffer_to_pcm(&buffer))
 }
 
-/// Read and decode a WAV file.
+/// Largest WAV file `rla_transcribe_wav` / `rla_play_wav` accept (256 MiB,
+/// about 23 min of 48 kHz 16-bit stereo), so a wrong path cannot make the
+/// library read an arbitrarily large file into memory.
+pub const MAX_WAV_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Read and decode a WAV file (at most [`MAX_WAV_BYTES`]).
 pub fn read_wav_pcm(path: &Path) -> Result<Pcm, String> {
+    let len = std::fs::metadata(path)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?
+        .len();
+    if len > MAX_WAV_BYTES {
+        return Err(format!(
+            "{}: {len} bytes is larger than the {MAX_WAV_BYTES}-byte WAV limit",
+            path.display()
+        ));
+    }
     let bytes = std::fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
     decode_wav_pcm(&bytes).map_err(|e| format!("{}: {e}", path.display()))
 }
@@ -377,6 +391,17 @@ pub(crate) mod tests {
             .map(|(a, b)| (a - b).abs())
             .fold(0.0f32, f32::max);
         assert!(max_err < 1e-3, "max error {max_err}");
+    }
+
+    #[test]
+    fn oversized_wav_is_rejected_before_reading() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("huge.wav");
+        // Sparse: no disk space is used and nothing is read.
+        let f = std::fs::File::create(&path).unwrap();
+        f.set_len(MAX_WAV_BYTES + 1).unwrap();
+        let err = read_wav_pcm(&path).unwrap_err();
+        assert!(err.contains("WAV limit"), "{err}");
     }
 
     #[test]

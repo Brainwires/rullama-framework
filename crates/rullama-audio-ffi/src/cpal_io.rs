@@ -33,6 +33,19 @@ struct StreamThread {
     thread: Option<JoinHandle<()>>,
 }
 
+impl StreamThread {
+    /// Tell the thread to stop but do not wait for it. Used when opening the
+    /// device timed out: the thread is stuck inside the audio backend, and
+    /// joining it would block the caller (and every ABI call behind the
+    /// engine lock) for as long as the backend hangs. If the device opens
+    /// later, the thread sees the dropped receiver / closed channel and drops
+    /// the stream at once.
+    fn detach(mut self) {
+        self.stop.take();
+        self.thread.take();
+    }
+}
+
 impl Drop for StreamThread {
     fn drop(&mut self) {
         if let Some(tx) = self.stop.take() {
@@ -136,7 +149,10 @@ impl AudioSource for CpalSource {
         match ready_rx.recv_timeout(OPEN_TIMEOUT) {
             Ok(Ok(())) => Ok(Box::new(handle)),
             Ok(Err(e)) => Err(e),
-            Err(_) => Err(SourceError::Failed("timed out opening audio input".into())),
+            Err(_) => {
+                handle.detach();
+                Err(SourceError::Failed("timed out opening audio input".into()))
+            }
         }
     }
 }
@@ -282,7 +298,12 @@ impl Player {
             .spawn(move || {
                 match open_output(&pcm, done_tx) {
                     Ok(stream) => {
-                        let _ = ready_tx.send(Ok(()));
+                        if ready_tx.send(Ok(())).is_err() {
+                            // play() timed out and gave up on this clip.
+                            drop(stream);
+                            flag.store(false, Ordering::SeqCst);
+                            return;
+                        }
                         // Either the callback ran out of samples or stop() was called.
                         let _ = stop_rx.recv();
                         if flag.load(Ordering::SeqCst) {
@@ -310,7 +331,10 @@ impl Player {
                 Ok(())
             }
             Ok(Err(e)) => Err(e),
-            Err(_) => Err((error::ERROR, "timed out opening audio output".to_string())),
+            Err(_) => {
+                handle.detach();
+                Err((error::ERROR, "timed out opening audio output".to_string()))
+            }
         }
     }
 

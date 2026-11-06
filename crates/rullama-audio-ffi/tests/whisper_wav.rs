@@ -67,3 +67,33 @@ fn transcribes_fixture_wav() {
         -1
     );
 }
+
+#[test]
+fn cancel_flag_aborts_whisper_inference() {
+    use rullama_audio_ffi::engine::Transcriber;
+    use rullama_audio_ffi::whisper::WhisperTranscriber;
+    use std::sync::atomic::AtomicBool;
+
+    let Ok(model) = std::env::var("RLA_WHISPER_MODEL") else {
+        eprintln!(
+            "skipping cancel_flag_aborts_whisper_inference: set RLA_WHISPER_MODEL to a ggml whisper model"
+        );
+        return;
+    };
+    let t = WhisperTranscriber::load(std::path::Path::new(&model)).unwrap();
+    let pcm = rullama_audio_ffi::dsp::read_wav_pcm(std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/phrase.wav"
+    )))
+    .unwrap();
+    let mono = rullama_audio_ffi::dsp::to_mono_16k(&pcm);
+
+    let cancelled = AtomicBool::new(true);
+    assert_eq!(
+        t.transcribe(&mono, &cancelled),
+        Err("transcription cancelled".to_string())
+    );
+    // The same context still works afterwards.
+    let text = t.transcribe(&mono, &AtomicBool::new(false)).unwrap();
+    assert!(normalize(&text).contains("second tile"), "{text:?}");
+}
