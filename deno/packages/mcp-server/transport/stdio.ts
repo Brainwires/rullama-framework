@@ -6,9 +6,7 @@
  */
 
 import type { ServerTransport } from "./traits.ts";
-import { LineReader, MAX_LINE_BYTES } from "./framing.ts";
-
-export { MAX_LINE_BYTES };
+import { LineReader } from "./framing.ts";
 
 /**
  * Stdio-based server transport (stdin/stdout).

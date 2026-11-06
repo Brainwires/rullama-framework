@@ -29,7 +29,10 @@ ignoreDependencies = [
 #   - deno/scripts and the top-level integration tests: run via `deno task` / `deno test`.
 entry = [
   "deno/packages/*/mod.ts",
-  "deno/packages/*/*.ts",
+  # `**`: fallow >= 3.40 no longer lets `*` match `/` (older releases did, which is what
+  # this glob relied on), so package sources in subdirectories (e.g. mcp-server/transport/)
+  # stay entry points as before.
+  "deno/packages/**/*.ts",
   "deno/packages/*/*/mod.ts",
   "deno/examples/**/*.ts",
   "deno/scripts/*.ts",
