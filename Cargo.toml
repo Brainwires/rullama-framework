@@ -24,6 +24,7 @@ members = [
     "crates/rullama-provider-speech",
     "crates/rullama-call-policy",
     "crates/rullama-hardware",
+    "crates/rullama-audio-ffi",
     "crates/rullama-finetune",
     "crates/rullama-test-fixtures",
     "crates/rullama-test-harness",
