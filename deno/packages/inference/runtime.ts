@@ -225,8 +225,16 @@ export async function runAgentLoop(
       await hooks.onBeforeProviderCall(ctx, view);
     }
 
-    // Call provider
-    const response = await agent.callProvider();
+    // Call provider. A call the signal cancelled (providers that honour
+    // `ChatOptions.signal` reject with an AbortError) ends the loop the same
+    // way an abort between iterations does.
+    let response: ChatResponse;
+    try {
+      response = await agent.callProvider();
+    } catch (e) {
+      if (signal?.aborted) return makeResult(false, "Aborted by signal");
+      throw e;
+    }
 
     // -- Hook C: onAfterProviderCall --
     if (hooks?.onAfterProviderCall) {

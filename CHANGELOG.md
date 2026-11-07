@@ -28,6 +28,42 @@ and this project adheres to
 - `tests/abi.rs` checks the header's prototypes and constants against the Rust
   exports.
 
+### Deno/TypeScript port (`@rullama/provider` 0.12.3, `@rullama/core` 0.12.2, `@rullama/inference` 0.12.2)
+
+Native Ollama tool calling and request cancellation. Deno-only; the Rust crates
+and the other `@rullama/*` packages are unchanged.
+
+#### Behaviour changes
+
+- **`@rullama/provider`**: `OllamaChatProvider` no longer drops tool calls. It
+  already sent `tools`; it now maps `message.tool_calls` from `/api/chat`
+  (non-streaming and streaming) to `tool_use` blocks / `tool_use` +
+  `tool_input_delta` stream chunks, the same shapes the OpenAI provider returns.
+  Older servers send no call id, so `call_<n>` is generated. A response with
+  tool calls reports `finish_reason: "tool_calls"` (Ollama says `"stop"`), so
+  agent loops run the tools instead of ending the turn. In requests, assistant
+  `tool_use` blocks are sent as native `tool_calls` (arguments as an object) and
+  each `tool_result` block as a `role: "tool"` message with `tool_name` and
+  `tool_call_id`. Callers no longer need Ollama's OpenAI-compatible `/v1`
+  endpoint to use tools.
+- **`@rullama/provider`**: the shared SSE and NDJSON stream parsers cancel the
+  response body when iteration stops early (consumer `break`, `[DONE]`, abort),
+  closing the HTTP connection instead of leaving it open until the server
+  finishes. Closing the connection is what makes Ollama stop generating.
+- **`@rullama/inference`**: `TaskAgent.execute(signal)` passes the signal to the
+  provider through `ChatOptions.signal`, and `runAgentLoop` returns its usual
+  `"Aborted by signal"` result when the provider call it was waiting on rejects
+  because the signal fired. Other provider errors still propagate.
+
+#### Added
+
+- **`@rullama/core`**: `ChatOptions.signal?: AbortSignal`. Providers that honour
+  it pass it to `fetch`, so aborting cancels the request, including a stream
+  already in progress. It is not serialized by `toJSON()`. `OllamaChatProvider`
+  honours it for `chat` and `streamChat`.
+- **`@rullama/provider`**: the internal `postJson` helper takes an optional
+  `signal`. The other providers do not pass one yet.
+
 ### Deno/TypeScript port (`@rullama/provider` 0.12.2, `@rullama/tool-builtins` 0.12.2, `@rullama/mcp-server` 0.12.4)
 
 Deno-only patches for three packages (the Rust crates and the other 24

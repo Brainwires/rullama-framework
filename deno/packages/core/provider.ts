@@ -44,15 +44,24 @@ export class ChatOptions {
    * their state per model with it.
    */
   model?: string;
+  /**
+   * Cancels the request when aborted. Providers that honour it pass it to
+   * `fetch`, so aborting mid-stream closes the connection (which stops
+   * server-side generation for e.g. Ollama). Never serialized.
+   */
+  signal?: AbortSignal;
 
   /** Create options, applying the defaults (`temperature` 0.7, `max_tokens` 4096) for anything not given. */
-  constructor(opts?: Partial<ChatOptions>) {
-    this.temperature = opts?.temperature ?? 0.7;
-    this.max_tokens = opts?.max_tokens ?? 4096;
-    this.top_p = opts?.top_p;
-    this.stop = opts?.stop;
-    this.system = opts?.system;
-    this.model = opts?.model;
+  constructor(opts: Partial<ChatOptions> = {}) {
+    const { temperature, max_tokens, top_p, stop, system, model, signal } =
+      opts;
+    this.temperature = temperature ?? 0.7;
+    this.max_tokens = max_tokens ?? 4096;
+    this.top_p = top_p;
+    this.stop = stop;
+    this.system = system;
+    this.model = model;
+    this.signal = signal;
   }
 
   /** Set the model (builder). */

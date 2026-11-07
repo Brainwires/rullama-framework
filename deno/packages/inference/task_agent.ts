@@ -240,6 +240,8 @@ export class TaskAgent {
           temperature: this.config.temperature,
           max_tokens: this.config.maxTokens,
           system: systemPrompt,
+          // Aborting the agent also cancels the request in flight.
+          signal,
         });
 
         // Get available tools from the executor
