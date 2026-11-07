@@ -14,6 +14,7 @@ env:
 jobs:
   check:
     name: Check
+    # Stays on GitHub-hosted: sudo apt-get install (sudo is inert on the self-hosted pool).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +37,7 @@ jobs:
 
   clippy:
     name: Clippy
+    # Stays on GitHub-hosted: sudo apt-get install (sudo is inert on the self-hosted pool).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,7 +61,7 @@ jobs:
 
   fmt:
     name: Format
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(startsWith(github.event_name, 'pull_request') && '"ubuntu-latest"' || (startsWith(vars.RUNNER_LINUX_X64, '[') && vars.RUNNER_LINUX_X64 || format('"{0}"', vars.RUNNER_LINUX_X64 || 'ubuntu-latest'))) }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -70,6 +72,7 @@ jobs:
 
   test:
     name: Test
+    # Stays on GitHub-hosted: sudo apt-get install (sudo is inert on the self-hosted pool).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,6 +95,7 @@ jobs:
 
   doc:
     name: Documentation
+    # Stays on GitHub-hosted: sudo apt-get install (sudo is inert on the self-hosted pool).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -114,6 +118,7 @@ jobs:
 
   msrv:
     name: MSRV (Rust 1.91)
+    # Stays on GitHub-hosted: sudo apt-get install (sudo is inert on the self-hosted pool).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -128,7 +133,7 @@ jobs:
 
   stubs:
     name: No stubs
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(startsWith(github.event_name, 'pull_request') && '"ubuntu-latest"' || (startsWith(vars.RUNNER_LINUX_X64, '[') && vars.RUNNER_LINUX_X64 || format('"{0}"', vars.RUNNER_LINUX_X64 || 'ubuntu-latest'))) }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -140,6 +145,7 @@ jobs:
 
   test-features:
     name: Test (${{ matrix.backend }})
+    # Stays on GitHub-hosted: services: containers (no docker on the self-hosted pool).
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -202,6 +208,7 @@ jobs:
 
   macos:
     name: macOS check
+    # Stays on GitHub-hosted: brew install (no Homebrew on the self-hosted pool).
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -215,7 +222,7 @@ jobs:
 
   fallow:
     name: Fallow gate (Deno)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(startsWith(github.event_name, 'pull_request') && '"ubuntu-latest"' || (startsWith(vars.RUNNER_LINUX_X64, '[') && vars.RUNNER_LINUX_X64 || format('"{0}"', vars.RUNNER_LINUX_X64 || 'ubuntu-latest'))) }}
     # The same gate the pre-commit hook runs (.githooks/pre-commit): dead code, complexity
     # and duplication scoped to what this change INTRODUCES (audit gate = new-only), over
     # the Deno tree per fallow.toml. Hard gate from day one — inherited findings on touched
@@ -238,7 +245,7 @@ jobs:
 
   deno:
     name: Deno
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(startsWith(github.event_name, 'pull_request') && '"ubuntu-latest"' || (startsWith(vars.RUNNER_LINUX_X64, '[') && vars.RUNNER_LINUX_X64 || format('"{0}"', vars.RUNNER_LINUX_X64 || 'ubuntu-latest'))) }}
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2

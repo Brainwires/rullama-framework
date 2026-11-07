@@ -13,6 +13,7 @@ env:
 jobs:
   ignored-tests:
     name: Run --ignored tests (${{ matrix.backend }})
+    # Stays on GitHub-hosted: services: containers (no docker on the self-hosted pool).
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -75,6 +76,7 @@ jobs:
 
   embed-network:
     name: Embed-network CLI tests
+    # Stays on GitHub-hosted: sudo apt-get install (sudo is inert on the self-hosted pool).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
