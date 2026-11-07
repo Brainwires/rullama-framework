@@ -41,6 +41,9 @@ export async function* parseSSEStream(
       }
     }
   } finally {
+    // Leaving early (consumer stopped, `[DONE]`, abort) cancels the body so
+    // the HTTP connection closes instead of idling until the server ends it.
+    await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }
@@ -74,6 +77,9 @@ export async function* parseNDJSONStream(
       }
     }
   } finally {
+    // Leaving early (consumer stopped, `[DONE]`, abort) cancels the body so
+    // the HTTP connection closes instead of idling until the server ends it.
+    await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }
