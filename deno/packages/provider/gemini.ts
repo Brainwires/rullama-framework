@@ -6,7 +6,12 @@
  */
 
 import { postJson } from "./http.ts";
-import { mapBlocks, textBlock, toolUseBlock } from "./content.ts";
+import {
+  firstSystemText,
+  mapBlocks,
+  textBlock,
+  toolUseBlock,
+} from "./content.ts";
 import {
   type ChatOptions,
   type ChatResponse,
@@ -249,9 +254,7 @@ export function convertTools(tools: Tool[]): GeminiFunctionDeclaration[] {
 export function getSystemInstruction(
   messages: Message[],
 ): string | undefined {
-  const sys = messages.find((m) => m.role === "system");
-  if (!sys) return undefined;
-  return typeof sys.content === "string" ? sys.content : undefined;
+  return firstSystemText(messages);
 }
 
 /** Build a Gemini request from core types. */

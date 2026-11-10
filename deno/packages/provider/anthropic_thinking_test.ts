@@ -3,44 +3,23 @@
 // only when the caller set them, and ChatOptions.signal passed to fetch.
 
 import { assert, assertEquals, assertRejects } from "@std/assert";
-import {
-  ChatOptions,
-  type ChatResponse,
-  Message,
-  type StreamChunk,
-} from "@rullama/core";
+import { ChatOptions, type ChatResponse, Message } from "@rullama/core";
 import {
   ANTHROPIC_CONTENT_KEY,
   AnthropicChatProvider,
   convertMessages,
 } from "./anthropic.ts";
 import { buildAnthropicBody } from "./anthropic_format.ts";
+import {
+  abortOnFirstChunk,
+  collect,
+  hangingStream,
+  withFetch,
+} from "./test_util.ts";
 
-type Init = RequestInit & { signal?: AbortSignal | null };
-
-/** Run `fn` with `fetch` replaced by `handler`; restores it afterwards. */
-async function withFetch(
-  handler: (init: Init) => Response | Promise<Response>,
-  fn: () => Promise<void>,
-): Promise<void> {
-  const original = globalThis.fetch;
-  globalThis.fetch = (_input, init) => Promise.resolve(handler(init ?? {}));
-  try {
-    await fn();
-  } finally {
-    globalThis.fetch = original;
-  }
-}
-
-const bodyOf = (init: Init) => JSON.parse(String(init.body));
+const bodyOf = (init: RequestInit) => JSON.parse(String(init.body));
 
 const provider = () => new AnthropicChatProvider("test-key", "claude-opus-5-5");
-
-async function collect(it: AsyncIterable<StreamChunk>): Promise<StreamChunk[]> {
-  const out: StreamChunk[] = [];
-  for await (const c of it) out.push(c);
-  return out;
-}
 
 /** An SSE body of `events` (`event:` + `data:` lines, as the API sends). */
 function sse(events: { type: string; [k: string]: unknown }[]): Response {
@@ -420,52 +399,26 @@ Deno.test("Anthropic chat - passes ChatOptions.signal to fetch", async () => {
 Deno.test("Anthropic streamChat - ChatOptions.signal aborts mid-stream", async () => {
   const events: string[] = [];
   let sent: AbortSignal | null | undefined;
+  const first = [
+    { type: "message_start", message: { usage: { input_tokens: 1 } } },
+    {
+      type: "content_block_start",
+      index: 0,
+      content_block: { type: "text", text: "" },
+    },
+    {
+      type: "content_block_delta",
+      index: 0,
+      delta: { type: "text_delta", text: "Hel" },
+    },
+  ].map((e) => `data: ${JSON.stringify(e)}\n\n`).join("");
   await withFetch((init) => {
     sent = init.signal;
-    const enc = new TextEncoder();
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        for (
-          const e of [
-            { type: "message_start", message: { usage: { input_tokens: 1 } } },
-            {
-              type: "content_block_start",
-              index: 0,
-              content_block: { type: "text", text: "" },
-            },
-            {
-              type: "content_block_delta",
-              index: 0,
-              delta: { type: "text_delta", text: "Hel" },
-            },
-          ]
-        ) {
-          controller.enqueue(enc.encode(`data: ${JSON.stringify(e)}\n\n`));
-        }
-        // Like fetch: aborting the signal errors the body.
-        init.signal?.addEventListener("abort", () => {
-          events.push("aborted");
-          controller.error(init.signal!.reason);
-        });
-      },
-    });
-    return new Response(body);
+    return hangingStream(init, events, first);
   }, async () => {
-    const controller = new AbortController();
-    const got: StreamChunk[] = [];
-    await assertRejects(async () => {
-      for await (
-        const c of provider().streamChat(
-          [Message.user("hi")],
-          undefined,
-          new ChatOptions({ signal: controller.signal }),
-        )
-      ) {
-        got.push(c);
-        controller.abort();
-      }
-    });
+    const { got, signal } = await abortOnFirstChunk(provider());
     assertEquals(got, [{ type: "text", text: "Hel" }]);
+    assertEquals(sent, signal);
   });
   assertEquals(events, ["aborted"]);
   assert(sent?.aborted);

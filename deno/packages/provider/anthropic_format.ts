@@ -23,7 +23,12 @@ import {
   toolInputJsonSchema,
   type Usage,
 } from "@rullama/core";
-import { mapBlocks, textBlock, toolUseBlock } from "./content.ts";
+import {
+  firstSystemText,
+  mapBlocks,
+  textBlock,
+  toolUseBlock,
+} from "./content.ts";
 
 /**
  * The `Message.metadata` key under which a reply's raw content blocks are
@@ -174,9 +179,7 @@ export function convertTools(tools: Tool[]): AnthropicTool[] {
 
 /** Extract the first system message from the message list. */
 export function getSystemMessage(messages: Message[]): string | undefined {
-  const sys = messages.find((m) => m.role === "system");
-  if (!sys) return undefined;
-  return typeof sys.content === "string" ? sys.content : undefined;
+  return firstSystemText(messages);
 }
 
 /**
@@ -263,60 +266,157 @@ export interface AnthropicStreamState {
   partialJson?: Record<number, string>;
 }
 
-/** Apply one `content_block_delta` to its block; the chunks it yields. */
-function applyDelta(
+type Delta = NonNullable<AnthropicStreamEvent["delta"]>;
+type DeltaHandler = (
+  block: AnthropicRawBlock,
+  delta: Delta,
+  index: number,
+  state: AnthropicStreamState,
+) => StreamChunk[];
+type EventHandler = (
   event: AnthropicStreamEvent,
   state: AnthropicStreamState,
-): StreamChunk[] {
+) => StreamChunk[];
+
+/** Append `more` to the string field `field` of `block`. */
+function append(
+  block: AnthropicRawBlock,
+  field: string,
+  more: string | undefined,
+): void {
+  block[field] = String(block[field] ?? "") + (more ?? "");
+}
+
+/** `text_delta` (or an untyped delta with text): extend the block, stream the text. */
+const textDelta: DeltaHandler = (block, delta) => {
+  if (!delta.text) return [];
+  append(block, "text", delta.text);
+  return [{ type: "text", text: delta.text }];
+};
+
+/** Tool input JSON: gathered per block (parsed at `content_block_stop`) and streamed. */
+const inputJsonDelta: DeltaHandler = (block, delta, index, state) => {
+  const part = delta.partial_json ?? "";
+  const json = (state.partialJson ??= {});
+  json[index] = (json[index] ?? "") + part;
+  if (block.type !== "tool_use" || !part) return [];
+  return [{
+    type: "tool_input_delta",
+    id: String(block.id ?? ""),
+    partial_json: part,
+  }];
+};
+
+/** Thinking and signatures are kept in the block only, never streamed as text. */
+const DELTA_HANDLERS = new Map<string, DeltaHandler>([
+  ["text_delta", textDelta],
+  ["input_json_delta", inputJsonDelta],
+  ["thinking_delta", (block, delta) => {
+    append(block, "thinking", delta.thinking);
+    return [];
+  }],
+  ["signature_delta", (block, delta) => {
+    append(block, "signature", delta.signature);
+    return [];
+  }],
+  ["citations_delta", (block, delta) => {
+    const citations = Array.isArray(block.citations) ? block.citations : [];
+    block.citations = [...citations, delta.citation];
+    return [];
+  }],
+]);
+
+/** `content_block_delta`: apply the delta to its block; the chunks it yields. */
+const applyDelta: EventHandler = (event, state) => {
   const delta = event.delta;
   if (!delta) return [];
   const index = event.index ?? 0;
   const block = state.blocks?.[index];
-  switch (delta.type) {
-    case "thinking_delta":
-      if (block) {
-        block.thinking = String(block.thinking ?? "") + (delta.thinking ?? "");
-      }
-      return [];
-    case "signature_delta":
-      if (block) {
-        block.signature = String(block.signature ?? "") +
-          (delta.signature ?? "");
-      }
-      return [];
-    case "input_json_delta": {
-      const part = delta.partial_json ?? "";
-      const json = (state.partialJson ??= {});
-      json[index] = (json[index] ?? "") + part;
-      return block?.type === "tool_use" && part
-        ? [{
-          type: "tool_input_delta",
-          id: String(block.id ?? ""),
-          partial_json: part,
-        }]
-        : [];
-    }
-    case "citations_delta":
-      if (block) {
-        const citations = Array.isArray(block.citations) ? block.citations : [];
-        block.citations = [...citations, delta.citation];
-      }
-      return [];
-    default: {
-      // `text_delta` (or an untyped delta with text).
-      if (!delta.text) return [];
-      if (block) block.text = String(block.text ?? "") + delta.text;
-      return [{ type: "text", text: delta.text }];
-    }
+  // A delta for a block that was never started still streams its text.
+  if (!block) return delta.text ? [{ type: "text", text: delta.text }] : [];
+  const handler = DELTA_HANDLERS.get(delta.type ?? "text_delta") ?? textDelta;
+  return handler(block, delta, index, state);
+};
+
+/** `content_block_start`: open the block; announce a tool call. */
+const startBlock: EventHandler = (event, state) => {
+  const start = event.content_block;
+  if (!start) return [];
+  (state.blocks ??= [])[event.index ?? 0] = { ...start };
+  return startChunks(start);
+};
+
+/** The chunks a block's start yields: a tool call's id and name, or initial text. */
+function startChunks(block: AnthropicResponseBlock): StreamChunk[] {
+  if (block.type === "tool_use") {
+    return [{ type: "tool_use", id: block.id ?? "", name: block.name ?? "" }];
   }
+  return block.type === "text" && block.text
+    ? [{ type: "text", text: block.text }]
+    : [];
 }
+
+/** `content_block_stop`: parse the block's gathered tool input JSON. */
+const stopBlock: EventHandler = (event, state) => {
+  const index = event.index ?? 0;
+  const pending = state.partialJson ?? {};
+  const json = pending[index];
+  const block = state.blocks?.[index];
+  if (json === undefined || !block) return [];
+  delete pending[index];
+  try {
+    block.input = json.trim() ? JSON.parse(json) : {};
+  } catch {
+    // Keep the start block's input when the gathered JSON is malformed.
+  }
+  return [];
+};
+
+/** `message_delta`: usage, with the prompt tokens from `message_start`. */
+const usageChunk: EventHandler = (event, state) => {
+  if (!event.usage) return [];
+  const completion = event.usage.output_tokens ?? 0;
+  return [{
+    type: "usage",
+    usage: {
+      prompt_tokens: state.promptTokens,
+      completion_tokens: completion,
+      total_tokens: state.promptTokens + completion,
+    },
+  }];
+};
+
+/** `message_stop`: the reply's raw blocks as a `metadata` chunk, then `done`. */
+const stopMessage: EventHandler = (_event, state) => {
+  const blocks = (state.blocks ?? []).filter((b) => b !== undefined);
+  const done: StreamChunk = { type: "done" };
+  if (blocks.length === 0) return [done];
+  return [
+    { type: "metadata", metadata: { [ANTHROPIC_CONTENT_KEY]: blocks } },
+    done,
+  ];
+};
+
+const EVENT_HANDLERS = new Map<string, EventHandler>([
+  ["message_start", (event, state) => {
+    state.promptTokens = event.message?.usage?.input_tokens ?? 0;
+    state.blocks = [];
+    state.partialJson = {};
+    return [];
+  }],
+  ["content_block_start", startBlock],
+  ["content_block_delta", applyDelta],
+  ["content_block_stop", stopBlock],
+  ["message_delta", usageChunk],
+  ["message_stop", stopMessage],
+]);
 
 /**
  * Map one stream event to zero or more core chunks. Usage is reported on
  * `message_delta` with the prompt tokens remembered from `message_start`.
  *
- * The reply's raw blocks are gathered in `state` (text, thinking and
- * signature deltas, tool input JSON) and, on `message_stop`, sent as a
+ * The reply's raw blocks are gathered in `state` (text, thinking, signature
+ * and citation deltas, tool input JSON) and, on `message_stop`, sent as a
  * `metadata` chunk (`{ [ANTHROPIC_CONTENT_KEY]: blocks }`) just before `done`:
  * store it on the assembled assistant message so the next request sends the
  * reply back unchanged.
@@ -325,72 +425,5 @@ export function streamEventToChunks(
   event: AnthropicStreamEvent,
   state: AnthropicStreamState,
 ): StreamChunk[] {
-  switch (event.type) {
-    case "message_start":
-      state.promptTokens = event.message?.usage?.input_tokens ?? 0;
-      state.blocks = [];
-      state.partialJson = {};
-      return [];
-    case "content_block_start": {
-      const start = event.content_block;
-      if (!start) return [];
-      const index = event.index ?? 0;
-      const block: AnthropicRawBlock = { ...start };
-      (state.blocks ??= [])[index] = block;
-      if (block.type === "tool_use") {
-        return [{
-          type: "tool_use",
-          id: String(block.id ?? ""),
-          name: String(block.name ?? ""),
-        }];
-      }
-      return block.type === "text" && typeof block.text === "string" &&
-          block.text
-        ? [{ type: "text", text: block.text }]
-        : [];
-    }
-    case "content_block_delta":
-      return applyDelta(event, state);
-    case "content_block_stop": {
-      const index = event.index ?? 0;
-      const pending = state.partialJson ?? {};
-      const json = pending[index];
-      const block = state.blocks?.[index];
-      if (json !== undefined && block) {
-        try {
-          block.input = json.trim() ? JSON.parse(json) : {};
-        } catch {
-          // Keep the start block's input when the gathered JSON is malformed.
-        }
-        delete pending[index];
-      }
-      return [];
-    }
-    case "message_delta": {
-      if (!event.usage) return [];
-      const completion = event.usage.output_tokens ?? 0;
-      return [{
-        type: "usage",
-        usage: {
-          prompt_tokens: state.promptTokens,
-          completion_tokens: completion,
-          total_tokens: state.promptTokens + completion,
-        },
-      }];
-    }
-    case "message_stop": {
-      const blocks = (state.blocks ?? []).filter((b) => b !== undefined);
-      return blocks.length > 0
-        ? [
-          {
-            type: "metadata",
-            metadata: { [ANTHROPIC_CONTENT_KEY]: blocks },
-          },
-          { type: "done" },
-        ]
-        : [{ type: "done" }];
-    }
-    default:
-      return [];
-  }
+  return EVENT_HANDLERS.get(event.type)?.(event, state) ?? [];
 }
