@@ -30,6 +30,38 @@ Deno.test("ChatOptions.factual", () => {
   assertEquals(opts.top_p, 0.9);
 });
 
+Deno.test("ChatOptions - the default temperature is marked, an explicit one is not", () => {
+  const defaulted = new ChatOptions();
+  assertEquals(defaulted.temperature, ChatOptions.DEFAULT_TEMPERATURE);
+  assertEquals(defaulted.temperature_defaulted, true);
+  assertEquals(ChatOptions.explicitTemperature(defaulted), undefined);
+
+  const given = new ChatOptions({ temperature: 0.7 });
+  assertEquals(given.temperature_defaulted, undefined);
+  assertEquals(ChatOptions.explicitTemperature(given), 0.7);
+
+  const built = ChatOptions.create().setTemperature(0.7);
+  assertEquals(built.temperature_defaulted, false);
+  assertEquals(ChatOptions.explicitTemperature(built), 0.7);
+
+  assertEquals(ChatOptions.explicitTemperature({ temperature: 0 }), 0);
+  assertEquals(ChatOptions.explicitTemperature({}), undefined);
+  // Copies of defaulted options stay defaulted.
+  assertEquals(new ChatOptions(defaulted).temperature_defaulted, true);
+});
+
+Deno.test("ChatOptions - top_k: no default, builder, serialized; the default mark is not", () => {
+  assertEquals(new ChatOptions().top_k, undefined);
+  const opts = ChatOptions.create().setTopK(40);
+  assertEquals(opts.top_k, 40);
+  assertEquals(new ChatOptions({ top_k: 3 }).top_k, 3);
+  assertEquals(opts.toJSON(), {
+    temperature: 0.7,
+    max_tokens: 4096,
+    top_k: 40,
+  });
+});
+
 Deno.test("ChatOptions.creative", () => {
   const opts = ChatOptions.creative(400);
   assertEquals(opts.temperature, 0.3);

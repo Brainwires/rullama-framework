@@ -40,7 +40,11 @@ export { lookup, PROVIDER_REGISTRY, type ProviderEntry } from "./registry.ts";
 export { parseNDJSONStream, parseSSEStream } from "./sse.ts";
 
 // Providers
-export { AnthropicChatProvider } from "./anthropic.ts";
+export {
+  ANTHROPIC_CONTENT_KEY,
+  AnthropicChatProvider,
+  type AnthropicRawBlock,
+} from "./anthropic.ts";
 export { OpenAiChatProvider } from "./openai.ts";
 export { OpenAiResponsesProvider } from "./openai_responses.ts";
 export { BedrockProvider } from "./bedrock.ts";

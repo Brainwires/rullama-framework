@@ -1,12 +1,18 @@
 // deno-lint-ignore-file no-explicit-any
 import { assert, assertEquals, assertRejects } from "@std/assert";
-import { ChatOptions, Message, type StreamChunk } from "@rullama/core";
+import { ChatOptions, Message } from "@rullama/core";
 import {
   convertMessages,
   convertTools,
   OllamaChatProvider,
   parseOllamaResponse,
 } from "./ollama.ts";
+import {
+  abortOnFirstChunk,
+  collect,
+  hangingStream,
+  withFetch,
+} from "./test_util.ts";
 
 // ---------------------------------------------------------------------------
 // Provider name tests
@@ -234,28 +240,8 @@ const WEATHER_TOOL = {
   },
 };
 
-/** Run `fn` with `fetch` replaced by `handler`; restores it afterwards. */
-async function withFetch(
-  handler: (init: RequestInit) => Response | Promise<Response>,
-  fn: () => Promise<void>,
-): Promise<void> {
-  const original = globalThis.fetch;
-  globalThis.fetch = (_input, init) => Promise.resolve(handler(init ?? {}));
-  try {
-    await fn();
-  } finally {
-    globalThis.fetch = original;
-  }
-}
-
 const ndjson = (...objs: unknown[]) =>
   new Response(objs.map((o) => JSON.stringify(o) + "\n").join(""));
-
-async function collect(it: AsyncIterable<StreamChunk>): Promise<StreamChunk[]> {
-  const out: StreamChunk[] = [];
-  for await (const c of it) out.push(c);
-  return out;
-}
 
 Deno.test("parseOllamaResponse - tool_calls become tool_use blocks", () => {
   const r = parseOllamaResponse({
@@ -462,59 +448,34 @@ Deno.test("OllamaChatProvider.streamChat - streamed tool calls", async () => {
   );
 });
 
-/** A fake streaming reply that sends one chunk, then hangs until the request
- * signal aborts (as real fetch does) or the reader cancels it. */
-function hangingStream(init: RequestInit, events: string[]): Response {
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(
-        new TextEncoder().encode(
-          JSON.stringify({ message: { content: "Hel" }, done: false }) + "\n",
-        ),
-      );
-      init.signal?.addEventListener("abort", () => {
-        events.push("aborted");
-        controller.error(init.signal!.reason);
-      });
-    },
-    cancel() {
-      events.push("cancelled");
-    },
-  });
-  return new Response(body);
-}
+/** A fake streaming reply that sends one chunk ("Hel"), then hangs until the
+ * request signal aborts or the reader cancels it. */
+const hangingOllama = (init: RequestInit, events: string[]) =>
+  hangingStream(
+    init,
+    events,
+    JSON.stringify({ message: { content: "Hel" }, done: false }) + "\n",
+  );
 
 Deno.test("OllamaChatProvider.streamChat - ChatOptions.signal aborts mid-stream", async () => {
   const events: string[] = [];
   let sentSignal: AbortSignal | null | undefined;
   await withFetch((init) => {
     sentSignal = init.signal;
-    return hangingStream(init, events);
+    return hangingOllama(init, events);
   }, async () => {
-    const controller = new AbortController();
-    const provider = new OllamaChatProvider("qwen3", "http://ollama.test");
-    const got: StreamChunk[] = [];
-    await assertRejects(async () => {
-      for await (
-        const c of provider.streamChat(
-          [Message.user("hi")],
-          undefined,
-          new ChatOptions({ signal: controller.signal }),
-        )
-      ) {
-        got.push(c);
-        controller.abort();
-      }
-    });
+    const { got, signal } = await abortOnFirstChunk(
+      new OllamaChatProvider("qwen3", "http://ollama.test"),
+    );
     assertEquals(got, [{ type: "text", text: "Hel" }]);
-    assertEquals(sentSignal, controller.signal);
+    assertEquals(sentSignal, signal);
   });
   assertEquals(events, ["aborted"]);
 });
 
 Deno.test("OllamaChatProvider.streamChat - stopping early cancels the response body", async () => {
   const events: string[] = [];
-  await withFetch((init) => hangingStream(init, events), async () => {
+  await withFetch((init) => hangingOllama(init, events), async () => {
     const provider = new OllamaChatProvider("qwen3", "http://ollama.test");
     for await (
       const _ of provider.streamChat(

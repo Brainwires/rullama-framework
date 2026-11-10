@@ -6,7 +6,13 @@
  * @module
  */
 
-import type { ContentBlock, MessageContent } from "@rullama/core";
+import type { ContentBlock, Message, MessageContent } from "@rullama/core";
+
+/** The first system message's text, if it is a plain string. */
+export function firstSystemText(messages: Message[]): string | undefined {
+  const sys = messages.find((m) => m.role === "system");
+  return typeof sys?.content === "string" ? sys.content : undefined;
+}
 
 /** Collapse parsed blocks to the core `MessageContent` convention. */
 export function collapseBlocks(blocks: ContentBlock[]): MessageContent {

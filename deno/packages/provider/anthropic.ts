@@ -30,8 +30,20 @@ const ANTHROPIC_VERSION = "2023-06-01";
 // AnthropicChatProvider
 // ---------------------------------------------------------------------------
 
-/** High-level Anthropic chat provider implementing the Provider interface.
- * Equivalent to Rust's `AnthropicChatProvider`. */
+/**
+ * High-level Anthropic chat provider implementing the Provider interface.
+ * Equivalent to Rust's `AnthropicChatProvider`.
+ *
+ * - Each reply keeps its raw content blocks (thinking, redacted thinking,
+ *   signatures) in `message.metadata.anthropicContent`
+ *   ({@link ANTHROPIC_CONTENT_KEY}); streamed replies deliver them in a
+ *   `metadata` chunk before `done`. Keep that metadata on the message in the
+ *   history and the next request sends the reply back exactly as it came.
+ * - `temperature`, `top_p` and `top_k` are sent only when the caller set
+ *   them (current models refuse sampling parameters); `ChatOptions`'
+ *   default temperature is not sent.
+ * - `ChatOptions.signal` aborts the request, streaming included.
+ */
 export class AnthropicChatProvider implements Provider {
   readonly name: string;
   private readonly apiKey: string;
@@ -81,6 +93,7 @@ export class AnthropicChatProvider implements Provider {
   ): Promise<ChatResponse> {
     const response = await this.post(
       this.body(messages, tools, options, false),
+      options.signal,
     );
     return parseAnthropicResponse(await response.json());
   }
@@ -90,17 +103,26 @@ export class AnthropicChatProvider implements Provider {
     tools: Tool[] | undefined,
     options: ChatOptions,
   ): AsyncIterable<StreamChunk> {
-    const response = await this.post(this.body(messages, tools, options, true));
+    const response = await this.post(
+      this.body(messages, tools, options, true),
+      options.signal,
+    );
     if (!response.body) {
       throw new Error("Anthropic streaming response has no body");
     }
     const state: AnthropicStreamState = { promptTokens: 0 };
     for await (const data of parseSSEStream(response.body)) {
-      let event: AnthropicStreamEvent;
+      let event: AnthropicStreamEvent & { error?: { message?: string } };
       try {
         event = JSON.parse(data);
       } catch {
         continue;
+      }
+      if (event.type === "error") {
+        // e.g. `overloaded_error` mid-stream: the reply is incomplete.
+        throw new Error(
+          `Anthropic stream error: ${event.error?.message ?? data}`,
+        );
       }
       yield* streamEventToChunks(event, state);
     }
@@ -124,20 +146,32 @@ export class AnthropicChatProvider implements Provider {
     });
   }
 
-  /** POST a Messages request; throws with the response body on a non-2xx status. */
-  private post(body: Record<string, unknown>): Promise<Response> {
-    return postJson("Anthropic", this.baseUrl, {
-      "x-api-key": this.apiKey,
-      "anthropic-version": ANTHROPIC_VERSION,
-    }, body);
+  /** POST a Messages request (aborted by `signal`); throws with the response
+   * body on a non-2xx status. */
+  private post(
+    body: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    return postJson(
+      "Anthropic",
+      this.baseUrl,
+      {
+        "x-api-key": this.apiKey,
+        "anthropic-version": ANTHROPIC_VERSION,
+      },
+      body,
+      signal,
+    );
   }
 }
 
 // Conversion helpers live in anthropic_format.ts (shared with Bedrock); re-exported
 // so `import { convertMessages } from "./anthropic.ts"` keeps working.
 export {
+  ANTHROPIC_CONTENT_KEY,
   type AnthropicContentBlock,
   type AnthropicMessage,
+  type AnthropicRawBlock,
   type AnthropicResponse,
   type AnthropicStreamEvent,
   type AnthropicTool,
