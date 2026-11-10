@@ -87,11 +87,40 @@ export interface AnthropicResponseBlock {
   input?: any;
 }
 
+/**
+ * The `Message.metadata` key under which a reply's `stop_details` are kept
+ * (e.g. `{ category, explanation }` when `finish_reason` is `"refusal"`).
+ * Present only when the API sent non-null `stop_details`. Never sent back.
+ */
+export const ANTHROPIC_STOP_DETAILS_KEY = "anthropicStopDetails";
+
+/** Why a reply stopped, beyond `stop_reason` (e.g. a refusal's category). */
+export interface AnthropicStopDetails {
+  /** E.g. the refusal category. */
+  category?: string | null;
+  /** A human-readable explanation, when the API gives one. */
+  explanation?: string;
+  /** Any other fields, as the API sent them. */
+  [field: string]: unknown;
+}
+
 /** A non-streaming response in Anthropic wire format. */
 export interface AnthropicResponse {
   content: AnthropicResponseBlock[];
   stop_reason: string;
+  stop_details?: AnthropicStopDetails | null;
   usage: { input_tokens: number; output_tokens: number };
+}
+
+/** The reply metadata: raw blocks and stop details, each only when present. */
+function replyMetadata(
+  blocks: readonly unknown[],
+  stopDetails: AnthropicStopDetails | null | undefined,
+): Record<string, unknown> | undefined {
+  const metadata: Record<string, unknown> = {};
+  if (blocks.length > 0) metadata[ANTHROPIC_CONTENT_KEY] = blocks;
+  if (stopDetails) metadata[ANTHROPIC_STOP_DETAILS_KEY] = stopDetails;
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
 /** A streaming event in Anthropic wire format (the subset we consume). */
@@ -110,6 +139,10 @@ export interface AnthropicStreamEvent {
     signature?: string;
     partial_json?: string;
     citation?: unknown;
+    /** On `message_delta`. */
+    stop_reason?: string;
+    /** On `message_delta`: e.g. a refusal's category. */
+    stop_details?: AnthropicStopDetails | null;
   };
   usage?: { input_tokens?: number; output_tokens?: number };
 }
@@ -149,23 +182,52 @@ function storedBlocks(m: Message): AnthropicRawBlock[] | undefined {
     : undefined;
 }
 
+/** A message's core content as wire blocks, empty text blocks left out. */
+function wireContent(m: Message): AnthropicContentBlock[] {
+  const blocks = typeof m.content === "string"
+    ? [{ type: "text" as const, text: m.content }]
+    : m.content.map(convertBlock);
+  return blocks.filter((b): b is AnthropicContentBlock =>
+    b !== null && !(b.type === "text" && b.text === "")
+  );
+}
+
 /**
- * Convert core Messages to Anthropic wire format (system messages are lifted
- * out). An assistant message with raw reply blocks in
- * `metadata[ANTHROPIC_CONTENT_KEY]` is sent as those blocks, unchanged.
+ * Convert core Messages to Anthropic wire format.
+ *
+ * - System messages are lifted out (the system prompt goes in `system`).
+ * - An assistant message with raw reply blocks in
+ *   `metadata[ANTHROPIC_CONTENT_KEY]` is sent as those blocks, unchanged, as
+ *   a message of its own (never merged or altered).
+ * - Empty text blocks are left out, and a message left with no content is
+ *   dropped (the API refuses both).
+ * - Consecutive user turns (`user` and `tool` messages, both sent as
+ *   `user`) are merged into one, so the results of parallel tool calls
+ *   arrive together. Assistant turns are not merged.
  */
 export function convertMessages(messages: Message[]): AnthropicMessage[] {
-  return messages
-    .filter((m) => m.role !== "system")
-    .map((m) => ({
-      role: m.role === "assistant" ? "assistant" : "user",
-      content: storedBlocks(m) ??
-        (typeof m.content === "string"
-          ? [{ type: "text" as const, text: m.content }]
-          : m.content.map(convertBlock).filter((
-            b,
-          ): b is AnthropicContentBlock => b !== null)),
-    }));
+  const out: AnthropicMessage[] = [];
+  let lastMergeable = false;
+  for (const m of messages) {
+    if (m.role === "system") continue;
+    const stored = storedBlocks(m);
+    if (stored) {
+      out.push({ role: "assistant", content: stored });
+      lastMergeable = false;
+      continue;
+    }
+    const content = wireContent(m);
+    if (content.length === 0) continue;
+    const role = m.role === "assistant" ? "assistant" : "user";
+    const last = out.at(-1);
+    if (role === "user" && lastMergeable && last) {
+      last.content = [...last.content, ...content];
+    } else {
+      out.push({ role, content });
+    }
+    lastMergeable = role === "user";
+  }
+  return out;
 }
 
 /** Convert core Tools to Anthropic wire format. */
@@ -202,7 +264,8 @@ export function parseContentBlocks(
 
 /**
  * Parse an {@link AnthropicResponse} into a core ChatResponse. The message
- * carries the reply's raw blocks in `metadata[ANTHROPIC_CONTENT_KEY]`.
+ * carries the reply's raw blocks in `metadata[ANTHROPIC_CONTENT_KEY]` and its
+ * `stop_details`, if any, in `metadata[ANTHROPIC_STOP_DETAILS_KEY]`.
  */
 export function parseAnthropicResponse(
   response: AnthropicResponse,
@@ -213,13 +276,12 @@ export function parseAnthropicResponse(
     total_tokens: response.usage.input_tokens + response.usage.output_tokens,
   };
   const blocks = Array.isArray(response.content) ? response.content : [];
+  const metadata = replyMetadata(blocks, response.stop_details);
   return {
     message: new Message({
       role: "assistant",
       content: parseContentBlocks(blocks),
-      ...(blocks.length > 0
-        ? { metadata: { [ANTHROPIC_CONTENT_KEY]: blocks } }
-        : {}),
+      ...(metadata ? { metadata } : {}),
     }),
     usage,
     finish_reason: response.stop_reason,
@@ -264,6 +326,8 @@ export interface AnthropicStreamState {
   blocks?: AnthropicRawBlock[];
   /** Tool-call input JSON gathered so far, by block index. */
   partialJson?: Record<number, string>;
+  /** The reply's `stop_details`, from `message_delta`. */
+  stopDetails?: AnthropicStopDetails | null;
 }
 
 type Delta = NonNullable<AnthropicStreamEvent["delta"]>;
@@ -372,8 +436,10 @@ const stopBlock: EventHandler = (event, state) => {
   return [];
 };
 
-/** `message_delta`: usage, with the prompt tokens from `message_start`. */
+/** `message_delta`: remember `stop_details`; usage, with the prompt tokens
+ * from `message_start`. */
 const usageChunk: EventHandler = (event, state) => {
+  if (event.delta?.stop_details) state.stopDetails = event.delta.stop_details;
   if (!event.usage) return [];
   const completion = event.usage.output_tokens ?? 0;
   return [{
@@ -386,15 +452,13 @@ const usageChunk: EventHandler = (event, state) => {
   }];
 };
 
-/** `message_stop`: the reply's raw blocks as a `metadata` chunk, then `done`. */
+/** `message_stop`: the reply's raw blocks (and stop details) as a `metadata`
+ * chunk, then `done`. */
 const stopMessage: EventHandler = (_event, state) => {
   const blocks = (state.blocks ?? []).filter((b) => b !== undefined);
+  const metadata = replyMetadata(blocks, state.stopDetails);
   const done: StreamChunk = { type: "done" };
-  if (blocks.length === 0) return [done];
-  return [
-    { type: "metadata", metadata: { [ANTHROPIC_CONTENT_KEY]: blocks } },
-    done,
-  ];
+  return metadata ? [{ type: "metadata", metadata }, done] : [done];
 };
 
 const EVENT_HANDLERS = new Map<string, EventHandler>([
@@ -417,9 +481,10 @@ const EVENT_HANDLERS = new Map<string, EventHandler>([
  *
  * The reply's raw blocks are gathered in `state` (text, thinking, signature
  * and citation deltas, tool input JSON) and, on `message_stop`, sent as a
- * `metadata` chunk (`{ [ANTHROPIC_CONTENT_KEY]: blocks }`) just before `done`:
- * store it on the assembled assistant message so the next request sends the
- * reply back unchanged.
+ * `metadata` chunk (`{ [ANTHROPIC_CONTENT_KEY]: blocks }`, plus
+ * `[ANTHROPIC_STOP_DETAILS_KEY]` when `message_delta` carried `stop_details`)
+ * just before `done`: store it on the assembled assistant message so the next
+ * request sends the reply back unchanged.
  */
 export function streamEventToChunks(
   event: AnthropicStreamEvent,

@@ -50,6 +50,18 @@ Deno.test("ChatOptions - the default temperature is marked, an explicit one is n
   assertEquals(new ChatOptions(defaulted).temperature_defaulted, true);
 });
 
+Deno.test("ChatOptions - extra_headers / extra_body: kept, copied, never serialized", () => {
+  const opts = new ChatOptions({
+    extra_headers: { "anthropic-beta": "x" },
+    extra_body: { fallbacks: "default" },
+  });
+  assertEquals(opts.extra_headers, { "anthropic-beta": "x" });
+  assertEquals(opts.extra_body, { fallbacks: "default" });
+  assertEquals(new ChatOptions(opts).extra_body, { fallbacks: "default" });
+  assertEquals(new ChatOptions().extra_headers, undefined);
+  assertEquals(opts.toJSON(), { temperature: 0.7, max_tokens: 4096 });
+});
+
 Deno.test("ChatOptions - top_k: no default, builder, serialized; the default mark is not", () => {
   assertEquals(new ChatOptions().top_k, undefined);
   const opts = ChatOptions.create().setTopK(40);
