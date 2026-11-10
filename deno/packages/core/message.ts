@@ -76,7 +76,11 @@ export interface MessageData {
   content: MessageContent;
   /** Optional participant name (e.g. the tool or agent that produced it). */
   name?: string;
-  /** Arbitrary application data carried with the message; providers do not read it. */
+  /**
+   * Arbitrary application data carried with the message. Providers ignore it,
+   * except for a key a provider itself wrote on its own reply (e.g.
+   * `anthropicContent`, the raw blocks `AnthropicChatProvider` sends back).
+   */
   metadata?: any;
 }
 
@@ -89,7 +93,11 @@ export class Message implements MessageData {
   content: MessageContent;
   /** Optional participant name (e.g. the tool or agent that produced it). */
   name?: string;
-  /** Arbitrary application data carried with the message; providers do not read it. */
+  /**
+   * Arbitrary application data carried with the message. Providers ignore it,
+   * except for a key a provider itself wrote on its own reply (e.g.
+   * `anthropicContent`, the raw blocks `AnthropicChatProvider` sends back).
+   */
   metadata?: any;
 
   /** Wrap plain message data; the static factories cover the common roles. */
@@ -218,6 +226,13 @@ export type StreamChunk =
     parameters: any;
   }
   | { type: "usage"; usage: Usage }
+  /**
+   * Provider data for the assistant message being streamed: merge it into
+   * that message's `metadata` when building the message from the chunks.
+   * E.g. `AnthropicChatProvider` sends the reply's raw content blocks
+   * (`anthropicContent`, thinking included) once the reply is complete.
+   */
+  | { type: "metadata"; metadata: Record<string, unknown> }
   | { type: "done" };
 
 /** Serialize messages into the STATELESS protocol format for conversation history.

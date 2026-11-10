@@ -28,6 +28,48 @@ and this project adheres to
 - `tests/abi.rs` checks the header's prototypes and constants against the Rust
   exports.
 
+### Deno/TypeScript port (`@rullama/provider` 0.12.4, `@rullama/core` 0.12.3)
+
+`AnthropicChatProvider` works with current Claude models (Opus 5.5, Sonnet
+5.5): thinking blocks survive the round trip, no default sampling options, and
+cancellation. Deno-only; the Rust crates and the other `@rullama/*` packages are
+unchanged.
+
+#### Behaviour changes
+
+- **`@rullama/provider`**: Anthropic replies keep their raw content blocks
+  (`thinking` with its `signature`, `redacted_thinking`, text, tool calls, in
+  order) in `message.metadata.anthropicContent` (`ANTHROPIC_CONTENT_KEY`). An
+  assistant message carrying them is sent back exactly as it came, instead of
+  being rebuilt from `content`, which dropped the thinking blocks these models
+  require back unchanged. `message.content` still holds only text and tool
+  calls. Also applies to `BedrockProvider`, which shares the wire format.
+- **`@rullama/provider`**: Anthropic (and Bedrock) requests send `temperature`,
+  `top_p` and `top_k` only when the caller set them. `ChatOptions`' default
+  temperature (0.7) is no longer sent; current models refuse sampling
+  parameters with a 400. The other providers still send the default.
+- **`@rullama/provider`**: `AnthropicChatProvider` and `BedrockProvider` pass
+  `ChatOptions.signal` to `fetch`, for `chat` and `streamChat`.
+- **`@rullama/provider`**: Anthropic streaming emits `tool_use` and
+  `tool_input_delta` chunks (it dropped tool calls), gathers text, thinking,
+  signature, citation and tool-input deltas into the reply's blocks and sends
+  them as a `metadata` chunk (`{ anthropicContent: [...] }`) before `done`. An
+  `error` event mid-stream rejects instead of ending the stream silently.
+- **`@rullama/provider`**: `tool_result` blocks keep `is_error: true` on the
+  Anthropic wire.
+
+#### Added
+
+- **`@rullama/core`**: `ChatOptions.temperature_defaulted` (set when the
+  constructor filled in the default temperature; `setTemperature` clears it),
+  `ChatOptions.explicitTemperature(options)`, `ChatOptions.DEFAULT_TEMPERATURE`,
+  and `top_k` / `setTopK`. `ChatOptions().temperature` is still 0.7.
+- **`@rullama/core`**: `StreamChunk` variant
+  `{ type: "metadata"; metadata: Record<string, unknown> }`: provider data to
+  merge into the streamed assistant message's `metadata`.
+- **`@rullama/provider`**: `ANTHROPIC_CONTENT_KEY` and the `AnthropicRawBlock`
+  type are exported.
+
 ### Deno/TypeScript port (`@rullama/provider` 0.12.3, `@rullama/core` 0.12.2, `@rullama/inference` 0.12.2)
 
 Native Ollama tool calling and request cancellation. Deno-only; the Rust crates

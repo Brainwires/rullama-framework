@@ -30,7 +30,28 @@ interface Provider {
 `temperature`, `max_tokens`, `top_p`, `stop`, `system` and (new in v0.12.1)
 `model`, which overrides the provider's configured model for one call; build it
 with `new ChatOptions({...})`, `ChatOptions.create().setModel(...)`, or the
-presets `ChatOptions.deterministic(n)` / `.factual(n)` / `.creative(n)`.
+presets `ChatOptions.deterministic(n)` / `.factual(n)` / `.creative(n)`. It also
+carries `top_k` and `signal` (an `AbortSignal` that cancels the request,
+streaming included, for the providers that honour it).
+
+### Anthropic: thinking blocks and sampling
+
+Current Claude models (Opus 5.5, Sonnet 5.5) return `thinking` /
+`redacted_thinking` blocks that must be sent back unchanged on the next request,
+and they refuse sampling parameters.
+
+- `AnthropicChatProvider.chat()` puts the reply's raw content blocks in
+  `response.message.metadata.anthropicContent` (`ANTHROPIC_CONTENT_KEY`);
+  `message.content` keeps only text and tool calls. `streamChat()` yields the
+  same blocks as `{ type: "metadata", metadata: { anthropicContent } }` just
+  before `done`; put that metadata on the assistant message you assemble.
+- Keep the message (with its metadata) in the history: an assistant message with
+  `anthropicContent` is sent back as those blocks, exactly as they came. Edit
+  `content` and drop the metadata if you need the edit to be sent instead.
+- `temperature`, `top_p` and `top_k` are sent only when set explicitly.
+  `new ChatOptions()` still reads `temperature: 0.7` (and other providers send
+  it), but it is marked `temperature_defaulted` and Anthropic leaves it out;
+  `ChatOptions.explicitTemperature(options)` tells the two apart.
 
 ## Supported Providers
 

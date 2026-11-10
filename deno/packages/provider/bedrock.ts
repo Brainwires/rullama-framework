@@ -318,6 +318,7 @@ export class BedrockProvider implements Provider {
       method: "POST",
       headers: { ...baseHeaders, ...sigHeaders },
       body: bodyStr,
+      signal: options.signal,
     });
 
     if (!response.ok) {
@@ -359,6 +360,7 @@ export class BedrockProvider implements Provider {
       method: "POST",
       headers: { ...baseHeaders, ...sigHeaders },
       body: bodyStr,
+      signal: options.signal,
     });
 
     if (!response.ok) {
