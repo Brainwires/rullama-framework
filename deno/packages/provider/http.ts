@@ -10,6 +10,7 @@
  *
  * @param label Vendor name for the error message, e.g. `"OpenAI"`.
  * @param signal Aborts the request (and closes a streamed body) when fired.
+ * @param fetchFn The `fetch` to call (default: the global one).
  * @throws Error `"<label> API error (<status>): <body>"` on a non-2xx status.
  */
 export async function postJson(
@@ -18,8 +19,9 @@ export async function postJson(
   headers: Record<string, string>,
   body: unknown,
   signal?: AbortSignal,
+  fetchFn: typeof fetch = fetch,
 ): Promise<Response> {
-  const response = await fetch(url, {
+  const response = await fetchFn(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),

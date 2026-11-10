@@ -52,6 +52,33 @@ and they refuse sampling parameters.
   `new ChatOptions()` still reads `temperature: 0.7` (and other providers send
   it), but it is marked `temperature_defaulted` and Anthropic leaves it out;
   `ChatOptions.explicitTemperature(options)` tells the two apart.
+- A reply's `stop_details` (e.g. a refusal's `category` when `finish_reason` is
+  `"refusal"`) land in `metadata.anthropicStopDetails`
+  (`ANTHROPIC_STOP_DETAILS_KEY`), streamed or not. They are never sent back.
+- `convertMessages` leaves out empty text blocks, drops messages left empty, and
+  merges consecutive user/tool turns. An assistant message carrying
+  `anthropicContent` is never merged or altered.
+
+### Anthropic: options
+
+```ts
+const claude = new AnthropicChatProvider({
+  apiKey: () => secrets.get("anthropic"), // or a string; resolved per request
+  model: "claude-opus-5-5",
+  extraHeaders: { "anthropic-beta": "server-side-fallback-2026-07-01" },
+  extraBody: { fallbacks: "default" },
+  fetch: myFetch, // optional; used by chat and streamChat
+});
+```
+
+The positional form
+`new AnthropicChatProvider(apiKey, model, providerName?,
+baseUrl?, { extraHeaders, extraBody, fetch })`
+still works. Per call, `ChatOptions.extra_headers` / `extra_body` are merged
+over the provider's extras. The provider's own fields always win: `x-api-key`,
+`anthropic-version` and `Content-Type` among the headers, and `model`,
+`messages`, `system`, `max_tokens`, sampling, `stop_sequences`, `tools` and
+`stream` in the body.
 
 ## Supported Providers
 

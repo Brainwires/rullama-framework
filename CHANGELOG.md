@@ -28,6 +28,38 @@ and this project adheres to
 - `tests/abi.rs` checks the header's prototypes and constants against the Rust
   exports.
 
+### Deno/TypeScript port (`@rullama/provider` 0.12.5, `@rullama/core` 0.12.4)
+
+More `AnthropicChatProvider` options, for apps that used to need their own
+client. Deno-only.
+
+#### Behaviour changes
+
+- **`@rullama/provider`**: `convertMessages` (Anthropic and Bedrock) leaves out
+  empty text blocks, drops messages left with no content, and merges
+  consecutive user turns (`user` and `tool` messages) into one. Assistant
+  turns are not merged, and an assistant message carrying `anthropicContent`
+  is never merged or altered.
+- **`@rullama/provider`**: a reply's `stop_details` (e.g. a refusal's
+  category) are kept in `message.metadata.anthropicStopDetails`
+  (`ANTHROPIC_STOP_DETAILS_KEY`), for `chat` and in `streamChat`'s `metadata`
+  chunk.
+
+#### Added
+
+- **`@rullama/provider`**: `AnthropicChatProvider` takes an options object
+  (`AnthropicProviderOptions`: `apiKey`, `model`, `providerName`, `baseUrl`,
+  `extraHeaders`, `extraBody`, `fetch`). The positional form takes the same
+  extras as a fifth argument (`AnthropicRequestOptions`).
+  - `apiKey` may be `() => string | Promise<string>`, resolved on every request.
+  - `extraHeaders` / `extraBody` are sent on `chat` and `streamChat`. The
+    provider's own headers and body fields win over them.
+  - `fetch` is used for every request, streaming included.
+  - `withProviderName` keeps all of them.
+- **`@rullama/provider`**: `postJson` takes an optional `fetch`.
+- **`@rullama/core`**: `ChatOptions.extra_headers` / `extra_body`: per-call
+  extras, merged over the provider's. Not serialized.
+
 ### Deno/TypeScript port (`@rullama/provider` 0.12.4, `@rullama/core` 0.12.3)
 
 `AnthropicChatProvider` works with current Claude models (Opus 5.5, Sonnet

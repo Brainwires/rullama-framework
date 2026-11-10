@@ -69,6 +69,21 @@ export class ChatOptions {
    * server-side generation for e.g. Ollama). Never serialized.
    */
   signal?: AbortSignal;
+  /**
+   * Extra HTTP headers for this call (e.g. a vendor beta flag), for the
+   * providers that honour it (`AnthropicChatProvider`). They are merged over the
+   * provider's own extra headers, but the auth and version headers a provider
+   * sets always win. Never serialized.
+   */
+  extra_headers?: Record<string, string>;
+  /**
+   * Extra top-level request-body fields for this call, for the providers that
+   * honour it (`AnthropicChatProvider`). They are merged over the provider's
+   * own extra body fields. The fields the provider builds (model, messages,
+   * system, max_tokens, sampling, tools, stream, …) always win. Never
+   * serialized.
+   */
+  extra_body?: Record<string, unknown>;
 
   /**
    * Create options, applying the defaults (`temperature` 0.7, marked
@@ -84,7 +99,11 @@ export class ChatOptions {
       system,
       model,
       signal,
+      extra_headers,
+      extra_body,
     } = opts;
+    if (extra_headers !== undefined) this.extra_headers = extra_headers;
+    if (extra_body !== undefined) this.extra_body = extra_body;
     this.temperature = temperature ?? ChatOptions.DEFAULT_TEMPERATURE;
     // Copying defaulted options (`new ChatOptions(other)`) keeps them defaulted.
     if (ChatOptions.explicitTemperature(opts) === undefined) {
