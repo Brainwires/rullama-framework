@@ -51,7 +51,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
       qdrant:
-        image: ${{ matrix.service == 'qdrant' && 'qdrant/qdrant:latest' || '' }}
+        image: ${{ matrix.service == 'qdrant' && 'qdrant/qdrant:v1.15.5@sha256:0fb8897412abc81d1c0430a899b9a81eb8328aa634e7242d1bc804c1fe8fe863' || '' }}
         ports: ['6333:6333', '6334:6334']
       # No surrealdb service: GitHub service containers cannot pass the required
       # `start` command (the container just prints usage and exits), so it is

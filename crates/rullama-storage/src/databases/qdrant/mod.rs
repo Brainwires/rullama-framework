@@ -17,11 +17,14 @@ use qdrant_client::{Payload, Qdrant};
 use rullama_core::{ChunkMetadata, DatabaseStats, SearchResult};
 use serde_json::json;
 
-const COLLECTION_NAME: &str = "code_embeddings";
+/// Collection used unless [`QdrantDatabase::with_url_and_collection`] names another.
+const DEFAULT_COLLECTION_NAME: &str = "code_embeddings";
 
 /// Qdrant-backed vector database for code embeddings.
 pub struct QdrantDatabase {
     client: Qdrant,
+    /// Name of the Qdrant collection this instance reads and writes
+    collection: String,
     /// IDF statistics for BM25 calculation
     idf_stats: SharedIdfStats,
 }
@@ -39,6 +42,14 @@ impl QdrantDatabase {
 
     /// Create a new Qdrant client with a custom URL
     pub async fn with_url(url: &str) -> Result<Self> {
+        Self::with_url_and_collection(url, DEFAULT_COLLECTION_NAME).await
+    }
+
+    /// Create a new Qdrant client with a custom URL and collection name.
+    ///
+    /// Instances using different collection names do not share data, so
+    /// concurrent users (e.g. parallel tests) of one server stay isolated.
+    pub async fn with_url_and_collection(url: &str, collection: &str) -> Result<Self> {
         tracing::info!("Connecting to Qdrant at {}", url);
 
         let client = Qdrant::from_url(url)
@@ -47,6 +58,7 @@ impl QdrantDatabase {
 
         let db = Self {
             client,
+            collection: collection.to_string(),
             idf_stats: bm25_helpers::new_shared_idf_stats(),
         };
 
@@ -68,7 +80,7 @@ impl QdrantDatabase {
         let mut offset: Option<qdrant_client::qdrant::PointId> = None;
 
         loop {
-            let mut builder = ScrollPointsBuilder::new(COLLECTION_NAME)
+            let mut builder = ScrollPointsBuilder::new(self.collection.clone())
                 .with_payload(true)
                 .limit(100);
 
@@ -114,7 +126,7 @@ impl QdrantDatabase {
         Ok(collections
             .collections
             .iter()
-            .any(|c| c.name == COLLECTION_NAME))
+            .any(|c| c.name == self.collection))
     }
 }
 
@@ -122,25 +134,27 @@ impl QdrantDatabase {
 impl VectorDatabase for QdrantDatabase {
     async fn initialize(&self, dimension: usize) -> Result<()> {
         if self.collection_exists().await? {
-            tracing::info!("Collection '{}' already exists", COLLECTION_NAME);
+            tracing::info!("Collection '{}' already exists", self.collection);
             return Ok(());
         }
 
         tracing::info!(
             "Creating collection '{}' with dimension {}",
-            COLLECTION_NAME,
+            self.collection,
             dimension
         );
 
         self.client
             .create_collection(
-                CreateCollectionBuilder::new(COLLECTION_NAME).vectors_config(VectorsConfig {
-                    config: Some(Config::Params(VectorParams {
-                        size: dimension as u64,
-                        distance: Distance::Cosine.into(),
-                        ..Default::default()
-                    })),
-                }),
+                CreateCollectionBuilder::new(self.collection.clone()).vectors_config(
+                    VectorsConfig {
+                        config: Some(Config::Params(VectorParams {
+                            size: dimension as u64,
+                            distance: Distance::Cosine.into(),
+                            ..Default::default()
+                        })),
+                    },
+                ),
             )
             .await
             .context("Failed to create collection")?;
@@ -187,7 +201,7 @@ impl VectorDatabase for QdrantDatabase {
             .collect();
 
         self.client
-            .upsert_points(UpsertPointsBuilder::new(COLLECTION_NAME, points))
+            .upsert_points(UpsertPointsBuilder::new(self.collection.clone(), points))
             .await
             .context("Failed to upsert points")?;
 
@@ -281,7 +295,7 @@ impl VectorDatabase for QdrantDatabase {
         }
 
         let mut search_builder =
-            SearchPointsBuilder::new(COLLECTION_NAME, query_vector, limit as u64)
+            SearchPointsBuilder::new(self.collection.clone(), query_vector, limit as u64)
                 .score_threshold(min_score)
                 .with_payload(true);
 
@@ -392,7 +406,7 @@ impl VectorDatabase for QdrantDatabase {
         let filter = Filter::must([Condition::matches("file_path", file_path.to_string())]);
 
         self.client
-            .delete_points(DeletePointsBuilder::new(COLLECTION_NAME).points(filter))
+            .delete_points(DeletePointsBuilder::new(self.collection.clone()).points(filter))
             .await
             .context("Failed to delete points")?;
 
@@ -405,7 +419,7 @@ impl VectorDatabase for QdrantDatabase {
         tracing::info!("Clearing all embeddings from collection");
 
         self.client
-            .delete_collection(COLLECTION_NAME)
+            .delete_collection(self.collection.clone())
             .await
             .context("Failed to delete collection")?;
 
@@ -420,7 +434,7 @@ impl VectorDatabase for QdrantDatabase {
     async fn get_statistics(&self) -> Result<DatabaseStats> {
         let collection_info = self
             .client
-            .collection_info(COLLECTION_NAME)
+            .collection_info(self.collection.clone())
             .await
             .context("Failed to get collection info")?;
 
@@ -450,7 +464,7 @@ impl VectorDatabase for QdrantDatabase {
 
         let count_result = self
             .client
-            .count(CountPointsBuilder::new(COLLECTION_NAME).filter(filter))
+            .count(CountPointsBuilder::new(self.collection.clone()).filter(filter))
             .await
             .context("Failed to count points by root path")?;
 
@@ -466,7 +480,7 @@ impl VectorDatabase for QdrantDatabase {
         let mut offset: Option<qdrant_client::qdrant::PointId> = None;
 
         loop {
-            let mut builder = ScrollPointsBuilder::new(COLLECTION_NAME)
+            let mut builder = ScrollPointsBuilder::new(self.collection.clone())
                 .filter(filter.clone())
                 .with_payload(true)
                 .limit(1000);
