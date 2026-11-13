@@ -53,11 +53,28 @@ jobs:
       qdrant:
         image: ${{ matrix.service == 'qdrant' && 'qdrant/qdrant:latest' || '' }}
         ports: ['6333:6333', '6334:6334']
-      surrealdb:
-        image: ${{ matrix.service == 'surrealdb' && 'surrealdb/surrealdb:latest' || '' }}
-        ports: ['8000:8000']
+      # No surrealdb service: GitHub service containers cannot pass the required
+      # `start` command (the container just prints usage and exits), so it is
+      # started by an explicit step below.
     steps:
       - uses: actions/checkout@v4
+      - name: Start SurrealDB
+        if: matrix.service == 'surrealdb'
+        run: |
+          # Pinned to v2.6.5 (matches the `surrealdb = "2"` client crate), by digest.
+          docker run -d --name surrealdb -p 8000:8000 \
+            surrealdb/surrealdb:v2.6.5@sha256:d653f6c8a89e81f865ee31cd2f587c50f50ace922175e04150b1e385d2f86011 \
+            start --user root --pass root memory
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
+              echo "SurrealDB is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::SurrealDB did not become healthy within 60s"
+          docker logs surrealdb
+          exit 1
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
