@@ -14,7 +14,7 @@ env:
 jobs:
   check:
     name: Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # whisper-rs-sys bindgen layouts fail to compile on ubuntu-latest (26.04, clang 21)
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space
@@ -36,7 +36,7 @@ jobs:
 
   clippy:
     name: Clippy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # whisper-rs-sys bindgen layouts fail to compile on ubuntu-latest (26.04, clang 21)
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space
@@ -70,7 +70,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # whisper-rs-sys bindgen layouts fail to compile on ubuntu-latest (26.04, clang 21)
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space
@@ -92,7 +92,7 @@ jobs:
 
   doc:
     name: Documentation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # whisper-rs-sys bindgen layouts fail to compile on ubuntu-latest (26.04, clang 21)
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space
@@ -114,7 +114,7 @@ jobs:
 
   msrv:
     name: MSRV (Rust 1.91)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # whisper-rs-sys bindgen layouts fail to compile on ubuntu-latest (26.04, clang 21)
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
