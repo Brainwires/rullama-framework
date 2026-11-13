@@ -115,7 +115,7 @@ impl SurrealDatabase {
             .await
             .context("Failed to query content for IDF refresh")?;
 
-        let rows: Vec<serde_json::Value> = match result.take(0) {
+        let rows: Vec<serde_json::Value> = match take_json_rows(&mut result, 0) {
             Ok(rows) => rows,
             Err(e) => {
                 tracing::debug!("IDF refresh skipped (table may not exist): {}", e);
@@ -217,7 +217,7 @@ impl SurrealDatabase {
         let mut result = stmt.await.context("Failed to execute search query")?;
 
         let rows: Vec<serde_json::Value> =
-            result.take(0).context("Failed to take search results")?;
+            take_json_rows(&mut result, 0).context("Failed to take search results")?;
 
         let mut results: Vec<SearchResult> = Vec::with_capacity(rows.len());
 
@@ -467,7 +467,7 @@ impl VectorDatabase for SurrealDatabase {
             .context("Failed to delete embeddings by file path")?;
 
         // SurrealDB DELETE returns the deleted records; count them.
-        let deleted: Vec<serde_json::Value> = result.take(0).unwrap_or_default();
+        let deleted: Vec<serde_json::Value> = take_json_rows(&mut result, 0).unwrap_or_default();
         let count = deleted.len();
 
         tracing::info!("Deleted {} rows for file '{}'", count, file_path);
@@ -503,7 +503,7 @@ impl VectorDatabase for SurrealDatabase {
             .await
             .context("Failed to count rows")?;
 
-        let count_rows: Vec<serde_json::Value> = result.take(0).unwrap_or_default();
+        let count_rows: Vec<serde_json::Value> = take_json_rows(&mut result, 0).unwrap_or_default();
         let total = count_rows
             .first()
             .and_then(|r| r.get("total"))
@@ -520,7 +520,8 @@ impl VectorDatabase for SurrealDatabase {
             .await
             .context("Failed to fetch language breakdown")?;
 
-        let lang_rows: Vec<serde_json::Value> = lang_result.take(0).unwrap_or_default();
+        let lang_rows: Vec<serde_json::Value> =
+            take_json_rows(&mut lang_result, 0).unwrap_or_default();
         let language_breakdown: Vec<(String, usize)> = lang_rows
             .iter()
             .map(|row| {
@@ -557,7 +558,7 @@ impl VectorDatabase for SurrealDatabase {
             .await
             .context("Failed to count rows by root_path")?;
 
-        let rows: Vec<serde_json::Value> = result.take(0).unwrap_or_default();
+        let rows: Vec<serde_json::Value> = take_json_rows(&mut result, 0).unwrap_or_default();
         let count = rows
             .first()
             .and_then(|r| r.get("total"))
@@ -578,7 +579,7 @@ impl VectorDatabase for SurrealDatabase {
             .await
             .context("Failed to fetch indexed files")?;
 
-        let rows: Vec<serde_json::Value> = result.take(0).unwrap_or_default();
+        let rows: Vec<serde_json::Value> = take_json_rows(&mut result, 0).unwrap_or_default();
         let files: Vec<String> = rows
             .iter()
             .filter_map(|row| {
@@ -811,7 +812,7 @@ async fn execute_with_bindings(
         stmt = stmt.bind((name, value));
     }
     let mut result = stmt.await.context("Failed to execute SurrealQL query")?;
-    let rows: Vec<serde_json::Value> = result.take(0).unwrap_or_default();
+    let rows: Vec<serde_json::Value> = take_json_rows(&mut result, 0).unwrap_or_default();
     Ok(rows)
 }
 
@@ -1141,4 +1142,22 @@ mod tests {
         let id_field = record.iter().find(|(n, _)| n == "id");
         assert!(id_field.is_some());
     }
+}
+
+/// Take the rows of statement `index` as plain JSON.
+///
+/// Deserializing a response straight into `serde_json::Value` fails with
+/// "invalid type: enum, expected any valid JSON value" (SurrealDB values such
+/// as record ids are enums), so the rows are taken as a SurrealDB value and
+/// converted with `into_json`, which renders record ids as `table:id` strings.
+fn take_json_rows(
+    result: &mut surrealdb::Response,
+    index: usize,
+) -> std::result::Result<Vec<serde_json::Value>, surrealdb::Error> {
+    let value: surrealdb::Value = result.take(index)?;
+    Ok(match value.into_inner().into_json() {
+        serde_json::Value::Array(rows) => rows,
+        serde_json::Value::Null => Vec::new(),
+        other => vec![other],
+    })
 }

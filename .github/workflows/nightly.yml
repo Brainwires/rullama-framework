@@ -61,9 +61,9 @@ jobs:
       - name: Start SurrealDB
         if: matrix.service == 'surrealdb'
         run: |
-          # Pinned to v2.6.5 (matches the `surrealdb = "2"` client crate), by digest.
+          # Pinned to v2.7.0 (matches the `surrealdb = "2"` client crate), by digest.
           docker run -d --name surrealdb -p 8000:8000 \
-            surrealdb/surrealdb:v2.6.5@sha256:d653f6c8a89e81f865ee31cd2f587c50f50ace922175e04150b1e385d2f86011 \
+            surrealdb/surrealdb:v2.7.0@sha256:e5d7387e3727bbe2f7cd6d869e48cd34777272258572ead37c9656b25f745723 \
             start --user root --pass root memory
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
