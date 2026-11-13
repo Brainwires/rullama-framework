@@ -459,7 +459,7 @@ impl VectorDatabase for SurrealDatabase {
         let mut result = self
             .db
             .query(format!(
-                "DELETE FROM {table} WHERE file_path = $path",
+                "DELETE FROM {table} WHERE file_path = $path RETURN BEFORE",
                 table = DEFAULT_TABLE,
             ))
             .bind(("path", file_path.to_string()))
