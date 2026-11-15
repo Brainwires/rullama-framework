@@ -12,6 +12,23 @@ env:
   CARGO_INCREMENTAL: "0"
 
 jobs:
+  runners:
+    name: pick runners
+    # Our self-hosted pools first, GitHub-hosted for the overflow: a job takes our pool only
+    # while it has a free slot, else its GitHub image at once (fork pull requests: GitHub only).
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      plan: ${{ steps.pick.outputs.plan }}
+    steps:
+      - id: pick
+        uses: Brainwires/.github/actions/pick-runners@2e093cef9ee71f64a75ea1c47aa2f923119050fa # pick-runners
+        with:
+          jobs: fmt=linux-x64 stubs=linux-x64 fallow=linux-x64 deno=linux-x64
+          vars: ${{ toJSON(vars) }}
+
   check:
     name: Check
     # Stays on GitHub-hosted: sudo apt-get install (sudo is inert on the self-hosted pool).
@@ -61,7 +78,9 @@ jobs:
 
   fmt:
     name: Format
-    runs-on: ${{ fromJSON((startsWith(github.event_name, 'pull_request') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)) && '"ubuntu-latest"' || (startsWith(vars.RUNNER_LINUX_X64, '[') && vars.RUNNER_LINUX_X64 || format('"{0}"', vars.RUNNER_LINUX_X64 || 'ubuntu-latest'))) }}
+    needs: runners
+    if: ${{ !cancelled() }}
+    runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}').fmt || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -133,7 +152,9 @@ jobs:
 
   stubs:
     name: No stubs
-    runs-on: ${{ fromJSON((startsWith(github.event_name, 'pull_request') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)) && '"ubuntu-latest"' || (startsWith(vars.RUNNER_LINUX_X64, '[') && vars.RUNNER_LINUX_X64 || format('"{0}"', vars.RUNNER_LINUX_X64 || 'ubuntu-latest'))) }}
+    needs: runners
+    if: ${{ !cancelled() }}
+    runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}').stubs || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -222,7 +243,9 @@ jobs:
 
   fallow:
     name: Fallow gate (Deno)
-    runs-on: ${{ fromJSON((startsWith(github.event_name, 'pull_request') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)) && '"ubuntu-latest"' || (startsWith(vars.RUNNER_LINUX_X64, '[') && vars.RUNNER_LINUX_X64 || format('"{0}"', vars.RUNNER_LINUX_X64 || 'ubuntu-latest'))) }}
+    needs: runners
+    if: ${{ !cancelled() }}
+    runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}').fallow || 'ubuntu-latest' }}
     # The same gate the pre-commit hook runs (.githooks/pre-commit): dead code, complexity
     # and duplication scoped to what this change INTRODUCES (audit gate = new-only), over
     # the Deno tree per fallow.toml. Hard gate from day one — inherited findings on touched
@@ -247,7 +270,9 @@ jobs:
 
   deno:
     name: Deno
-    runs-on: ${{ fromJSON((startsWith(github.event_name, 'pull_request') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)) && '"ubuntu-latest"' || (startsWith(vars.RUNNER_LINUX_X64, '[') && vars.RUNNER_LINUX_X64 || format('"{0}"', vars.RUNNER_LINUX_X64 || 'ubuntu-latest'))) }}
+    needs: runners
+    if: ${{ !cancelled() }}
+    runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}').deno || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2
