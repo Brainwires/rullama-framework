@@ -230,6 +230,8 @@ jobs:
           fetch-depth: 0 # audit diffs against the PR base / merge-base
       - uses: fallow-rs/fallow@v3
         with:
+          # Pinned: fallow 3.43.0 shipped without its linux-x64-musl platform package (binary verification fails).
+          version: 3.42.0
           command: audit
           config: fallow.toml
           fail-on-issues: true
