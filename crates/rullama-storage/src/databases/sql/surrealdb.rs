@@ -33,6 +33,8 @@ impl SqlDialect for SurrealDialect {
     }
 
     fn quote_ident(&self, ident: &str) -> String {
-        format!("\"{}\"", ident)
+        // SurrealQL reads "double quotes" as a string literal, so a quoted table
+        // name would select from a string value; identifiers use backticks.
+        format!("`{}`", ident.replace('`', "\\`"))
     }
 }

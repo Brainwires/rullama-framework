@@ -9,26 +9,84 @@ mod qdrant_integration {
     use rullama_storage::databases::qdrant::QdrantDatabase;
     use rullama_storage::databases::traits::VectorDatabase;
 
-    /// Helper: try to connect to Qdrant, returning None if the server is
-    /// not reachable.
-    async fn try_connect() -> Option<QdrantDatabase> {
+    /// A [`QdrantDatabase`] bound to a collection unique to one test run.
+    ///
+    /// The tests run in parallel against a single Qdrant server, so each one
+    /// gets its own collection; the guard deletes it on drop, including when
+    /// the test panics.
+    struct TestDb {
+        db: QdrantDatabase,
+        url: String,
+        collection: String,
+    }
+
+    impl std::ops::Deref for TestDb {
+        type Target = QdrantDatabase;
+        fn deref(&self) -> &QdrantDatabase {
+            &self.db
+        }
+    }
+
+    impl Drop for TestDb {
+        fn drop(&mut self) {
+            // Drop is sync and may run inside a current-thread runtime, so the
+            // cleanup runs on its own thread with its own runtime.
+            let url = self.url.clone();
+            let collection = self.collection.clone();
+            let _ = std::thread::spawn(move || {
+                if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    rt.block_on(async {
+                        if let Ok(db) =
+                            QdrantDatabase::with_url_and_collection(&url, &collection).await
+                        {
+                            let _ = db.clear().await;
+                        }
+                    });
+                }
+            })
+            .join();
+        }
+    }
+
+    /// Helper: try to connect to Qdrant with a collection unique to `test`,
+    /// returning None if the server is not reachable.
+    async fn try_connect(test: &str) -> Option<TestDb> {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let url = std::env::var("QDRANT_URL").unwrap_or_else(|_| QdrantDatabase::default_url());
-        QdrantDatabase::with_url(&url).await.ok()
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let collection = format!(
+            "{}_{}_{}_{}",
+            test,
+            std::process::id(),
+            nanos,
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        );
+        let db = QdrantDatabase::with_url_and_collection(&url, &collection)
+            .await
+            .ok()?;
+        Some(TestDb {
+            db,
+            url,
+            collection,
+        })
     }
 
     #[tokio::test]
     #[ignore = "requires a running Qdrant server"]
     async fn test_vector_database_initialize_and_store() {
-        let db = match try_connect().await {
+        let db = match try_connect("test_vector_database_initialize_and_store").await {
             Some(db) => db,
             None => {
                 eprintln!("Skipping: Qdrant not reachable");
                 return;
             }
         };
-
-        // Clear any prior data (deletes the collection).
-        let _ = db.clear().await;
 
         // Initialize with small dimension.
         db.initialize(4).await.unwrap();
@@ -60,7 +118,7 @@ mod qdrant_integration {
     #[tokio::test]
     #[ignore = "requires a running Qdrant server"]
     async fn test_vector_database_search() {
-        let db = match try_connect().await {
+        let db = match try_connect("test_vector_database_search").await {
             Some(db) => db,
             None => {
                 eprintln!("Skipping: Qdrant not reachable");
@@ -68,7 +126,6 @@ mod qdrant_integration {
             }
         };
 
-        let _ = db.clear().await;
         db.initialize(4).await.unwrap();
 
         let ts = chrono::Utc::now().timestamp();
@@ -109,7 +166,7 @@ mod qdrant_integration {
     #[tokio::test]
     #[ignore = "requires a running Qdrant server"]
     async fn test_vector_database_statistics() {
-        let db = match try_connect().await {
+        let db = match try_connect("test_vector_database_statistics").await {
             Some(db) => db,
             None => {
                 eprintln!("Skipping: Qdrant not reachable");
@@ -117,7 +174,6 @@ mod qdrant_integration {
             }
         };
 
-        let _ = db.clear().await;
         db.initialize(4).await.unwrap();
 
         let meta = rullama_storage::rullama_core::ChunkMetadata {
@@ -148,7 +204,7 @@ mod qdrant_integration {
     #[tokio::test]
     #[ignore = "requires a running Qdrant server"]
     async fn test_vector_database_delete_and_clear() {
-        let db = match try_connect().await {
+        let db = match try_connect("test_vector_database_delete_and_clear").await {
             Some(db) => db,
             None => {
                 eprintln!("Skipping: Qdrant not reachable");
@@ -156,7 +212,6 @@ mod qdrant_integration {
             }
         };
 
-        let _ = db.clear().await;
         db.initialize(4).await.unwrap();
 
         let meta = rullama_storage::rullama_core::ChunkMetadata {
@@ -193,7 +248,7 @@ mod qdrant_integration {
     #[tokio::test]
     #[ignore = "requires a running Qdrant server"]
     async fn test_vector_database_filtered_search() {
-        let db = match try_connect().await {
+        let db = match try_connect("test_vector_database_filtered_search").await {
             Some(db) => db,
             None => {
                 eprintln!("Skipping: Qdrant not reachable");
@@ -201,7 +256,6 @@ mod qdrant_integration {
             }
         };
 
-        let _ = db.clear().await;
         db.initialize(4).await.unwrap();
 
         let ts = chrono::Utc::now().timestamp();

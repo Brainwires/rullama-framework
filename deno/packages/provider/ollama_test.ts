@@ -1,11 +1,18 @@
-import { assertEquals } from "@std/assert";
-import { Message } from "@rullama/core";
+// deno-lint-ignore-file no-explicit-any
+import { assert, assertEquals, assertRejects } from "@std/assert";
+import { ChatOptions, Message } from "@rullama/core";
 import {
   convertMessages,
   convertTools,
   OllamaChatProvider,
   parseOllamaResponse,
 } from "./ollama.ts";
+import {
+  abortOnFirstChunk,
+  collect,
+  hangingStream,
+  withFetch,
+} from "./test_util.ts";
 
 // ---------------------------------------------------------------------------
 // Provider name tests
@@ -217,4 +224,287 @@ Deno.test("parseOllamaResponse - missing optional fields", () => {
   assertEquals(chatResponse.usage.prompt_tokens, 0);
   assertEquals(chatResponse.usage.completion_tokens, 0);
   assertEquals(chatResponse.finish_reason, "stop");
+});
+
+// ---------------------------------------------------------------------------
+// Tool calls and cancellation, through a fake fetch
+// ---------------------------------------------------------------------------
+
+const WEATHER_TOOL = {
+  name: "get_weather",
+  description: "Weather for a city",
+  input_schema: {
+    type: "object" as const,
+    properties: { city: { type: "string" } },
+    required: ["city"],
+  },
+};
+
+const ndjson = (...objs: unknown[]) =>
+  new Response(objs.map((o) => JSON.stringify(o) + "\n").join(""));
+
+Deno.test("parseOllamaResponse - tool_calls become tool_use blocks", () => {
+  const r = parseOllamaResponse({
+    message: {
+      content: "",
+      tool_calls: [
+        { function: { name: "get_weather", arguments: { city: "Oslo" } } },
+        { id: "abc", function: { name: "get_time", arguments: '{"tz":1}' } },
+      ],
+    },
+    done_reason: "stop",
+  });
+  assertEquals(r.message.content, [
+    {
+      type: "tool_use",
+      id: "call_0",
+      name: "get_weather",
+      input: { city: "Oslo" },
+    },
+    { type: "tool_use", id: "abc", name: "get_time", input: { tz: 1 } },
+  ]);
+  // Ollama says "stop"; agent loops need to see that tools are pending.
+  assertEquals(r.finish_reason, "tool_calls");
+});
+
+Deno.test("parseOllamaResponse - text alongside a tool call is kept", () => {
+  const r = parseOllamaResponse({
+    message: {
+      content: "Checking.",
+      tool_calls: [{ function: { name: "get_weather", arguments: {} } }],
+    },
+  });
+  assertEquals(r.message.content, [
+    { type: "text", text: "Checking." },
+    { type: "tool_use", id: "call_0", name: "get_weather", input: {} },
+  ]);
+});
+
+Deno.test("convertMessages - tool round trip uses native tool_calls and role tool", () => {
+  const converted = convertMessages([
+    Message.user("Weather in Oslo?"),
+    new Message({
+      role: "assistant",
+      content: [{
+        type: "tool_use",
+        id: "call_0",
+        name: "get_weather",
+        input: { city: "Oslo" },
+      }],
+    }),
+    new Message({
+      role: "user",
+      content: [{
+        type: "tool_result",
+        tool_use_id: "call_0",
+        content: "Sunny",
+      }],
+    }),
+  ]);
+  assertEquals(converted, [
+    { role: "user", content: "Weather in Oslo?" },
+    {
+      role: "assistant",
+      content: "",
+      tool_calls: [{
+        id: "call_0",
+        function: { name: "get_weather", arguments: { city: "Oslo" } },
+      }],
+    },
+    {
+      role: "tool",
+      content: "Sunny",
+      tool_call_id: "call_0",
+      tool_name: "get_weather",
+    },
+  ]);
+});
+
+Deno.test("OllamaChatProvider.chat - tool-call round trip over /api/chat", async () => {
+  const bodies: any[] = [];
+  const replies = [
+    Response.json({
+      message: {
+        role: "assistant",
+        content: "",
+        tool_calls: [{
+          function: { name: "get_weather", arguments: { city: "Oslo" } },
+        }],
+      },
+      done: true,
+      done_reason: "stop",
+      prompt_eval_count: 5,
+      eval_count: 3,
+    }),
+    Response.json({
+      message: { role: "assistant", content: "Sunny in Oslo." },
+      done: true,
+      done_reason: "stop",
+    }),
+  ];
+  await withFetch((init) => {
+    bodies.push(JSON.parse(String(init.body)));
+    return replies.shift()!;
+  }, async () => {
+    const provider = new OllamaChatProvider("qwen3", "http://ollama.test");
+    const history = [Message.user("Weather in Oslo?")];
+    const first = await provider.chat(
+      history,
+      [WEATHER_TOOL],
+      new ChatOptions(),
+    );
+    assertEquals(first.finish_reason, "tool_calls");
+    const [use] = first.message.content as any[];
+    assertEquals(use.name, "get_weather");
+    assertEquals(use.input, { city: "Oslo" });
+
+    history.push(
+      first.message,
+      new Message({
+        role: "user",
+        content: [{
+          type: "tool_result",
+          tool_use_id: use.id,
+          content: "Sunny",
+        }],
+      }),
+    );
+    const second = await provider.chat(
+      history,
+      [WEATHER_TOOL],
+      new ChatOptions(),
+    );
+    assertEquals(second.message.text(), "Sunny in Oslo.");
+    assertEquals(second.finish_reason, "stop");
+  });
+
+  assertEquals(bodies[0].tools[0].function.name, "get_weather");
+  assertEquals(bodies[1].messages.slice(1), [
+    {
+      role: "assistant",
+      content: "",
+      tool_calls: [{
+        id: "call_0",
+        function: { name: "get_weather", arguments: { city: "Oslo" } },
+      }],
+    },
+    {
+      role: "tool",
+      content: "Sunny",
+      tool_call_id: "call_0",
+      tool_name: "get_weather",
+    },
+  ]);
+});
+
+Deno.test("OllamaChatProvider.streamChat - streamed tool calls", async () => {
+  await withFetch(
+    () =>
+      ndjson(
+        { message: { content: "Let me check." }, done: false },
+        {
+          message: {
+            content: "",
+            tool_calls: [
+              {
+                function: { name: "get_weather", arguments: { city: "Oslo" } },
+              },
+              {
+                id: "t2",
+                function: { name: "get_weather", arguments: { city: "Rome" } },
+              },
+            ],
+          },
+          done: false,
+        },
+        { done: true, prompt_eval_count: 4, eval_count: 6 },
+      ),
+    async () => {
+      const provider = new OllamaChatProvider("qwen3", "http://ollama.test");
+      const chunks = await collect(
+        provider.streamChat(
+          [Message.user("hi")],
+          [WEATHER_TOOL],
+          new ChatOptions(),
+        ),
+      );
+      assertEquals(chunks, [
+        { type: "text", text: "Let me check." },
+        { type: "tool_use", id: "call_0", name: "get_weather" },
+        {
+          type: "tool_input_delta",
+          id: "call_0",
+          partial_json: '{"city":"Oslo"}',
+        },
+        { type: "tool_use", id: "t2", name: "get_weather" },
+        { type: "tool_input_delta", id: "t2", partial_json: '{"city":"Rome"}' },
+        {
+          type: "usage",
+          usage: { prompt_tokens: 4, completion_tokens: 6, total_tokens: 10 },
+        },
+        { type: "done" },
+      ]);
+    },
+  );
+});
+
+/** A fake streaming reply that sends one chunk ("Hel"), then hangs until the
+ * request signal aborts or the reader cancels it. */
+const hangingOllama = (init: RequestInit, events: string[]) =>
+  hangingStream(
+    init,
+    events,
+    JSON.stringify({ message: { content: "Hel" }, done: false }) + "\n",
+  );
+
+Deno.test("OllamaChatProvider.streamChat - ChatOptions.signal aborts mid-stream", async () => {
+  const events: string[] = [];
+  let sentSignal: AbortSignal | null | undefined;
+  await withFetch((init) => {
+    sentSignal = init.signal;
+    return hangingOllama(init, events);
+  }, async () => {
+    const { got, signal } = await abortOnFirstChunk(
+      new OllamaChatProvider("qwen3", "http://ollama.test"),
+    );
+    assertEquals(got, [{ type: "text", text: "Hel" }]);
+    assertEquals(sentSignal, signal);
+  });
+  assertEquals(events, ["aborted"]);
+});
+
+Deno.test("OllamaChatProvider.streamChat - stopping early cancels the response body", async () => {
+  const events: string[] = [];
+  await withFetch((init) => hangingOllama(init, events), async () => {
+    const provider = new OllamaChatProvider("qwen3", "http://ollama.test");
+    for await (
+      const _ of provider.streamChat(
+        [Message.user("hi")],
+        undefined,
+        new ChatOptions(),
+      )
+    ) break;
+  });
+  // Closing the stream is what makes Ollama stop generating.
+  assertEquals(events, ["cancelled"]);
+});
+
+Deno.test("OllamaChatProvider.chat - passes ChatOptions.signal to fetch", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  await withFetch((init) => {
+    assert(init.signal?.aborted);
+    throw new DOMException("aborted", "AbortError");
+  }, async () => {
+    const provider = new OllamaChatProvider("qwen3", "http://ollama.test");
+    await assertRejects(
+      () =>
+        provider.chat(
+          [Message.user("hi")],
+          undefined,
+          new ChatOptions({ signal: controller.signal }),
+        ),
+      DOMException,
+    );
+  });
 });

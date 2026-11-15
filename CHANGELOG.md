@@ -28,6 +28,116 @@ and this project adheres to
 - `tests/abi.rs` checks the header's prototypes and constants against the Rust
   exports.
 
+### Deno/TypeScript port (`@rullama/provider` 0.12.5, `@rullama/core` 0.12.4)
+
+More `AnthropicChatProvider` options, for apps that used to need their own
+client. Deno-only.
+
+#### Behaviour changes
+
+- **`@rullama/provider`**: `convertMessages` (Anthropic and Bedrock) leaves out
+  empty text blocks, drops messages left with no content, and merges
+  consecutive user turns (`user` and `tool` messages) into one. Assistant
+  turns are not merged, and an assistant message carrying `anthropicContent`
+  is never merged or altered.
+- **`@rullama/provider`**: a reply's `stop_details` (e.g. a refusal's
+  category) are kept in `message.metadata.anthropicStopDetails`
+  (`ANTHROPIC_STOP_DETAILS_KEY`), for `chat` and in `streamChat`'s `metadata`
+  chunk.
+
+#### Added
+
+- **`@rullama/provider`**: `AnthropicChatProvider` takes an options object
+  (`AnthropicProviderOptions`: `apiKey`, `model`, `providerName`, `baseUrl`,
+  `extraHeaders`, `extraBody`, `fetch`). The positional form takes the same
+  extras as a fifth argument (`AnthropicRequestOptions`).
+  - `apiKey` may be `() => string | Promise<string>`, resolved on every request.
+  - `extraHeaders` / `extraBody` are sent on `chat` and `streamChat`. The
+    provider's own headers and body fields win over them.
+  - `fetch` is used for every request, streaming included.
+  - `withProviderName` keeps all of them.
+- **`@rullama/provider`**: `postJson` takes an optional `fetch`.
+- **`@rullama/core`**: `ChatOptions.extra_headers` / `extra_body`: per-call
+  extras, merged over the provider's. Not serialized.
+
+### Deno/TypeScript port (`@rullama/provider` 0.12.4, `@rullama/core` 0.12.3)
+
+`AnthropicChatProvider` works with current Claude models (Opus 5.5, Sonnet
+5.5): thinking blocks survive the round trip, no default sampling options, and
+cancellation. Deno-only; the Rust crates and the other `@rullama/*` packages are
+unchanged.
+
+#### Behaviour changes
+
+- **`@rullama/provider`**: Anthropic replies keep their raw content blocks
+  (`thinking` with its `signature`, `redacted_thinking`, text, tool calls, in
+  order) in `message.metadata.anthropicContent` (`ANTHROPIC_CONTENT_KEY`). An
+  assistant message carrying them is sent back exactly as it came, instead of
+  being rebuilt from `content`, which dropped the thinking blocks these models
+  require back unchanged. `message.content` still holds only text and tool
+  calls. Also applies to `BedrockProvider`, which shares the wire format.
+- **`@rullama/provider`**: Anthropic (and Bedrock) requests send `temperature`,
+  `top_p` and `top_k` only when the caller set them. `ChatOptions`' default
+  temperature (0.7) is no longer sent; current models refuse sampling
+  parameters with a 400. The other providers still send the default.
+- **`@rullama/provider`**: `AnthropicChatProvider` and `BedrockProvider` pass
+  `ChatOptions.signal` to `fetch`, for `chat` and `streamChat`.
+- **`@rullama/provider`**: Anthropic streaming emits `tool_use` and
+  `tool_input_delta` chunks (it dropped tool calls), gathers text, thinking,
+  signature, citation and tool-input deltas into the reply's blocks and sends
+  them as a `metadata` chunk (`{ anthropicContent: [...] }`) before `done`. An
+  `error` event mid-stream rejects instead of ending the stream silently.
+- **`@rullama/provider`**: `tool_result` blocks keep `is_error: true` on the
+  Anthropic wire.
+
+#### Added
+
+- **`@rullama/core`**: `ChatOptions.temperature_defaulted` (set when the
+  constructor filled in the default temperature; `setTemperature` clears it),
+  `ChatOptions.explicitTemperature(options)`, `ChatOptions.DEFAULT_TEMPERATURE`,
+  and `top_k` / `setTopK`. `ChatOptions().temperature` is still 0.7.
+- **`@rullama/core`**: `StreamChunk` variant
+  `{ type: "metadata"; metadata: Record<string, unknown> }`: provider data to
+  merge into the streamed assistant message's `metadata`.
+- **`@rullama/provider`**: `ANTHROPIC_CONTENT_KEY` and the `AnthropicRawBlock`
+  type are exported.
+
+### Deno/TypeScript port (`@rullama/provider` 0.12.3, `@rullama/core` 0.12.2, `@rullama/inference` 0.12.2)
+
+Native Ollama tool calling and request cancellation. Deno-only; the Rust crates
+and the other `@rullama/*` packages are unchanged.
+
+#### Behaviour changes
+
+- **`@rullama/provider`**: `OllamaChatProvider` no longer drops tool calls. It
+  already sent `tools`; it now maps `message.tool_calls` from `/api/chat`
+  (non-streaming and streaming) to `tool_use` blocks / `tool_use` +
+  `tool_input_delta` stream chunks, the same shapes the OpenAI provider returns.
+  Older servers send no call id, so `call_<n>` is generated. A response with
+  tool calls reports `finish_reason: "tool_calls"` (Ollama says `"stop"`), so
+  agent loops run the tools instead of ending the turn. In requests, assistant
+  `tool_use` blocks are sent as native `tool_calls` (arguments as an object) and
+  each `tool_result` block as a `role: "tool"` message with `tool_name` and
+  `tool_call_id`. Callers no longer need Ollama's OpenAI-compatible `/v1`
+  endpoint to use tools.
+- **`@rullama/provider`**: the shared SSE and NDJSON stream parsers cancel the
+  response body when iteration stops early (consumer `break`, `[DONE]`, abort),
+  closing the HTTP connection instead of leaving it open until the server
+  finishes. Closing the connection is what makes Ollama stop generating.
+- **`@rullama/inference`**: `TaskAgent.execute(signal)` passes the signal to the
+  provider through `ChatOptions.signal`, and `runAgentLoop` returns its usual
+  `"Aborted by signal"` result when the provider call it was waiting on rejects
+  because the signal fired. Other provider errors still propagate.
+
+#### Added
+
+- **`@rullama/core`**: `ChatOptions.signal?: AbortSignal`. Providers that honour
+  it pass it to `fetch`, so aborting cancels the request, including a stream
+  already in progress. It is not serialized by `toJSON()`. `OllamaChatProvider`
+  honours it for `chat` and `streamChat`.
+- **`@rullama/provider`**: the internal `postJson` helper takes an optional
+  `signal`. The other providers do not pass one yet.
+
 ### Deno/TypeScript port (`@rullama/provider` 0.12.2, `@rullama/tool-builtins` 0.12.2, `@rullama/mcp-server` 0.12.4)
 
 Deno-only patches for three packages (the Rust crates and the other 24

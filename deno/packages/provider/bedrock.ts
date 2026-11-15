@@ -295,38 +295,11 @@ export class BedrockProvider implements Provider {
     tools: Tool[] | undefined,
     options: ChatOptions,
   ): Promise<ChatResponse> {
-    const body = this.buildRequestBody(messages, tools, options);
-    const url = bedrockInvokeUrl(this.region, this.model);
-
-    const baseHeaders: Record<string, string> = {
-      "Content-Type": "application/json",
-      "anthropic_version": ANTHROPIC_BEDROCK_VERSION,
-    };
-
-    const bodyStr = JSON.stringify(body);
-    const sigHeaders = await signRequest(
-      "POST",
-      url,
-      baseHeaders,
-      bodyStr,
-      this.credentials,
-      this.region,
-      "bedrock",
+    const response = await this.signedPost(
+      bedrockInvokeUrl(this.region, this.model),
+      this.buildRequestBody(messages, tools, options),
+      options.signal,
     );
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { ...baseHeaders, ...sigHeaders },
-      body: bodyStr,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `Bedrock API error (${response.status}): ${errorText}`,
-      );
-    }
-
     const bedrockResponse: BedrockResponse = await response.json();
     return parseBedrockResponse(bedrockResponse);
   }
@@ -336,37 +309,11 @@ export class BedrockProvider implements Provider {
     tools: Tool[] | undefined,
     options: ChatOptions,
   ): AsyncIterable<StreamChunk> {
-    const body = this.buildRequestBody(messages, tools, options);
-    const url = bedrockStreamUrl(this.region, this.model);
-
-    const baseHeaders: Record<string, string> = {
-      "Content-Type": "application/json",
-      "anthropic_version": ANTHROPIC_BEDROCK_VERSION,
-    };
-
-    const bodyStr = JSON.stringify(body);
-    const sigHeaders = await signRequest(
-      "POST",
-      url,
-      baseHeaders,
-      bodyStr,
-      this.credentials,
-      this.region,
-      "bedrock",
+    const response = await this.signedPost(
+      bedrockStreamUrl(this.region, this.model),
+      this.buildRequestBody(messages, tools, options),
+      options.signal,
     );
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { ...baseHeaders, ...sigHeaders },
-      body: bodyStr,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `Bedrock API error (${response.status}): ${errorText}`,
-      );
-    }
 
     if (!response.body) {
       throw new Error("Bedrock streaming response has no body");
@@ -395,6 +342,40 @@ export class BedrockProvider implements Provider {
     return buildAnthropicBody(messages, tools, options, {
       anthropic_version: ANTHROPIC_BEDROCK_VERSION,
     });
+  }
+
+  /** POST `body` to `url` with SigV4 headers (aborted by `signal`); throws
+   * with the response body on a non-2xx status. */
+  private async signedPost(
+    url: string,
+    body: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    const baseHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+      "anthropic_version": ANTHROPIC_BEDROCK_VERSION,
+    };
+    const bodyStr = JSON.stringify(body);
+    const sigHeaders = await signRequest(
+      "POST",
+      url,
+      baseHeaders,
+      bodyStr,
+      this.credentials,
+      this.region,
+      "bedrock",
+    );
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { ...baseHeaders, ...sigHeaders },
+      body: bodyStr,
+      signal,
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Bedrock API error (${response.status}): ${errorText}`);
+    }
+    return response;
   }
 }
 

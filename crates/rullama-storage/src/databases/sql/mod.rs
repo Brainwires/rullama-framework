@@ -10,9 +10,9 @@
 //! Each SQL backend provides its own dialect implementation that handles
 //! differences in placeholder syntax, identifier quoting, and type mapping:
 //!
-//! - **PostgreSQL** (`PostgresDialect`) — `$N` placeholders, `"double-quote"` identifiers, pgvector types
+//! - **PostgreSQL** (`PostgresDialect`) — `$N` placeholders, `` `backtick` `` identifiers, pgvector types
 //! - **MySQL** (`MySqlDialect`) — `?` placeholders, `` `backtick` `` identifiers, JSON for vectors
-//! - **SurrealDB** (`SurrealDialect`) — `$N` placeholders, `"double-quote"` identifiers, native array types
+//! - **SurrealDB** (`SurrealDialect`) — `$N` placeholders, `` `backtick` `` identifiers, native array types
 //!
 //! ## Design goals
 //!
@@ -53,7 +53,7 @@ pub trait SqlDialect {
 
     /// Quote an identifier (table name, column name) for the dialect.
     ///
-    /// PostgreSQL and SurrealDB use double-quotes (`"id"`), MySQL uses
+    /// PostgreSQL uses double-quotes (`"id"`), MySQL and SurrealDB use
     /// backticks (`` `id` ``).
     fn quote_ident(&self, ident: &str) -> String;
 }

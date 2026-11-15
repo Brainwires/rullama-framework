@@ -15,7 +15,7 @@ jobs:
   check:
     name: Check
     # Stays on GitHub-hosted: sudo apt-get install (sudo is inert on the self-hosted pool).
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # whisper-rs-sys bindgen layouts fail to compile on ubuntu-latest (26.04, clang 21)
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space
@@ -38,7 +38,7 @@ jobs:
   clippy:
     name: Clippy
     # Stays on GitHub-hosted: sudo apt-get install (sudo is inert on the self-hosted pool).
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # whisper-rs-sys bindgen layouts fail to compile on ubuntu-latest (26.04, clang 21)
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space
@@ -73,7 +73,7 @@ jobs:
   test:
     name: Test
     # Stays on GitHub-hosted: sudo apt-get install (sudo is inert on the self-hosted pool).
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # whisper-rs-sys bindgen layouts fail to compile on ubuntu-latest (26.04, clang 21)
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space
@@ -96,7 +96,7 @@ jobs:
   doc:
     name: Documentation
     # Stays on GitHub-hosted: sudo apt-get install (sudo is inert on the self-hosted pool).
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # whisper-rs-sys bindgen layouts fail to compile on ubuntu-latest (26.04, clang 21)
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space
@@ -119,7 +119,7 @@ jobs:
   msrv:
     name: MSRV (Rust 1.91)
     # Stays on GitHub-hosted: sudo apt-get install (sudo is inert on the self-hosted pool).
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # whisper-rs-sys bindgen layouts fail to compile on ubuntu-latest (26.04, clang 21)
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -237,6 +237,8 @@ jobs:
           fetch-depth: 0 # audit diffs against the PR base / merge-base
       - uses: fallow-rs/fallow@v3
         with:
+          # Pinned: fallow 3.43.0 shipped without its linux-x64-musl platform package (binary verification fails).
+          version: 3.42.0
           command: audit
           config: fallow.toml
           fail-on-issues: true
