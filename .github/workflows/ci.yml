@@ -12,8 +12,26 @@ env:
   CARGO_INCREMENTAL: "0"
 
 jobs:
+  runners:
+    name: pick runners
+    # Our self-hosted pools first, GitHub-hosted for the overflow: a job takes our pool only
+    # while it has a free slot, else its GitHub image at once (fork pull requests: GitHub only).
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      plan: ${{ steps.pick.outputs.plan }}
+    steps:
+      - id: pick
+        uses: Brainwires/.github/actions/pick-runners@415ef1f9941d798b5760bf69f908be88789371a2 # pick-runners
+        with:
+          jobs: fmt=linux-x64 stubs=linux-x64 fallow=linux-x64 deno=linux-x64
+          vars: ${{ toJSON(vars) }}
+
   check:
     name: Check
+    # Stays on GitHub-hosted: sudo apt-get install (sudo is inert on the self-hosted pool).
     runs-on: ubuntu-24.04 # whisper-rs-sys bindgen layouts fail to compile on ubuntu-latest (26.04, clang 21)
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +54,7 @@ jobs:
 
   clippy:
     name: Clippy
+    # Stays on GitHub-hosted: sudo apt-get install (sudo is inert on the self-hosted pool).
     runs-on: ubuntu-24.04 # whisper-rs-sys bindgen layouts fail to compile on ubuntu-latest (26.04, clang 21)
     steps:
       - uses: actions/checkout@v4
@@ -59,7 +78,9 @@ jobs:
 
   fmt:
     name: Format
-    runs-on: ubuntu-latest
+    needs: runners
+    if: ${{ !cancelled() }}
+    runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}').fmt || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -70,6 +91,7 @@ jobs:
 
   test:
     name: Test
+    # Stays on GitHub-hosted: sudo apt-get install (sudo is inert on the self-hosted pool).
     runs-on: ubuntu-24.04 # whisper-rs-sys bindgen layouts fail to compile on ubuntu-latest (26.04, clang 21)
     steps:
       - uses: actions/checkout@v4
@@ -92,6 +114,7 @@ jobs:
 
   doc:
     name: Documentation
+    # Stays on GitHub-hosted: sudo apt-get install (sudo is inert on the self-hosted pool).
     runs-on: ubuntu-24.04 # whisper-rs-sys bindgen layouts fail to compile on ubuntu-latest (26.04, clang 21)
     steps:
       - uses: actions/checkout@v4
@@ -114,6 +137,7 @@ jobs:
 
   msrv:
     name: MSRV (Rust 1.91)
+    # Stays on GitHub-hosted: sudo apt-get install (sudo is inert on the self-hosted pool).
     runs-on: ubuntu-24.04 # whisper-rs-sys bindgen layouts fail to compile on ubuntu-latest (26.04, clang 21)
     steps:
       - uses: actions/checkout@v4
@@ -128,7 +152,9 @@ jobs:
 
   stubs:
     name: No stubs
-    runs-on: ubuntu-latest
+    needs: runners
+    if: ${{ !cancelled() }}
+    runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}').stubs || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -140,6 +166,7 @@ jobs:
 
   test-features:
     name: Test (${{ matrix.backend }})
+    # Stays on GitHub-hosted: services: containers (no docker on the self-hosted pool).
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -202,6 +229,7 @@ jobs:
 
   macos:
     name: macOS check
+    # Stays on GitHub-hosted: brew install (no Homebrew on the self-hosted pool).
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -215,7 +243,9 @@ jobs:
 
   fallow:
     name: Fallow gate (Deno)
-    runs-on: ubuntu-latest
+    needs: runners
+    if: ${{ !cancelled() }}
+    runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}').fallow || 'ubuntu-latest' }}
     # The same gate the pre-commit hook runs (.githooks/pre-commit): dead code, complexity
     # and duplication scoped to what this change INTRODUCES (audit gate = new-only), over
     # the Deno tree per fallow.toml. Hard gate from day one — inherited findings on touched
@@ -240,7 +270,9 @@ jobs:
 
   deno:
     name: Deno
-    runs-on: ubuntu-latest
+    needs: runners
+    if: ${{ !cancelled() }}
+    runs-on: ${{ fromJSON(needs.runners.outputs.plan || '{}').deno || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2
