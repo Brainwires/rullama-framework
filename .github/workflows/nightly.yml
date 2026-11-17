@@ -1,9 +1,6 @@
 name: Nightly integration tests
 
 on:
-  schedule:
-    # 06:00 UTC — every day.
-    - cron: '0 6 * * *'
   workflow_dispatch:
 
 env:
